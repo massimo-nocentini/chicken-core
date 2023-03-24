@@ -220,10 +220,17 @@ to see a list of all supported options and short aliases to basic options.
 === Runtime options
 
 After successful compilation a C source file is generated and can be
-compiled with a C compiler. Executables generated with CHICKEN (and the
-compiler itself) accept a small set of runtime options. These are filtered out
-by the startup code and will not be contained in the result of 
-{{(command-line-arguments)}}.
+compiled with a C compiler. Executables generated with CHICKEN (and
+the compiler itself) accept a small set of runtime options.
+Processing of these options stops at the first non-runtime option, or
+''after'' the empty runtime option (just "{{-:}}"), whichever comes
+first.
+
+In other words, the program sees every option after the first list of
+unbroken runtime options, which are all consumed.  If an empty runtime
+option is present, that is the last of this list of unbroken runtime
+options.  If a non-runtime option is present, that also breaks up the
+runtime options.
 
 ; {{-:?}} : Shows a list of the available runtime options and exits the program.
 

@@ -6024,17 +6024,23 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 
 (define command-line-arguments
   (make-parameter
-   (let ([args (argv)])
+   (let ((args (argv)))
      (if (pair? args)
-	 (let loop ([args (##sys#slot args 1)])
+	 (let loop ((args (##sys#slot args 1)))	; Skip over program name (argv[0])
 	   (if (null? args)
 	       '()
-	       (let ([arg (##sys#slot args 0)]
-		     [r (##sys#slot args 1)] )
-		 (if (and (fx>= (##sys#size arg) 3)
-			  (string=? "-:" (##sys#substring arg 0 2)))
-		     (loop r)
-		     (cons arg (loop r)) ) ) ) )
+	       (let ((arg (##sys#slot args 0))
+		     (rest (##sys#slot args 1)) )
+		 (cond
+		  ((string=? "-:" arg)	; Consume first "empty" runtime options list, return rest
+		   rest)
+
+		  ((and (fx>= (##sys#size arg) 3)
+			(string=? "-:" (##sys#substring arg 0 2)))
+		   (loop rest))
+
+		  ;; First non-runtime option and everything following it is returned as-is
+		  (else args) ) ) ) )
 	 args) )
    (lambda (x)
      (##sys#check-list x 'command-line-arguments)

@@ -13,7 +13,7 @@ This module provides access to the current process context.
 
 Returns two values: an integer and a foreign-pointer object
 representing the {{argc}} and {{argv}} arguments passed to the current
-process.
+process.  See also {{argv}} below.
 
 ==== argv
 
@@ -24,13 +24,27 @@ the list is a string containing the name of the executing program. The
 other items are the arguments passed to the application. It depends on
 the host-shell whether arguments are expanded ('globbed') or not.
 
+NOTE: This is the "raw" unprocessed argument list, including runtime
+options (starting with {{-:}}) which are consumed by the runtime
+library.
+
 ==== command-line-arguments
 
 <parameter>(command-line-arguments)</parameter>
 
-Contains the list of arguments passed to this program, with the name of
-the program and any runtime options (all options starting with {{-:}})
-removed.
+Contains the list of arguments passed to this program.
+
+This ''excludes'' the name of the program, as well as any runtime
+options (options starting with {{-:}}) up until the first empty
+runtime option (just {{"-:"}}) or non-runtime option, whichever
+comes first.
+
+In other words, this method returns every option ''after'' the first
+list of unbroken runtime options, which are all skipped.  If an empty
+runtime option is present, that is the last of this list of unbroken
+runtime options and everything after it is returned by this method.
+If a non-runtime option is present, that also breaks up the runtime
+options and this method returns that and every following option.
 
 ==== executable-pathname
 

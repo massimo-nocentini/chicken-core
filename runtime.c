@@ -1348,153 +1348,159 @@ void CHICKEN_parse_command_line(int argc, char *argv[], C_word *heap, C_word *st
   *stack = DEFAULT_STACK_SIZE;
   *symbols = DEFAULT_SYMBOL_TABLE_SIZE;
 
-  for(i = 1; i < C_main_argc; ++i)
-    if(!strncmp(C_main_argv[ i ], C_text("-:"), 2)) {
-      for(ptr = &C_main_argv[ i ][ 2 ]; *ptr != '\0';) {
-	switch(*(ptr++)) {
-	case '?':
-	  C_dbg("Runtime options", "\n\n"
-		 " -:?              display this text\n"
-		 " -:c              always treat stdin as console\n"
-		 " -:d              enable debug output\n"
-		 " -:D              enable more debug output\n"
-		 " -:g              show GC information\n"
-		 " -:o              disable stack overflow checks\n"
-		 " -:hiSIZE         set initial heap size\n"
-		 " -:hmSIZE         set maximal heap size\n"
-                 " -:hfSIZE         set minimum unused heap size\n"
-		 " -:hgPERCENTAGE   set heap growth percentage\n"
-		 " -:hsPERCENTAGE   set heap shrink percentage\n"
-		 " -:huPERCENTAGE   set percentage of memory used at which heap will be shrunk\n"
-		 " -:hSIZE          set fixed heap size\n"
-		 " -:r              write trace output to stderr\n"
-		 " -:RSEED          initialize rand() seed with SEED (helpful for benchmark stability)\n"
-		 " -:p              collect statistical profile and write to file at exit\n"
-		 " -:PFREQUENCY     like -:p, specifying sampling frequency in us (default: 10000)\n"
-		 " -:sSIZE          set nursery (stack) size\n"
-		 " -:tSIZE          set symbol-table size\n"
-                 " -:fSIZE          set maximal number of pending finalizers\n"
-		 " -:x              deliver uncaught exceptions of other threads to primordial one\n"
-		 " -:B              sound bell on major GC\n"
-		 " -:G              force GUI mode\n"
-		 " -:aSIZE          set trace-buffer/call-chain size\n"
-		 " -:ASIZE          set fixed temporary stack size\n"
-		 " -:H              dump heap state on exit\n"
-		 " -:S              do not handle segfaults or other serious conditions\n"
-		 "\n  SIZE may have a `k' (`K'), `m' (`M') or `g' (`G') suffix, meaning size\n"
-		 "  times 1024, 1048576, and 1073741824, respectively.\n\n");
-	  C_exit_runtime(C_fix(0));
+  for(i = 1; i < C_main_argc; ++i) {
+    if (strncmp(C_main_argv[ i ], C_text("-:"), 2))
+      break; /* Stop parsing on first non-runtime option */
 
-	case 'h':
-	  switch(*ptr) {
-	  case 'i':
-	    *heap = arg_val(ptr + 1); 
-	    heap_size_changed = 1;
-	    goto next;
-          case 'f':
-	    C_heap_half_min_free = arg_val(ptr + 1);
-	    goto next;
-	  case 'g':
-	    C_heap_growth = arg_val(ptr + 1);
-	    goto next;
-	  case 'm':
-	    C_maximal_heap_size = arg_val(ptr + 1);
-	    goto next;
-	  case 's':
-	    C_heap_shrinkage = arg_val(ptr + 1);
-	    goto next;
-	  case 'u':
-	    C_heap_shrinkage_used = arg_val(ptr + 1);
-	    goto next;
-	  default:
-	    *heap = arg_val(ptr); 
-	    heap_size_changed = 1;
-	    C_heap_size_is_fixed = 1;
-	    goto next;
-	  }
+    ptr = &C_main_argv[ i ][ 2 ];
+    if (*ptr == '\0')
+      break; /* Also stop parsing on first "empty" option (i.e. "-:") */
 
-	case 'o':
-	  C_disable_overflow_check = 1;
-	  break;
+    do {
+      switch(*(ptr++)) {
+      case '?':
+        C_dbg("Runtime options", "\n\n"
+              " -:?              display this text\n"
+              " -:c              always treat stdin as console\n"
+              " -:d              enable debug output\n"
+              " -:D              enable more debug output\n"
+              " -:g              show GC information\n"
+              " -:o              disable stack overflow checks\n"
+              " -:hiSIZE         set initial heap size\n"
+              " -:hmSIZE         set maximal heap size\n"
+              " -:hfSIZE         set minimum unused heap size\n"
+              " -:hgPERCENTAGE   set heap growth percentage\n"
+              " -:hsPERCENTAGE   set heap shrink percentage\n"
+              " -:huPERCENTAGE   set percentage of memory used at which heap will be shrunk\n"
+              " -:hSIZE          set fixed heap size\n"
+              " -:r              write trace output to stderr\n"
+              " -:RSEED          initialize rand() seed with SEED (helpful for benchmark stability)\n"
+              " -:p              collect statistical profile and write to file at exit\n"
+              " -:PFREQUENCY     like -:p, specifying sampling frequency in us (default: 10000)\n"
+              " -:sSIZE          set nursery (stack) size\n"
+              " -:tSIZE          set symbol-table size\n"
+              " -:fSIZE          set maximal number of pending finalizers\n"
+              " -:x              deliver uncaught exceptions of other threads to primordial one\n"
+              " -:B              sound bell on major GC\n"
+              " -:G              force GUI mode\n"
+              " -:aSIZE          set trace-buffer/call-chain size\n"
+              " -:ASIZE          set fixed temporary stack size\n"
+              " -:H              dump heap state on exit\n"
+              " -:S              do not handle segfaults or other serious conditions\n"
+              "\n  SIZE may have a `k' (`K'), `m' (`M') or `g' (`G') suffix, meaning size\n"
+              "  times 1024, 1048576, and 1073741824, respectively.\n\n");
+        C_exit_runtime(C_fix(0));
 
-	case 'B':
-	  gc_bell = 1;
-	  break;
-
-	case 'G':
-	  C_gui_mode = 1;
-	  break;
-
-	case 'H':
-	  dump_heap_on_exit = 1;
-	  break;
-
-	case 'S':
-	  pass_serious_signals = 1;
-	  break;
-
-	case 's':
-	  *stack = arg_val(ptr);
-	  stack_size_changed = 1;
-	  goto next;
-
-	case 'f':
-	  C_max_pending_finalizers = arg_val(ptr);
-	  goto next;
-
-	case 'a':
-	  C_trace_buffer_size = arg_val(ptr);
-	  goto next;
-
-	case 'A':
-	  fixed_temporary_stack_size = arg_val(ptr);
-	  goto next;
-
-	case 't':
-	  *symbols = arg_val(ptr);
-	  goto next;
-
-	case 'c':
-	  fake_tty_flag = 1;
-	  break;
-
-	case 'd':
-	  debug_mode = 1;
-	  break;
-
-	case 'D':
-	  debug_mode = 2;
-	  break;
-
-	case 'g':
-	  gc_report_flag = 2;
-	  break;
-
-	case 'P':
-	  profiling = 1;
-	  profile_frequency = arg_val(ptr);
+      case 'h':
+        switch(*ptr) {
+        case 'i':
+          *heap = arg_val(ptr + 1); 
+          heap_size_changed = 1;
           goto next;
+        case 'f':
+          C_heap_half_min_free = arg_val(ptr + 1);
+          goto next;
+        case 'g':
+          C_heap_growth = arg_val(ptr + 1);
+          goto next;
+        case 'm':
+          C_maximal_heap_size = arg_val(ptr + 1);
+          goto next;
+        case 's':
+          C_heap_shrinkage = arg_val(ptr + 1);
+          goto next;
+        case 'u':
+          C_heap_shrinkage_used = arg_val(ptr + 1);
+          goto next;
+        default:
+          *heap = arg_val(ptr); 
+          heap_size_changed = 1;
+          C_heap_size_is_fixed = 1;
+          goto next;
+        }
 
-	case 'p':
-	  profiling = 1;
-          break;
+      case 'o':
+        C_disable_overflow_check = 1;
+        break;
 
-	case 'r':
-	  show_trace = 1;
-	  break;
+      case 'B':
+        gc_bell = 1;
+        break;
 
-	case 'R':
-	  srand((unsigned int)arg_val(ptr));
-	  random_state_initialized = 1;
-	  goto next;
+      case 'G':
+        C_gui_mode = 1;
+        break;
 
-	case 'x':
-	  C_abort_on_thread_exceptions = 1;
-	  break;
+      case 'H':
+        dump_heap_on_exit = 1;
+        break;
 
-	default: panic(C_text("illegal runtime option"));
-	}
+      case 'S':
+        pass_serious_signals = 1;
+        break;
+
+      case 's':
+        *stack = arg_val(ptr);
+        stack_size_changed = 1;
+        goto next;
+
+      case 'f':
+        C_max_pending_finalizers = arg_val(ptr);
+        goto next;
+
+      case 'a':
+        C_trace_buffer_size = arg_val(ptr);
+        goto next;
+
+      case 'A':
+        fixed_temporary_stack_size = arg_val(ptr);
+        goto next;
+
+      case 't':
+        *symbols = arg_val(ptr);
+        goto next;
+
+      case 'c':
+        fake_tty_flag = 1;
+        break;
+
+      case 'd':
+        debug_mode = 1;
+        break;
+
+      case 'D':
+        debug_mode = 2;
+        break;
+
+      case 'g':
+        gc_report_flag = 2;
+        break;
+
+      case 'P':
+        profiling = 1;
+        profile_frequency = arg_val(ptr);
+        goto next;
+
+      case 'p':
+        profiling = 1;
+        break;
+
+      case 'r':
+        show_trace = 1;
+        break;
+
+      case 'R':
+        srand((unsigned int)arg_val(ptr));
+        random_state_initialized = 1;
+        goto next;
+
+      case 'x':
+        C_abort_on_thread_exceptions = 1;
+        break;
+
+      default: panic(C_text("illegal runtime option"));
       }
+    } while(*ptr != '\0');
 
     next:;
     }

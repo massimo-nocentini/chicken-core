@@ -5,6 +5,10 @@
     to avoid arbitrary OS command injection during egg installation,
     reported by Vasilij Schneidermann who also provided the necessary
     patches to mitigate this problem.
+  - The runtime option "-:b" has been removed, as it was deemed too
+    insecure to be able to drop to a REPL from the CLI of any program.
+  - Runtime option processing has been hardened: processing now stops on
+    the first non-runtime option or after "-:", whichever comes first.
 
 - Core libraries
   - Added "locative-index", kindly contributed by John Croisant.
