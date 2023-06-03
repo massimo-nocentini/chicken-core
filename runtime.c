@@ -4193,7 +4193,7 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
        !C_in_new_heapp(car) :
        C_in_fromspacep(car)) {
 
-      C_set_block_item(pair, 0, C_SCHEME_UNDEFINED);
+      C_set_block_item(pair, 0, C_SCHEME_BROKEN_WEAK_PTR);
 
 #ifndef NDEBUG
       if ((h & C_HEADER_TYPE_BITS) == C_SYMBOL_TYPE) {
@@ -4262,7 +4262,7 @@ C_regparm void C_fcall update_symbol_tables(int mode)
 	sym = C_block_item(bucket, 0);
 
 	/* If the symbol is unreferenced, drop it: */
-	if(sym == C_SCHEME_UNDEFINED) {
+	if(sym == C_SCHEME_BROKEN_WEAK_PTR) {
 	  if(last) C_set_block_item(last, 1, C_block_item(bucket,1));
 	  else stp->table[ i ] = C_block_item(bucket,1);
           ++ndropped;
@@ -12589,6 +12589,7 @@ static C_regparm C_word C_fcall decode_literal2(C_word **ptr, C_char **str,
     case C_SCHEME_END_OF_LIST:
     case C_SCHEME_UNDEFINED:
     case C_SCHEME_END_OF_FILE:
+    case C_SCHEME_BROKEN_WEAK_PTR:
       return (C_word)(*(*str - 1));
 
     case C_FIXNUM_BIT:
@@ -13104,31 +13105,32 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
       b2 = b->next;
 
       switch(b->key) {
-      case C_fix(1): C_fprintf(C_stderr,              C_text("fixnum         ")); break;
-      case C_SCHEME_TRUE: C_fprintf(C_stderr,         C_text("boolean        ")); break;
-      case C_SCHEME_END_OF_LIST: C_fprintf(C_stderr,  C_text("null           ")); break;
-      case C_SCHEME_UNDEFINED  : C_fprintf(C_stderr,  C_text("void           ")); break;
-      case C_make_character('A'): C_fprintf(C_stderr, C_text("character      ")); break;
-      case C_SCHEME_END_OF_FILE: C_fprintf(C_stderr,  C_text("eof            ")); break;
-      case C_SCHEME_UNBOUND: C_fprintf(C_stderr,      C_text("unbound        ")); break;
-      case C_SYMBOL_TYPE: C_fprintf(C_stderr,         C_text("symbol         ")); break;
-      case C_STRING_TYPE: C_fprintf(C_stderr,         C_text("string         ")); break;
-      case C_PAIR_TYPE: C_fprintf(C_stderr,           C_text("pair           ")); break;
-      case C_CLOSURE_TYPE: C_fprintf(C_stderr,        C_text("closure        ")); break;
-      case C_FLONUM_TYPE: C_fprintf(C_stderr,         C_text("flonum         ")); break;
-      case C_PORT_TYPE: C_fprintf(C_stderr,           C_text("port           ")); break;
-      case C_POINTER_TYPE: C_fprintf(C_stderr,        C_text("pointer        ")); break;
-      case C_LOCATIVE_TYPE: C_fprintf(C_stderr,       C_text("locative       ")); break;
-      case C_TAGGED_POINTER_TYPE: C_fprintf(C_stderr, C_text("tagged pointer ")); break;
-      case C_LAMBDA_INFO_TYPE: C_fprintf(C_stderr,    C_text("lambda info    ")); break;
-      case C_WEAK_PAIR_TYPE: C_fprintf(C_stderr,      C_text("weak pair      ")); break;
-      case C_VECTOR_TYPE: C_fprintf(C_stderr,         C_text("vector         ")); break;
-      case C_BYTEVECTOR_TYPE: C_fprintf(C_stderr,     C_text("bytevector     ")); break;
-      case C_BIGNUM_TYPE: C_fprintf(C_stderr,         C_text("bignum         ")); break;
-      case C_CPLXNUM_TYPE: C_fprintf(C_stderr,        C_text("cplxnum        ")); break;
-      case C_RATNUM_TYPE: C_fprintf(C_stderr,         C_text("ratnum         ")); break;
+      case C_fix(1): C_fprintf(C_stderr,                 C_text("fixnum         ")); break;
+      case C_SCHEME_TRUE: C_fprintf(C_stderr,            C_text("boolean        ")); break;
+      case C_SCHEME_END_OF_LIST: C_fprintf(C_stderr,     C_text("null           ")); break;
+      case C_SCHEME_UNDEFINED  : C_fprintf(C_stderr,     C_text("void           ")); break;
+      case C_SCHEME_BROKEN_WEAK_PTR: C_fprintf(C_stderr, C_text("broken weak ptr")); break;
+      case C_make_character('A'): C_fprintf(C_stderr,    C_text("character      ")); break;
+      case C_SCHEME_END_OF_FILE: C_fprintf(C_stderr,     C_text("eof            ")); break;
+      case C_SCHEME_UNBOUND: C_fprintf(C_stderr,         C_text("unbound        ")); break;
+      case C_SYMBOL_TYPE: C_fprintf(C_stderr,            C_text("symbol         ")); break;
+      case C_STRING_TYPE: C_fprintf(C_stderr,            C_text("string         ")); break;
+      case C_PAIR_TYPE: C_fprintf(C_stderr,              C_text("pair           ")); break;
+      case C_CLOSURE_TYPE: C_fprintf(C_stderr,           C_text("closure        ")); break;
+      case C_FLONUM_TYPE: C_fprintf(C_stderr,            C_text("flonum         ")); break;
+      case C_PORT_TYPE: C_fprintf(C_stderr,              C_text("port           ")); break;
+      case C_POINTER_TYPE: C_fprintf(C_stderr,           C_text("pointer        ")); break;
+      case C_LOCATIVE_TYPE: C_fprintf(C_stderr,          C_text("locative       ")); break;
+      case C_TAGGED_POINTER_TYPE: C_fprintf(C_stderr,    C_text("tagged pointer ")); break;
+      case C_LAMBDA_INFO_TYPE: C_fprintf(C_stderr,       C_text("lambda info    ")); break;
+      case C_WEAK_PAIR_TYPE: C_fprintf(C_stderr,         C_text("weak pair      ")); break;
+      case C_VECTOR_TYPE: C_fprintf(C_stderr,            C_text("vector         ")); break;
+      case C_BYTEVECTOR_TYPE: C_fprintf(C_stderr,        C_text("bytevector     ")); break;
+      case C_BIGNUM_TYPE: C_fprintf(C_stderr,            C_text("bignum         ")); break;
+      case C_CPLXNUM_TYPE: C_fprintf(C_stderr,           C_text("cplxnum        ")); break;
+      case C_RATNUM_TYPE: C_fprintf(C_stderr,            C_text("ratnum         ")); break;
 	/* XXX this is sort of funny: */
-      case C_BYTEBLOCK_BIT: C_fprintf(C_stderr,        C_text("blob           ")); break;
+      case C_BYTEBLOCK_BIT: C_fprintf(C_stderr,          C_text("blob           ")); break;
       default:
 	x = b->key;
 

@@ -336,6 +336,7 @@ void *alloca ();
 #define C_SCHEME_UNDEFINED        ((C_word)(C_SPECIAL_BITS | 0x00000010))
 #define C_SCHEME_UNBOUND          ((C_word)(C_SPECIAL_BITS | 0x00000020))
 #define C_SCHEME_END_OF_FILE      ((C_word)(C_SPECIAL_BITS | 0x00000030))
+#define C_SCHEME_BROKEN_WEAK_PTR  ((C_word)(C_SPECIAL_BITS | 0x00000040))
 
 #define C_FIXNUM_BIT              0x00000001
 #define C_FIXNUM_SHIFT            1
