@@ -88,7 +88,7 @@
 ;        | (deprecated NAME)
 ;   VALUE = string | symbol | keyword | char | number |
 ;           boolean | true | false |
-;           null | eof | blob |  pointer | port | locative | fixnum |
+;           null | eof | bwp | blob |  pointer | port | locative | fixnum |
 ;           float | bignum | ratnum | cplxnum | integer | pointer-vector
 ;   BASIC = * | list | pair | procedure | vector | undefined | noreturn | values
 ;   COMPLEX = (pair TYPE TYPE)
@@ -133,7 +133,7 @@
 (define-constant +maximal-complex-object-constructor-result-type-length+ 256)
 
 (define-constant value-types
-  '(string symbol keyword char null boolean true false blob eof
+  '(string symbol keyword char null boolean true false blob eof bwp
     fixnum float number integer bignum ratnum cplxnum
     pointer-vector port pointer locative))
 
@@ -172,7 +172,7 @@
 	   ((or) (every type-always-immediate? (cdr t)))
 	   ((forall) (type-always-immediate? (third t)))
 	   (else #f)))
-	((memq t '(eof null fixnum char boolean undefined)) #t)
+	((memq t '(eof bwp null fixnum char boolean undefined)) #t)
 	(else #f)))
 
 (define (scrutinize node db complain specialize strict block-compilation)
@@ -213,6 +213,8 @@
 	     (simplify-type
 	      `(pair ,(constant-result (car lit)) ,(constant-result (cdr lit)))))
 	    ((eof-object? lit) 'eof)
+	    ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+	    ((##core#inline "C_bwpp" lit) #;(bwp-object? lit) 'bwp)
 	    ((vector? lit) 
 	     (simplify-type
 	      `(vector ,@(map constant-result (vector->list lit)))))

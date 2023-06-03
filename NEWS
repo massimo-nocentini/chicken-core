@@ -11,6 +11,7 @@
     the first non-runtime option or after "-:", whichever comes first.
 
 - Core libraries
+  - Added weak pairs to (chicken base), with similar behaviour to Chez Scheme.
   - Added "locative-index", kindly contributed by John Croisant.
   - Added "fp*+" (fused multiply-add) to "chicken.flonum" module
     (suggested by Christian Himpe).

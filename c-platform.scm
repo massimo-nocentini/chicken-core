@@ -173,6 +173,8 @@
     chicken.base#equal=? chicken.base#exact-integer?
     chicken.base#flush-output
 
+    chicken.base#weak-cons chicken.base#weak-pair? chicken.base#bwp-object?
+
     chicken.base#identity chicken.base#o chicken.base#atom?
     chicken.base#alist-ref chicken.base#rassoc
 
@@ -539,6 +541,7 @@
 (rewrite 'srfi-4#f64vector? 2 1 "C_i_f64vectorp" #t)
 (rewrite 'scheme#pair? 2 1 "C_i_pairp" #t)
 (rewrite '##sys#pair? 2 1 "C_i_pairp" #t)
+(rewrite 'chicken.base#weak-pair? 2 1 "C_i_weak_pairp" #t)
 (rewrite 'scheme#procedure? 2 1 "C_i_closurep" #t)
 (rewrite 'chicken.base#port? 2 1 "C_i_portp" #t)
 (rewrite 'scheme#boolean? 2 1 "C_booleanp" #t)
@@ -566,6 +569,7 @@
 (rewrite 'scheme#inexact? 2 1 "C_u_i_inexactp" #f)
 (rewrite 'scheme#list? 2 1 "C_i_listp" #t)
 (rewrite 'scheme#eof-object? 2 1 "C_eofp" #t)
+(rewrite 'chicken.base#bwp-object? 2 1 "C_bwpp" #t)
 (rewrite 'scheme#string-ref 2 2 "C_subchar" #f)
 (rewrite 'scheme#string-ref 2 2 "C_i_string_ref" #t)
 (rewrite 'scheme#string-set! 2 3 "C_setsubchar" #f)
@@ -949,6 +953,7 @@
 
 (rewrite 'scheme#cons 16 2 "C_a_i_cons" #t 3)
 (rewrite '##sys#cons 16 2 "C_a_i_cons" #t 3)
+(rewrite 'chicken.base#weak-cons 16 2 "C_a_i_weak_cons" #t 3)
 (rewrite 'scheme#list 16 #f "C_a_i_list" #t '(0 3) #t)
 (rewrite '##sys#list 16 #f "C_a_i_list" #t '(0 3))
 (rewrite 'scheme#vector 16 #f "C_a_i_vector" #t #t #t)

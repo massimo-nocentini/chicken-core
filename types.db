@@ -148,11 +148,11 @@
 (scheme#cddddr (forall (a) (#(procedure #:clean #:enforce #:foldable) scheme#cddddr ((pair * (pair * (pair * (pair * a))))) a)))
 
 (scheme#set-car! (#(procedure #:enforce) scheme#set-car! (pair *) undefined)
-		 ((pair (or fixnum char boolean eof null undefined)) (##sys#setislot #(1) '0 #(2)))
+		 ((pair (or fixnum char boolean eof bwp null undefined)) (##sys#setislot #(1) '0 #(2)))
 		 ((pair *) (##sys#setslot #(1) '0 #(2))))
 
 (scheme#set-cdr! (#(procedure #:enforce) scheme#set-cdr! (pair *) undefined)
-		 ((pair (or fixnum char boolean eof null undefined)) (##sys#setislot #(1) '1 #(2)))
+		 ((pair (or fixnum char boolean eof bwp null undefined)) (##sys#setislot #(1) '1 #(2)))
 		 ((pair *) (##sys#setslot #(1) '1 #(2))))
 
 (scheme#null? (#(procedure #:pure #:predicate null) scheme#null? (*) boolean))
@@ -875,6 +875,11 @@
 (chicken.base#exact-integer-sqrt (#(procedure #:clean #:enforce #:foldable) chicken.base#exact-integer-sqrt (integer) integer integer)
 		    ((integer) (##sys#exact-integer-sqrt #(1))))
 
+(chicken.base#weak-cons (forall (a b) (#(procedure #:pure) chicken.base#weak-cons (a b) (pair (or a bwp) b))))
+;; NOTE: This is *not* a #:predicate, as we don't want to introduce a completely new weak-pair type
+(chicken.base#weak-pair? (#(procedure #:pure) chicken.base#weak-pair? (*) boolean))
+(chicken.base#bwp-object? (#(procedure #:pure #:predicate bwp) chicken.base#bwp-object? (*) boolean))
+
 (chicken.base#fixnum? (#(procedure #:pure #:predicate fixnum) chicken.base#fixnum? (*) boolean))
 (chicken.base#flonum? (#(procedure #:pure #:predicate float) chicken.base#flonum? (*) boolean))
 (chicken.base#bignum? (#(procedure #:pure #:predicate bignum) chicken.base#bignum? (*) boolean))
@@ -939,8 +944,8 @@
 (chicken.base#error (procedure chicken.base#error (* #!rest) noreturn))
 (chicken.base#equal=? (#(procedure #:clean #:foldable) chicken.base#equal=? (* *) boolean)
 	 ((fixnum fixnum) (scheme#eq? #(1) #(2)))
-	 (((or symbol keyword char eof null undefined) *) (scheme#eq? #(1) #(2)))
-	 ((* (or symbol keyword char eof null undefined)) (scheme#eq? #(1) #(2)))
+	 (((or symbol keyword char eof bwp null undefined) *) (scheme#eq? #(1) #(2)))
+	 ((* (or symbol keyword char eof bwp null undefined)) (scheme#eq? #(1) #(2)))
 	 ((number number) (scheme#= #(1) #(2))))
 
 (chicken.base#emergency-exit (procedure chicken.base#emergency-exit (#!optional fixnum) noreturn))

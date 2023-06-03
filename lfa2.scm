@@ -255,6 +255,8 @@
 	    ((list? lit) 'list)
 	    ((pair? lit) 'pair)
 	    ((eof-object? lit) 'eof)
+	    ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+	    ((##core#inline "C_bwpp" lit) #;(bwp-object? lit) 'bwp)
 	    ((vector? lit) 'vector)
 	    ((and (not (##sys#immediate? lit)) (##sys#generic-structure? lit))
 	     `(struct ,(##sys#slot lit 0)))
