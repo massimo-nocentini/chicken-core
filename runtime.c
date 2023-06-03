@@ -2119,7 +2119,7 @@ C_word C_fcall C_restore_callback_continuation(void)
   C_word p = C_block_item(callback_continuation_stack_symbol, 0),
          k;
 
-  assert(!C_immediatep(p) && C_block_header(p) == C_PAIR_TAG);
+  assert(!C_immediatep(p) && C_header_type(p) == C_PAIR_TYPE);
   k = C_u_i_car(p);
 
   C_mutate(&C_block_item(callback_continuation_stack_symbol, 0), C_u_i_cdr(p));
@@ -2133,7 +2133,7 @@ C_word C_fcall C_restore_callback_continuation2(int level)
   C_word p = C_block_item(callback_continuation_stack_symbol, 0),
          k;
 
-  if(level != callback_continuation_level || C_immediatep(p) || C_block_header(p) != C_PAIR_TAG)
+  if(level != callback_continuation_level || C_immediatep(p) || C_header_type(p) != C_PAIR_TYPE)
     panic(C_text("unbalanced callback continuation stack"));
 
   k = C_u_i_car(p);
@@ -4770,7 +4770,8 @@ C_regparm C_word C_fcall C_equalp(C_word x, C_word y)
 
   if(C_immediatep(x) || C_immediatep(y)) return 0;
 
-  if((header = C_block_header(x)) != C_block_header(y)) return 0;
+  /* NOTE: Extra check at the end is special consideration for pairs being equal to weak pairs */
+  if((header = C_block_header(x)) != C_block_header(y) && !(C_header_type(x) == C_PAIR_TYPE && C_header_type(y) == C_PAIR_TYPE)) return 0;
   else if((bits = header & C_HEADER_BITS_MASK) & C_BYTEBLOCK_BIT) {
     if(header == C_FLONUM_TAG && C_block_header(y) == C_FLONUM_TAG)
       return C_ub_i_flonum_eqvp(C_flonum_magnitude(x),
@@ -5126,11 +5127,11 @@ C_regparm C_word C_fcall C_i_listp(C_word x)
   C_word fast = x, slow = x;
 
   while(fast != C_SCHEME_END_OF_LIST)
-    if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+    if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
       fast = C_u_i_cdr(fast);
       
       if(fast == C_SCHEME_END_OF_LIST) return C_SCHEME_TRUE;
-      else if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+      else if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
 	fast = C_u_i_cdr(fast);
 	slow = C_u_i_cdr(slow);
 
@@ -5590,7 +5591,7 @@ C_regparm C_word C_fcall C_i_integer_oddp(C_word x)
 
 C_regparm C_word C_fcall C_i_car(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "car", x);
 
   return C_u_i_car(x);
@@ -5599,7 +5600,7 @@ C_regparm C_word C_fcall C_i_car(C_word x)
 
 C_regparm C_word C_fcall C_i_cdr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cdr", x);
 
   return C_u_i_cdr(x);
@@ -5608,14 +5609,14 @@ C_regparm C_word C_fcall C_i_cdr(C_word x)
 
 C_regparm C_word C_fcall C_i_caar(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "caar", x);
   }
 
   x = C_u_i_car(x);
 
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5623,14 +5624,14 @@ C_regparm C_word C_fcall C_i_caar(C_word x)
 
 C_regparm C_word C_fcall C_i_cadr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cadr", x);
   }
 
   x = C_u_i_cdr(x);
 
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5638,14 +5639,14 @@ C_regparm C_word C_fcall C_i_cadr(C_word x)
 
 C_regparm C_word C_fcall C_i_cdar(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cdar", x);
   }
 
   x = C_u_i_car(x);
 
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5653,13 +5654,13 @@ C_regparm C_word C_fcall C_i_cdar(C_word x)
 
 C_regparm C_word C_fcall C_i_cddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5667,15 +5668,15 @@ C_regparm C_word C_fcall C_i_cddr(C_word x)
 
 C_regparm C_word C_fcall C_i_caddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "caddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5683,15 +5684,15 @@ C_regparm C_word C_fcall C_i_caddr(C_word x)
 
 C_regparm C_word C_fcall C_i_cdddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cdddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5699,17 +5700,17 @@ C_regparm C_word C_fcall C_i_cdddr(C_word x)
 
 C_regparm C_word C_fcall C_i_cadddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cadddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5717,17 +5718,17 @@ C_regparm C_word C_fcall C_i_cadddr(C_word x)
 
 C_regparm C_word C_fcall C_i_cddddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cddddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5739,14 +5740,14 @@ C_regparm C_word C_fcall C_i_list_tail(C_word lst, C_word i)
   int n;
 
   if(lst != C_SCHEME_END_OF_LIST && 
-     (C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG))
+     (C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "list-tail", lst);
 
   if(i & C_FIXNUM_BIT) n = C_unfix(i);
   else barf(C_BAD_ARGUMENT_TYPE_ERROR, "list-tail", i);
 
   while(n--) {
-    if(C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG)
+    if(C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE)
       barf(C_OUT_OF_RANGE_ERROR, "list-tail", lst0, i);
     
     lst = C_u_i_cdr(lst);
@@ -6139,11 +6140,11 @@ C_regparm C_word C_fcall C_i_length(C_word lst)
 
   while(slow != C_SCHEME_END_OF_LIST) {
     if(fast != C_SCHEME_END_OF_LIST) {
-      if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+      if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
 	fast = C_u_i_cdr(fast);
       
 	if(fast != C_SCHEME_END_OF_LIST) {
-	  if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+	  if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
 	    fast = C_u_i_cdr(fast);
 	  }
 	  else barf(C_NOT_A_PROPER_LIST_ERROR, "length", lst);
@@ -6154,7 +6155,7 @@ C_regparm C_word C_fcall C_i_length(C_word lst)
       }
     }
 
-    if(C_immediatep(slow) || C_block_header(slow) != C_PAIR_TAG)
+    if(C_immediatep(slow) || C_header_type(slow) != C_PAIR_TYPE)
       barf(C_NOT_A_PROPER_LIST_ERROR, "length", lst);
 
     slow = C_u_i_cdr(slow);
@@ -6169,7 +6170,7 @@ C_regparm C_word C_fcall C_u_i_length(C_word lst)
 {
   int n = 0;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     lst = C_u_i_cdr(lst);
     ++n;
   }
@@ -6179,7 +6180,7 @@ C_regparm C_word C_fcall C_u_i_length(C_word lst)
 
 C_regparm C_word C_fcall C_i_set_car(C_word x, C_word val)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "set-car!", x);
 
   C_mutate(&C_u_i_car(x), val);
@@ -6189,7 +6190,7 @@ C_regparm C_word C_fcall C_i_set_car(C_word x, C_word val)
 
 C_regparm C_word C_fcall C_i_set_cdr(C_word x, C_word val)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "set-cdr!", x);
 
   C_mutate(&C_u_i_cdr(x), val);
@@ -7127,10 +7128,10 @@ C_regparm C_word C_fcall C_i_assq(C_word x, C_word lst)
 {
   C_word a;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     a = C_u_i_car(lst);
 
-    if(!C_immediatep(a) && C_block_header(a) == C_PAIR_TAG) {
+    if(!C_immediatep(a) && C_header_type(a) == C_PAIR_TYPE) {
       if(C_u_i_car(a) == x) return a;
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "assq", a);
@@ -7149,10 +7150,10 @@ C_regparm C_word C_fcall C_i_assv(C_word x, C_word lst)
 {
   C_word a;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     a = C_u_i_car(lst);
 
-    if(!C_immediatep(a) && C_block_header(a) == C_PAIR_TAG) {
+    if(!C_immediatep(a) && C_header_type(a) == C_PAIR_TYPE) {
       if(C_truep(C_i_eqvp(C_u_i_car(a), x))) return a;
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "assv", a);
@@ -7171,10 +7172,10 @@ C_regparm C_word C_fcall C_i_assoc(C_word x, C_word lst)
 {
   C_word a;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     a = C_u_i_car(lst);
 
-    if(!C_immediatep(a) && C_block_header(a) == C_PAIR_TAG) {
+    if(!C_immediatep(a) && C_header_type(a) == C_PAIR_TYPE) {
       if(C_equalp(C_u_i_car(a), x)) return a;
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "assoc", a);
@@ -7191,7 +7192,7 @@ C_regparm C_word C_fcall C_i_assoc(C_word x, C_word lst)
 
 C_regparm C_word C_fcall C_i_memq(C_word x, C_word lst)
 {
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     if(C_u_i_car(lst) == x) return lst;
     else lst = C_u_i_cdr(lst);
   }
@@ -7216,7 +7217,7 @@ C_regparm C_word C_fcall C_u_i_memq(C_word x, C_word lst)
 
 C_regparm C_word C_fcall C_i_memv(C_word x, C_word lst)
 {
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     if(C_truep(C_i_eqvp(C_u_i_car(lst), x))) return lst;
     else lst = C_u_i_cdr(lst);
   }
@@ -7230,7 +7231,7 @@ C_regparm C_word C_fcall C_i_memv(C_word x, C_word lst)
 
 C_regparm C_word C_fcall C_i_member(C_word x, C_word lst)
 {
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     if(C_equalp(C_u_i_car(lst), x)) return lst;
     else lst = C_u_i_cdr(lst);
   }
@@ -7355,7 +7356,7 @@ C_regparm C_word C_fcall C_i_check_structure_2(C_word x, C_word st, C_word loc)
 
 C_regparm C_word C_fcall C_i_check_pair_2(C_word x, C_word loc)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
     error_location = loc;
     barf(C_BAD_ARGUMENT_TYPE_NO_PAIR_ERROR, NULL, x);
   }
@@ -7409,7 +7410,7 @@ C_regparm C_word C_fcall C_i_check_keyword_2(C_word x, C_word loc)
 
 C_regparm C_word C_fcall C_i_check_list_2(C_word x, C_word loc)
 {
-  if(x != C_SCHEME_END_OF_LIST && (C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)) {
+  if(x != C_SCHEME_END_OF_LIST && (C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)) {
     error_location = loc;
     barf(C_BAD_ARGUMENT_TYPE_NO_LIST_ERROR, NULL, x);
   }
@@ -7574,14 +7575,14 @@ C_regparm C_word C_fcall C_i_foreign_unsigned_ranged_integer_argumentp(C_word x,
 /* I */
 C_regparm C_word C_fcall C_i_not_pair_p_2(C_word x)
 {
-  return C_mk_bool(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG);
+  return C_mk_bool(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE);
 }
 
 
 C_regparm C_word C_fcall C_i_null_list_p(C_word x)
 {
   if(x == C_SCHEME_END_OF_LIST) return C_SCHEME_TRUE;
-  else if(!C_immediatep(x) && C_block_header(x) == C_PAIR_TAG) return C_SCHEME_FALSE;
+  else if(!C_immediatep(x) && C_header_type(x) == C_PAIR_TYPE) return C_SCHEME_FALSE;
   else {
     barf(C_BAD_ARGUMENT_TYPE_NO_LIST_ERROR, "null-list?", x);
     return C_SCHEME_FALSE;
@@ -7674,7 +7675,7 @@ void C_ccall C_apply(C_word c, C_word *av)
     barf(C_NOT_A_CLOSURE_ERROR, "apply", fn);
 
   lst = av[ c - 1 ];
-  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG))
+  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "apply", lst);
 
   len = C_unfix(C_u_i_length(lst));
@@ -7820,7 +7821,7 @@ void C_ccall C_apply_values(C_word c, C_word *av)
 
   lst = av[ 2 ];
 
-  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG))
+  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "apply", lst);
 
   /* Check whether continuation receives multiple values: */
@@ -7857,7 +7858,7 @@ void C_ccall C_apply_values(C_word c, C_word *av)
     barf(C_CONTINUATION_CANT_RECEIVE_VALUES_ERROR, "values", k);
 #endif
   }
-  else if(C_block_header(lst) == C_PAIR_TAG) {
+  else if(C_header_type(lst) == C_PAIR_TYPE) {
     if(C_u_i_cdr(lst) == C_SCHEME_END_OF_LIST)
       n = C_u_i_car(lst);
     else {
@@ -12907,18 +12908,18 @@ C_regparm C_word C_fcall
 C_i_get_keyword(C_word kw, C_word args, C_word def)
 {
   while(!C_immediatep(args)) {
-    if(C_block_header(args) == C_PAIR_TAG) {
+    if(C_header_type(args) == C_PAIR_TYPE) {
       if(kw == C_u_i_car(args)) {
 	args = C_u_i_cdr(args);
 
-	if(C_immediatep(args) || C_block_header(args) != C_PAIR_TAG)
+	if(C_immediatep(args) || C_header_type(args) != C_PAIR_TYPE)
 	  return def;
 	else return C_u_i_car(args);
       }
       else {
 	args = C_u_i_cdr(args);
 
-	if(C_immediatep(args) || C_block_header(args) != C_PAIR_TAG)
+	if(C_immediatep(args) || C_header_type(args) != C_PAIR_TYPE)
 	  return def;
 	else args = C_u_i_cdr(args);
       }

@@ -1,17 +1,49 @@
 ;; weak-pointer-test.scm
 
-(import (chicken gc))
+(import (chicken gc) (chicken port))
 
 (include "test.scm")
 
 ;; Ensure weakly held items are not just equal to other references to it, but *identical*
 (current-test-comparator eq?)
 
+(test-group "Testing basic pair accessors work on weak pairs, too"
+  (let ((my-proper-weak-list (weak-cons 1 (weak-cons 2 '())))
+	(my-proper-list (cons 1 (cons 2 '())))
+	(my-improper-weak-list (weak-cons 1 (weak-cons 2 3)))
+	(my-improper-list (cons 1 (cons 2 3))))
+
+    (test-assert "proper weak lists are pairs" (pair? my-proper-weak-list))
+    (test-assert "improper weak lists are pairs" (pair? my-improper-weak-list))
+
+    (test-assert "regular proper lists are not weak pairs" (not (weak-pair? my-proper-list)))
+    (test-assert "regular improper lists are not weak pairs" (not (weak-pair? my-improper-list)))
+
+    (test-assert "proper weak lists are lists" (list? my-proper-weak-list))
+    (test-assert "improper weak lists are *not* lists" (not (list? my-improper-weak-list)))
+
+    (test-equal "an weak proper list is equal to the same regular proper list" my-proper-weak-list my-proper-list equal?)
+    (test-equal "an weak proper list is not *identical* to the same regular proper list" my-proper-weak-list my-proper-list (complement eq?))
+
+    (test-equal "car of weak list returns the first item" (car my-proper-weak-list) 1)
+    (test-equal "cdr of weak list returns the cdr" (cdr my-proper-weak-list) (cdr my-proper-list) equal?)
+    (test-equal "cadr of weak list returns the second item" (cadr my-proper-weak-list) 2)
+    (test-equal "cddr of weak list returns the cdr of the cdr" (cddr my-proper-weak-list) '())
+
+    (test-equal "length of weak proper list returns the length" 2 (length my-proper-weak-list))
+    (test-error "length of weak improper list raises an error" (length my-improper-weak-list))
+
+    (let* ((written-proper-weak-list (with-output-to-string (lambda () (write my-proper-weak-list))))
+	   (written-improper-weak-list (with-output-to-string (lambda () (write my-improper-weak-list))))
+	   (reread-proper-weak-list (with-input-from-string written-proper-weak-list read))
+	   (reread-improper-weak-list (with-input-from-string written-improper-weak-list read)))
+      (test-equal "a proper weak list is written as a regular proper list" "(1 2)" written-proper-weak-list string=?)
+      (test-equal "a proper weak list is read back as regular proper list" my-proper-list reread-proper-weak-list equal?)
+      (test-equal "an improper weak list is written as a regular improper list" "(1 2 . 3)" written-improper-weak-list string=?)
+      (test-equal "an improper weak list is read back as regular improper list" my-improper-list reread-improper-weak-list equal?))))
+
 (test-group "Testing that basic weak pairs get their car reclaimed"
-  (let* ((car (lambda (x) (##sys#slot x 0))) ; TODO: make list accessors work on weak pairs
-	 (cadr (lambda (x) (car (##sys#slot x 1))))
-	 (caddr (lambda (x) (car (##sys#slot (##sys#slot x 1) 1))))
-	 (not-held-onto-value (vector 42))
+  (let* ((not-held-onto-value (vector 42))
 	 (held-onto-vector (vector 'this-one-stays))
 	 (weak-list (weak-cons not-held-onto-value
 			       (weak-cons (vector 'ohai)
@@ -37,9 +69,7 @@
 
 
 (test-group "Testing cars of weak pairs referenced by their cdr do not get collected"
-  (let* ((car (lambda (x) (##sys#slot x 0))) ; TODO: make list accessors work on weak pairs
-	 (cdr (lambda (x) (##sys#slot x 1)))
-	 (obj-a (vector 42))
+  (let* ((obj-a (vector 42))
 	 (ref-a (weak-cons obj-a obj-a))
 	 (obj-b (vector 'ohai))
 	 (ref-b (weak-cons obj-b obj-b))

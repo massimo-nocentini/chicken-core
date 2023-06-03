@@ -1006,6 +1006,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_block_item(x,i)          (*C_CHECK2(x,i,(C_header_size(C_VAL1(x))>(C_VAL2(i))),&(((C_SCHEME_BLOCK *)(C_VAL1(x)))->data [ C_VAL2(i) ])))
 #define C_set_block_item(x,i,y)    (C_block_item(x, i) = (y))
 #define C_header_bits(bh)          (C_block_header(bh) & C_HEADER_BITS_MASK)
+#define C_header_type(bh)          (C_block_header(bh) & C_HEADER_TYPE_BITS)
 #define C_header_size(bh)          (C_block_header(bh) & C_HEADER_SIZE_MASK)
 #define C_bignum_size(b)           (C_bytestowords(C_header_size(C_internal_bignum_vector(b)))-1)
 #define C_make_header(type, size)  ((C_header)(((type) & C_HEADER_BITS_MASK) | ((size) & C_HEADER_SIZE_MASK)))
@@ -1128,7 +1129,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_bignump(x)              C_mk_bool(C_block_header(x) == C_BIGNUM_TAG)
 #define C_stringp(x)              C_mk_bool(C_header_bits(x) == C_STRING_TYPE)
 #define C_symbolp(x)              C_mk_bool(C_block_header(x) == C_SYMBOL_TAG)
-#define C_pairp(x)                C_mk_bool(C_block_header(x) == C_PAIR_TAG)
+#define C_pairp(x)                C_mk_bool(C_header_type(x) == C_PAIR_TYPE)
 #define C_weak_pairp(x)           C_mk_bool(C_block_header(x) == C_WEAK_PAIR_TAG)
 #define C_closurep(x)             C_mk_bool(C_header_bits(x) == C_CLOSURE_TYPE)
 #define C_vectorp(x)              C_mk_bool(C_header_bits(x) == C_VECTOR_TYPE)
@@ -1399,7 +1400,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_u_i_cddddr(x)                 C_u_i_cdr( C_u_i_cdddr( x ) )
 
 #ifdef HAVE_STATEMENT_EXPRESSIONS
-# define C_i_not_pair_p(x)              ({C_word tmp = (x); C_mk_bool(C_immediatep(tmp) || C_block_header(tmp) != C_PAIR_TAG);})
+# define C_i_not_pair_p(x)              ({C_word tmp = (x); C_mk_bool(C_immediatep(tmp) || C_header_type(tmp) != C_PAIR_TYPE);})
 #else
 # define C_i_not_pair_p                 C_i_not_pair_p_2
 #endif
@@ -2716,7 +2717,7 @@ inline static int C_persistable_symbol(C_word x)
 
 inline static C_word C_i_pairp(C_word x)
 {
-  return C_mk_bool(!C_immediatep(x) && C_block_header(x) == C_PAIR_TAG);
+  return C_mk_bool(!C_immediatep(x) && C_header_type(x) == C_PAIR_TYPE);
 }
 
 inline static C_word C_i_weak_pairp(C_word x)

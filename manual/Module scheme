@@ -2168,11 +2168,17 @@ parse Scheme programs.
 <procedure>(pair? obj)</procedure><br>
 
 Pair? returns #t if obj is a pair, and otherwise returns #f.
+NOTE: [[Module (chicken base)#weak-pairs|Weak pairs]] are regarded
+as pairs by this procedure.
 
  (pair? '(a . b))                ===>  #t
  (pair? '(a b c))                ===>  #t
  (pair? '())                     ===>  #f
  (pair? '#(a b))                 ===>  #f
+ (pair? (cons 1 2))              ===>  #t
+ 
+ (import (chicken base))
+ (pair? (weak-cons 1 2))         ===>  #t
 
 <procedure>(cons obj[1] obj[2])</procedure><br>
 
@@ -2195,6 +2201,10 @@ to take the car of the empty list.
  (car '((a) b c d))              ===>  (a)
  (car '(1 . 2))                  ===>  1
  (car '())                       ===>  error
+ (car (cons 1 2))                ===>  1
+ 
+ (import (chicken base))
+ (car (weak-cons 1 2))           ===>  1
 
 <procedure>(cdr pair)</procedure><br>
 
@@ -2204,6 +2214,10 @@ to take the cdr of the empty list.
  (cdr '((a) b c d))              ===>  (b c d)
  (cdr '(1 . 2))                  ===>  2
  (cdr '())                       ===>  error
+ (cdr (cons 1 2))                ===>  2
+ 
+ (import (chicken base))
+ (cdr (weak-cons 1 2))           ===>  2
 
 <procedure>(set-car! pair obj)</procedure><br>
 
