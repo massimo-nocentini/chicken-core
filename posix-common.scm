@@ -709,11 +709,9 @@ EOF
    lst))
 
 (define call-with-exec-args
-  (let ((pathname-strip-directory pathname-strip-directory)
-	(nop (lambda (x) x)))
+  (let ((nop (lambda (x) x)))
     (lambda (loc filename argconv arglist envlist proc)
-      (let* ((stripped-filename (pathname-strip-directory filename))
-	     (args (cons stripped-filename arglist)) ; Add argv[0]
+      (let* ((args (cons filename arglist)) ; Add argv[0]
 	     (argbuf (list->c-string-buffer args argconv loc))
 	     (envbuf #f))
 
