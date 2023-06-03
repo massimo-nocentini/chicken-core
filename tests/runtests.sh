@@ -453,6 +453,10 @@ for s in 100000 120000 200000 250000 300000 350000 400000 450000 500000; do
   ./a.out -:d -:g -:hi$s
 done
 
+echo "======================================== weak pointer test ..."
+$compile weak-pointer-test.scm
+./a.out
+
 echo "======================================== symbol-GC tests ..."
 $compile symbolgc-tests.scm
 ./a.out

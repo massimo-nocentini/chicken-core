@@ -1129,6 +1129,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_stringp(x)              C_mk_bool(C_header_bits(x) == C_STRING_TYPE)
 #define C_symbolp(x)              C_mk_bool(C_block_header(x) == C_SYMBOL_TAG)
 #define C_pairp(x)                C_mk_bool(C_block_header(x) == C_PAIR_TAG)
+#define C_weak_pairp(x)           C_mk_bool(C_block_header(x) == C_WEAK_PAIR_TAG)
 #define C_closurep(x)             C_mk_bool(C_header_bits(x) == C_CLOSURE_TYPE)
 #define C_vectorp(x)              C_mk_bool(C_header_bits(x) == C_VECTOR_TYPE)
 #define C_bytevectorp(x)          C_mk_bool(C_header_bits(x) == C_BYTEVECTOR_TYPE)
@@ -1139,6 +1140,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_booleanp(x)             C_mk_bool(((x) & C_IMMEDIATE_TYPE_BITS) == C_BOOLEAN_BITS)
 #define C_eofp(x)                 C_mk_bool((x) == C_SCHEME_END_OF_FILE)
 #define C_undefinedp(x)           C_mk_bool((x) == C_SCHEME_UNDEFINED)
+#define C_bwpp(x)                 C_mk_bool((x) == C_SCHEME_BROKEN_WEAK_PTR)
 #define C_fixnump(x)              C_mk_bool((x) & C_FIXNUM_BIT)
 #define C_nfixnump(x)             C_mk_nbool((x) & C_FIXNUM_BIT)
 #define C_pointerp(x)             C_mk_bool(C_block_header(x) == C_POINTER_TAG)
@@ -1315,11 +1317,14 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 
 
 #ifdef HAVE_STATEMENT_EXPRESSIONS
-# define C_a_i(a, n)                    ({C_word *tmp = *a; *a += (n); tmp;})
-# define C_a_i_cons(a, n, car, cdr)     ({C_word tmp = (C_word)(*a); (*a)[0] = C_PAIR_TYPE | 2; *a += C_SIZEOF_PAIR; \
-                                          C_set_block_item(tmp, 0, car); C_set_block_item(tmp, 1, cdr); tmp;})
+# define C_a_i(a, n)                     ({C_word *tmp = *a; *a += (n); tmp;})
+# define C_a_i_cons(a, n, car, cdr)      ({C_word tmp = (C_word)(*a); (*a)[0] = C_PAIR_TAG; *a += C_SIZEOF_PAIR; \
+                                           C_set_block_item(tmp, 0, car); C_set_block_item(tmp, 1, cdr); tmp;})
+# define C_a_i_weak_cons(a, n, car, cdr) ({C_word tmp = (C_word)(*a); (*a)[0] = C_WEAK_PAIR_TAG; *a += C_SIZEOF_PAIR; \
+                                           C_set_block_item(tmp, 0, car); C_set_block_item(tmp, 1, cdr); tmp;})
 #else
-# define C_a_i_cons(a, n, car, cdr)     C_a_pair(a, car, cdr)
+# define C_a_i_cons(a, n, car, cdr)      C_a_pair(a, car, cdr)
+# define C_a_i_weak_cons(a, n, car, cdr) C_a_weak_pair(a, car, cdr)
 #endif /* HAVE_STATEMENT_EXPRESSIONS */
 
 #define C_a_i_flonum(ptr, c, n)         C_flonum(ptr, n)
@@ -2714,6 +2719,10 @@ inline static C_word C_i_pairp(C_word x)
   return C_mk_bool(!C_immediatep(x) && C_block_header(x) == C_PAIR_TAG);
 }
 
+inline static C_word C_i_weak_pairp(C_word x)
+{
+  return C_mk_bool(!C_immediatep(x) && C_block_header(x) == C_WEAK_PAIR_TAG);
+}
 
 inline static C_word C_i_stringp(C_word x)
 {

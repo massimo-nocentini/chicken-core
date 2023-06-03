@@ -289,12 +289,16 @@
 
 ;;; Predicates on expressions and literals:
 
+;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+(define (bwp-object? x) (##core#inline "C_bwpp" x))
+
 (define (constant? x)
   (or (number? x)
       (char? x)
       (string? x)
       (boolean? x)
       (eof-object? x)
+      (bwp-object? x)
       (blob? x)
       (vector? x)
       (##sys#srfi-4-vector? x)
@@ -304,6 +308,7 @@
   (or (boolean? x)
       (char? x)
       (eof-object? x)
+      (bwp-object? x)
       (number? x)
       (symbol? x) ) )
 
@@ -312,6 +317,7 @@
       (eq? (##core#undefined) x)
       (null? x)
       (eof-object? x)
+      (bwp-object? x)
       (char? x)
       (boolean? x) ) )
 

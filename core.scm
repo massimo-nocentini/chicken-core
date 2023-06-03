@@ -3180,6 +3180,8 @@
 			   ((char? x) `(char ,x))
 			   ((null? x) '(nil))
 			   ((eof-object? x) '(eof))
+			   ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+			   ((##core#inline "C_bwpp" x) #;(bwp-object? x) '(bwp))
 			   (else (bomb "bad immediate (prepare)")) )
 		     '() ) ) )
 

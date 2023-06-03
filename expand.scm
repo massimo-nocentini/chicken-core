@@ -1382,6 +1382,9 @@
                          (char? (car clause))
                          (string? (car clause))
                          (eof-object? (car clause))
+			 ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+			 (##core#inline "C_bwpp" (car clause))
+                         #;(bwp-object? (car clause))
                          (blob? (car clause))
                          (vector? (car clause))
                          (##sys#srfi-4-vector? (car clause))
