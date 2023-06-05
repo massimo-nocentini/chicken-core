@@ -336,6 +336,32 @@
 (assert (nan? (fp*+ 0.0 +inf.0 1.0)))
 (assert (nan? (fp*+ -inf.0 0.0 1.0)))
 
+;; Hyperbolic function tests
+
+(assert (fp= (fpsinh -inf.0) -inf.0))
+(assert (fp= (fpsinh 0.0) 0.0))
+(assert (fp= (fpsinh +inf.0) +inf.0))
+
+(assert (fp= (fpcosh -inf.0) +inf.0))
+(assert (fp= (fpcosh 0.0) 1.0))
+(assert (fp= (fpcosh +inf.0) +inf.0))
+
+(assert (fp= (fptanh -inf.0) -1.0))
+(assert (fp= (fptanh 0.0) 0.0))
+(assert (fp= (fptanh +inf.0) 1.0))
+
+(assert (fp= (fpasinh -inf.0) -inf.0))
+(assert (fp= (fpasinh 0.0) 0.0))
+(assert (fp= (fpasinh +inf.0) +inf.0))
+
+(assert (fp= (fpacosh 1.0) 0.0))
+(assert (fp= (fpacosh +inf.0) +inf.0))
+(assert (nan? (fpacosh 0.0)))
+
+(assert (fp= (fpatanh -1.0) -inf.0))
+(assert (fp= (fpatanh 0.0) 0.0))
+(assert (fp= (fpatanh 1.0) +inf.0))
+
 ;; string->symbol
 
 ;; by Jim Ursetto

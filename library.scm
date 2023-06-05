@@ -1680,6 +1680,30 @@ EOF
   (fp-check-flonums x y 'fpatan2)
   (##core#inline_allocate ("C_a_i_flonum_atan2" 4) x y))
 
+(define (fpsinh x)
+  (fp-check-flonum x 'fpsinh)
+  (##core#inline_allocate ("C_a_i_flonum_sinh" 4) x))
+
+(define (fpcosh x)
+  (fp-check-flonum x 'fpcosh)
+  (##core#inline_allocate ("C_a_i_flonum_cosh" 4) x))
+
+(define (fptanh x)
+  (fp-check-flonum x 'fptanh)
+  (##core#inline_allocate ("C_a_i_flonum_tanh" 4) x))
+
+(define (fpasinh x)
+  (fp-check-flonum x 'fpasinh)
+  (##core#inline_allocate ("C_a_i_flonum_asinh" 4) x))
+
+(define (fpacosh x)
+  (fp-check-flonum x 'fpacosh)
+  (##core#inline_allocate ("C_a_i_flonum_acosh" 4) x))
+
+(define (fpatanh x)
+  (fp-check-flonum x 'fpatanh)
+  (##core#inline_allocate ("C_a_i_flonum_atanh" 4) x))
+
 (define (fpexp x)
   (fp-check-flonum x 'fpexp)
   (##core#inline_allocate ("C_a_i_flonum_exp" 4) x))

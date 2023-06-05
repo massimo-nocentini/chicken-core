@@ -966,6 +966,12 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 # define C_asin                     asin
 # define C_acos                     acos
 # define C_atan                     atan
+# define C_sinh                     sinh
+# define C_cosh                     cosh
+# define C_tanh                     tanh
+# define C_asinh                    asinh
+# define C_acosh                    acosh
+# define C_atanh                    atanh
 # define C_atan2                    atan2
 # define C_log                      log
 # define C_exp                      exp
@@ -1629,6 +1635,12 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_a_i_flonum_acos(ptr, c, x)    C_flonum(ptr, C_acos(C_flonum_magnitude(x)))
 #define C_a_i_flonum_atan(ptr, c, x)    C_flonum(ptr, C_atan(C_flonum_magnitude(x)))
 #define C_a_i_flonum_atan2(ptr, c, x, y)  C_flonum(ptr, C_atan2(C_flonum_magnitude(x), C_flonum_magnitude(y)))
+#define C_a_i_flonum_sinh(ptr, c, x)     C_flonum(ptr, C_sinh(C_flonum_magnitude(x)))
+#define C_a_i_flonum_cosh(ptr, c, x)     C_flonum(ptr, C_cosh(C_flonum_magnitude(x)))
+#define C_a_i_flonum_tanh(ptr, c, x)     C_flonum(ptr, C_tanh(C_flonum_magnitude(x)))
+#define C_a_i_flonum_asinh(ptr, c, x)    C_flonum(ptr, C_asinh(C_flonum_magnitude(x)))
+#define C_a_i_flonum_acosh(ptr, c, x)    C_flonum(ptr, C_acosh(C_flonum_magnitude(x)))
+#define C_a_i_flonum_atanh(ptr, c, x)    C_flonum(ptr, C_atanh(C_flonum_magnitude(x)))
 #define C_a_i_flonum_exp(ptr, c, x)     C_flonum(ptr, C_exp(C_flonum_magnitude(x)))
 #define C_a_i_flonum_expt(ptr, c, x, y)  C_flonum(ptr, C_pow(C_flonum_magnitude(x), C_flonum_magnitude(y)))
 #define C_a_i_flonum_log(ptr, c, x)     C_flonum(ptr, C_log(C_flonum_magnitude(x)))
@@ -2074,6 +2086,12 @@ C_fctexport C_word C_fcall C_a_i_asin(C_word **a, int c, C_word n) C_regparm;
 C_fctexport C_word C_fcall C_a_i_acos(C_word **a, int c, C_word n) C_regparm;
 C_fctexport C_word C_fcall C_a_i_atan(C_word **a, int c, C_word n) C_regparm;
 C_fctexport C_word C_fcall C_a_i_atan2(C_word **a, int c, C_word n1, C_word n2) C_regparm;
+C_fctexport C_word C_fcall C_a_i_sinh(C_word **a, int c, C_word n) C_regparm;
+C_fctexport C_word C_fcall C_a_i_cosh(C_word **a, int c, C_word n) C_regparm;
+C_fctexport C_word C_fcall C_a_i_tanh(C_word **a, int c, C_word n) C_regparm;
+C_fctexport C_word C_fcall C_a_i_asinh(C_word **a, int c, C_word n) C_regparm;
+C_fctexport C_word C_fcall C_a_i_acosh(C_word **a, int c, C_word n) C_regparm;
+C_fctexport C_word C_fcall C_a_i_atanh(C_word **a, int c, C_word n) C_regparm;
 C_fctexport C_word C_fcall C_a_i_sqrt(C_word **a, int c, C_word n) C_regparm;
 C_fctexport C_word C_fcall C_i_o_fixnum_plus(C_word x, C_word y) C_regparm;
 C_fctexport C_word C_fcall C_i_o_fixnum_difference(C_word x, C_word y) C_regparm;

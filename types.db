@@ -1216,25 +1216,37 @@
        ((float) (##core#inline_allocate ("C_a_i_flonum_abs" 4) #(1) )))
 
 (chicken.flonum#fpacos (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpacos (float) float)
-       ((float) (##core#inline_allocate ("C_a_i_flonum_acos" 4) #(1) )))
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_acos" 4) #(1) )))
+
+(chicken.flonum#fpacosh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpacosh (float) float)
+			((float) (##core#inline_allocate ("C_a_i_flonum_acosh" 4) #(1) )))
 
 (chicken.flonum#fpasin (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpasin (float) float)
-	((float) (##core#inline_allocate ("C_a_i_flonum_asin" 4) #(1) )))
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_asin" 4) #(1) )))
+
+(chicken.flonum#fpasinh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpasinh (float) float)
+			((float) (##core#inline_allocate ("C_a_i_flonum_asinh" 4) #(1) )))
 
 (chicken.flonum#fpatan (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpatan (float) float)
-	((float) (##core#inline_allocate ("C_a_i_flonum_atan" 4) #(1) )))
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_atan" 4) #(1) )))
+
+(chicken.flonum#fpatanh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpatanh (float) float)
+			((float) (##core#inline_allocate ("C_a_i_flonum_atanh" 4) #(1) )))
 
 (chicken.flonum#fpatan2 (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpatan2 (float float) float)
-	 ((float float) (##core#inline_allocate ("C_a_i_flonum_atan2" 4) #(1) #(2))))
+			((float float) (##core#inline_allocate ("C_a_i_flonum_atan2" 4) #(1) #(2))))
 
 (chicken.flonum#fpceiling (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpceiling (float) float)
 	   ((float) (##core#inline_allocate ("C_a_i_flonum_ceiling" 4) #(1) )))
 
 (chicken.flonum#fpcos (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpcos (float) float)
-       ((float) (##core#inline_allocate ("C_a_i_flonum_cos" 4) #(1) )))
+		      ((float) (##core#inline_allocate ("C_a_i_flonum_cos" 4) #(1) )))
+
+(chicken.flonum#fpcosh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpcosh (float) float)
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_cosh" 4) #(1) )))
 
 (chicken.flonum#fpexp (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpexp (float) float)
-       ((float) (##core#inline_allocate ("C_a_i_flonum_exp" 4) #(1) )))
+		      ((float) (##core#inline_allocate ("C_a_i_flonum_exp" 4) #(1) )))
 
 (chicken.flonum#fpexpt (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpexpt (float float) float)
 	((float float) (##core#inline_allocate ("C_a_i_flonum_expt" 4) #(1) #(2))))
@@ -1261,16 +1273,22 @@
 	 ((float) (##core#inline_allocate ("C_a_i_flonum_round" 4) #(1) )))
 
 (chicken.flonum#fpsin (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpsin (float) float)
-       ((float) (##core#inline_allocate ("C_a_i_flonum_sin" 4) #(1) )))
+		      ((float) (##core#inline_allocate ("C_a_i_flonum_sin" 4) #(1) )))
+
+(chicken.flonum#fpsinh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpsinh (float) float)
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_sinh" 4) #(1) )))
 
 (chicken.flonum#fpsqrt (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpsqrt (float) float)
-	((float) (##core#inline_allocate ("C_a_i_flonum_sqrt" 4) #(1) )))
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_sqrt" 4) #(1) )))
 
 (chicken.flonum#fptan (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fptan (float) float)
-       ((float) (##core#inline_allocate ("C_a_i_flonum_tan" 4) #(1) )))
+		      ((float) (##core#inline_allocate ("C_a_i_flonum_tan" 4) #(1) )))
+
+(chicken.flonum#fptanh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fptanh (float) float)
+		       ((float) (##core#inline_allocate ("C_a_i_flonum_tanh" 4) #(1) )))
 
 (chicken.flonum#fptruncate (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fptruncate (float) float)
-	    ((float) (##core#inline_allocate ("C_a_i_flonum_truncate" 4) #(1) )))
+			   ((float) (##core#inline_allocate ("C_a_i_flonum_truncate" 4) #(1) )))
 
 ;; fixnum
 

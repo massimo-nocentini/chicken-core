@@ -14,6 +14,8 @@
   - Added "locative-index", kindly contributed by John Croisant.
   - Added "fp*+" (fused multiply-add) to "chicken.flonum" module
     (suggested by Christian Himpe).
+  - Added flonum-specific hyperbolic functions and their inverse to
+    "chicken.flonum" module (suggested by Christian Himpe).
   - The `process-execute` procedure now sets argv[0] to the unmodified
     filename. Previously, the directory part would be stripped.
 

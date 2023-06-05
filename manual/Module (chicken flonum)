@@ -41,6 +41,12 @@ your code.
 <procedure>(fpacos X)</procedure>
 <procedure>(fpatan X)</procedure>
 <procedure>(fpatan2 X Y)</procedure>
+<procedure>(fpsinh X)</procedure>
+<procedure>(fpcosh X)</procedure>
+<procedure>(fptanh X)</procedure>
+<procedure>(fpasinh X)</procedure>
+<procedure>(fpacosh X)</procedure>
+<procedure>(fpatanh X)</procedure>
 <procedure>(fplog X)</procedure>
 <procedure>(fpexp X)</procedure>
 <procedure>(fpexpt X Y)</procedure>

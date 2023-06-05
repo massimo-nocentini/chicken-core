@@ -6952,7 +6952,7 @@ C_regparm C_word C_fcall C_a_i_exp(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "exp", f);
-  return C_flonum(a, exp(f));
+  return C_flonum(a, C_exp(f));
 }
 
 
@@ -6961,7 +6961,7 @@ C_regparm C_word C_fcall C_a_i_log(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "log", f);
-  return C_flonum(a, log(f));
+  return C_flonum(a, C_log(f));
 }
 
 
@@ -6970,7 +6970,7 @@ C_regparm C_word C_fcall C_a_i_sin(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "sin", f);
-  return C_flonum(a, sin(f));
+  return C_flonum(a, C_sin(f));
 }
 
 
@@ -6979,7 +6979,7 @@ C_regparm C_word C_fcall C_a_i_cos(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "cos", f);
-  return C_flonum(a, cos(f));
+  return C_flonum(a, C_cos(f));
 }
 
 
@@ -6988,7 +6988,7 @@ C_regparm C_word C_fcall C_a_i_tan(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "tan", f);
-  return C_flonum(a, tan(f));
+  return C_flonum(a, C_tan(f));
 }
 
 
@@ -6997,7 +6997,7 @@ C_regparm C_word C_fcall C_a_i_asin(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "asin", f);
-  return C_flonum(a, asin(f));
+  return C_flonum(a, C_asin(f));
 }
 
 
@@ -7006,7 +7006,7 @@ C_regparm C_word C_fcall C_a_i_acos(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "acos", f);
-  return C_flonum(a, acos(f));
+  return C_flonum(a, C_acos(f));
 }
 
 
@@ -7015,7 +7015,7 @@ C_regparm C_word C_fcall C_a_i_atan(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "atan", f);
-  return C_flonum(a, atan(f));
+  return C_flonum(a, C_atan(f));
 }
 
 
@@ -7025,7 +7025,61 @@ C_regparm C_word C_fcall C_a_i_atan2(C_word **a, int c, C_word n1, C_word n2)
 
   C_check_real(n1, "atan", f1);
   C_check_real(n2, "atan", f2);
-  return C_flonum(a, atan2(f1, f2));
+  return C_flonum(a, C_atan2(f1, f2));
+}
+
+
+C_regparm C_word C_fcall C_a_i_sinh(C_word **a, int c, C_word n)
+{
+  double f;
+
+  C_check_real(n, "sinh", f);
+  return C_flonum(a, C_sinh(f));
+}
+
+
+C_regparm C_word C_fcall C_a_i_cosh(C_word **a, int c, C_word n)
+{
+  double f;
+
+  C_check_real(n, "cosh", f);
+  return C_flonum(a, C_cosh(f));
+}
+
+
+C_regparm C_word C_fcall C_a_i_tanh(C_word **a, int c, C_word n)
+{
+  double f;
+
+  C_check_real(n, "tanh", f);
+  return C_flonum(a, C_tanh(f));
+}
+
+
+C_regparm C_word C_fcall C_a_i_asinh(C_word **a, int c, C_word n)
+{
+  double f;
+
+  C_check_real(n, "asinh", f);
+  return C_flonum(a, C_asinh(f));
+}
+
+
+C_regparm C_word C_fcall C_a_i_acosh(C_word **a, int c, C_word n)
+{
+  double f;
+
+  C_check_real(n, "acosh", f);
+  return C_flonum(a, C_acosh(f));
+}
+
+
+C_regparm C_word C_fcall C_a_i_atanh(C_word **a, int c, C_word n)
+{
+  double f;
+
+  C_check_real(n, "atanh", f);
+  return C_flonum(a, C_atanh(f));
 }
 
 
@@ -7034,7 +7088,7 @@ C_regparm C_word C_fcall C_a_i_sqrt(C_word **a, int c, C_word n)
   double f;
 
   C_check_real(n, "sqrt", f);
-  return C_flonum(a, sqrt(f));
+  return C_flonum(a, C_sqrt(f));
 }
 
 
