@@ -5,6 +5,7 @@
 *.import.c
 *.o
 *.so
+*.so.[0-9]*
 
 # Generated text files
 
@@ -122,3 +123,4 @@
 /chicken.string.import.scm
 /chicken.tcp.import.scm
 /chicken.time.posix.import.scm
+/srfi-4.import.scm
