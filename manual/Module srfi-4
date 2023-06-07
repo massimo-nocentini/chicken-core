@@ -191,6 +191,23 @@ will set {{x}} to the object {{#u8(1 2 3)}}. Since CHICKEN 4.9.0, literal homoge
  `(,x #u8(1 2))        ; legal
  `#u8(1 ,x 2)          ; illegal
 
+Elements may also be characters or strings, in that case they are interpreted
+as a sequence of numerical character codes. For example,
+
+ '#u8(#\x7f "EL" #\F 2 1)
+
+is equivalent to
+
+ '#u8(#\x7f #\x45 #\x4c #\x46 2 1)
+
+Character literals inside numeric vectors expand into the UTF-8 sequence of
+the characters they represent, for strings the contained characters 
+are interpreted in whatever encoding is used for the text file or stream 
+in which the literal appears.
+
+Note that {{#u8"..."}} can be used as an abbreviation for the special case
+{{#u8("...")}}.
+
 === Predicates
 
 <procedure>(u8vector? OBJ)</procedure><br>

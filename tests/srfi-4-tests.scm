@@ -157,3 +157,17 @@
 (assert
   (handle-exceptions exn #t
     (make-f64vector most-positive-fixnum) #f))
+
+;; test special read-syntax
+
+(let ((cases '(("#u8(1 2 #\\A)" #u8(1 2 65))
+               ("#u8(\"abc\")" #u8(97 98 99))
+               ("#u8\"abc\"" #u8(97 98 99))
+               ("#s8\"\"" #s8())
+               ("#u64(\" \" #\\! 1 \"A\")" #u64(32 33 1 65))
+               ("#u64(\" \" #\\! \"A\" 1)" #u64(32 33 65 1)))))
+  (do ((cs cases (cdr cs)))
+      ((null? cs))
+      (let ((x (with-input-from-string (caar cs) read)))
+        (unless (equal? x (cadar cs))
+          (error "failed" x (cadar cs))))))

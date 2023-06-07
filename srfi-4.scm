@@ -434,7 +434,7 @@ EOF
 		    ((##core#inline "C_eqp" p '()) v)
 		  (if (and (##core#inline "C_blockp" p) (##core#inline "C_pairp" p))
 		      (,set v i (##core#inline "C_slot" p 0))
-		      (##sys#error-not-a-proper-list lst) ) ) ) )))))))
+		      (##sys#error-not-a-proper-list lst ',name) ) ) ) )))))))
 
 (list->NNNvector u8vector)
 (list->NNNvector s8vector)
@@ -612,6 +612,28 @@ EOF
 
 ;;; Read syntax:
 
+(define (canonicalize-number-list! lst1)
+  (let loop ((lst lst1) (prev #f))
+    (if (and (##core#inline "C_blockp" lst) 
+             (##core#inline "C_pairp" lst))
+        (let retry ((x (##sys#slot lst 0)))
+          (cond ((char? x) (retry (##sys#char->utf8-string x)))
+                ((string? x)
+                 (if (eq? x "")
+                     (loop (##sys#slot lst 1) prev)
+                     (let loop2 ((ns (string->list x)) (prev prev))
+                       (let ((n (cons (char->integer (##sys#slot ns 0))
+                                      (##sys#slot lst 1))))
+                         (if prev
+                             (##sys#setslot prev 1 n)
+                             (set! lst1 n))
+                         (let ((ns2 (##sys#slot ns 1)))
+                           (if (null? ns2)
+                               (loop (##sys#slot lst 1) n)
+                               (loop2 (##sys#slot ns 1) n)))))))
+                (else (loop (##sys#slot lst 1) lst))))
+        lst1)))
+
 (set! ##sys#user-read-hook
   (let ([old-hook ##sys#user-read-hook]
 	[read read]
@@ -629,9 +651,15 @@ EOF
       (if (memq char '(#\u #\s #\f #\U #\S #\F))
 	  (let* ([x (read port)]
 		 [tag (and (symbol? x) x)] )
-	    (cond [(or (eq? tag 'f) (eq? tag 'F)) #f]
-		  [(memq tag consers) => (lambda (c) ((##sys#slot (##sys#slot c 1) 0) (read port)))]
-		  [else (##sys#read-error port "illegal bytevector syntax" tag)] ) )
+	    (cond ((or (eq? tag 'f) (eq? tag 'F)) #f)
+		  ((memq tag consers) => 
+                    (lambda (c)
+                      (let ((val (read port)))
+                        (if (string? val)
+                            (set! val (map char->integer (string->list val)))
+                            (set! val (canonicalize-number-list! val)))
+                        ((##sys#slot (##sys#slot c 1) 0) val))))
+		  (else (##sys#read-error port "illegal bytevector syntax" tag)) ) )
 	  (old-hook char port) ) ) ) )
 
 
