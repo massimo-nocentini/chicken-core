@@ -546,8 +546,6 @@ static void C_fcall mark_live_heap_only_objects(C_byte *tgt_space_start, C_byte 
 static C_word C_fcall intern0(C_char *name) C_regparm;
 static void C_fcall update_locative_table(int mode) C_regparm;
 static void C_fcall update_weak_pairs(int mode) C_regparm;
-static void C_fcall fixup_symbol_forwards(C_word sym) C_regparm;
-static void C_fcall update_symbol_tables(int mode) C_regparm;
 static LF_LIST *find_module_handle(C_char *name);
 static void set_profile_timer(C_uword freq);
 static void take_profile_sample();
@@ -2449,16 +2447,24 @@ C_regparm C_word C_fcall hash_string(int len, C_char *str, C_word m, C_word r, i
 
 C_regparm C_word C_fcall lookup(C_word key, int len, C_char *str, C_SYMBOL_TABLE *stable)
 {
-  C_word bucket, sym, s;
+  C_word bucket, last = 0, sym, s;
 
   for(bucket = stable->table[ key ]; bucket != C_SCHEME_END_OF_LIST; 
       bucket = C_block_item(bucket,1)) {
     sym = C_block_item(bucket,0);
-    s = C_block_item(sym, 1);
 
-    if(C_header_size(s) == (C_word)len
-       && !C_memcmp(str, (C_char *)C_data_pointer(s), len))
-      return sym;
+    /* If the symbol is unreferenced, drop it: */
+    if (sym == C_SCHEME_BROKEN_WEAK_PTR) {
+       if (last) C_set_block_item(last, 1, C_block_item(bucket, 1));
+       else stable->table[ key ] = C_block_item(bucket,1);
+    } else {
+      last = bucket;
+      s = C_block_item(sym, 1);
+
+      if(C_header_size(s) == (C_word)len
+         && !C_memcmp(str, (C_char *)C_data_pointer(s), len))
+        return sym;
+    }
   }
 
   return C_SCHEME_FALSE;
@@ -2538,14 +2544,23 @@ C_regparm C_word C_fcall lookup_bucket(C_word sym, C_SYMBOL_TABLE *stable)
 
 double compute_symbol_table_load(double *avg_bucket_len, int *total_n)
 {
-  C_word bucket;
+  C_word bucket, last;
   int i, j, alen = 0, bcount = 0, total = 0;
 
   for(i = 0; i < symbol_table->size; ++i) {
-    bucket = symbol_table->table[ i ];
-
-    for(j = 0; bucket != C_SCHEME_END_OF_LIST; ++j)
-      bucket = C_block_item(bucket,1);
+    last = 0;
+    j = 0;
+    for(bucket = symbol_table->table[ i ]; bucket != C_SCHEME_END_OF_LIST; 
+        bucket = C_block_item(bucket,1)) {
+      /* If the symbol is unreferenced, drop it: */
+      if (C_block_item(bucket,0) == C_SCHEME_BROKEN_WEAK_PTR) {
+         if (last) C_set_block_item(last, 1, C_block_item(bucket, 1));
+         else symbol_table->table[ i ] = C_block_item(bucket,1);
+      } else {
+        last = bucket;
+        ++j;
+      }
+    }
 
     if(j > 0) {
       alen += j;
@@ -3627,8 +3642,6 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
   }
 
   if(gc_mode == GC_MAJOR) {
-    update_symbol_tables(gc_mode);
-
     tgc = C_cpu_milliseconds() - tgc;
     gc_ms += tgc;
     timer_accumulated_gc_ms += tgc;
@@ -4005,7 +4018,6 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
   /* Mark nested values in already moved (marked) blocks in breadth-first manner: */
   mark_nested_objects(start, new_tospace_start, &new_tospace_top, new_tospace_limit);
   update_weak_pairs(GC_REALLOC);
-  update_symbol_tables(GC_REALLOC);
 
   heap_free (heapspace1, heapspace1_size);
   heap_free (heapspace2, heapspace2_size);
@@ -4194,27 +4206,6 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
        C_in_fromspacep(car)) {
 
       C_set_block_item(pair, 0, C_SCHEME_BROKEN_WEAK_PTR);
-
-#ifndef NDEBUG
-      if ((h & C_HEADER_TYPE_BITS) == C_SYMBOL_TYPE) {
-        /* Detect inconsistencies before clearing out weak pairs holding symbols */
-        fixup_symbol_forwards(car);
-        {
-	  C_word str = C_symbol_name(car);
-          int str_perm;
-
-          str_perm = !C_in_stackp(str) && !C_in_heapp(str) &&
-                  !C_in_scratchspacep(str) &&
-                  (mode == GC_REALLOC ? !C_in_new_heapp(str) : 1);
-
-	  if ((C_persistable_symbol(car) || str_perm)) {
-	    C_dbg(C_text("GC"), C_text("Offending symbol: `%.*s'\n"),
-		  (int)C_header_size(str), C_c_string(str));
-	    panic(C_text("Persistable symbol found in weak pair"));
-	  }
-	}
-      }
-#endif
       ++weakn;
     } else {
       /* Might have moved, re-set the car to the target value */
@@ -4224,82 +4215,6 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
   weak_pair_chain = (C_word)NULL;
   if(gc_report_flag && weakn)
     C_dbg("GC", C_text("%d recoverable weak pairs found\n"), weakn);
-}
-
-static C_regparm void fixup_symbol_forwards(C_word sym)
-{
-  C_word val, h;
-  int i, s = C_header_size(sym); /* 3 */
-
-  for (i = 0; i < s; i++) {
-    val = C_block_item(sym, i);
-    if (!C_immediatep(val)) {
-      h = C_block_header(val);
-
-      while(is_fptr(h)) {
-        val = fptr_to_ptr(h);
-        h = C_block_header(val);
-      }
-      C_set_block_item(sym, i, val);
-    }
-  }
-}
-
-C_regparm void C_fcall update_symbol_tables(int mode)
-{
-  int i, ndropped = 0;
-  C_word bucket, last, sym, h;
-  C_SYMBOL_TABLE *stp;
-
-  assert(mode != GC_MINOR); /* Call only in major or realloc mode */
-  /* Drop pairs for any unreferenced symbols from the bucket chain */
-  for(stp = symbol_table_list; stp != NULL; stp = stp->next) {
-    for(i = 0; i < stp->size; ++i) {
-      last = 0;
-
-      for(bucket = stp->table[ i ]; bucket != C_SCHEME_END_OF_LIST; bucket = C_block_item(bucket,1)) {
-
-	sym = C_block_item(bucket, 0);
-
-	/* If the symbol is unreferenced, drop it: */
-	if(sym == C_SCHEME_BROKEN_WEAK_PTR) {
-	  if(last) C_set_block_item(last, 1, C_block_item(bucket,1));
-	  else stp->table[ i ] = C_block_item(bucket,1);
-          ++ndropped;
-	} else {
-#ifndef NDEBUG
-          /* Detect inconsistencies in retained symbols */
-          {
-            C_word str = C_symbol_name(sym);
-            int str_perm;
-
-            str_perm = !C_in_stackp(str) && !C_in_heapp(str) &&
-              !C_in_scratchspacep(str) &&
-              (mode == GC_REALLOC ? !C_in_new_heapp(str) : 1);
-
-            if ((C_persistable_symbol(sym) || str_perm) &&
-                (C_block_header(bucket) == C_WEAK_PAIR_TAG)) {
-              C_dbg(C_text("GC"), C_text("Offending symbol: `%.*s'\n"),
-                    (int)C_header_size(str), C_c_string(str));
-              panic(C_text("Persistable symbol found in weak pair"));
-            } else if (!C_persistable_symbol(sym) && !str_perm &&
-                       (C_block_header(bucket) == C_PAIR_TAG)) {
-              C_dbg(C_text("GC"), C_text("Offending symbol: `%.*s'...\n"),
-                    (int)C_header_size(str), C_c_string(str));
-              panic(C_text("Unpersistable symbol found in strong pair"));
-            }
-          }
-#endif
-	  h = C_block_header(sym);
-          assert(!is_fptr(h)); /* Should be ensured by update_weak_pairs */
-	  assert((h & C_HEADER_TYPE_BITS) == C_SYMBOL_TYPE);
-	  last = bucket;
-	}
-      }
-    }
-  }
-  if(gc_report_flag && ndropped)
-    C_dbg("GC", C_text("%d unused symbols reclaimed\n"), ndropped);
 }
 
 
