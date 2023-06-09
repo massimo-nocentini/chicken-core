@@ -3503,6 +3503,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     ++gc_count_1;
     ++gc_count_1_total;
     update_locative_table(GC_MINOR);
+    update_weak_pairs(GC_MINOR);
   }
   else {
     /* Mark finalizer list and remember pointers to non-forwarded items: */
@@ -3818,11 +3819,8 @@ static C_regparm void C_fcall mark_nested_objects(C_byte *heap_scan_top, C_byte 
 
     if(n > 0 && (h & C_BYTEBLOCK_BIT) == 0) {
       if(h & C_SPECIALBLOCK_BIT) {
-        /* Minor GC needs to be fast; always mark weakly held symbols */
-        if (gc_mode != GC_MINOR || h != C_WEAK_PAIR_TAG) {
-	  --n;
-	  ++p;
-        }
+	--n;
+	++p;
       }
 
       while(n--) mark(p++);
@@ -3906,7 +3904,7 @@ static C_regparm void C_fcall really_mark(C_word *x, C_byte *tgt_space_start, C_
   p2->header = h;
   p->header = ptr_to_fptr((C_uword)p2);
   C_memcpy(p2->data, p->data, bytes);
-  if (h == C_WEAK_PAIR_TAG && gc_mode != GC_MINOR && !C_immediatep(p2->data[0])) {
+  if (h == C_WEAK_PAIR_TAG && !C_immediatep(p2->data[0])) {
     p->data[0] = weak_pair_chain; /* "Recycle" the weak pair's CAR to point to prev head */
     weak_pair_chain = (C_word)p;  /* Make this fwd ptr the new head of the weak pair chain */
   }
@@ -4167,17 +4165,6 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
   int weakn = 0;
   C_word p, pair, car, h;
 
-  if(gc_mode == GC_MINOR) {
-    /* For now, we always mark weak pairs in major/realloc GC.
-     * Perhaps we can drop that constraint if we move the pruning of
-     * symbol table buckets to C_h_intern()/lookup().
-     * Then only weak pairs in the nursery get put in the chain,
-     * which should be very few.  NOTE: What about mutation?
-     */
-    assert(weak_pair_chain == (C_word)NULL);
-    return;
-  }
-
   /* NOTE: Don't use C_block_item() because it asserts the block is
    * big enough in DEBUGBUILD, but forwarding pointers have size 0.
    */
@@ -4188,22 +4175,25 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
       h = C_block_header(pair);
     } while (is_fptr(h));
 
-    assert((mode == GC_REALLOC ?
-            C_in_new_heapp(pair) :
-            !C_in_fromspacep(pair)));
+    /* The pair itself should be live */
+    assert((mode == GC_MINOR && !C_in_stackp(pair)) ||
+           (mode == GC_MAJOR && !C_in_stackp(pair) && !C_in_fromspacep(pair)) ||
+           (mode == GC_REALLOC && !C_in_stackp(pair) && !C_in_heapp(pair))); /* NB: *old* heap! */
 
     car = C_block_item(pair, 0);
-    assert(!C_immediatep(car));
+    if (car == C_SCHEME_BROKEN_WEAK_PTR) continue; /* Already processed (should not happen!) */
+
+    assert(!C_immediatep(car)); /* should be ensured when adding it to the chain */
     h = C_block_header(car);
     while (is_fptr(h)) {
       car = fptr_to_ptr(h);
       h = C_block_header(car);
     }
 
-    /* If the car is unreferenced, drop it: */
-    if(mode == GC_REALLOC ?
-       !C_in_new_heapp(car) :
-       C_in_fromspacep(car)) {
+    /* If the car is unreferenced by anyone else, it wasn't moved by GC.  So drop it: */
+    if((mode == GC_MINOR && C_in_stackp(car)) ||
+       (mode == GC_MAJOR && (C_in_stackp(car) || C_in_fromspacep(car))) ||
+       (mode == GC_REALLOC && (C_in_stackp(car) || C_in_heapp(car)))) { /* NB: *old* heap! */
 
       C_set_block_item(pair, 0, C_SCHEME_BROKEN_WEAK_PTR);
       ++weakn;

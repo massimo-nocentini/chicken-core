@@ -176,6 +176,10 @@ They're the same as regular pairs for all intents and purposes.
 However, there's a {{weak-pair?}} predicate which ''can'' distinguish
 between regular pairs and weak pairs.
 
+NOTE: Due to internal limitations, {{set-car!}} on a weak pair
+currently may cause it to hold onto the value for one more GC cycle in
+some situations.
+
 ==== weak-cons
 
 <procedure>(weak-cons obj[1] obj[2])</procedure><br>
