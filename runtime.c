@@ -3476,6 +3476,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     tgt_space_start = tospace_start;
     tgt_space_top = &tospace_top;
     tgt_space_limit= tospace_limit;
+    weak_pair_chain = (C_word)NULL; /* only chain up weak pairs forwarded into tospace */
 
     cell.val = "GC_MAJOR";
     C_debugger(&cell, 0, NULL);
@@ -3991,6 +3992,7 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
   new_tospace_top = new_tospace_start;
   new_tospace_limit = new_tospace_start + size;
   start = new_tospace_top;
+  weak_pair_chain = (C_word)NULL; /* only chain up weak pairs forwarded into new heap */
 
   /* Mark standard live objects in nursery and heap */
   mark_live_objects(new_tospace_start, &new_tospace_top, new_tospace_limit);
@@ -4169,11 +4171,17 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
    * big enough in DEBUGBUILD, but forwarding pointers have size 0.
    */
   for (p = weak_pair_chain; p != (C_word)NULL; p = *((C_word *)C_data_pointer(p))) {
+    /* NOTE: We only chain up the weak pairs' forwarding pointers into
+     * the new space.  This is safe because already forwarded weak
+     * pairs in nursery/fromspace will be forwarded *again* into
+     * tospace/new heap.  That forwarding pointer is chained up.
+     * Still-unforwarded weak pairs will be forwarded straight to the
+     * new space, and also chained up.
+     */
     h = C_block_header(p);
-    do {
-      pair = fptr_to_ptr(h);
-      h = C_block_header(pair);
-    } while (is_fptr(h));
+    assert(is_fptr(h));
+    pair = fptr_to_ptr(h);
+    assert(!is_fptr(C_block_header(pair)));
 
     /* The pair itself should be live */
     assert((mode == GC_MINOR && !C_in_stackp(pair)) ||
@@ -4181,8 +4189,6 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
            (mode == GC_REALLOC && !C_in_stackp(pair) && !C_in_heapp(pair))); /* NB: *old* heap! */
 
     car = C_block_item(pair, 0);
-    if (car == C_SCHEME_BROKEN_WEAK_PTR) continue; /* Already processed (should not happen!) */
-
     assert(!C_immediatep(car)); /* should be ensured when adding it to the chain */
     h = C_block_header(car);
     while (is_fptr(h)) {
