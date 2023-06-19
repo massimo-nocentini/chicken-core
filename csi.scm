@@ -592,6 +592,9 @@ EOF
 	    ((eq? x #t) (fprintf out "boolean true~%"))
 	    ((eq? x #f) (fprintf out "boolean false~%"))
 	    ((null? x) (fprintf out "empty list~%"))
+            ((##core#inline "C_bwpp" x) 
+             ;; TODO: replace with bwp-object? later
+             (fprintf out "broken weak pointer~%"))
 	    ((eof-object? x) (fprintf out "end-of-file object~%"))
 	    ((eq? (##sys#void) x) (fprintf out "unspecified object~%"))
 	    ((fixnum? x)
@@ -657,6 +660,9 @@ EOF
 	       (##sys#slot x 7)
 	       (##sys#slot x 3)
 	       (##sys#peek-unsigned-integer x 0) ) )
+            ((not (##core#inline "C_blockp" x)) 
+             ;; catch immediates here, as ##sys#locative? crashes on non-block
+             (fprintf out "unknown immediate object~%"))
 	    ((##sys#locative? x)
 	     (fprintf out "locative~%  pointer ~X~%  index ~A~%  type ~A~%"
 	       (##sys#peek-unsigned-integer x 0)
