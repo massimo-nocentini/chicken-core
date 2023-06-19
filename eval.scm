@@ -182,6 +182,8 @@
 		   (lambda v #f) ) ]
 	      ((or (char? x)
 		   (eof-object? x)
+		   (##core#inline "C_bwpp" x) ; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+		   ;;(bwp-object? x)
 		   (string? x)
 		   (blob? x)
 		   (vector? x)

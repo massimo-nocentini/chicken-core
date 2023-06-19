@@ -403,6 +403,7 @@ static C_TLS C_word
   **mutation_stack_top,
   *stack_bottom,
   *locative_table,
+  weak_pair_chain,
   error_location,
   interrupt_hook_symbol,
   current_thread_symbol,
@@ -544,7 +545,7 @@ static void C_fcall mark_live_objects(C_byte *tgt_space_start, C_byte **tgt_spac
 static void C_fcall mark_live_heap_only_objects(C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
 static C_word C_fcall intern0(C_char *name) C_regparm;
 static void C_fcall update_locative_table(int mode) C_regparm;
-static void C_fcall update_symbol_tables(int mode) C_regparm;
+static void C_fcall update_weak_pairs(int mode) C_regparm;
 static LF_LIST *find_module_handle(C_char *name);
 static void set_profile_timer(C_uword freq);
 static void take_profile_sample();
@@ -830,6 +831,7 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
   current_module_name = NULL;
   current_module_handle = NULL;
   callback_continuation_level = 0;
+  weak_pair_chain = (C_word)NULL;
   gc_ms = 0;
   if (!random_state_initialized) {
     srand(time(NULL));
@@ -2115,7 +2117,7 @@ C_word C_fcall C_restore_callback_continuation(void)
   C_word p = C_block_item(callback_continuation_stack_symbol, 0),
          k;
 
-  assert(!C_immediatep(p) && C_block_header(p) == C_PAIR_TAG);
+  assert(!C_immediatep(p) && C_header_type(p) == C_PAIR_TYPE);
   k = C_u_i_car(p);
 
   C_mutate(&C_block_item(callback_continuation_stack_symbol, 0), C_u_i_cdr(p));
@@ -2129,7 +2131,7 @@ C_word C_fcall C_restore_callback_continuation2(int level)
   C_word p = C_block_item(callback_continuation_stack_symbol, 0),
          k;
 
-  if(level != callback_continuation_level || C_immediatep(p) || C_block_header(p) != C_PAIR_TAG)
+  if(level != callback_continuation_level || C_immediatep(p) || C_header_type(p) != C_PAIR_TYPE)
     panic(C_text("unbalanced callback continuation stack"));
 
   k = C_u_i_car(p);
@@ -2445,16 +2447,24 @@ C_regparm C_word C_fcall hash_string(int len, C_char *str, C_word m, C_word r, i
 
 C_regparm C_word C_fcall lookup(C_word key, int len, C_char *str, C_SYMBOL_TABLE *stable)
 {
-  C_word bucket, sym, s;
+  C_word bucket, last = 0, sym, s;
 
   for(bucket = stable->table[ key ]; bucket != C_SCHEME_END_OF_LIST; 
       bucket = C_block_item(bucket,1)) {
     sym = C_block_item(bucket,0);
-    s = C_block_item(sym, 1);
 
-    if(C_header_size(s) == (C_word)len
-       && !C_memcmp(str, (C_char *)C_data_pointer(s), len))
-      return sym;
+    /* If the symbol is unreferenced, drop it: */
+    if (sym == C_SCHEME_BROKEN_WEAK_PTR) {
+       if (last) C_set_block_item(last, 1, C_block_item(bucket, 1));
+       else stable->table[ key ] = C_block_item(bucket,1);
+    } else {
+      last = bucket;
+      s = C_block_item(sym, 1);
+
+      if(C_header_size(s) == (C_word)len
+         && !C_memcmp(str, (C_char *)C_data_pointer(s), len))
+        return sym;
+    }
   }
 
   return C_SCHEME_FALSE;
@@ -2534,14 +2544,23 @@ C_regparm C_word C_fcall lookup_bucket(C_word sym, C_SYMBOL_TABLE *stable)
 
 double compute_symbol_table_load(double *avg_bucket_len, int *total_n)
 {
-  C_word bucket;
+  C_word bucket, last;
   int i, j, alen = 0, bcount = 0, total = 0;
 
   for(i = 0; i < symbol_table->size; ++i) {
-    bucket = symbol_table->table[ i ];
-
-    for(j = 0; bucket != C_SCHEME_END_OF_LIST; ++j)
-      bucket = C_block_item(bucket,1);
+    last = 0;
+    j = 0;
+    for(bucket = symbol_table->table[ i ]; bucket != C_SCHEME_END_OF_LIST; 
+        bucket = C_block_item(bucket,1)) {
+      /* If the symbol is unreferenced, drop it: */
+      if (C_block_item(bucket,0) == C_SCHEME_BROKEN_WEAK_PTR) {
+         if (last) C_set_block_item(last, 1, C_block_item(bucket, 1));
+         else symbol_table->table[ i ] = C_block_item(bucket,1);
+      } else {
+        last = bucket;
+        ++j;
+      }
+    }
 
     if(j > 0) {
       alen += j;
@@ -3421,6 +3440,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
   tgt_space_start = fromspace_start;
   tgt_space_top = &C_fromspace_top;
   tgt_space_limit = C_fromspace_limit;
+  weak_pair_chain = (C_word)NULL;
 
   start = C_fromspace_top;
 
@@ -3456,6 +3476,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     tgt_space_start = tospace_start;
     tgt_space_top = &tospace_top;
     tgt_space_limit= tospace_limit;
+    weak_pair_chain = (C_word)NULL; /* only chain up weak pairs forwarded into tospace */
 
     cell.val = "GC_MAJOR";
     C_debugger(&cell, 0, NULL);
@@ -3483,6 +3504,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     ++gc_count_1;
     ++gc_count_1_total;
     update_locative_table(GC_MINOR);
+    update_weak_pairs(GC_MINOR);
   }
   else {
     /* Mark finalizer list and remember pointers to non-forwarded items: */
@@ -3570,6 +3592,8 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     }
 
     update_locative_table(gc_mode);
+    update_weak_pairs(gc_mode);
+
     count = (C_uword)tospace_top - (C_uword)tospace_start; // Actual used, < heap_size/2
 
     {
@@ -3620,8 +3644,6 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
   }
 
   if(gc_mode == GC_MAJOR) {
-    update_symbol_tables(gc_mode);
-
     tgc = C_cpu_milliseconds() - tgc;
     gc_ms += tgc;
     timer_accumulated_gc_ms += tgc;
@@ -3798,11 +3820,8 @@ static C_regparm void C_fcall mark_nested_objects(C_byte *heap_scan_top, C_byte 
 
     if(n > 0 && (h & C_BYTEBLOCK_BIT) == 0) {
       if(h & C_SPECIALBLOCK_BIT) {
-        /* Minor GC needs to be fast; always mark weakly held symbols */
-        if (gc_mode != GC_MINOR || h != C_WEAK_PAIR_TAG) {
-	  --n;
-	  ++p;
-        }
+	--n;
+	++p;
       }
 
       while(n--) mark(p++);
@@ -3886,6 +3905,10 @@ static C_regparm void C_fcall really_mark(C_word *x, C_byte *tgt_space_start, C_
   p2->header = h;
   p->header = ptr_to_fptr((C_uword)p2);
   C_memcpy(p2->data, p->data, bytes);
+  if (h == C_WEAK_PAIR_TAG && !C_immediatep(p2->data[0])) {
+    p->data[0] = weak_pair_chain; /* "Recycle" the weak pair's CAR to point to prev head */
+    weak_pair_chain = (C_word)p;  /* Make this fwd ptr the new head of the weak pair chain */
+  }
 }
 
 
@@ -3969,6 +3992,7 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
   new_tospace_top = new_tospace_start;
   new_tospace_limit = new_tospace_start + size;
   start = new_tospace_top;
+  weak_pair_chain = (C_word)NULL; /* only chain up weak pairs forwarded into new heap */
 
   /* Mark standard live objects in nursery and heap */
   mark_live_objects(new_tospace_start, &new_tospace_top, new_tospace_limit);
@@ -3993,7 +4017,7 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
 
   /* Mark nested values in already moved (marked) blocks in breadth-first manner: */
   mark_nested_objects(start, new_tospace_start, &new_tospace_top, new_tospace_limit);
-  update_symbol_tables(GC_REALLOC);
+  update_weak_pairs(GC_REALLOC);
 
   heap_free (heapspace1, heapspace1_size);
   heap_free (heapspace2, heapspace2_size);
@@ -4124,97 +4148,69 @@ C_regparm void C_fcall update_locative_table(int mode)
   if(mode != GC_REALLOC) locative_table_count = hi;
 }
 
-static C_regparm void fixup_symbol_forwards(C_word sym)
+/* When a weak pair is encountered by GC, it turns it into a
+ * forwarding reference as usual, but then it re-uses the now-defunct
+ * pair's CAR field.  It clobbers that field with a plain C pointer to
+ * the current "weak pair chain".  Then, the weak pair chain is
+ * updated to point to this new forwarding pointer, creating a crude
+ * linked list of sorts.
+ *
+ * We can get away with this because the slots of an object are
+ * unused/dead when it is turned into a forwarding pointer - the
+ * forwarding pointer itself is just a header, but those data fields
+ * remain allocated.  Since the weak pair chain is a linked list that
+ * can *only* contain weak-pairs-turned-forwarding-pointer, we may
+ * freely access the first slot of such forwarding pointers.
+ */
+static C_regparm void C_fcall update_weak_pairs(int mode)
 {
-  C_word val, h;
-  int i, s = C_header_size(sym); /* 3 */
+  int weakn = 0;
+  C_word p, pair, car, h;
 
-  for (i = 0; i < s; i++) {
-    val = C_block_item(sym, i);
-    if (!C_immediatep(val)) {
-      h = C_block_header(val);
+  /* NOTE: Don't use C_block_item() because it asserts the block is
+   * big enough in DEBUGBUILD, but forwarding pointers have size 0.
+   */
+  for (p = weak_pair_chain; p != (C_word)NULL; p = *((C_word *)C_data_pointer(p))) {
+    /* NOTE: We only chain up the weak pairs' forwarding pointers into
+     * the new space.  This is safe because already forwarded weak
+     * pairs in nursery/fromspace will be forwarded *again* into
+     * tospace/new heap.  That forwarding pointer is chained up.
+     * Still-unforwarded weak pairs will be forwarded straight to the
+     * new space, and also chained up.
+     */
+    h = C_block_header(p);
+    assert(is_fptr(h));
+    pair = fptr_to_ptr(h);
+    assert(!is_fptr(C_block_header(pair)));
 
-      while(is_fptr(h)) {
-        val = fptr_to_ptr(h);
-        h = C_block_header(val);
-      }
-      C_set_block_item(sym, i, val);
+    /* The pair itself should be live */
+    assert((mode == GC_MINOR && !C_in_stackp(pair)) ||
+           (mode == GC_MAJOR && !C_in_stackp(pair) && !C_in_fromspacep(pair)) ||
+           (mode == GC_REALLOC && !C_in_stackp(pair) && !C_in_heapp(pair))); /* NB: *old* heap! */
+
+    car = C_block_item(pair, 0);
+    assert(!C_immediatep(car)); /* should be ensured when adding it to the chain */
+    h = C_block_header(car);
+    while (is_fptr(h)) {
+      car = fptr_to_ptr(h);
+      h = C_block_header(car);
+    }
+
+    /* If the car is unreferenced by anyone else, it wasn't moved by GC.  So drop it: */
+    if((mode == GC_MINOR && C_in_stackp(car)) ||
+       (mode == GC_MAJOR && (C_in_stackp(car) || C_in_fromspacep(car))) ||
+       (mode == GC_REALLOC && (C_in_stackp(car) || C_in_heapp(car)))) { /* NB: *old* heap! */
+
+      C_set_block_item(pair, 0, C_SCHEME_BROKEN_WEAK_PTR);
+      ++weakn;
+    } else {
+      /* Might have moved, re-set the car to the target value */
+      C_set_block_item(pair, 0, car);
     }
   }
-}
-
-C_regparm void C_fcall update_symbol_tables(int mode)
-{
-  int weakn = 0, i;
-  C_word bucket, last, sym, h;
-  C_SYMBOL_TABLE *stp;
-
-  assert(mode != GC_MINOR); /* Call only in major or realloc mode */
-  /* Update symbol locations through fptrs or drop if unreferenced */
-  for(stp = symbol_table_list; stp != NULL; stp = stp->next) {
-    for(i = 0; i < stp->size; ++i) {
-      last = 0;
-
-      for(bucket = stp->table[ i ]; bucket != C_SCHEME_END_OF_LIST; bucket = C_block_item(bucket,1)) {
-
-	sym = C_block_item(bucket, 0);
-	h = C_block_header(sym);
-
-	/* Resolve any forwarding pointers */
-	while(is_fptr(h)) {
-	  sym = fptr_to_ptr(h);
-	  h = C_block_header(sym);
-	}
-
-	assert((h & C_HEADER_TYPE_BITS) == C_SYMBOL_TYPE);
-
-#ifdef DEBUGBUILD
-        /* Detect inconsistencies before dropping / keeping the symbol */
-        fixup_symbol_forwards(sym);
-	{
-	  C_word str = C_symbol_name(sym);
-          int str_perm;
-
-          str_perm = !C_in_stackp(str) && !C_in_heapp(str) &&
-                  !C_in_scratchspacep(str) &&
-                  (mode == GC_REALLOC ? !C_in_new_heapp(str) : 1);
-
-	  if ((C_persistable_symbol(sym) || str_perm) &&
-              (C_block_header(bucket) == C_WEAK_PAIR_TAG)) {
-	    C_dbg(C_text("GC"), C_text("Offending symbol: `%.*s'\n"),
-		  (int)C_header_size(str), C_c_string(str));
-	    panic(C_text("Persistable symbol found in weak pair"));
-	  } else if (!C_persistable_symbol(sym) && !str_perm &&
-		     (C_block_header(bucket) == C_PAIR_TAG)) {
-	    C_dbg(C_text("GC"), C_text("Offending symbol: `%.*s'...\n"),
-		  (int)C_header_size(str), C_c_string(str));
-	    panic(C_text("Unpersistable symbol found in strong pair"));
-	  }
-	}
-#endif
-
-	/* If the symbol is unreferenced, drop it: */
-	if(mode == GC_REALLOC ?
-           !C_in_new_heapp(sym) :
-           !C_in_fromspacep(sym)) {
-
-	  if(last) C_set_block_item(last, 1, C_block_item(bucket,1));
-	  else stp->table[ i ] = C_block_item(bucket,1);
-
-#ifndef NDEBUG
-          fixup_symbol_forwards(sym);
-	  assert(!C_persistable_symbol(sym));
-#endif
-	  ++weakn;
-	} else {
-	  C_set_block_item(bucket,0,sym); /* Might have moved */
-	  last = bucket;
-	}
-      }
-    }
-  }
+  weak_pair_chain = (C_word)NULL;
   if(gc_report_flag && weakn)
-    C_dbg("GC", C_text("%d recoverable weakly held items found\n"), weakn);
+    C_dbg("GC", C_text("%d recoverable weak pairs found\n"), weakn);
 }
 
 
@@ -4685,7 +4681,8 @@ C_regparm C_word C_fcall C_equalp(C_word x, C_word y)
 
   if(C_immediatep(x) || C_immediatep(y)) return 0;
 
-  if((header = C_block_header(x)) != C_block_header(y)) return 0;
+  /* NOTE: Extra check at the end is special consideration for pairs being equal to weak pairs */
+  if((header = C_block_header(x)) != C_block_header(y) && !(C_header_type(x) == C_PAIR_TYPE && C_header_type(y) == C_PAIR_TYPE)) return 0;
   else if((bits = header & C_HEADER_BITS_MASK) & C_BYTEBLOCK_BIT) {
     if(header == C_FLONUM_TAG && C_block_header(y) == C_FLONUM_TAG)
       return C_ub_i_flonum_eqvp(C_flonum_magnitude(x),
@@ -5041,11 +5038,11 @@ C_regparm C_word C_fcall C_i_listp(C_word x)
   C_word fast = x, slow = x;
 
   while(fast != C_SCHEME_END_OF_LIST)
-    if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+    if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
       fast = C_u_i_cdr(fast);
       
       if(fast == C_SCHEME_END_OF_LIST) return C_SCHEME_TRUE;
-      else if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+      else if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
 	fast = C_u_i_cdr(fast);
 	slow = C_u_i_cdr(slow);
 
@@ -5505,7 +5502,7 @@ C_regparm C_word C_fcall C_i_integer_oddp(C_word x)
 
 C_regparm C_word C_fcall C_i_car(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "car", x);
 
   return C_u_i_car(x);
@@ -5514,7 +5511,7 @@ C_regparm C_word C_fcall C_i_car(C_word x)
 
 C_regparm C_word C_fcall C_i_cdr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cdr", x);
 
   return C_u_i_cdr(x);
@@ -5523,14 +5520,14 @@ C_regparm C_word C_fcall C_i_cdr(C_word x)
 
 C_regparm C_word C_fcall C_i_caar(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "caar", x);
   }
 
   x = C_u_i_car(x);
 
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5538,14 +5535,14 @@ C_regparm C_word C_fcall C_i_caar(C_word x)
 
 C_regparm C_word C_fcall C_i_cadr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cadr", x);
   }
 
   x = C_u_i_cdr(x);
 
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5553,14 +5550,14 @@ C_regparm C_word C_fcall C_i_cadr(C_word x)
 
 C_regparm C_word C_fcall C_i_cdar(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cdar", x);
   }
 
   x = C_u_i_car(x);
 
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5568,13 +5565,13 @@ C_regparm C_word C_fcall C_i_cdar(C_word x)
 
 C_regparm C_word C_fcall C_i_cddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5582,15 +5579,15 @@ C_regparm C_word C_fcall C_i_cddr(C_word x)
 
 C_regparm C_word C_fcall C_i_caddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "caddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5598,15 +5595,15 @@ C_regparm C_word C_fcall C_i_caddr(C_word x)
 
 C_regparm C_word C_fcall C_i_cdddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cdddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5614,17 +5611,17 @@ C_regparm C_word C_fcall C_i_cdddr(C_word x)
 
 C_regparm C_word C_fcall C_i_cadddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cadddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_car(x);
 }
@@ -5632,17 +5629,17 @@ C_regparm C_word C_fcall C_i_cadddr(C_word x)
 
 C_regparm C_word C_fcall C_i_cddddr(C_word x)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
   bad:
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "cddddr", x);
   }
 
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
   x = C_u_i_cdr(x);
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) goto bad;
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) goto bad;
 
   return C_u_i_cdr(x);
 }
@@ -5654,14 +5651,14 @@ C_regparm C_word C_fcall C_i_list_tail(C_word lst, C_word i)
   int n;
 
   if(lst != C_SCHEME_END_OF_LIST && 
-     (C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG))
+     (C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "list-tail", lst);
 
   if(i & C_FIXNUM_BIT) n = C_unfix(i);
   else barf(C_BAD_ARGUMENT_TYPE_ERROR, "list-tail", i);
 
   while(n--) {
-    if(C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG)
+    if(C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE)
       barf(C_OUT_OF_RANGE_ERROR, "list-tail", lst0, i);
     
     lst = C_u_i_cdr(lst);
@@ -6054,11 +6051,11 @@ C_regparm C_word C_fcall C_i_length(C_word lst)
 
   while(slow != C_SCHEME_END_OF_LIST) {
     if(fast != C_SCHEME_END_OF_LIST) {
-      if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+      if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
 	fast = C_u_i_cdr(fast);
       
 	if(fast != C_SCHEME_END_OF_LIST) {
-	  if(!C_immediatep(fast) && C_block_header(fast) == C_PAIR_TAG) {
+	  if(!C_immediatep(fast) && C_header_type(fast) == C_PAIR_TYPE) {
 	    fast = C_u_i_cdr(fast);
 	  }
 	  else barf(C_NOT_A_PROPER_LIST_ERROR, "length", lst);
@@ -6069,7 +6066,7 @@ C_regparm C_word C_fcall C_i_length(C_word lst)
       }
     }
 
-    if(C_immediatep(slow) || C_block_header(slow) != C_PAIR_TAG)
+    if(C_immediatep(slow) || C_header_type(slow) != C_PAIR_TYPE)
       barf(C_NOT_A_PROPER_LIST_ERROR, "length", lst);
 
     slow = C_u_i_cdr(slow);
@@ -6084,7 +6081,7 @@ C_regparm C_word C_fcall C_u_i_length(C_word lst)
 {
   int n = 0;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     lst = C_u_i_cdr(lst);
     ++n;
   }
@@ -6094,7 +6091,7 @@ C_regparm C_word C_fcall C_u_i_length(C_word lst)
 
 C_regparm C_word C_fcall C_i_set_car(C_word x, C_word val)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "set-car!", x);
 
   C_mutate(&C_u_i_car(x), val);
@@ -6104,7 +6101,7 @@ C_regparm C_word C_fcall C_i_set_car(C_word x, C_word val)
 
 C_regparm C_word C_fcall C_i_set_cdr(C_word x, C_word val)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "set-cdr!", x);
 
   C_mutate(&C_u_i_cdr(x), val);
@@ -7096,10 +7093,10 @@ C_regparm C_word C_fcall C_i_assq(C_word x, C_word lst)
 {
   C_word a;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     a = C_u_i_car(lst);
 
-    if(!C_immediatep(a) && C_block_header(a) == C_PAIR_TAG) {
+    if(!C_immediatep(a) && C_header_type(a) == C_PAIR_TYPE) {
       if(C_u_i_car(a) == x) return a;
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "assq", a);
@@ -7118,10 +7115,10 @@ C_regparm C_word C_fcall C_i_assv(C_word x, C_word lst)
 {
   C_word a;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     a = C_u_i_car(lst);
 
-    if(!C_immediatep(a) && C_block_header(a) == C_PAIR_TAG) {
+    if(!C_immediatep(a) && C_header_type(a) == C_PAIR_TYPE) {
       if(C_truep(C_i_eqvp(C_u_i_car(a), x))) return a;
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "assv", a);
@@ -7140,10 +7137,10 @@ C_regparm C_word C_fcall C_i_assoc(C_word x, C_word lst)
 {
   C_word a;
 
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     a = C_u_i_car(lst);
 
-    if(!C_immediatep(a) && C_block_header(a) == C_PAIR_TAG) {
+    if(!C_immediatep(a) && C_header_type(a) == C_PAIR_TYPE) {
       if(C_equalp(C_u_i_car(a), x)) return a;
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "assoc", a);
@@ -7160,7 +7157,7 @@ C_regparm C_word C_fcall C_i_assoc(C_word x, C_word lst)
 
 C_regparm C_word C_fcall C_i_memq(C_word x, C_word lst)
 {
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     if(C_u_i_car(lst) == x) return lst;
     else lst = C_u_i_cdr(lst);
   }
@@ -7185,7 +7182,7 @@ C_regparm C_word C_fcall C_u_i_memq(C_word x, C_word lst)
 
 C_regparm C_word C_fcall C_i_memv(C_word x, C_word lst)
 {
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     if(C_truep(C_i_eqvp(C_u_i_car(lst), x))) return lst;
     else lst = C_u_i_cdr(lst);
   }
@@ -7199,7 +7196,7 @@ C_regparm C_word C_fcall C_i_memv(C_word x, C_word lst)
 
 C_regparm C_word C_fcall C_i_member(C_word x, C_word lst)
 {
-  while(!C_immediatep(lst) && C_block_header(lst) == C_PAIR_TAG) {
+  while(!C_immediatep(lst) && C_header_type(lst) == C_PAIR_TYPE) {
     if(C_equalp(C_u_i_car(lst), x)) return lst;
     else lst = C_u_i_cdr(lst);
   }
@@ -7324,7 +7321,7 @@ C_regparm C_word C_fcall C_i_check_structure_2(C_word x, C_word st, C_word loc)
 
 C_regparm C_word C_fcall C_i_check_pair_2(C_word x, C_word loc)
 {
-  if(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG) {
+  if(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE) {
     error_location = loc;
     barf(C_BAD_ARGUMENT_TYPE_NO_PAIR_ERROR, NULL, x);
   }
@@ -7378,7 +7375,7 @@ C_regparm C_word C_fcall C_i_check_keyword_2(C_word x, C_word loc)
 
 C_regparm C_word C_fcall C_i_check_list_2(C_word x, C_word loc)
 {
-  if(x != C_SCHEME_END_OF_LIST && (C_immediatep(x) || C_block_header(x) != C_PAIR_TAG)) {
+  if(x != C_SCHEME_END_OF_LIST && (C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE)) {
     error_location = loc;
     barf(C_BAD_ARGUMENT_TYPE_NO_LIST_ERROR, NULL, x);
   }
@@ -7543,14 +7540,14 @@ C_regparm C_word C_fcall C_i_foreign_unsigned_ranged_integer_argumentp(C_word x,
 /* I */
 C_regparm C_word C_fcall C_i_not_pair_p_2(C_word x)
 {
-  return C_mk_bool(C_immediatep(x) || C_block_header(x) != C_PAIR_TAG);
+  return C_mk_bool(C_immediatep(x) || C_header_type(x) != C_PAIR_TYPE);
 }
 
 
 C_regparm C_word C_fcall C_i_null_list_p(C_word x)
 {
   if(x == C_SCHEME_END_OF_LIST) return C_SCHEME_TRUE;
-  else if(!C_immediatep(x) && C_block_header(x) == C_PAIR_TAG) return C_SCHEME_FALSE;
+  else if(!C_immediatep(x) && C_header_type(x) == C_PAIR_TYPE) return C_SCHEME_FALSE;
   else {
     barf(C_BAD_ARGUMENT_TYPE_NO_LIST_ERROR, "null-list?", x);
     return C_SCHEME_FALSE;
@@ -7643,7 +7640,7 @@ void C_ccall C_apply(C_word c, C_word *av)
     barf(C_NOT_A_CLOSURE_ERROR, "apply", fn);
 
   lst = av[ c - 1 ];
-  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG))
+  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "apply", lst);
 
   len = C_unfix(C_u_i_length(lst));
@@ -7789,7 +7786,7 @@ void C_ccall C_apply_values(C_word c, C_word *av)
 
   lst = av[ 2 ];
 
-  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_block_header(lst) != C_PAIR_TAG))
+  if(lst != C_SCHEME_END_OF_LIST && (C_immediatep(lst) || C_header_type(lst) != C_PAIR_TYPE))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "apply", lst);
 
   /* Check whether continuation receives multiple values: */
@@ -7826,7 +7823,7 @@ void C_ccall C_apply_values(C_word c, C_word *av)
     barf(C_CONTINUATION_CANT_RECEIVE_VALUES_ERROR, "values", k);
 #endif
   }
-  else if(C_block_header(lst) == C_PAIR_TAG) {
+  else if(C_header_type(lst) == C_PAIR_TYPE) {
     if(C_u_i_cdr(lst) == C_SCHEME_END_OF_LIST)
       n = C_u_i_car(lst);
     else {
@@ -12558,6 +12555,7 @@ static C_regparm C_word C_fcall decode_literal2(C_word **ptr, C_char **str,
     case C_SCHEME_END_OF_LIST:
     case C_SCHEME_UNDEFINED:
     case C_SCHEME_END_OF_FILE:
+    case C_SCHEME_BROKEN_WEAK_PTR:
       return (C_word)(*(*str - 1));
 
     case C_FIXNUM_BIT:
@@ -12875,18 +12873,18 @@ C_regparm C_word C_fcall
 C_i_get_keyword(C_word kw, C_word args, C_word def)
 {
   while(!C_immediatep(args)) {
-    if(C_block_header(args) == C_PAIR_TAG) {
+    if(C_header_type(args) == C_PAIR_TYPE) {
       if(kw == C_u_i_car(args)) {
 	args = C_u_i_cdr(args);
 
-	if(C_immediatep(args) || C_block_header(args) != C_PAIR_TAG)
+	if(C_immediatep(args) || C_header_type(args) != C_PAIR_TYPE)
 	  return def;
 	else return C_u_i_car(args);
       }
       else {
 	args = C_u_i_cdr(args);
 
-	if(C_immediatep(args) || C_block_header(args) != C_PAIR_TAG)
+	if(C_immediatep(args) || C_header_type(args) != C_PAIR_TYPE)
 	  return def;
 	else args = C_u_i_cdr(args);
       }
@@ -13073,31 +13071,32 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
       b2 = b->next;
 
       switch(b->key) {
-      case C_fix(1): C_fprintf(C_stderr,              C_text("fixnum         ")); break;
-      case C_SCHEME_TRUE: C_fprintf(C_stderr,         C_text("boolean        ")); break;
-      case C_SCHEME_END_OF_LIST: C_fprintf(C_stderr,  C_text("null           ")); break;
-      case C_SCHEME_UNDEFINED  : C_fprintf(C_stderr,  C_text("void           ")); break;
-      case C_make_character('A'): C_fprintf(C_stderr, C_text("character      ")); break;
-      case C_SCHEME_END_OF_FILE: C_fprintf(C_stderr,  C_text("eof            ")); break;
-      case C_SCHEME_UNBOUND: C_fprintf(C_stderr,      C_text("unbound        ")); break;
-      case C_SYMBOL_TYPE: C_fprintf(C_stderr,         C_text("symbol         ")); break;
-      case C_STRING_TYPE: C_fprintf(C_stderr,         C_text("string         ")); break;
-      case C_PAIR_TYPE: C_fprintf(C_stderr,           C_text("pair           ")); break;
-      case C_CLOSURE_TYPE: C_fprintf(C_stderr,        C_text("closure        ")); break;
-      case C_FLONUM_TYPE: C_fprintf(C_stderr,         C_text("flonum         ")); break;
-      case C_PORT_TYPE: C_fprintf(C_stderr,           C_text("port           ")); break;
-      case C_POINTER_TYPE: C_fprintf(C_stderr,        C_text("pointer        ")); break;
-      case C_LOCATIVE_TYPE: C_fprintf(C_stderr,       C_text("locative       ")); break;
-      case C_TAGGED_POINTER_TYPE: C_fprintf(C_stderr, C_text("tagged pointer ")); break;
-      case C_LAMBDA_INFO_TYPE: C_fprintf(C_stderr,    C_text("lambda info    ")); break;
-      case C_WEAK_PAIR_TYPE: C_fprintf(C_stderr,      C_text("weak pair      ")); break;
-      case C_VECTOR_TYPE: C_fprintf(C_stderr,         C_text("vector         ")); break;
-      case C_BYTEVECTOR_TYPE: C_fprintf(C_stderr,     C_text("bytevector     ")); break;
-      case C_BIGNUM_TYPE: C_fprintf(C_stderr,         C_text("bignum         ")); break;
-      case C_CPLXNUM_TYPE: C_fprintf(C_stderr,        C_text("cplxnum        ")); break;
-      case C_RATNUM_TYPE: C_fprintf(C_stderr,         C_text("ratnum         ")); break;
+      case C_fix(1): C_fprintf(C_stderr,                 C_text("fixnum         ")); break;
+      case C_SCHEME_TRUE: C_fprintf(C_stderr,            C_text("boolean        ")); break;
+      case C_SCHEME_END_OF_LIST: C_fprintf(C_stderr,     C_text("null           ")); break;
+      case C_SCHEME_UNDEFINED  : C_fprintf(C_stderr,     C_text("void           ")); break;
+      case C_SCHEME_BROKEN_WEAK_PTR: C_fprintf(C_stderr, C_text("broken weak ptr")); break;
+      case C_make_character('A'): C_fprintf(C_stderr,    C_text("character      ")); break;
+      case C_SCHEME_END_OF_FILE: C_fprintf(C_stderr,     C_text("eof            ")); break;
+      case C_SCHEME_UNBOUND: C_fprintf(C_stderr,         C_text("unbound        ")); break;
+      case C_SYMBOL_TYPE: C_fprintf(C_stderr,            C_text("symbol         ")); break;
+      case C_STRING_TYPE: C_fprintf(C_stderr,            C_text("string         ")); break;
+      case C_PAIR_TYPE: C_fprintf(C_stderr,              C_text("pair           ")); break;
+      case C_CLOSURE_TYPE: C_fprintf(C_stderr,           C_text("closure        ")); break;
+      case C_FLONUM_TYPE: C_fprintf(C_stderr,            C_text("flonum         ")); break;
+      case C_PORT_TYPE: C_fprintf(C_stderr,              C_text("port           ")); break;
+      case C_POINTER_TYPE: C_fprintf(C_stderr,           C_text("pointer        ")); break;
+      case C_LOCATIVE_TYPE: C_fprintf(C_stderr,          C_text("locative       ")); break;
+      case C_TAGGED_POINTER_TYPE: C_fprintf(C_stderr,    C_text("tagged pointer ")); break;
+      case C_LAMBDA_INFO_TYPE: C_fprintf(C_stderr,       C_text("lambda info    ")); break;
+      case C_WEAK_PAIR_TYPE: C_fprintf(C_stderr,         C_text("weak pair      ")); break;
+      case C_VECTOR_TYPE: C_fprintf(C_stderr,            C_text("vector         ")); break;
+      case C_BYTEVECTOR_TYPE: C_fprintf(C_stderr,        C_text("bytevector     ")); break;
+      case C_BIGNUM_TYPE: C_fprintf(C_stderr,            C_text("bignum         ")); break;
+      case C_CPLXNUM_TYPE: C_fprintf(C_stderr,           C_text("cplxnum        ")); break;
+      case C_RATNUM_TYPE: C_fprintf(C_stderr,            C_text("ratnum         ")); break;
 	/* XXX this is sort of funny: */
-      case C_BYTEBLOCK_BIT: C_fprintf(C_stderr,        C_text("blob           ")); break;
+      case C_BYTEBLOCK_BIT: C_fprintf(C_stderr,          C_text("blob           ")); break;
       default:
 	x = b->key;
 

@@ -295,6 +295,8 @@
       (cond ((pair? obj)        (wr-expr obj col))
 	    ((null? obj)        (wr-lst obj col))
 	    ((eof-object? obj)  (out "#!eof" col))
+	    ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
+	    ((##core#inline "C_bwpp" obj) #;(bwp-object? obj) (out "#!bwp" col))
 	    ((vector? obj)      (wr-lst (vector->list obj) (out "#" col)))
 	    ((boolean? obj)     (out (if obj "#t" "#f") col))
 	    ((##sys#number? obj)      (out (##sys#number->string obj) col))

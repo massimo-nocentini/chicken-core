@@ -161,6 +161,70 @@ For complex numbers, returns a complex number of the same angle but
 with magnitude 1.
 
 
+=== Weak pairs
+
+''Weak pairs'' behave identically to regular pairs, with one
+exception: the car value may be garbage collected.  When that happens,
+it gets replaced with a sentinel "broken-weak-pointer" value.
+
+They are indistinguishable from regular pairs: {{car}}, {{cdr}}, etc
+all work on them, {{pair?}} returns true, etc.  The {{WRITE}}
+representation is identical to regular pairs, so they will be read
+back as pairs.  In other words, they have no read/write invariance.
+
+They're the same as regular pairs for all intents and purposes.
+However, there's a {{weak-pair?}} predicate which ''can'' distinguish
+between regular pairs and weak pairs.
+
+NOTE: Due to internal limitations, {{set-car!}} on a weak pair
+currently may cause it to hold onto the value for one more GC cycle in
+some situations.
+
+==== weak-cons
+
+<procedure>(weak-cons obj[1] obj[2])</procedure><br>
+
+Returns a newly allocated weak pair whose car is obj[1] and whose cdr
+is obj[2]. The pair is indistinguishable from normal pairs, except as
+noted above.
+
+ (weak-cons 'a '())                   ===>  (a)
+ (weak-cons '(a) '(b c d))            ===>  ((a) b c d)
+ (weak-cons "a" '(b c))               ===>  ("a" b c)
+ (weak-cons 'a 3)                     ===>  (a . 3)
+ (weak-cons '(a b) 'c)                ===>  ((a b) . c)
+ 
+ (import (chicken gc))
+ 
+ (let* ((x '(a b))
+        (y (weak-cons x 'c)))
+   (gc #t)
+   (car x))                           ===> (a b)
+ 
+ (let ((x (weak-cons '(a b) 'c)))
+   (gc #t)
+   (car x))                           ===>  #!bwp
+
+As the final two examples show, when something ''else'' still holds on
+to the value that's stored in the car of a weak pair, it will not be
+reclaimed.  But if the value is ''only'' referenced by one or more
+weak pairs, it is reclaimed and the car of the weak pair is replaced
+with the ''broken-weak-pointer'' value {{#!bwp}}.
+
+<procedure>(weak-pair? obj)</procedure><br>
+
+This predicate returns {{#t}} if and only if {{obj}} is a weak pair.
+
+ (weak-pair? (weak-cons 'a '()))      ===>  #t
+ (weak-pair? (cons 'a '()))           ===>  #f
+ (weak-pair? (vector 'a '()))         ===>  #f
+
+<procedure>(bwp-object? obj)</procedure>
+
+This predicate returns {{#t}} if {{obj}} is the broken-weak-pointer
+value, otherwise {{#f}}.
+
+
 === Lazy evaluation
 
 ==== delay-force

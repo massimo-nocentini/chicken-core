@@ -600,7 +600,7 @@ EOF
    case-sensitive keyword-style parentheses-synonyms symbol-escape
 
    on-exit exit exit-handler implicit-exit-handler emergency-exit
-   )
+   bwp-object? weak-cons weak-pair?)
 
 (import scheme chicken.internal.syntax)
 
@@ -809,6 +809,11 @@ EOF
 		     (apply h args)
 		     (loop t) ) ) ) ) ) ) ) )
 
+
+;;; Weak pairs:
+(define (bwp-object? x) (##core#inline "C_bwpp" x))
+(define (weak-cons x y) (##core#inline_allocate ("C_a_i_weak_cons" 3) x y))
+(define (weak-pair? x) (##core#inline "C_i_weak_pairp" x))
 
 ;;; List operators:
 
@@ -4303,6 +4308,8 @@ EOF
 					     (else
 					      (let ([tok (r-token)])
 						(cond [(string=? "eof" tok) #!eof]
+						      ;; TODO: use #!bwp when we have a bootstrapping compiler whose reader supports it
+						      [(string=? "bwp" tok) (foreign-value "C_SCHEME_BROKEN_WEAK_PTR" scheme-object)]
 						      [(member tok '("optional" "rest" "key"))
 						       (build-symbol (##sys#string-append "#!" tok)) ]
 						      [else
@@ -4574,6 +4581,7 @@ EOF
 		((eq? x #f) (outstr port "#f"))
 		((##core#inline "C_eofp" x) (outstr port "#!eof"))
 		((##core#inline "C_undefinedp" x) (outstr port "#<unspecified>"))
+		((##core#inline "C_bwpp" x) (outstr port "#!bwp"))
 		((##core#inline "C_charp" x)
 		 (cond [readable
 			(outstr port "#\\")

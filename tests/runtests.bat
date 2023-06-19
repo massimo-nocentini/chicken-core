@@ -613,6 +613,11 @@ for %%s in (100000 120000 200000 250000 300000 350000 400000 450000 500000) do (
   if errorlevel 1 exit /b 1
 )
 
+echo ======================================== weak pointer test ...
+%compile% weak-pointer-test.scm
+if errorlevel 1 exit /b 1
+a.out
+if errorlevel 1 exit /b 1
 
 echo ======================================== symbol-GC tests ...
 %compile% symbolgc-tests.scm
