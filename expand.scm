@@ -48,7 +48,8 @@
 	chicken.fixnum
 	chicken.internal
 	chicken.keyword
-	chicken.platform)
+	chicken.platform
+	chicken.string)
 
 (include "common-declarations.scm")
 (include "mini-srfi-1.scm")
@@ -651,9 +652,12 @@
       (list 'define name exp) ) ) )
 
 
-;;; General syntax checking routine:
+;;; Line-number database management:
 
 (define ##sys#line-number-database #f)
+
+;;; General syntax checking routine:
+
 (define ##sys#syntax-error-culprit #f)
 (define ##sys#syntax-context '())
 
@@ -712,6 +716,24 @@
 			   (else (loop (cdr cx))))))))
 	  (##sys#syntax-error-hook (get-output-string out))))))
 
+;;; Hook for source information
+
+(define (##sys#read/source-info-hook class data val)	; Used here and in core.scm
+  (when (and (eq? 'list-info class) (symbol? (car data)))
+    (hash-table-set!
+     ##sys#line-number-database
+     (car data)
+     (alist-cons 
+      data (conc ##sys#current-source-filename ":" val)
+      (or (hash-table-ref ##sys#line-number-database (car data))
+	  '() ) ) ) )
+  data)
+
+;; TODO: Should we export this, or something like it?
+(define (##sys#read/source-info in)		; Used only in batch-driver
+  (##sys#read in ##sys#read/source-info-hook) )
+
+
 (define (get-line-number sexp)
   (and ##sys#line-number-database
        (pair? sexp)
@@ -722,6 +744,26 @@
 			  (let ((a (assq sexp pl)))
 			    (and a (cdr a)))))
 		    (else #f))))))
+
+;; TODO: Needs a better name - it extracts the name(?) and the source expression
+(define (##sys#get-line-2 exp)
+  (let* ((name (car exp))
+	 (lst (hash-table-ref ##sys#line-number-database name)))
+    (cond ((and lst (assq exp (cdr lst)))
+	   => (lambda (a) (values (car lst) (cdr a))) )
+	  (else (values name #f)) ) ) )
+
+(define (##sys#display-line-number-database)
+  (hash-table-for-each
+   (lambda (key val)
+     (when val
+       (let ((port (current-output-port)))
+	 (##sys#print key #t port)
+	 (##sys#print " " #f port)
+	 (##sys#print (map cdr val) #t port)
+	 (##sys#print "\n" #f port))) )
+   ##sys#line-number-database) )
+
 
 (define-constant +default-argument-count-limit+ 99999)
 

@@ -287,7 +287,7 @@
 
 (declare
  (unit compiler)
- (uses eval extras data-structures scrutinizer support))
+ (uses eval extras expand data-structures scrutinizer support))
 
 (module chicken.compiler.core
     (analyze-expression canonicalize-expression compute-database-statistics
@@ -543,7 +543,7 @@
   (define (handle-expansion-result outer-ln)
     (lambda (input output)
       (and-let* (((not (eq? input output)))
-		 (ln (or (get-line input) outer-ln)))
+		 (ln (or (get-line-number input) outer-ln)))
 	(update-line-number-database! output ln))
       output))
 
@@ -640,7 +640,7 @@
 	       `(quote ,x)
 	       (##sys#syntax-error/context "illegal atomic form" x)))
 	  ((symbol? (car x))
-	   (let ((ln (or (get-line x) outer-ln)))
+	   (let ((ln (or (get-line-number x) outer-ln)))
 	     (emit-syntax-trace-info x #f)
 	     (unless (list? x)
 	       (if ln
@@ -752,7 +752,7 @@
 				(vars (unzip1 bindings))
 				(aliases (map gensym vars))
 				(se2 (##sys#extend-se (##sys#current-environment) vars aliases))
-				(ln (or (get-line x) outer-ln)))
+				(ln (or (get-line-number x) outer-ln)))
 			   (set-real-names! aliases vars)
 			   `(let
 			     ,(map (lambda (alias b)
@@ -821,7 +821,7 @@
 			    llist
 			    (lambda (vars argc rest)
 			      (let* ((aliases (map gensym vars))
-				     (ln (or (get-line x) outer-ln))
+				     (ln (or (get-line-number x) outer-ln))
 				     (se2 (##sys#extend-se (##sys#current-environment) vars aliases))
 				     (body (parameterize ((##sys#current-environment se2))
 					     (let ((body0 (canonicalize-body/ln
@@ -870,7 +870,7 @@
 					 (car b))))
 				     (cadr x) )
 				(##sys#current-environment)) ))
-			   (let ((ln (or (get-line x) outer-ln)))
+			   (let ((ln (or (get-line-number x) outer-ln)))
 			     (walk
 			      (canonicalize-body/ln
 			       ln (cddr x) compiler-syntax-enabled)
@@ -886,7 +886,7 @@
 					    (car b))))
 					(cadr x) ) )
 			       (se2 (append ms (##sys#current-environment)))
-			       (ln (or (get-line x) outer-ln)) )
+			       (ln (or (get-line-number x) outer-ln)) )
 			  (for-each
 			   (lambda (sb)
 			     (set-car! (cdr sb) se2) )
@@ -969,7 +969,7 @@
 						   (##sys#current-environment)))
 					(##sys#get name '##compiler#compiler-syntax) ) ) )
 				   (cadr x)))
-			      (ln (or (get-line x) outer-ln)))
+			      (ln (or (get-line-number x) outer-ln)))
 			  (dynamic-wind
 			      (lambda ()
 				(for-each
@@ -990,7 +990,7 @@
 				 bs) ) ) ) )
 
 		       ((##core#include)
-			(fluid-let ((##sys#default-read-info-hook read-info-hook))
+			(fluid-let ((##sys#default-read-info-hook ##sys#read/source-info-hook))
 			  (##sys#include-forms-from-file
 			   (cadr x)
 			   (caddr x)
@@ -1101,7 +1101,7 @@
 			       (obody (cddr x))
 			       (aliases (map gensym vars))
 			       (se2 (##sys#extend-se (##sys#current-environment) vars aliases))
-			       (ln (or (get-line x) outer-ln))
+			       (ln (or (get-line-number x) outer-ln))
 			       (body
 				(parameterize ((##sys#current-environment se2))
 				  (walk
@@ -1115,7 +1115,7 @@
 			(unless tl?
 			  (let* ((var0 (cadr x))
 				 (var (lookup var0))
-				 (ln (get-line x)))
+				 (ln (get-line-number x)))
 			   (quit-compiling
 			    "~atoplevel definition of `~s' in non-toplevel context"
 			    (if ln (sprintf "(~a) - " ln) "")
@@ -1125,7 +1125,7 @@
 		       ((##core#set!)
 			(let* ((var0 (cadr x))
 			       (var (lookup var0))
-			       (ln (get-line x))
+			       (ln (get-line-number x))
 			       (val (caddr x)))
 			  (when (memq var unlikely-variables)
 			    (warning
@@ -1286,7 +1286,7 @@
 
 			((##core#define-external-variable)
 			 (let* ((sym (second x))
-				(ln (get-line x))
+				(ln (get-line-number x))
 				(name (symbol->string sym))
 				(type (third x))
 				(exported (fourth x))
@@ -1335,7 +1335,7 @@
 			((##core#define-inline)
 			 (let* ((name (second x))
 				(val `(##core#lambda ,@(cdaddr x)))
-				(ln (get-line x)))
+				(ln (get-line-number x)))
 			   (unless tl?
 			     (quit-compiling
 			      "~ainline definition of `~s' in non-toplevel context"
@@ -1346,7 +1346,7 @@
 
 			((##core#define-constant)
 			 (let* ((name (second x))
-				(ln (get-line x))
+				(ln (get-line-number x))
 				(valexp (third x))
 				(val (handle-exceptions ex
 					 ;; could show line number here
@@ -1400,7 +1400,7 @@
 			     (if (valid-c-identifier? raw-c-name)
 				 (set! callback-names
 				   (cons (cons raw-c-name name) callback-names))
-				 (let ((ln (get-line x)))
+				 (let ((ln (get-line-number x)))
 				   (quit-compiling
 				    "~aname `~S' of external definition is not a valid C identifier"
 				    (if ln (sprintf "(~a) - " ln) "")

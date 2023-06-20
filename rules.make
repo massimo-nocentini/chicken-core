@@ -536,6 +536,7 @@ batch-driver.c: batch-driver.scm mini-srfi-1.scm \
 		chicken.condition.import.scm \
 		chicken.port.import.scm \
 		chicken.string.import.scm \
+		chicken.syntax.import.scm \
 		chicken.time.import.scm
 c-platform.c: c-platform.scm mini-srfi-1.scm \
 		chicken.compiler.optimizer.import.scm \
@@ -565,7 +566,8 @@ core.c: core.scm mini-srfi-1.scm \
 		chicken.keyword.import.scm \
 		chicken.load.import.scm \
 		chicken.pretty-print.import.scm \
-		chicken.string.import.scm
+		chicken.string.import.scm \
+		chicken.syntax.import.scm
 optimizer.c: optimizer.scm mini-srfi-1.scm \
 		chicken.compiler.support.import.scm \
 		chicken.fixnum.import.scm \
@@ -595,7 +597,8 @@ compiler-syntax.c: compiler-syntax.scm mini-srfi-1.scm \
 		chicken.compiler.support.import.scm \
 		chicken.compiler.core.import.scm \
 		chicken.fixnum.import.scm \
-		chicken.format.import.scm
+		chicken.format.import.scm \
+		chicken.syntax.import.scm
 chicken-ffi-syntax.c: chicken-ffi-syntax.scm \
 		chicken.format.import.scm \
 		chicken.internal.import.scm \
@@ -745,6 +748,7 @@ expand.c: expand.scm \
 		chicken.fixnum.import.scm \
 		chicken.keyword.import.scm \
 		chicken.platform.import.scm \
+		chicken.string.import.scm \
 		chicken.internal.import.scm
 extras.c: extras.scm \
 		chicken.fixnum.import.scm \
