@@ -112,7 +112,8 @@
       (define (emit-trace-info tf info cntr e v) 
 	(when tf
 	  (##core#inline 
-	   "C_emit_eval_trace_info" 
+	   "C_emit_trace_info"
+	   (or (get-line-number info) "<eval>")
 	   info
 	   (##sys#make-structure 'frameinfo cntr e v)
 	   (thread-id ##sys#current-thread) ) ) )

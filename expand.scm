@@ -718,7 +718,7 @@
 
 ;;; Hook for source information
 
-(define (##sys#read/source-info-hook class data val)	; Used here and in core.scm
+(define (##sys#read/source-info-hook class data val)	; Used here, in core.scm and in csi.scm
   (when (and (eq? 'list-info class) (symbol? (car data)))
     (hash-table-set!
      ##sys#line-number-database

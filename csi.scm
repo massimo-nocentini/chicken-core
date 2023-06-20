@@ -73,6 +73,7 @@ EOF
 ;;; Parameters:
 
 (define-constant init-file "csirc")
+(define-constant line-number-database-size 997) ; Copied from core.scm
 
 (set! ##sys#repl-print-length-limit 2048)
 (set! ##sys#features (cons #:csi ##sys#features))
@@ -1157,4 +1158,7 @@ EOF
 		       (let ((r (optional rs)))
 			 (exit (if (fixnum? r) r 0)))))))))))))
 
-(run))
+(set! ##sys#line-number-database (make-vector line-number-database-size '()))
+
+(fluid-let ((##sys#default-read-info-hook ##sys#read/source-info-hook))
+  (run)))

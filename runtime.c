@@ -281,8 +281,10 @@ typedef struct finalizer_node_struct
 
 typedef struct trace_info_struct
 {
-  C_char *raw;
-  C_word cooked1, cooked2, thread;
+  /* Either raw_location is set to a C string or NULL */
+  C_char *raw_location;
+  /* cooked_location is C_SCHEME_FALSE or a Scheme string (when raw_location is NULL) */
+  C_word cooked_location, cooked1, cooked2, thread;
 } TRACE_INFO;
 
 typedef struct hdump_bucket_struct
@@ -3725,6 +3727,7 @@ static C_regparm void C_fcall mark_live_objects(C_byte *tgt_space_start, C_byte 
 
   /* Mark trace-buffer: */
   for(tinfo = trace_buffer; tinfo < trace_buffer_limit; ++tinfo) {
+    mark(&tinfo->cooked_location);
     mark(&tinfo->cooked1);
     mark(&tinfo->cooked2);
     mark(&tinfo->thread);
@@ -4360,8 +4363,13 @@ static void take_profile_sample()
     tb = trace_buffer_top - 1;
   }
 
+  if (tb->raw_location != NULL) {
+    key = tb->raw_location;
+  } else {
+    key = "<eval>"; /* Location string is GCable, can't use it */
+  }
+
   /* We could also just hash the pointer but that's a bit trickier */
-  key = tb->raw;
   bp = profile_table + hash_string(C_strlen(key), key, PROFILE_TABLE_SIZE, 0, 0);
   b = *bp;
 
@@ -4419,7 +4427,8 @@ C_regparm void C_fcall C_trace(C_char *name)
     trace_buffer_full = 1;
   }
 
-  trace_buffer_top->raw = name;
+  trace_buffer_top->raw_location = name;
+  trace_buffer_top->cooked_location = C_SCHEME_FALSE;
   trace_buffer_top->cooked1 = C_SCHEME_FALSE;
   trace_buffer_top->cooked2 = C_SCHEME_FALSE;
   thread = C_block_item(current_thread_symbol, 0);
@@ -4428,7 +4437,7 @@ C_regparm void C_fcall C_trace(C_char *name)
 }
 
 
-C_regparm C_word C_fcall C_emit_trace_info2(char *raw, C_word x, C_word y, C_word t)
+C_regparm C_word C_fcall C_emit_trace_info2(char *raw, C_word l, C_word x, C_word y, C_word t)
 {
   /* See above */
   if(profiling && next_profile_bucket == NULL) {
@@ -4443,7 +4452,8 @@ C_regparm C_word C_fcall C_emit_trace_info2(char *raw, C_word x, C_word y, C_wor
     trace_buffer_full = 1;
   }
 
-  trace_buffer_top->raw = raw;
+  trace_buffer_top->raw_location = raw;
+  trace_buffer_top->cooked_location = l;
   trace_buffer_top->cooked1 = x;
   trace_buffer_top->cooked2 = y;
   trace_buffer_top->thread = t;
@@ -4485,7 +4495,13 @@ C_char *C_dump_trace(int start)
 	  horror(C_text("out of memory - cannot reallocate trace-dump buffer"));
       }
 
-      C_strlcat(result, ptr->raw, result_len);
+      if (ptr->raw_location != NULL) {
+        C_strlcat(result, ptr->raw_location, result_len);
+      } else if (ptr->cooked_location != C_SCHEME_FALSE) {
+        C_strlcat(result, C_c_string(ptr->cooked_location), nmin(C_header_size(ptr->cooked_location), result_len));
+      } else {
+        C_strlcat(result, "<unknown>", result_len);
+      }
 
       if(i > 0) C_strlcat(result, "\n", result_len);
       else C_strlcat(result, " \t<--\n", result_len);
@@ -4517,6 +4533,8 @@ C_regparm void C_fcall C_clear_trace_buffer(void)
   trace_buffer_full = 0;
 
   for(i = 0; i < C_trace_buffer_size; ++i) {
+    trace_buffer[ i ].raw_location = NULL;
+    trace_buffer[ i ].cooked_location = C_SCHEME_FALSE;
     trace_buffer[ i ].cooked1 = C_SCHEME_FALSE;
     trace_buffer[ i ].cooked2 = C_SCHEME_FALSE;
     trace_buffer[ i ].thread = C_SCHEME_FALSE;
@@ -4550,16 +4568,17 @@ C_word C_fetch_trace(C_word starti, C_word buffer)
     ptr += start;
     i -= start;
 
-    if(C_header_size(buffer) < i * 4)
+    if(C_header_size(buffer) < i * 5)
       panic(C_text("destination buffer too small for call-chain"));
 
     for(;i--; ++ptr) {
       if(ptr >= trace_buffer_limit) ptr = trace_buffer;
 
       /* outside-pointer, will be ignored by GC */
-      C_mutate(&C_block_item(buffer, p++), (C_word)ptr->raw);
+      C_mutate(&C_block_item(buffer, p++), (C_word)ptr->raw_location);
 
       /* subject to GC */
+      C_mutate(&C_block_item(buffer, p++), ptr->cooked_location);
       C_mutate(&C_block_item(buffer, p++), ptr->cooked1);
       C_mutate(&C_block_item(buffer, p++), ptr->cooked2);
       C_mutate(&C_block_item(buffer, p++), ptr->thread);

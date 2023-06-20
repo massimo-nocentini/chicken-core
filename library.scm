@@ -4959,14 +4959,14 @@ EOF
 
 ;;; Access backtrace:
 
-(define-constant +trace-buffer-entry-slot-count+ 4)
+(define-constant +trace-buffer-entry-slot-count+ 5)
 
 (set! chicken.base#get-call-chain
   (let ((extract
 	 (foreign-lambda* nonnull-c-string ((scheme-object x)) "C_return((C_char *)x);")))
     (lambda (#!optional (start 0) (thread ##sys#current-thread))
       (let* ((tbl (foreign-value "C_trace_buffer_size" int))
-	     ;; 4 slots: "raw" string, cooked1, cooked2, thread
+	     ;; 5 slots: "raw" location (for compiled code), "cooked" location (for interpreted code), cooked1, cooked2, thread
 	     (c +trace-buffer-entry-slot-count+)
 	     (vec (##sys#make-vector (fx* c tbl) #f))
 	     (r (##core#inline "C_fetch_trace" start vec))
@@ -4978,9 +4978,10 @@ EOF
 	      (let ((t (##sys#slot vec (fx+ i 3)))) ; thread id
 		(if (or (not t) (not thread) (eq? t-id t))
 		    (cons (vector
-			   (extract (##sys#slot vec i)) ; raw
-			   (##sys#slot vec (fx+ i 1))   ; cooked1
-			   (##sys#slot vec (fx+ i 2)))  ; cooked2
+			   (or (##sys#slot vec (fx+ i 1)) ; cooked_location
+			       (extract (##sys#slot vec i))) ; raw_location
+			   (##sys#slot vec (fx+ i 2))   ; cooked1
+			   (##sys#slot vec (fx+ i 3)))  ; cooked2
 			  (loop (fx+ i c)))
 		    (loop (fx+ i c))))))))))
 
