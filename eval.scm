@@ -121,7 +121,8 @@
       (define (emit-syntax-trace-info tf info cntr) 
 	(when tf
 	  (##core#inline
-	   "C_emit_syntax_trace_info"
+	   "C_emit_trace_info"
+	   (or (get-line-number info) "<syntax>")
 	   info
 	   cntr
            (thread-id ##sys#current-thread) ) ) )

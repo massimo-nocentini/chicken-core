@@ -718,15 +718,30 @@
 
 ;;; Hook for source information
 
+(define (alist-weak-cons k v lst)
+  (cons (##core#inline_allocate ("C_a_i_weak_cons" 3) k v) lst))
+
+(define (assq/drop-bwp! x lst)
+  (let lp ((lst lst)
+	   (prev #f))
+    (cond ((null? lst) #f)
+	  ((eq? x (caar lst)) (car lst))
+	  ((and prev
+		(##core#inline "C_bwpp" (caar lst)))
+	   (set-cdr! prev (cdr lst))
+	   (lp (cdr lst) prev))
+	  (else (lp (cdr lst) lst)))))
+
 (define (##sys#read/source-info-hook class data val)	; Used here, in core.scm and in csi.scm
   (when (and (eq? 'list-info class) (symbol? (car data)))
-    (hash-table-set!
-     ##sys#line-number-database
-     (car data)
-     (alist-cons 
-      data (conc ##sys#current-source-filename ":" val)
-      (or (hash-table-ref ##sys#line-number-database (car data))
-	  '() ) ) ) )
+    (let ((old-value (or (hash-table-ref ##sys#line-number-database (car data)) '())))
+      (assq/drop-bwp! (car data) old-value) ;; Hack to clean out garbage values
+      (hash-table-set!
+       ##sys#line-number-database
+       (car data)
+       (alist-weak-cons
+	data (conc ##sys#current-source-filename ":" val)
+	old-value ) )) )
   data)
 
 ;; TODO: Should we export this, or something like it?
@@ -741,7 +756,7 @@
 	 (and (symbol? head)
 	      (cond ((hash-table-ref ##sys#line-number-database head)
 		     => (lambda (pl)
-			  (let ((a (assq sexp pl)))
+			  (let ((a (assq/drop-bwp! sexp pl)))
 			    (and a (cdr a)))))
 		    (else #f))))))
 
@@ -749,7 +764,7 @@
 (define (##sys#get-line-2 exp)
   (let* ((name (car exp))
 	 (lst (hash-table-ref ##sys#line-number-database name)))
-    (cond ((and lst (assq exp (cdr lst)))
+    (cond ((and lst (assq/drop-bwp! exp (cdr lst)))
 	   => (lambda (a) (values (car lst) (cdr a))) )
 	  (else (values name #f)) ) ) )
 
@@ -864,7 +879,7 @@
 		    (cur (or (hash-table-ref ##sys#line-number-database name) '())) )
 	   (unless (assq new cur)
 	     (hash-table-set! ##sys#line-number-database name
-			      (alist-cons new ln cur))))
+			      (alist-weak-cons new ln cur))))
 	 new)
        (assert (list? se) "not a list" se) ;XXX remove later
        (define (rename sym)
