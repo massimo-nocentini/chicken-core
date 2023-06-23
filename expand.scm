@@ -740,7 +740,7 @@
        ##sys#line-number-database
        (car data)
        (alist-weak-cons
-	data (conc ##sys#current-source-filename ":" val)
+	data (conc (or ##sys#current-source-filename "<stdin>") ":" val)
 	old-value ) )) )
   data)
 
