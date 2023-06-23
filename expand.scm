@@ -779,6 +779,25 @@
 	 (##sys#print "\n" #f port))) )
    ##sys#line-number-database) )
 
+;;; Traverse expression and update line-number db with all contained calls:
+
+(define (##sys#update-line-number-database! exp ln)
+  (define (mapupdate xs)
+    (let loop ((xs xs))
+      (when (pair? xs)
+	(walk (car xs))
+	(loop (cdr xs)) ) ) )
+  (define (walk x)
+    (cond ((not (pair? x)))
+	  ((symbol? (car x))
+	   (let* ((name (car x))
+		  (old (or (hash-table-ref ##sys#line-number-database name) '())))
+	     (unless (assq x old)
+	       (hash-table-set! ##sys#line-number-database name (alist-cons x ln old)))
+	     (mapupdate (cdr x)) ) )
+	  (else (mapupdate x)) ) )
+  (walk exp) )
+
 
 (define-constant +default-argument-count-limit+ 99999)
 

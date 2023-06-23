@@ -544,7 +544,7 @@
     (lambda (input output)
       (and-let* (((not (eq? input output)))
 		 (ln (or (get-line-number input) outer-ln)))
-	(update-line-number-database! output ln))
+	(##sys#update-line-number-database! output ln))
       output))
 
   (define (canonicalize-body/ln ln body cs?)
@@ -1903,26 +1903,6 @@
 	 ;; C identifiers aren't hygienically renamed inside body strings
 	 (argnames (map cadr (strip-syntax args))))
     (create-foreign-stub rtype #f argtypes argnames body #f #t) ) )
-
-
-;;; Traverse expression and update line-number db with all contained calls:
-
-(define (update-line-number-database! exp ln)
-  (define (mapupdate xs)
-    (let loop ((xs xs))
-      (when (pair? xs)
-	(walk (car xs))
-	(loop (cdr xs)) ) ) )
-  (define (walk x)
-    (cond ((not (pair? x)))
-	  ((symbol? (car x))
-	   (let* ((name (car x))
-		  (old (or (hash-table-ref ##sys#line-number-database name) '())))
-	     (unless (assq x old)
-	       (hash-table-set! ##sys#line-number-database name (alist-cons x ln old)))
-	     (mapupdate (cdr x)) ) )
-	  (else (mapupdate x)) ) )
-  (walk exp) )
 
 
 ;;; Convert canonicalized node-graph into continuation-passing-style:

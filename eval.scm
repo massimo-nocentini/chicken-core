@@ -130,6 +130,13 @@
       (define (decorate p ll h cntr)
 	(eval-decorator p ll h cntr))
 
+      (define (handle-expansion-result outer-ln)
+	(lambda (input output)
+	  (and-let* (((not (eq? input output)))
+		     (ln (or (get-line-number input) outer-ln)))
+	    (##sys#update-line-number-database! output ln))
+	  output))
+
       (define (compile x e h tf cntr tl?)
 	(cond ((keyword? x) (lambda v x))
 	      ((symbol? x)
@@ -195,7 +202,10 @@
 	       (##sys#syntax-error/context "illegal non-atomic object" x)]
 	      [(symbol? (##sys#slot x 0))
 	       (emit-syntax-trace-info tf x cntr)
-	       (let ((x2 (expand x (##sys#current-environment))))
+	       (let* ((ln (get-line-number x))
+		      (x2 (fluid-let ((chicken.syntax#expansion-result-hook
+				       (handle-expansion-result ln)))
+			    (expand x (##sys#current-environment)))))
 		 (d `(EVAL/EXPANDED: ,x2))
 		 (if (not (eq? x2 x))
 		     (compile x2 e h tf cntr tl?)
