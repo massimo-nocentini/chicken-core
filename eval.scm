@@ -1024,8 +1024,7 @@
   (##sys#make-c-string (##sys#string-append "C_" (toplevel name)) loc))
 
 (define load/internal
-  (let ((read read)
-	(write write)
+  (let ((write write)
 	(display display)
 	(newline newline)
 	(eval eval)
@@ -1089,8 +1088,8 @@
 			  "unable to load compiled module - "
 			  (or _dlerror "unknown reason"))
 			 fname)))
-		    (let ((x1 (read in)))
-		      (do ((x x1 (read in)))
+		    (let ((x1 (##sys#read/source-info in)))
+		      (do ((x x1 (##sys#read/source-info in)))
 			  ((eof-object? x))
 			(when printer (printer x))
 			(##sys#call-with-values
@@ -1163,8 +1162,7 @@
   (load-unit unit-name lib 'load-library))
 
 (define ##sys#include-forms-from-file
-  (let ((with-input-from-file with-input-from-file)
-	(read read)
+  (let ((call-with-input-file call-with-input-file)
 	(reverse reverse))
     (lambda (filename source k)
       (let ((path (##sys#resolve-include-filename filename #t #f source)))
@@ -1172,10 +1170,10 @@
 	  (##sys#signal-hook #:file-error 'include "cannot open file" filename))
 	(when (load-verbose)
 	  (print "; including " path " ..."))
-	(with-input-from-file path
-	  (lambda ()
+	(call-with-input-file path
+	  (lambda (in)
 	    (fluid-let ((##sys#current-source-filename path))
-	      (do ((x (read) (read))
+	      (do ((x (##sys#read/source-info in) (##sys#read/source-info in))
 		   (xs '() (cons x xs)))
 		  ((eof-object? x)
 		   (k (reverse xs)))))))))))

@@ -280,7 +280,7 @@ EOF
 (define default-evaluator
   (let ((eval eval)
 	(load-noisily load-noisily)
-	(read read)
+	(read (lambda () (##sys#read/source-info (current-input-port))))
 	(read-line read-line)
 	(display display)
 	(string-split string-split)
@@ -1047,7 +1047,7 @@ EOF
                  (load home-fn) ) ) ) )
       (define (evalstring str #!optional (rec (lambda _ (void))))
 	(let ((in (open-input-string str)))
-	  (do ([x (read in) (read in)])
+	  (do ([x (##sys#read/source-info in) (##sys#read/source-info in)])
 	      ((eof-object? x))
 	    (rec (receive (eval x))) ) ) )
       (when (member* '("-h" "-help" "--help") args)
@@ -1157,5 +1157,4 @@ EOF
 		       (let ((r (optional rs)))
 			 (exit (if (fixnum? r) r 0)))))))))))))
 
-(fluid-let ((##sys#default-read-info-hook ##sys#read/source-info-hook))
-  (run)))
+(run))

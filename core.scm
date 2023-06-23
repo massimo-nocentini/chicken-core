@@ -990,18 +990,17 @@
 				 bs) ) ) ) )
 
 		       ((##core#include)
-			(fluid-let ((##sys#default-read-info-hook ##sys#read/source-info-hook))
-			  (##sys#include-forms-from-file
-			   (cadr x)
-			   (caddr x)
-			   (lambda (forms)
-			     (walk (if (pair? (cdddr x)) ; body?
-				       (canonicalize-body/ln
-					ln
-					(append forms (cadddr x))
-					compiler-syntax-enabled)
-				       `(##core#begin ,@forms))
-				   e dest ldest h ln tl?)))))
+			(##sys#include-forms-from-file
+			 (cadr x)
+			 (caddr x)
+			 (lambda (forms)
+			   (walk (if (pair? (cdddr x)) ; body?
+				     (canonicalize-body/ln
+				      ln
+				      (append forms (cadddr x))
+				      compiler-syntax-enabled)
+				     `(##core#begin ,@forms))
+				 e dest ldest h ln tl?))))
 
 		       ((##core#let-module-alias)
 			(##sys#with-module-aliases

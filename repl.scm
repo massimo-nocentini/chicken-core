@@ -40,8 +40,6 @@
 
 (include "common-declarations.scm")
 
-(define-constant line-number-database-size 997) ; Copied from core.scm
-
 (define ##sys#repl-print-length-limit #f)
 (define ##sys#repl-read-hook #f)
 (define ##sys#repl-recent-call-chain #f) ; used in csi for ,c command
@@ -71,7 +69,6 @@
 
 (define repl
   (let ((eval eval)
-	(read read)
 	(call-with-current-continuation call-with-current-continuation)
 	(string-append string-append))
     (lambda (#!optional (evaluator eval))
@@ -117,9 +114,6 @@
 	      (set! quit-hook (lambda (result) (k result)))
 	      (load-verbose #t)
 	      (set! ##sys#notices-enabled #t)
-	      ;; Make sure line number db is initialized but don't clear it if (repl) is called again
-	      (unless ##sys#line-number-database
-		(set! ##sys#line-number-database (make-vector line-number-database-size '())))
 	      (##sys#error-handler
 	       (lambda (msg . args)
 		 (resetports)
@@ -156,40 +150,40 @@
 		      (resetports)
 		      (c #f)))))
 		(##sys#read-prompt-hook)
-		(fluid-let ((##sys#default-read-info-hook ##sys#read/source-info-hook))
-		  (let ((exp ((or ##sys#repl-read-hook read))))
-		    (unless (eof-object? exp)
-		      (when (eq? #\newline (##sys#peek-char-0 ##sys#standard-input))
-			(##sys#read-char-0 ##sys#standard-input))
-		      (foreign-code "C_clear_trace_buffer();")
-		      (set! ##sys#unbound-in-eval '())
-		      (receive result (evaluator exp)
-			(when (and ##sys#warnings-enabled (pair? ##sys#unbound-in-eval))
-			  (let loop ((vars ##sys#unbound-in-eval)
-				     (u '()))
-			    (cond ((null? vars)
-				   (when (pair? u)
-				     (when ##sys#notices-enabled
-				       (##sys#notice
-					"the following toplevel variables are referenced but unbound:\n")
-				       (for-each
-					(lambda (v)
-					  (##sys#print "  " #f ##sys#standard-error)
-					  (##sys#print (car v) #t ##sys#standard-error)
-					  (when (cdr v)
-					    (##sys#print " (in " #f ##sys#standard-error)
-					    (##sys#print (cdr v) #t ##sys#standard-error)
-					    (##sys#write-char-0 #\) ##sys#standard-error))
-					  (##sys#write-char-0 #\newline ##sys#standard-error))
-					u)
-				       (##sys#flush-output ##sys#standard-error))))
-				  ((or (memq (caar vars) u)
-				       (##core#inline "C_u_i_namespaced_symbolp" (caar vars))
-				       (##sys#symbol-has-toplevel-binding? (caar vars)))
-				   (loop (cdr vars) u))
-				  (else (loop (cdr vars) (cons (car vars) u)))) 9))
-			(write-results result)
-			(loop)))))))
+		(let* ((read (lambda () (##sys#read/source-info ##sys#standard-input)))
+		       (exp ((or ##sys#repl-read-hook read))))
+		  (unless (eof-object? exp)
+		    (when (eq? #\newline (##sys#peek-char-0 ##sys#standard-input))
+		      (##sys#read-char-0 ##sys#standard-input))
+		    (foreign-code "C_clear_trace_buffer();")
+		    (set! ##sys#unbound-in-eval '())
+		    (receive result (evaluator exp)
+		      (when (and ##sys#warnings-enabled (pair? ##sys#unbound-in-eval))
+			(let loop ((vars ##sys#unbound-in-eval)
+				   (u '()))
+			  (cond ((null? vars)
+				 (when (pair? u)
+				   (when ##sys#notices-enabled
+				     (##sys#notice
+				      "the following toplevel variables are referenced but unbound:\n")
+				     (for-each
+				      (lambda (v)
+					(##sys#print "  " #f ##sys#standard-error)
+					(##sys#print (car v) #t ##sys#standard-error)
+					(when (cdr v)
+					  (##sys#print " (in " #f ##sys#standard-error)
+					  (##sys#print (cdr v) #t ##sys#standard-error)
+					  (##sys#write-char-0 #\) ##sys#standard-error))
+					(##sys#write-char-0 #\newline ##sys#standard-error))
+				      u)
+				     (##sys#flush-output ##sys#standard-error))))
+				((or (memq (caar vars) u)
+				     (##core#inline "C_u_i_namespaced_symbolp" (caar vars))
+				     (##sys#symbol-has-toplevel-binding? (caar vars)))
+				 (loop (cdr vars) u))
+				(else (loop (cdr vars) (cons (car vars) u)))) 9))
+		      (write-results result)
+		      (loop))))))
 	    (lambda ()
 	      (load-verbose lv)
 	      (set! quit-hook qh)

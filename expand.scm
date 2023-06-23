@@ -732,7 +732,7 @@
 	   (lp (cdr lst) prev))
 	  (else (lp (cdr lst) lst)))))
 
-(define (##sys#read/source-info-hook class data val)	; Used here, in core.scm and in csi.scm
+(define (read/source-info-hook class data val)
   (when (and (eq? 'list-info class) (symbol? (car data)))
     (let ((old-value (or (hash-table-ref ##sys#line-number-database (car data)) '())))
       (assq/drop-bwp! (car data) old-value) ;; Hack to clean out garbage values
@@ -744,9 +744,14 @@
 	old-value ) )) )
   data)
 
+(define-constant line-number-database-size 997) ; Copied from core.scm
+
 ;; TODO: Should we export this, or something like it?
-(define (##sys#read/source-info in)		; Used only in batch-driver
-  (##sys#read in ##sys#read/source-info-hook) )
+(define (##sys#read/source-info in)
+  ;; Initialize line number db on first use
+  (unless ##sys#line-number-database
+    (set! ##sys#line-number-database (make-vector line-number-database-size '())))
+  (##sys#read in read/source-info-hook) )
 
 
 (define (get-line-number sexp)
