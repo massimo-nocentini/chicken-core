@@ -612,6 +612,11 @@ EOF
 
 ;;; Read syntax:
 
+;; This code is too complicated. We try to avoid mapping over
+;; a potentially large list anc creating lots of garbage in the
+;; process, therefore the final result list is constructed 
+;; via destructive updates and thus rather inelegant yet avoids
+;; any re-consing unless elements are non-numeric.
 (define (canonicalize-number-list! lst1)
   (let loop ((lst lst1) (prev #f))
     (if (and (##core#inline "C_blockp" lst) 
@@ -619,7 +624,7 @@ EOF
         (let retry ((x (##sys#slot lst 0)))
           (cond ((char? x) (retry (##sys#char->utf8-string x)))
                 ((string? x)
-                 (if (eq? x "")
+                 (if (zero? (string-length x))
                      (loop (##sys#slot lst 1) prev)
                      (let loop2 ((ns (string->list x)) (prev prev))
                        (let ((n (cons (char->integer (##sys#slot ns 0))
@@ -632,7 +637,9 @@ EOF
                                (loop (##sys#slot lst 1) n)
                                (loop2 (##sys#slot ns 1) n)))))))
                 (else (loop (##sys#slot lst 1) lst))))
-        lst1)))
+        (cond (prev (##sys#setslot prev 1 '())
+                    lst1)
+              (else '())))))
 
 (set! ##sys#user-read-hook
   (let ([old-hook ##sys#user-read-hook]
