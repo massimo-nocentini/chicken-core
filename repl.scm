@@ -69,7 +69,6 @@
 
 (define repl
   (let ((eval eval)
-	(read read)
 	(call-with-current-continuation call-with-current-continuation)
 	(string-append string-append))
     (lambda (#!optional (evaluator eval))
@@ -131,13 +130,13 @@
 		       (write-err args)))
 		 (set! ##sys#repl-recent-call-chain
 		   (let ((ct (or (and-let* ((lexn ##sys#last-exception) ;XXX not really right
-			  	           ((##sys#structure? lexn 'condition))
-				           (a (member '(exn . call-chain) (##sys#slot lexn 2))))
+			  	            ((##sys#structure? lexn 'condition))
+				            (a (member '(exn . call-chain) (##sys#slot lexn 2))))
 			           (cadr a))
                                  (get-call-chain 0 ##sys#current-thread))))
 	             (##sys#really-print-call-chain
-		       ##sys#standard-error ct
-		       "\n\tCall history:\n")
+		      ##sys#standard-error ct
+		      "\n\tCall history:\n")
 		     ct))
 		 (flush-output ##sys#standard-error))))
 	    (lambda ()
@@ -151,7 +150,8 @@
 		      (resetports)
 		      (c #f)))))
 		(##sys#read-prompt-hook)
-		(let ((exp ((or ##sys#repl-read-hook read))))
+		(let* ((read (lambda () (##sys#read/source-info ##sys#standard-input)))
+		       (exp ((or ##sys#repl-read-hook read))))
 		  (unless (eof-object? exp)
 		    (when (eq? #\newline (##sys#peek-char-0 ##sys#standard-input))
 		      (##sys#read-char-0 ##sys#standard-input))

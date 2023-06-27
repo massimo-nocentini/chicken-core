@@ -48,7 +48,8 @@
 	chicken.fixnum
 	chicken.internal
 	chicken.keyword
-	chicken.platform)
+	chicken.platform
+	chicken.string)
 
 (include "common-declarations.scm")
 (include "mini-srfi-1.scm")
@@ -651,9 +652,12 @@
       (list 'define name exp) ) ) )
 
 
-;;; General syntax checking routine:
+;;; Line-number database management:
 
 (define ##sys#line-number-database #f)
+
+;;; General syntax checking routine:
+
 (define ##sys#syntax-error-culprit #f)
 (define ##sys#syntax-context '())
 
@@ -712,6 +716,44 @@
 			   (else (loop (cdr cx))))))))
 	  (##sys#syntax-error-hook (get-output-string out))))))
 
+;;; Hook for source information
+
+(define (alist-weak-cons k v lst)
+  (cons (##core#inline_allocate ("C_a_i_weak_cons" 3) k v) lst))
+
+(define (assq/drop-bwp! x lst)
+  (let lp ((lst lst)
+	   (prev #f))
+    (cond ((null? lst) #f)
+	  ((eq? x (caar lst)) (car lst))
+	  ((and prev
+		(##core#inline "C_bwpp" (caar lst)))
+	   (set-cdr! prev (cdr lst))
+	   (lp (cdr lst) prev))
+	  (else (lp (cdr lst) lst)))))
+
+(define (read/source-info-hook class data val)
+  (when (and (eq? 'list-info class) (symbol? (car data)))
+    (let ((old-value (or (hash-table-ref ##sys#line-number-database (car data)) '())))
+      (assq/drop-bwp! (car data) old-value) ;; Hack to clean out garbage values
+      (hash-table-set!
+       ##sys#line-number-database
+       (car data)
+       (alist-weak-cons
+	data (conc (or ##sys#current-source-filename "<stdin>") ":" val)
+	old-value ) )) )
+  data)
+
+(define-constant line-number-database-size 997) ; Copied from core.scm
+
+;; TODO: Should we export this, or something like it?
+(define (##sys#read/source-info in)
+  ;; Initialize line number db on first use
+  (unless ##sys#line-number-database
+    (set! ##sys#line-number-database (make-vector line-number-database-size '())))
+  (##sys#read in read/source-info-hook) )
+
+
 (define (get-line-number sexp)
   (and ##sys#line-number-database
        (pair? sexp)
@@ -719,9 +761,48 @@
 	 (and (symbol? head)
 	      (cond ((hash-table-ref ##sys#line-number-database head)
 		     => (lambda (pl)
-			  (let ((a (assq sexp pl)))
+			  (let ((a (assq/drop-bwp! sexp pl)))
 			    (and a (cdr a)))))
 		    (else #f))))))
+
+;; TODO: Needs a better name - it extracts the name(?) and the source expression
+(define (##sys#get-line-2 exp)
+  (let* ((name (car exp))
+	 (lst (hash-table-ref ##sys#line-number-database name)))
+    (cond ((and lst (assq/drop-bwp! exp (cdr lst)))
+	   => (lambda (a) (values (car lst) (cdr a))) )
+	  (else (values name #f)) ) ) )
+
+(define (##sys#display-line-number-database)
+  (hash-table-for-each
+   (lambda (key val)
+     (when val
+       (let ((port (current-output-port)))
+	 (##sys#print key #t port)
+	 (##sys#print " " #f port)
+	 (##sys#print (map cdr val) #t port)
+	 (##sys#print "\n" #f port))) )
+   ##sys#line-number-database) )
+
+;;; Traverse expression and update line-number db with all contained calls:
+
+(define (##sys#update-line-number-database! exp ln)
+  (define (mapupdate xs)
+    (let loop ((xs xs))
+      (when (pair? xs)
+	(walk (car xs))
+	(loop (cdr xs)) ) ) )
+  (define (walk x)
+    (cond ((not (pair? x)))
+	  ((symbol? (car x))
+	   (let* ((name (car x))
+		  (old (or (hash-table-ref ##sys#line-number-database name) '())))
+	     (unless (assq x old)
+	       (hash-table-set! ##sys#line-number-database name (alist-cons x ln old)))
+	     (mapupdate (cdr x)) ) )
+	  (else (mapupdate x)) ) )
+  (walk exp) )
+
 
 (define-constant +default-argument-count-limit+ 99999)
 
@@ -822,7 +903,7 @@
 		    (cur (or (hash-table-ref ##sys#line-number-database name) '())) )
 	   (unless (assq new cur)
 	     (hash-table-set! ##sys#line-number-database name
-			      (alist-cons new ln cur))))
+			      (alist-weak-cons new ln cur))))
 	 new)
        (assert (list? se) "not a list" se) ;XXX remove later
        (define (rename sym)

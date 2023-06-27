@@ -109,10 +109,11 @@
 		((eq? x (##sys#slot lst 0)) i)
 		(else (loop (##sys#slot lst 1) (fx+ i 1))) ) ) )
 
-      (define (emit-trace-info tf info cntr e v) 
+      (define (emit-trace-info tf ln info cntr e v)
 	(when tf
 	  (##core#inline 
-	   "C_emit_eval_trace_info" 
+	   "C_emit_trace_info"
+	   ln
 	   info
 	   (##sys#make-structure 'frameinfo cntr e v)
 	   (thread-id ##sys#current-thread) ) ) )
@@ -120,13 +121,21 @@
       (define (emit-syntax-trace-info tf info cntr) 
 	(when tf
 	  (##core#inline
-	   "C_emit_syntax_trace_info"
+	   "C_emit_trace_info"
+	   (or (get-line-number info) "<syntax>")
 	   info
 	   cntr
            (thread-id ##sys#current-thread) ) ) )
 	
       (define (decorate p ll h cntr)
 	(eval-decorator p ll h cntr))
+
+      (define (handle-expansion-result outer-ln)
+	(lambda (input output)
+	  (and-let* (((not (eq? input output)))
+		     (ln (or (get-line-number input) outer-ln)))
+	    (##sys#update-line-number-database! output ln))
+	  output))
 
       (define (compile x e h tf cntr tl?)
 	(cond ((keyword? x) (lambda v x))
@@ -193,7 +202,10 @@
 	       (##sys#syntax-error/context "illegal non-atomic object" x)]
 	      [(symbol? (##sys#slot x 0))
 	       (emit-syntax-trace-info tf x cntr)
-	       (let ((x2 (expand x (##sys#current-environment))))
+	       (let* ((ln (get-line-number x))
+		      (x2 (fluid-let ((chicken.syntax#expansion-result-hook
+				       (handle-expansion-result ln)))
+			    (expand x (##sys#current-environment)))))
 		 (d `(EVAL/EXPANDED: ,x2))
 		 (if (not (eq? x2 x))
 		     (compile x2 e h tf cntr tl?)
@@ -677,37 +689,38 @@
 		       (compile (##sys#slot x 0) e #f tf cntr #f)))
 	       (args (##sys#slot x 1))
 	       (argc (checked-length args))
-	       (info x) )
+	       (info x)
+	       (ln (or (get-line-number info) "<eval>")))
 	  (case argc
 	    ((#f) (##sys#syntax-error/context "malformed expression" x))
 	    ((0) (lambda (v)
-		   (emit-trace-info tf info cntr e v)
+		   (emit-trace-info tf ln info cntr e v)
 		   ((##core#app fn v))))
 	    ((1) (let ((a1 (compile (##sys#slot args 0) e #f tf cntr #f)))
 		   (lambda (v)
-		     (emit-trace-info tf info cntr e v)
+		     (emit-trace-info tf ln info cntr e v)
 		     ((##core#app fn v) (##core#app a1 v))) ) )
 	    ((2) (let* ((a1 (compile (##sys#slot args 0) e #f tf cntr #f))
 			(a2 (compile (##core#inline "C_u_i_list_ref" args 1) e #f tf cntr #f)) )
 		   (lambda (v)
-		     (emit-trace-info tf info cntr e v)
+		     (emit-trace-info tf ln info cntr e v)
 		     ((##core#app fn v) (##core#app a1 v) (##core#app a2 v))) ) )
 	    ((3) (let* ((a1 (compile (##sys#slot args 0) e #f tf cntr #f))
 			(a2 (compile (##core#inline "C_u_i_list_ref" args 1) e #f tf cntr #f))
 			(a3 (compile (##core#inline "C_u_i_list_ref" args 2) e #f tf cntr #f)) )
 		   (lambda (v)
-		     (emit-trace-info tf info cntr e v)
+		     (emit-trace-info tf ln info cntr e v)
 		     ((##core#app fn v) (##core#app a1 v) (##core#app a2 v) (##core#app a3 v))) ) )
 	    ((4) (let* ((a1 (compile (##sys#slot args 0) e #f tf cntr #f))
 			(a2 (compile (##core#inline "C_u_i_list_ref" args 1) e #f tf cntr #f))
 			(a3 (compile (##core#inline "C_u_i_list_ref" args 2) e #f tf cntr #f))
 			(a4 (compile (##core#inline "C_u_i_list_ref" args 3) e #f tf cntr #f)) )
 		   (lambda (v)
-		     (emit-trace-info tf info cntr e v)
+		     (emit-trace-info tf ln info cntr e v)
 		     ((##core#app fn v) (##core#app a1 v) (##core#app a2 v) (##core#app a3 v) (##core#app a4 v))) ) )
 	    (else (let ((as (##sys#map (lambda (a) (compile a e #f tf cntr #f)) args)))
 		    (lambda (v)
-		      (emit-trace-info tf info cntr e v)
+		      (emit-trace-info tf ln info cntr e v)
 		      (apply (##core#app fn v) (##sys#map (lambda (a) (##core#app a v)) as))) ) ) ) ) )
 
       (compile exp env #f (fx> (##sys#eval-debug-level) 0) cntr tl?) ) ) )
@@ -1012,8 +1025,7 @@
   (##sys#make-c-string (##sys#string-append "C_" (toplevel name)) loc))
 
 (define load/internal
-  (let ((read read)
-	(write write)
+  (let ((write write)
 	(display display)
 	(newline newline)
 	(eval eval)
@@ -1077,8 +1089,8 @@
 			  "unable to load compiled module - "
 			  (or _dlerror "unknown reason"))
 			 fname)))
-		    (let ((x1 (read in)))
-		      (do ((x x1 (read in)))
+		    (let ((x1 (##sys#read/source-info in)))
+		      (do ((x x1 (##sys#read/source-info in)))
 			  ((eof-object? x))
 			(when printer (printer x))
 			(##sys#call-with-values
@@ -1151,8 +1163,7 @@
   (load-unit unit-name lib 'load-library))
 
 (define ##sys#include-forms-from-file
-  (let ((with-input-from-file with-input-from-file)
-	(read read)
+  (let ((call-with-input-file call-with-input-file)
 	(reverse reverse))
     (lambda (filename source k)
       (let ((path (##sys#resolve-include-filename filename #t #f source)))
@@ -1160,10 +1171,10 @@
 	  (##sys#signal-hook #:file-error 'include "cannot open file" filename))
 	(when (load-verbose)
 	  (print "; including " path " ..."))
-	(with-input-from-file path
-	  (lambda ()
+	(call-with-input-file path
+	  (lambda (in)
 	    (fluid-let ((##sys#current-source-filename path))
-	      (do ((x (read) (read))
+	      (do ((x (##sys#read/source-info in) (##sys#read/source-info in))
 		   (xs '() (cons x xs)))
 		  ((eof-object? x)
 		   (k (reverse xs)))))))))))

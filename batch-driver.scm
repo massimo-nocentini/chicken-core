@@ -27,7 +27,7 @@
 
 (declare
   (unit batch-driver)
-  (uses extras data-structures pathname
+  (uses extras data-structures pathname expand
 	support compiler-syntax compiler optimizer internal
 	;; TODO: Backend should be configurable
 	scrutinizer lfa2 c-platform c-backend user-pass))
@@ -608,7 +608,7 @@
 			       (in (check-and-open-input-file f)) )
 			  (fluid-let ((##sys#current-source-filename f))
 			    (let loop ()
-			      (let ((x (read/source-info in)))
+			      (let ((x (##sys#read/source-info in)))
 				(cond ((eof-object? x) 
 				       (close-checked-input-file in f) )
 				      (else
@@ -670,7 +670,7 @@
    	     (when (debugging '|N| "real name table:")
 	       (display-real-name-table) )
 	     (when (debugging 'n "line number database:")
-	       (display-line-number-database) )
+	       (##sys#display-line-number-database) )
 
 	     (set! ##sys#line-number-database line-number-database-2)
 	     (set! line-number-database-2 #f)

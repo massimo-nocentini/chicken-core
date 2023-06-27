@@ -40,9 +40,7 @@
      canonicalize-begin-body string->expr llist-length llist-match?
      expand-profile-lambda reset-profile-info-vector-name!
      profiling-prelude-exps db-get db-get-all db-put! collect! db-get-list
-     get-line get-line-2 display-line-number-database
-     make-node node? node-class node-class-set!
-     node-parameters node-parameters-set!
+     make-node node? node-class node-class-set! node-parameters node-parameters-set!
      node-subexpressions node-subexpressions-set! varnode qnode
      build-node-graph build-expression-tree fold-boolean inline-lambda-bindings
      tree-copy copy-node! copy-node emit-global-inline-file load-inline-file
@@ -65,7 +63,7 @@
      real-name real-name2 display-real-name-table
      source-info->string source-info->line source-info->name
      call-info constant-form-eval maybe-constant-fold-call
-     dump-nodes read-info-hook read/source-info big-fixnum? small-bignum?
+     dump-nodes big-fixnum? small-bignum?
      hide-variable export-variable variable-hidden? variable-visible?
      mark-variable variable-mark intrinsic? predicate? foldable?
      load-identifier-database
@@ -448,25 +446,6 @@
     (or x '())))
 
 
-;;; Line-number database management:
-
-(define (get-line exp)
-  (db-get ##sys#line-number-database (car exp) exp) )
-
-(define (get-line-2 exp)
-  (let* ((name (car exp))
-	 (lst (hash-table-ref ##sys#line-number-database name)))
-    (cond ((and lst (assq exp (cdr lst)))
-	   => (lambda (a) (values (car lst) (cdr a))) )
-	  (else (values name #f)) ) ) )
-
-(define (display-line-number-database)
-  (hash-table-for-each
-   (lambda (key val)
-     (when val (printf "~S ~S~%" key (map cdr val))) )
-   ##sys#line-number-database) )
-
-
 ;;; Node creation and -manipulation:
 
 ;; Note: much of this stuff will be overridden by the inline-definitions in "tweaks.scm".
@@ -567,7 +546,7 @@
 	       ((##core#app)
 		(make-node '##core#call (list #t) (map walk (cdr x))) )
 	       (else
-		(receive (name ln) (get-line-2 x)
+		(receive (name ln) (##sys#get-line-2 x)
 		  (make-node
 		   '##core#call
 		   (list (cond [(variable-mark name '##compiler#always-bound-to-procedure)
@@ -1674,23 +1653,6 @@
 	  (write-char #\]) ) )
       (write-char #\>) ) )
   (newline) )
-
-
-;;; Hook for source information
-
-(define (read-info-hook class data val)	; Used here and in compiler.scm
-  (when (and (eq? 'list-info class) (symbol? (car data)))
-    (hash-table-set!
-     ##sys#line-number-database
-     (car data)
-     (alist-cons 
-      data (conc ##sys#current-source-filename ":" val)
-      (or (hash-table-ref ##sys#line-number-database (car data))
-	  '() ) ) ) )
-  data)
-
-(define (read/source-info in)		; Used only in batch-driver
-  (##sys#read in read-info-hook) )
 
 
 ;;; "#> ... <#" syntax:

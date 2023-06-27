@@ -26,7 +26,7 @@
 
 (declare 
   (unit compiler-syntax)
-  (uses extras support compiler))
+  (uses expand extras support compiler))
 
 (module chicken.compiler.compiler-syntax
     (compiler-syntax-statistics)
@@ -36,7 +36,8 @@
 	chicken.compiler.support
 	chicken.compiler.core
 	chicken.fixnum
-	chicken.format)
+	chicken.format
+	chicken.syntax)
 
 (include "tweaks.scm")
 (include "mini-srfi-1.scm")
@@ -197,7 +198,7 @@
 	  (let ((fstr (if (string? (car args)) (car args) (cadar args)))
 		(args (cdr args)))
 	    (define (fail ret? msg . args)
-	      (let ((ln (get-line x)))
+	      (let ((ln (get-line-number x)))
 		(warning 
 		 (sprintf "~a`~a', in format string ~s, ~?" 
 		   (if ln (sprintf "(~a) " ln) "")

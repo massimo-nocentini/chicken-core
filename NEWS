@@ -53,6 +53,10 @@
   - Default "cc" on BSD systems for building CHICKEN to avoid ABI problems
     when linking with C++ code.
 
+- Runtime system
+  - Make line numbers available for error output and during syntax expansion
+    in the interpreter as well as the compiler.
+
 5.3.0
 
 - Core libraries
