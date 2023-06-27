@@ -1,6 +1,6 @@
 ;; weak-pointer-test.scm
 
-(import (chicken gc) (chicken port))
+(import (chicken gc) (chicken port) (chicken locative))
 
 (include "test.scm")
 
@@ -130,5 +130,78 @@
     (test-equal "object in third weak cons' car is identical to the other reference" (car ref-c) held-onto-vector)
     (test-assert "car of third weak cons is not a broken weak pair" (not (bwp-object? (car ref-c))))
     (test-assert "cdr of third weak cons is not a broken weak pair" (not (bwp-object? (cdr ref-c))))))
+
+
+(test-group "Testing that strong locatives get their object updated"
+  (gc #t) ; Improve chances we don't get a minor GC in between
+  (let* ((not-held-onto-value (vector 42))
+	 (held-onto-vector (vector 'this-one-stays))
+	 (vec-0 (vector 0))
+	 (vec-1 (vector 1))
+	 (vec-2 (vector 2))
+
+	 (nested-not-held-onto-value (vector vec-0 vec-1 vec-2))
+	 (nested-held-onto-value (vector (vector 'x) (vector 'y) (vector 'z)))
+	 (vec-ohai (vector 'ohai))
+	 (vec-fubar (vector 'fubar))
+
+	 (loc1 (make-locative not-held-onto-value 0))
+	 (loc2 (make-locative (vector 'ohai 'fubar) 1))
+	 (loc3 (make-locative held-onto-vector 0))
+
+	 (loc4 (make-locative nested-not-held-onto-value 1))
+	 (loc5 (make-locative (vector vec-ohai vec-fubar) 1))
+	 (loc6 (make-locative nested-held-onto-value 1)))
+
+    ;; break other references to the values
+    (set! not-held-onto-value #f)
+    (set! nested-not-held-onto-value #f)
+
+    (gc)
+
+    (test-equal "First locative is updated" (locative-ref loc1) 42)
+    (test-equal "Second locative is updated" (locative-ref loc2) 'fubar)
+    (test-equal "Third locative is updated" (locative-ref loc3) 'this-one-stays)
+
+    (test-equal "Fourth locative is updated" (locative-ref loc4) vec-1)
+    (test-equal "Fifth locative is updated" (locative-ref loc5) vec-fubar)
+    (test-equal "Sixth locative is updated" (locative-ref loc6) (vector-ref nested-held-onto-value 1))))
+
+
+(test-group "Testing that weak locatives get their object reclaimed"
+  (gc #t) ; Improve chances we don't get a minor GC in between
+  (let* ((not-held-onto-value (vector 42))
+	 (held-onto-vector (vector 'this-one-stays))
+	 (vec-0 (vector 0))
+	 (vec-1 (vector 1))
+	 (vec-2 (vector 2))
+
+	 (nested-not-held-onto-value (vector vec-0 vec-1 vec-2))
+	 (nested-held-onto-value (vector (vector 'x) (vector 'y) (vector 'z)))
+	 (vec-ohai (vector 'ohai))
+	 (vec-fubar (vector 'fubar))
+
+	 (loc1 (make-weak-locative not-held-onto-value 0))
+	 (loc2 (make-weak-locative (vector 'ohai 'fubar) 1))
+	 (loc3 (make-weak-locative held-onto-vector 0))
+
+	 (loc4 (make-weak-locative nested-not-held-onto-value 1))
+	 (loc5 (make-weak-locative (vector vec-ohai vec-fubar) 1))
+	 (loc6 (make-weak-locative nested-held-onto-value 1)))
+
+    ;; break other references to the values
+    (set! not-held-onto-value #f)
+    (set! nested-not-held-onto-value #f)
+
+    (gc)
+
+    (test-error "First locative is reclaimed" (locative-ref loc1))
+    (test-error "Second locative is reclaimed" (locative-ref loc2))
+    ;; NOTE: It seems we have to go "through" the original vector to ensure reference is kept
+    (test-equal "Third locative is NOT reclaimed" (locative-ref loc3) (vector-ref held-onto-vector 0))
+
+    (test-error "Fourth locative is reclaimed" (locative-ref loc4))
+    (test-error "Fifth locative is reclaimed" (locative-ref loc5))
+    (test-equal "Sixth locative is NOT reclaimed" (locative-ref loc6) (vector-ref nested-held-onto-value 1))))
 
 (test-exit)

@@ -153,7 +153,6 @@ static C_TLS int timezone;
 #define DEFAULT_HEAP_MIN_FREE          (4 * 1024 * 1024)
 #define HEAP_SHRINK_COUNTS             10
 #define DEFAULT_FORWARDING_TABLE_SIZE  32
-#define DEFAULT_LOCATIVE_TABLE_SIZE    32
 #define DEFAULT_COLLECTIBLES_SIZE      1024
 #define DEFAULT_TRACE_BUFFER_SIZE      16
 #define MIN_TRACE_BUFFER_SIZE          3
@@ -404,8 +403,8 @@ static C_TLS C_word
   **mutation_stack_limit,
   **mutation_stack_top,
   *stack_bottom,
-  *locative_table,
   weak_pair_chain,
+  locative_chain,
   error_location,
   interrupt_hook_symbol,
   current_thread_symbol,
@@ -470,8 +469,6 @@ static C_TLS double
 static C_TLS LF_LIST *lf_list;
 static C_TLS int signal_mapping_table[ NSIG ];
 static C_TLS int
-  locative_table_size,
-  locative_table_count,
   live_finalizer_count,
   allocated_finalizer_count,
   pending_finalizer_count,
@@ -546,8 +543,8 @@ static void C_fcall mark_nested_objects(C_byte *heap_scan_top, C_byte *tgt_space
 static void C_fcall mark_live_objects(C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
 static void C_fcall mark_live_heap_only_objects(C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
 static C_word C_fcall intern0(C_char *name) C_regparm;
-static void C_fcall update_locative_table(int mode) C_regparm;
 static void C_fcall update_weak_pairs(int mode) C_regparm;
+static void C_fcall update_locatives(int mode) C_regparm;
 static LF_LIST *find_module_handle(C_char *name);
 static void set_profile_timer(C_uword freq);
 static void take_profile_sample();
@@ -761,14 +758,6 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
   *forwarding_table = 0;
   forwarding_table_size = DEFAULT_FORWARDING_TABLE_SIZE;
 
-  /* Initialize locative table: */
-  locative_table = (C_word *)C_malloc(DEFAULT_LOCATIVE_TABLE_SIZE * sizeof(C_word));
-   
-  if(locative_table == NULL) return 0;
- 
-  locative_table_size = DEFAULT_LOCATIVE_TABLE_SIZE;
-  locative_table_count = 0;
-
   /* Setup collectibles: */
   collectibles = (C_word **)C_malloc(sizeof(C_word *) * DEFAULT_COLLECTIBLES_SIZE);
 
@@ -834,6 +823,7 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
   current_module_handle = NULL;
   callback_continuation_level = 0;
   weak_pair_chain = (C_word)NULL;
+  locative_chain = (C_word)NULL;
   gc_ms = 0;
   if (!random_state_initialized) {
     srand(time(NULL));
@@ -3443,6 +3433,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
   tgt_space_top = &C_fromspace_top;
   tgt_space_limit = C_fromspace_limit;
   weak_pair_chain = (C_word)NULL;
+  locative_chain = (C_word)NULL;
 
   start = C_fromspace_top;
 
@@ -3479,6 +3470,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     tgt_space_top = &tospace_top;
     tgt_space_limit= tospace_limit;
     weak_pair_chain = (C_word)NULL; /* only chain up weak pairs forwarded into tospace */
+    locative_chain = (C_word)NULL;  /* same for locatives */
 
     cell.val = "GC_MAJOR";
     C_debugger(&cell, 0, NULL);
@@ -3505,7 +3497,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     count = (C_uword)C_fromspace_top - (C_uword)start;
     ++gc_count_1;
     ++gc_count_1_total;
-    update_locative_table(GC_MINOR);
+    update_locatives(GC_MINOR);
     update_weak_pairs(GC_MINOR);
   }
   else {
@@ -3593,7 +3585,7 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
       }
     }
 
-    update_locative_table(gc_mode);
+    update_locatives(gc_mode);
     update_weak_pairs(gc_mode);
 
     count = (C_uword)tospace_top - (C_uword)tospace_start; // Actual used, < heap_size/2
@@ -3680,8 +3672,6 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     C_dbg("GC", C_text("   to\t" UWORD_FORMAT_STRING "\t" UWORD_FORMAT_STRING "\t" UWORD_FORMAT_STRING" \n"), 
 	  (C_uword)tospace_start, (C_uword)tospace_top, 
 	  (C_uword)tospace_limit);
-
-    C_dbg("GC", C_text("%d locatives (from %d)\n"), locative_table_count, locative_table_size);
   }
 
   /* GC will have copied any live objects out of scratch space: clear it */
@@ -3911,6 +3901,9 @@ static C_regparm void C_fcall really_mark(C_word *x, C_byte *tgt_space_start, C_
   if (h == C_WEAK_PAIR_TAG && !C_immediatep(p2->data[0])) {
     p->data[0] = weak_pair_chain; /* "Recycle" the weak pair's CAR to point to prev head */
     weak_pair_chain = (C_word)p;  /* Make this fwd ptr the new head of the weak pair chain */
+  } else if (h == C_LOCATIVE_TAG) {
+    p->data[0] = locative_chain; /* "Recycle" the locative pointer field to point to prev head */
+    locative_chain = (C_word)p;  /* Make this fwd ptr the new head of the locative chain */
   }
 }
 
@@ -3996,6 +3989,7 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
   new_tospace_limit = new_tospace_start + size;
   start = new_tospace_top;
   weak_pair_chain = (C_word)NULL; /* only chain up weak pairs forwarded into new heap */
+  locative_chain = (C_word)NULL;  /* same for locatives */
 
   /* Mark standard live objects in nursery and heap */
   mark_live_objects(new_tospace_start, &new_tospace_top, new_tospace_limit);
@@ -4012,14 +4006,9 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
     remark(&gcrp->value);
   }
 
-  /* Mark locative table (like finalizers, all objects are kept alive in GC_REALLOC): */
-  for(i = 0; i < locative_table_count; ++i)
-    remark(&locative_table[ i ]);
-
-  update_locative_table(GC_REALLOC);
-
   /* Mark nested values in already moved (marked) blocks in breadth-first manner: */
   mark_nested_objects(start, new_tospace_start, &new_tospace_top, new_tospace_limit);
+  update_locatives(GC_REALLOC);
   update_weak_pairs(GC_REALLOC);
 
   heap_free (heapspace1, heapspace1_size);
@@ -4050,106 +4039,6 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
   if(C_post_gc_hook != NULL) C_post_gc_hook(GC_REALLOC, 0);
 }
 
-
-C_regparm void C_fcall update_locative_table(int mode)
-{
-  int i, hi = 0, invalidated = 0;
-  C_header h;
-  C_word loc, obj, obj2, offset, loc2, ptr;
-  C_uword ptr2;
-
-  for(i = 0; i < locative_table_count; ++i) {
-    loc = locative_table[ i ];
-
-    if(loc != C_SCHEME_UNDEFINED) {
-      h = C_block_header(loc);
-
-      switch(mode) {
-      case GC_MINOR:
-        if(is_fptr(h))		/* forwarded? update l-table entry */
-          loc = locative_table[ i ] = fptr_to_ptr(h);
-        /* otherwise it must have been GC'd (since this is a minor one) */
-        else if(C_in_stackp(loc)) {
-          locative_table[ i ] = C_SCHEME_UNDEFINED;
-          C_set_block_item(loc, 0, 0);
-	  ++invalidated;
-          break;
-        }
-
-        /* forwarded. fix up ptr and check pointed-at object for being forwarded... */
-        ptr = C_block_item(loc, 0);
-        offset = C_unfix(C_block_item(loc, 1));
-        obj = ptr - offset;
-        h = C_block_header(obj);
-
-        if(is_fptr(h)) {	/* pointed-at object forwarded? update */
-          C_set_block_item(loc, 0, (C_uword)fptr_to_ptr(h) + offset);
-	  hi = i + 1;
-	}
-        else if(C_in_stackp(obj)) { /* pointed-at object GC'd, locative is invalid */
-          locative_table[ i ] = C_SCHEME_UNDEFINED;
-          C_set_block_item(loc, 0, 0);
-        }
-	else hi = i + 1;
-        
-        break;
-
-      case GC_MAJOR:
-        if(is_fptr(h))		/* forwarded? update l-table entry */
-          loc = locative_table[ i ] = fptr_to_ptr(h);
-        else {			/* otherwise, throw away */
-          locative_table[ i ] = C_SCHEME_UNDEFINED;
-          C_set_block_item(loc, 0, 0);
-	  ++invalidated;
-          break;
-        }
-
-        h = C_block_header(loc);
-        
-        if(is_fptr(h))		/* new instance is forwarded itself? update again */
-          loc = locative_table[ i ] = fptr_to_ptr(h);
-
-        ptr = C_block_item(loc, 0); /* fix up ptr */
-        offset = C_unfix(C_block_item(loc, 1));
-        obj = ptr - offset;
-        h = C_block_header(obj);
-
-        if(is_fptr(h)) {	/* pointed-at object has been forwarded? */
-	  ptr2 = (C_uword)fptr_to_ptr(h);
-	  h = C_block_header(ptr2);
-
-	  if(is_fptr(h)) {	/* secondary forwarding check for pointed-at object */
-	    ptr2 = (C_uword)fptr_to_ptr(h) + offset;
-	    C_set_block_item(loc, 0, ptr2);
-	  }
-	  else C_set_block_item(loc, 0, ptr2 + offset); /* everything's fine, fixup pointer */
-
-	  hi = i + 1;
-        }
-        else {
-          locative_table[ i ] = C_SCHEME_UNDEFINED; /* pointed-at object is dead */
-          C_set_block_item(loc, 0, 0);
-	  ++invalidated;
-        }
-        
-        break;
-
-      case GC_REALLOC:
-        ptr = C_block_item(loc, 0); /* just update ptr's pointed-at objects */
-        offset = C_unfix(C_block_item(loc, 1));
-        obj = ptr - offset;
-        remark(&obj);
-        C_set_block_item(loc, 0, obj + offset);        
-        break;
-      }
-    }
-  }
-
-  if(gc_report_flag && invalidated > 0)
-    C_dbg(C_text("GC"), C_text("locative-table entries reclaimed: %d\n"), invalidated);
-
-  if(mode != GC_REALLOC) locative_table_count = hi;
-}
 
 /* When a weak pair is encountered by GC, it turns it into a
  * forwarding reference as usual, but then it re-uses the now-defunct
@@ -4214,6 +4103,56 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
   weak_pair_chain = (C_word)NULL;
   if(gc_report_flag && weakn)
     C_dbg("GC", C_text("%d recoverable weak pairs found\n"), weakn);
+}
+
+/* Same as weak pairs (see above), but for locatives.  Note that this
+ * also includes non-weak locatives, as these point *into* an object,
+ * so the updating of that pointer is not handled by the GC proper
+ * (which only deals with full objects).
+ */
+static C_regparm void C_fcall update_locatives(int mode)
+{
+  int weakn = 0;
+  C_word p, loc, ptr, obj, h, offset;
+
+  for (p = locative_chain; p != (C_word)NULL; p = *((C_word *)C_data_pointer(p))) {
+    h = C_block_header(p);
+    assert(is_fptr(h));
+    loc = fptr_to_ptr(h);
+    assert(!is_fptr(C_block_header(loc)));
+
+    /* The locative object itself should be live */
+    assert((mode == GC_MINOR && !C_in_stackp(loc)) ||
+           (mode == GC_MAJOR && !C_in_stackp(loc) && !C_in_fromspacep(loc)) ||
+           (mode == GC_REALLOC && !C_in_stackp(loc) && !C_in_heapp(loc))); /* NB: *old* heap! */
+
+    ptr = C_block_item(loc, 0); /* fix up ptr */
+    offset = C_unfix(C_block_item(loc, 1));
+    obj = ptr - offset;
+
+    h = C_block_header(obj);
+    while (is_fptr(h)) {
+      obj = fptr_to_ptr(h);
+      h = C_block_header(obj);
+    }
+
+    /* If the object is unreferenced by anyone else, it wasn't moved by GC.  So drop it: */
+    if((mode == GC_MINOR && C_in_stackp(obj)) ||
+       (mode == GC_MAJOR && (C_in_stackp(obj) || C_in_fromspacep(obj))) ||
+       (mode == GC_REALLOC && (C_in_stackp(obj) || C_in_heapp(obj)))) { /* NB: *old* heap! */
+
+      /* NOTE: This does *not* use BROKEN_WEAK_POINTER.  This slot
+       * holds an unaligned raw C pointer, not a Scheme object */
+      C_set_block_item(loc, 0, 0);
+      ++weakn;
+    } else {
+      /* Might have moved, re-set the object to the target value */
+      C_set_block_item(loc, 0, obj + offset);
+    }
+  }
+  locative_chain = (C_word)NULL;
+  if(gc_report_flag && weakn)
+    C_dbg("GC", C_text("%d recoverable weak locatives found\n"), weakn);
 }
 
 
@@ -12067,26 +12006,6 @@ C_regparm C_word C_fcall C_a_i_make_locative(C_word **a, int c, C_word type, C_w
   loc[ 3 ] = type;
   loc[ 4 ] = C_truep(weak) ? C_SCHEME_FALSE : object;
 
-  for(i = 0; i < locative_table_count; ++i)
-    if(locative_table[ i ] == C_SCHEME_UNDEFINED) {
-      locative_table[ i ] = (C_word)loc;
-      return (C_word)loc;
-    }
-
-  if(locative_table_count >= locative_table_size) {
-    if(debug_mode == 2)
-      C_dbg(C_text("debug"), C_text("resizing locative table from %d to %d (count is %d)\n"), 
-	    locative_table_size, locative_table_size * 2, locative_table_count);
-
-    locative_table = (C_word *)C_realloc(locative_table, locative_table_size * 2 * sizeof(C_word));
-
-    if(locative_table == NULL) 
-      panic(C_text("out of memory - cannot resize locative table"));
-
-    locative_table_size *= 2;
-  }
-
-  locative_table[ locative_table_count++ ] = (C_word)loc;
   return (C_word)loc;
 }
 
