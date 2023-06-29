@@ -3727,14 +3727,13 @@ static C_regparm void C_fcall mark_live_objects(C_byte *tgt_space_start, C_byte 
 
 /*
  * Mark all live *heap* objects that don't need GC mode-specific
- * treatment.  Thus, no finalizers, GC roots or locative tables.
- *
- * Locative tables are excluded because these need to chase forwarding
- * chains to update the corresponding pointer, while dead objects must
- * be zeroed out with NULL pointers.
+ * treatment.  Thus, no finalizers or other GC roots.
  *
  * Finalizers are excluded because these need special handling:
  * finalizers referring to dead objects must be marked and queued.
+ * However, *pending* finalizers (for objects previously determined
+ * to be collectable) are marked so that these objects stick around
+ * until after the finalizer has been run.
  *
  * This function does not need to be called on a minor GC, since these
  * objects won't ever exist in the nursery.
