@@ -4975,7 +4975,7 @@ EOF
 	(let loop ((i 0))
 	  (if (fx>= i n)
 	      '()
-	      (let ((t (##sys#slot vec (fx+ i 3)))) ; thread id
+	      (let ((t (##sys#slot vec (fx+ i 4)))) ; thread id
 		(if (or (not t) (not thread) (eq? t-id t))
 		    (cons (vector
 			   (or (##sys#slot vec (fx+ i 1)) ; cooked_location
