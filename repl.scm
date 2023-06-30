@@ -36,7 +36,8 @@
 	chicken.base
 	chicken.eval
 	chicken.foreign
-	chicken.load)
+	chicken.load
+	chicken.syntax)
 
 (include "common-declarations.scm")
 
@@ -150,8 +151,8 @@
 		      (resetports)
 		      (c #f)))))
 		(##sys#read-prompt-hook)
-		(let* ((read (lambda () (##sys#read/source-info ##sys#standard-input)))
-		       (exp ((or ##sys#repl-read-hook read))))
+		;; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
+		(let ((exp ((or ##sys#repl-read-hook chicken.syntax#read/source-info))))
 		  (unless (eof-object? exp)
 		    (when (eq? #\newline (##sys#peek-char-0 ##sys#standard-input))
 		      (##sys#read-char-0 ##sys#standard-input))

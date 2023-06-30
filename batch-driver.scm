@@ -47,6 +47,7 @@
 	chicken.pretty-print
 	chicken.process-context
 	chicken.string
+	chicken.syntax
         chicken.port
 	chicken.time
         chicken.condition
@@ -608,7 +609,8 @@
 			       (in (check-and-open-input-file f)) )
 			  (fluid-let ((##sys#current-source-filename f))
 			    (let loop ()
-			      (let ((x (##sys#read/source-info in)))
+			      (let ((x (chicken.syntax#read/source-info in))) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
+
 				(cond ((eof-object? x) 
 				       (close-checked-input-file in f) )
 				      (else

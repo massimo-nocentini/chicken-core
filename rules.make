@@ -761,6 +761,7 @@ eval.c: eval.scm \
 		chicken.foreign.import.scm \
 		chicken.internal.import.scm \
 		chicken.keyword.import.scm \
+		chicken.syntax.import.scm \
 		chicken.platform.import.scm
 repl.c: repl.scm \
 		chicken.eval.import.scm

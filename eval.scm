@@ -906,6 +906,7 @@
 	chicken.foreign
 	chicken.internal
 	chicken.platform
+	chicken.syntax
 	chicken.time)
 
 (include "mini-srfi-1.scm")
@@ -1077,7 +1078,8 @@
 	     (fluid-let ((##sys#read-error-with-line-number #t)
 			 (##sys#current-load-filename fname)
 			 (##sys#current-source-filename fname))
-	       (let ((in (if fname (open-input-file fname) input)))
+	       (let ((in (if fname (open-input-file fname) input))
+		     (read/source-info chicken.syntax#read/source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
 		 (##sys#dynamic-wind
 		  (lambda () #f)
 		  (lambda ()
@@ -1089,8 +1091,8 @@
 			  "unable to load compiled module - "
 			  (or _dlerror "unknown reason"))
 			 fname)))
-		    (let ((x1 (##sys#read/source-info in)))
-		      (do ((x x1 (##sys#read/source-info in)))
+		    (let ((x1 (read/source-info in)))
+		      (do ((x x1 (read/source-info in)))
 			  ((eof-object? x))
 			(when printer (printer x))
 			(##sys#call-with-values
@@ -1166,7 +1168,8 @@
   (let ((call-with-input-file call-with-input-file)
 	(reverse reverse))
     (lambda (filename source k)
-      (let ((path (##sys#resolve-include-filename filename #t #f source)))
+      (let ((path (##sys#resolve-include-filename filename #t #f source))
+	    (read/source-info chicken.syntax#read/source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
 	(when (not path)
 	  (##sys#signal-hook #:file-error 'include "cannot open file" filename))
 	(when (load-verbose)
@@ -1174,7 +1177,7 @@
 	(call-with-input-file path
 	  (lambda (in)
 	    (fluid-let ((##sys#current-source-filename path))
-	      (do ((x (##sys#read/source-info in) (##sys#read/source-info in))
+	      (do ((x (read/source-info in) (read/source-info in))
 		   (xs '() (cons x xs)))
 		  ((eof-object? x)
 		   (k (reverse xs)))))))))))

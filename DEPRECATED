@@ -1,6 +1,11 @@
 Deprecated functions and variables
 ==================================
 
+5.3.1
+- read/source-info was moved from the internal, undocumented module
+  (chicken compiler support) into (chicken syntax).  Using it from
+  the former module is deprecated.
+
 5.2.1
 - current-milliseconds and its C implementations C_milliseconds and
   C_a_i_current_milliseconds have been deprecated in favor of

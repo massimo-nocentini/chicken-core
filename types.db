@@ -2359,6 +2359,7 @@
   chicken.syntax#ir-macro-transformer
   ((procedure (* (procedure (*) *) (procedure (* *) *)) *))
   (struct transformer)))
+(chicken.syntax#read/source-info (#(procedure #:enforce) chicken.syntax#read/source-info (#!optional input-port) *))
 (chicken.syntax#strip-syntax (#(procedure #:clean) chicken.syntax#strip-syntax (*) *))
 (chicken.syntax#syntax-error (procedure chicken.syntax#syntax-error (* #!rest) noreturn))
 
@@ -2385,3 +2386,7 @@
 (chicken.tcp#tcp-port-numbers (#(procedure #:clean #:enforce) chicken.tcp#tcp-port-numbers (port) fixnum fixnum))
 (chicken.tcp#tcp-read-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-read-timeout (#!optional (or false integer)) (or false integer)))
 (chicken.tcp#tcp-write-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-write-timeout (#!optional (or false integer)) (or false integer)))
+
+
+;; Undocumented internal module, only here to have the deprecation warning because some eggs use it
+(chicken.compiler.support#read/source-info deprecated)

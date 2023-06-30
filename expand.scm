@@ -37,6 +37,7 @@
 (module chicken.syntax
   (expand
    get-line-number
+   read/source-info
    strip-syntax
    syntax-error
    er-macro-transformer
@@ -746,11 +747,11 @@
 
 (define-constant line-number-database-size 997) ; Copied from core.scm
 
-;; TODO: Should we export this, or something like it?
-(define (##sys#read/source-info in)
+(define (read/source-info #!optional (in ##sys#standard-input))
   ;; Initialize line number db on first use
   (unless ##sys#line-number-database
     (set! ##sys#line-number-database (make-vector line-number-database-size '())))
+  (##sys#check-input-port in #t 'read/source-info)
   (##sys#read in read/source-info-hook) )
 
 

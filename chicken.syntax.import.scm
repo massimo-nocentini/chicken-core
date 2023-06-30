@@ -32,6 +32,7 @@
  'expand
  '((expand . chicken.syntax#expand)
    (get-line-number . chicken.syntax#get-line-number)
+   (read/source-info . chicken.syntax#read/source-info)
    (strip-syntax . chicken.syntax#strip-syntax)
    (syntax-error . chicken.syntax#syntax-error)
    (er-macro-transformer . chicken.syntax#er-macro-transformer)
