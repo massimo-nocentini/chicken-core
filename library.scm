@@ -821,11 +821,12 @@ EOF
 
 (define (tail? x y)
   (##sys#check-list y 'tail?)
-  (or (##core#inline "C_eqp" x '())
-      (let loop ((y y))
-	(cond ((##core#inline "C_eqp" y '()) #f)
-	      ((##core#inline "C_eqp" x y) #t)
-	      (else (loop (##sys#slot y 1))) ) ) ) )
+  (let loop ((y y))
+    (cond ((##core#inline "C_eqp" x y) #t)
+          ((and (##core#inline "C_blockp" y)
+                (##core#inline "C_pairp" y))
+           (loop (##sys#slot y 1)))
+          (else #f))))
 
 (define intersperse
   (lambda (lst x)
