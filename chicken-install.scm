@@ -486,12 +486,14 @@
      (else
       ;; <location>/<egg-name>/<version>/<egg-name>.egg
       (if version
-          (values (probe-dir (make-pathname egg-dir version)) version)
+          (values (probe-dir (make-pathname egg-dir (->string version)))
+                  version)
           (let ((versions (directory egg-dir)))
             (if (null? versions)
                 (values #f #f)
                 (let ((latest (car (sort versions version>=?))))
-                  (values (make-pathname egg-dir latest) latest)))))))))
+                  (values (make-pathname egg-dir (->string latest))
+                          latest)))))))))
 
 (define (write-cache-metadata egg-cache-dir egg-version)
   (when egg-version
@@ -576,7 +578,8 @@
                         (loop (cdr srvs)))))))
           ;; The order of probe-dir's here is important.  First try
           ;; the path with version, then the path without version.
-          ((or (probe-dir (make-pathname (list (car locs) name) lversion))
+          ((or (probe-dir (make-pathname (list (car locs) name)
+                                         (->string lversion)))
                (probe-dir (make-pathname (car locs) name)))
            => (lambda (dir)
                 ;; for locally available eggs, check set of files and
