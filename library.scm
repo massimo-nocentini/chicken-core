@@ -44,6 +44,7 @@
        ##sys#default-read-info-hook ##sys#infix-list-hook
        ##sys#sharp-number-hook ##sys#user-print-hook
        ##sys#user-interrupt-hook ##sys#windows-platform
+       ##sys#resume-thread-on-event ##sys#suspend-thread-on-event
        ##sys#schedule ##sys#features)
   (foreign-declare #<<EOF
 #include <errno.h>
@@ -152,7 +153,13 @@ signal_debug_event(C_word mode, C_word msg, C_word args)
   C_debugger(&cell, 3, av);
   return C_SCHEME_UNDEFINED;
 }
-
+                   
+static C_word C_i_sleep_until_interrupt(C_word secs)
+{
+   while(C_i_process_sleep(secs) == C_fix(-1) && errno == EINTR);
+   return C_SCHEME_UNDEFINED;
+}
+                   
 #ifdef NO_DLOAD2
 # define HAVE_DLOAD 0
 #else
@@ -5739,6 +5746,68 @@ EOF
 (define (##sys#kill-other-threads thunk)
   (thunk))	     ; does nothing, will be modified by scheduler.scm
 
+;; these two procedures should redefined in thread APIs (e.g. srfi-18):
+(define (##sys#resume-thread-on-event t) #f)
+ 
+(define (##sys#suspend-thread-on-event t)
+  ;; wait until signal handler fires. If we are only waiting for a finalizer,
+  ;; then this will wait forever:
+  (##sys#sleep-until-interrupt))
+
+(define (##sys#sleep-until-interrupt)
+  (##core#inline "C_i_sleep_until_interrupt" 100)
+  (##sys#dispatch-interrupt (lambda _ #f)))
+
+  
+;;; event queues (for signals and finalizers)
+  
+(define (##sys#make-event-queue)
+  (##sys#make-structure 'event-queue 
+                        '() ; head
+                        '() ; tail
+                        #f)) ; suspended thread
+
+(define (##sys#add-event-to-queue! q e)
+  (let ((h (##sys#slot q 1))
+        (t (##sys#slot q 2))
+        (item (cons e '())))
+    (if (null? h)
+        (##sys#setslot q 1 item)
+        (##sys#setslot t 1 item))
+    (##sys#setslot q 2 item)
+    (let ((st (##sys#slot q 3))) ; thread suspended?
+      (when st
+        (##sys#setslot q 3 #f)
+        (##sys#resume-thread-on-event st)))))
+
+(define (##sys#get-next-event q)
+  (let ((st (##sys#slot q 3)))
+    (and (not st)
+         (let ((h (##sys#slot q 1)))
+           (and (not (null? h))
+                (let ((x (##sys#slot h 0))
+                      (n (##sys#slot h 1)))
+                  (##sys#setslot q 1 n)
+                  (when (null? n) (##sys#setslot q 2 '()))
+                  x))))))
+
+(define (##sys#wait-for-next-event q)
+  (let ((st (##sys#slot q 3)))
+    (when st
+      (##sys#signal-hook #:runtime-error #f "event queue blocked" q))
+    (let again ()
+      (let ((h (##sys#slot q 1)))
+        (cond ((null? h)
+               (##sys#setslot q 3 ##sys#current-thread)
+               (##sys#suspend-thread-on-event ##sys#current-thread)
+               (again))
+              (else
+                (let ((x (##sys#slot h 0))
+                      (n (##sys#slot h 1)))
+                  (##sys#setslot q 1 n)
+                  (when (null? n) (##sys#setslot q 2 '()))
+                  x)))))))
+  
 
 ;;; Sleeping:
 
