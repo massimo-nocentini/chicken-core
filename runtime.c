@@ -543,8 +543,8 @@ static void C_fcall mark_nested_objects(C_byte *heap_scan_top, C_byte *tgt_space
 static void C_fcall mark_live_objects(C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
 static void C_fcall mark_live_heap_only_objects(C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
 static C_word C_fcall intern0(C_char *name) C_regparm;
-static void C_fcall update_weak_pairs(int mode) C_regparm;
-static void C_fcall update_locatives(int mode) C_regparm;
+static void C_fcall update_weak_pairs(int mode, C_byte *undead_start, C_byte *undead_end) C_regparm;
+static void C_fcall update_locatives(int mode, C_byte *undead_start, C_byte *undead_end) C_regparm;
 static LF_LIST *find_module_handle(C_char *name);
 static void set_profile_timer(C_uword freq);
 static void take_profile_sample();
@@ -3497,8 +3497,8 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
     count = (C_uword)C_fromspace_top - (C_uword)start;
     ++gc_count_1;
     ++gc_count_1_total;
-    update_locatives(GC_MINOR);
-    update_weak_pairs(GC_MINOR);
+    update_locatives(GC_MINOR, start, *tgt_space_top);
+    update_weak_pairs(GC_MINOR, start, *tgt_space_top);
   }
   else {
     /* Mark finalizer list and remember pointers to non-forwarded items: */
@@ -3585,8 +3585,8 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
       }
     }
 
-    update_locatives(gc_mode);
-    update_weak_pairs(gc_mode);
+    update_locatives(gc_mode, start, *tgt_space_top);
+    update_weak_pairs(gc_mode, start, *tgt_space_top);
 
     count = (C_uword)tospace_top - (C_uword)tospace_start; // Actual used, < heap_size/2
 
@@ -4007,8 +4007,8 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
 
   /* Mark nested values in already moved (marked) blocks in breadth-first manner: */
   mark_nested_objects(start, new_tospace_start, &new_tospace_top, new_tospace_limit);
-  update_locatives(GC_REALLOC);
-  update_weak_pairs(GC_REALLOC);
+  update_locatives(GC_REALLOC, new_tospace_top, new_tospace_top);
+  update_weak_pairs(GC_REALLOC, new_tospace_top, new_tospace_top);
 
   heap_free (heapspace1, heapspace1_size);
   heap_free (heapspace2, heapspace2_size);
@@ -4053,10 +4053,11 @@ C_regparm void C_fcall C_rereclaim2(C_uword size, int relative_resize)
  * can *only* contain weak-pairs-turned-forwarding-pointer, we may
  * freely access the first slot of such forwarding pointers.
  */
-static C_regparm void C_fcall update_weak_pairs(int mode)
+static C_regparm void C_fcall update_weak_pairs(int mode, C_byte *undead_start, C_byte *undead_end)
 {
   int weakn = 0;
   C_word p, pair, car, h;
+  C_byte *car_ptr;
 
   /* NOTE: Don't use C_block_item() because it asserts the block is
    * big enough in DEBUGBUILD, but forwarding pointers have size 0.
@@ -4087,10 +4088,12 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
       h = C_block_header(car);
     }
 
-    /* If the car is unreferenced by anyone else, it wasn't moved by GC.  So drop it: */
+    car_ptr = (C_byte *)(C_uword)car;
+    /* If the car is unreferenced by anyone else, it wasn't moved by GC.  Or, if it's in the "undead" portion of
+       the new heap, it was moved because it was only referenced by a revived finalizable object.  In either case, drop it: */
     if((mode == GC_MINOR && C_in_stackp(car)) ||
-       (mode == GC_MAJOR && (C_in_stackp(car) || C_in_fromspacep(car))) ||
-       (mode == GC_REALLOC && (C_in_stackp(car) || C_in_heapp(car)))) { /* NB: *old* heap! */
+       (mode == GC_MAJOR && (C_in_stackp(car) || C_in_fromspacep(car) || (car_ptr >= undead_start && car_ptr < undead_end))) ||
+       (mode == GC_REALLOC && (C_in_stackp(car) || C_in_heapp(car) || (car_ptr >= undead_start && car_ptr < undead_end)))) { /* NB: *old* heap! */
 
       C_set_block_item(pair, 0, C_SCHEME_BROKEN_WEAK_PTR);
       ++weakn;
@@ -4109,10 +4112,11 @@ static C_regparm void C_fcall update_weak_pairs(int mode)
  * so the updating of that pointer is not handled by the GC proper
  * (which only deals with full objects).
  */
-static C_regparm void C_fcall update_locatives(int mode)
+static C_regparm void C_fcall update_locatives(int mode, C_byte *undead_start, C_byte *undead_end)
 {
   int weakn = 0;
   C_word p, loc, ptr, obj, h, offset;
+  C_byte *obj_ptr;
 
   for (p = locative_chain; p != (C_word)NULL; p = *((C_word *)C_data_pointer(p))) {
     h = C_block_header(p);
@@ -4136,10 +4140,12 @@ static C_regparm void C_fcall update_locatives(int mode)
       h = C_block_header(obj);
     }
 
-    /* If the object is unreferenced by anyone else, it wasn't moved by GC.  So drop it: */
+    obj_ptr = (C_byte *)(C_uword)obj;
+    /* If the object is unreferenced by anyone else, it wasn't moved by GC.  Or, if it's in the "undead" portion of
+       the new heap, it was moved because it was only referenced by a revived finalizable object.  In either case, drop it: */
     if((mode == GC_MINOR && C_in_stackp(obj)) ||
-       (mode == GC_MAJOR && (C_in_stackp(obj) || C_in_fromspacep(obj))) ||
-       (mode == GC_REALLOC && (C_in_stackp(obj) || C_in_heapp(obj)))) { /* NB: *old* heap! */
+       (mode == GC_MAJOR && (C_in_stackp(obj) || C_in_fromspacep(obj) || (obj_ptr >= undead_start && obj_ptr < undead_end))) ||
+       (mode == GC_REALLOC && (C_in_stackp(obj) || C_in_heapp(obj) || (obj_ptr >= undead_start && obj_ptr < undead_end)))) { /* NB: *old* heap! */
 
       /* NOTE: This does *not* use BROKEN_WEAK_POINTER.  This slot
        * holds an unaligned raw C pointer, not a Scheme object */

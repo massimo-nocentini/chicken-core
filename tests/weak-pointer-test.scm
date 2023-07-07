@@ -204,4 +204,117 @@
     (test-error "Fifth locative is reclaimed" (locative-ref loc5))
     (test-equal "Sixth locative is NOT reclaimed" (locative-ref loc6) (vector-ref nested-held-onto-value 1))))
 
+
+(test-group "Testing that weak pairs get invalidated before finalizing would-be garbage"
+  (gc #t) ; Improve chances we don't get a minor GC in between
+  (let* ((not-held-onto-value (vector 42))
+	 (held-onto-value (vector 99))
+	 (garbage-a (vector (weak-cons not-held-onto-value '()) (weak-cons held-onto-value '()) #f))
+	 (garbage-b (vector (weak-cons not-held-onto-value '()) (weak-cons held-onto-value '()) #f))
+
+	 (garbage-a-weak-ref (weak-cons garbage-a '()))
+	 (garbage-b-weak-ref (weak-cons garbage-b '()))
+
+	 (observed-garbage-a-0 #f)
+	 (observed-garbage-a-1 #f)
+	 (observed-garbage-a-2 #f)
+	 (observed-garbage-b-0 #f)
+	 (observed-garbage-b-1 #f)
+	 (observed-garbage-b-2 #f))
+
+    ;; Garbage weakly references eachother
+    (vector-set! garbage-a 2 (weak-cons garbage-b '()))
+    (vector-set! garbage-b 2 (weak-cons garbage-a '()))
+
+    (set-finalizer! garbage-a (lambda (vec)
+				(set! observed-garbage-a-0 (car (vector-ref vec 0)))
+				(set! observed-garbage-a-1 (car (vector-ref vec 1)))
+				(set! observed-garbage-a-2 (car (vector-ref vec 2)))))
+    (set-finalizer! garbage-b (lambda (vec)
+				(set! observed-garbage-b-0 (car (vector-ref vec 0)))
+				(set! observed-garbage-b-1 (car (vector-ref vec 1)))
+				(set! observed-garbage-b-2 (car (vector-ref vec 2)))))
+
+    (set! not-held-onto-value #f)
+    (set! garbage-a #f)
+    (set! garbage-b #f)
+
+    ;; Must be a major collection, finalizers don't get queued on minor GC
+    ;; (gc #t)
+    ;; NOTE: The above won't work because it triggers *another* GC after running finalizers,
+    ;; which would invalidate all weak pairs anyway.  So instead, we create garbage until
+    ;; the finalizers have run.  This is more like what happens in a regular program.
+    (let lp ()
+      (unless (and observed-garbage-a-0 observed-garbage-b-0)
+	(make-vector 1000)
+	(lp)))
+
+    (test-assert "Weak pair's car which pointed to first garbage contains broken weak pointer" (bwp-object? (car garbage-a-weak-ref)))
+    (test-assert "Weak pair's car in first garbage which pointed to collected object contains broken weak pointer" (bwp-object? observed-garbage-a-0))
+    (test-equal "Weak pair's car in first garbage which pointed to retained object contains the original object" observed-garbage-a-1 held-onto-value)
+    (test-assert "Weak pair's car in first garbage which pointed to second garbage contains broken weak pointer" (bwp-object? observed-garbage-a-2))
+    (test-assert "Weak pair's car which pointed to second garbage contains broken weak pointer" (bwp-object? (car garbage-b-weak-ref)))
+    (test-assert "Weak pair's car in second garbage which pointed to collected object contains broken weak pointer" (bwp-object? observed-garbage-b-0))
+    (test-equal "Weak pair's car in second garbage which pointed to retained object contains the original object" observed-garbage-b-1 held-onto-value)
+    (test-assert "Weak pair's car in second garbage which pointed to first garbage contains broken weak pointer" (bwp-object? observed-garbage-b-2))))
+
+
+;; Safe version of locative-ref, returns !#bwp instead of raising an exception
+(define (weak-locative-ref loc)
+  (condition-case (locative-ref loc)
+    ((exn type) #!bwp)))
+
+(test-group "Testing that weak locatives get invalidated before finalizing would-be garbage"
+  (gc #t) ; Improve chances we don't get a minor GC in between
+  (let* ((not-held-onto-value (vector (vector 42)))
+	 (held-onto-value (vector (vector 99)))
+	 (garbage-a (vector (make-weak-locative not-held-onto-value 0) (make-weak-locative held-onto-value 0) #f))
+	 (garbage-b (vector (make-weak-locative not-held-onto-value 0) (make-weak-locative held-onto-value 0) #f))
+
+	 (garbage-a-weak-ref (make-weak-locative garbage-a 0))
+	 (garbage-b-weak-ref (make-weak-locative garbage-b 0))
+
+	 (observed-garbage-a-0 #f)
+	 (observed-garbage-a-1 #f)
+	 (observed-garbage-a-2 #f)
+	 (observed-garbage-b-0 #f)
+	 (observed-garbage-b-1 #f)
+	 (observed-garbage-b-2 #f))
+
+    ;; Garbage weakly references eachother
+    (vector-set! garbage-a 2 (make-weak-locative garbage-b 0))
+    (vector-set! garbage-b 2 (make-weak-locative garbage-a 0))
+
+    (set-finalizer! garbage-a (lambda (vec)
+				(set! observed-garbage-a-0 (weak-locative-ref (vector-ref vec 0)))
+				(set! observed-garbage-a-1 (weak-locative-ref (vector-ref vec 1)))
+				(set! observed-garbage-a-2 (weak-locative-ref (vector-ref vec 2)))))
+    (set-finalizer! garbage-b (lambda (vec)
+				(set! observed-garbage-b-0 (weak-locative-ref (vector-ref vec 0)))
+				(set! observed-garbage-b-1 (weak-locative-ref (vector-ref vec 1)))
+				(set! observed-garbage-b-2 (weak-locative-ref (vector-ref vec 2)))))
+
+    (set! not-held-onto-value #f)
+    (set! garbage-a #f)
+    (set! garbage-b #f)
+
+    ;; Must be a major collection, finalizers don't get queued on minor GC
+    ;; (gc #t)
+    ;; NOTE: The above won't work because it triggers *another* GC after running finalizers,
+    ;; which would invalidate all weak pairs anyway.  So instead, we create garbage until
+    ;; the finalizers have run.  This is more like what happens in a regular program.
+    (let lp ()
+      (unless (and observed-garbage-a-0 observed-garbage-b-0)
+	(make-vector 1000)
+	(lp)))
+
+    (test-assert "Weak locative which pointed to first garbage contains broken weak pointer" (bwp-object? (weak-locative-ref garbage-a-weak-ref)))
+    (test-assert "Weak locative in first garbage which pointed to collected object contains broken weak pointer" (bwp-object? observed-garbage-a-0))
+    (test-equal "Weak locative in first garbage which pointed to retained object contains the original object" observed-garbage-a-1 (vector-ref held-onto-value 0))
+    (test-assert "Weak locative in first garbage which pointed to second garbage contains broken weak pointer" (bwp-object? observed-garbage-a-2))
+    (test-assert "Weak locative which pointed to second garbage contains broken weak pointer" (bwp-object? (weak-locative-ref garbage-b-weak-ref)))
+    (test-assert "Weak locative in second garbage which pointed to collected object contains broken weak pointer" (bwp-object? observed-garbage-b-0))
+    (test-equal "Weak locative in second garbage which pointed to retained object contains the original object" observed-garbage-b-1 (vector-ref held-onto-value 0))
+    (test-assert "Weak locative in second garbage which pointed to first garbage contains broken weak pointer" (bwp-object? observed-garbage-b-2))))
+
 (test-exit)

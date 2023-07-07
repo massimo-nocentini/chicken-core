@@ -53,6 +53,12 @@ Multiple finalizers can be registered for the same object. The order
 in which the finalizers run is undefined. Execution of finalizers
 may be nested.
 
+NOTE: When a finalizable object has any weak references (i.e., weak
+locatives or weak pairs) to objects that are only reachable through it
+or other finalizable objects, those references will be broken like
+when the objects had already been collected.  This is done in order to
+avoid user code from accessing objects that are possibly in an
+invalid state.
 
 === force-finalizers
 
