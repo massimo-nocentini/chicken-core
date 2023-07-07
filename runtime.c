@@ -4126,6 +4126,7 @@ static C_regparm void C_fcall update_locatives(int mode)
            (mode == GC_REALLOC && !C_in_stackp(loc) && !C_in_heapp(loc))); /* NB: *old* heap! */
 
     ptr = C_block_item(loc, 0); /* fix up ptr */
+    if (ptr == 0) continue; /* Skip already dropped weak locatives */
     offset = C_unfix(C_block_item(loc, 1));
     obj = ptr - offset;
 
