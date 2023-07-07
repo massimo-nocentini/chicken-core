@@ -6153,7 +6153,8 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 
 
 (module chicken.gc
-    (current-gc-milliseconds gc memory-statistics set-finalizer!
+    (current-gc-milliseconds gc memory-statistics 
+     set-finalizer! make-finalizer add-to-finalizer
      set-gc-report! force-finalizers)
 
 (import scheme)
@@ -6187,7 +6188,7 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 
 (define ##sys#set-finalizer! (##core#primitive "C_register_finalizer"))
 
-(define set-finalizer! 
+(define ##sys#init-finalizer
   (let ((string-append string-append))
     (lambda (x y)
       (when (fx>= (##core#inline "C_i_live_finalizer_count") _max_pending_finalizers)
@@ -6216,6 +6217,36 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 		  #f ##sys#standard-error))
 	       (##sys#force-finalizers) ) ) )
       (##sys#set-finalizer! x y) ) ) )
+
+(define set-finalizer! ##sys#init-finalizer)
+
+(define finalizer-tag (vector 'finalizer))
+
+(define (finalizer? x)
+  (and (pair? x) (eq? finalizer-tag (##sys#slot x 0))) )
+
+(define (make-finalizer . objects)
+  (let ((q (##sys#make-event-queue)))
+    (define (handler o) (##sys#add-event-to-queue! q o))
+    (define (handle o) (##sys#init-finalizer o handler))
+    (for-each handle objects)
+    (##sys#decorate-lambda
+       (lambda (#!optional mode)
+         (if mode
+             (##sys#wait-for-next-event q)
+             (##sys#get-next-event q)))
+       finalizer?
+       (lambda (proc i)
+         (##sys#setslot proc i (cons finalizer-tag handle))
+         proc))))
+
+(define (add-to-finalizer f . objects)
+  (let ((af (and (procedure? f)
+                 (##sys#lambda-decoration f finalizer?))))
+    (unless af
+      (error 'add-to-finalizer "bad argument type - not a finalizer procedure" 
+             f))
+    (for-each (cdr af) objects)))
 
 (define ##sys#run-pending-finalizers
   (let ((vector-fill! vector-fill!)

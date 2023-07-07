@@ -1395,6 +1395,8 @@
 (chicken.gc#gc (#(procedure #:clean) chicken.gc#gc (#!optional *) fixnum))
 (chicken.gc#memory-statistics (#(procedure #:clean) chicken.gc#memory-statistics () (vector-of fixnum)))
 (chicken.gc#set-finalizer! (#(procedure #:clean #:enforce) chicken.gc#set-finalizer! (* (procedure (*) . *)) *))
+(chicken.gc#make-finalizer (#(procedure #:clean #:enforce) chicken.gc#make-finalizer (#!rest *) (procedure (#!optional boolean) *)))
+(chicken.gc#add-to-finalizer (#(procedure #:clean #:enforce) chicken.gc#add-to-finalizer (procedure #!rest *) undefined))
 (chicken.gc#set-gc-report! (#(procedure #:clean) chicken.gc#set-gc-report! (*) undefined))
 
 (chicken.repl#repl (#(procedure #:enforce) chicken.repl#repl (#!optional (procedure (*) . *)) undefined))

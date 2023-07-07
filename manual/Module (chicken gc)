@@ -40,11 +40,11 @@ because CHICKEN uses a copying semi-space collector.
 Registers a procedure of one argument {{PROC}}, that will be
 called as soon as the non-immediate data object {{X}} is about to
 be garbage-collected (with that object as its argument). Note that
-the finalizer will '''not''' be called while interrupts are disabled.
 This procedure returns {{X}}.
 
-Finalizers are invoked asynchronously, in the thread that happens
-to be currently running. Finalizers for data that has become garbage
+Finalizers installed using {{set-finalizer!}} are invoked asynchronously, 
+in the thread that happens to be currently running.
+Finalizers for data that has become garbage
 are called on normal program exit. Finalizers are not run on
 abnormal program exit. A normal program exit does not run finalizers
 that are still reachable from global data. 
@@ -53,12 +53,48 @@ Multiple finalizers can be registered for the same object. The order
 in which the finalizers run is undefined. Execution of finalizers
 may be nested.
 
-NOTE: When a finalizable object has any weak references (i.e., weak
+NOTE 1: The finalizer will '''not''' be called while interrupts are disabled.
+
+NOTE 2: When a finalizable object has any weak references (i.e., weak
 locatives or weak pairs) to objects that are only reachable through it
 or other finalizable objects, those references will be broken like
 when the objects had already been collected.  This is done in order to
 avoid user code from accessing objects that are possibly in an
 invalid state.
+
+
+=== make-finalizer
+
+<procedure>(make-finalizer OBJECT ...)</procedure>
+
+Registers the set of non-immediate argument objects for finalization and 
+returns a procedure of zero or one arguments. Invoking this procedure
+will return the first object from the set that
+is not referenced from any other globally reachable data and can be
+garbage collected.
+Non-immediate objects are anything that is not a small integer ("fixnum"),
+a character, a boolean, the empty list, the undefined value, the end-of-file
+value ({{#!eof}}) or the broken-weak-pair object ({{#!bwp}}).
+
+Note that you can pass procedures created by {{make-finalizer}} to
+{{make-finalizer}} itself, implying that a finalizer procedure is finalized
+when all associated objects are.
+
+The procedure returned by {{make-finalizer}} behaves differently
+depending on the argument given: If the argument is missing or {{#f}},
+then it returns {{#f}} when no object has as yet been finalized.
+When the argument is {{#t}}, execution of the current thread suspends until a finalization
+occurs. If no other threads are executing then execution pauses for eternity.
+
+The same caveat regarding weak references applies to finalizers
+registered with {{make-finalizer}}.  See {{NOTE 2}} in {{set-finalizer!}}.
+
+=== add-to-finalizer
+
+<procedure>(add-to-finalizer FINALIZER OBJECT ...)</procedure>
+
+Add further objects to the finalization procedure {{FINALIZER}}, in
+addition to the objects already supplied when invoking {{make-finalizer}}.
 
 === force-finalizers
 
