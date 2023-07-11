@@ -21,9 +21,9 @@
     filename. Previously, the directory part would be stripped.
   - Added support for embedded strings and characters in SRFI-4 vector
     literals.
-  - read/source-info is now documented and officially supported, from
-    the (chicken syntax) module.  It is still exported from the
-    undocumented internal (chicken compiler support) module, but
+  - read-with-source-info is now documented and officially supported,
+    from the (chicken syntax) module.  read/source-info is still exported
+    from the undocumented internal (chicken compiler support) module, but
     using it from there is deprecated.
 
 - Tools

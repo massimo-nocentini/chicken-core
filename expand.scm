@@ -37,7 +37,7 @@
 (module chicken.syntax
   (expand
    get-line-number
-   read/source-info
+   read-with-source-info
    strip-syntax
    syntax-error
    er-macro-transformer
@@ -733,7 +733,7 @@
 	   (lp (cdr lst) prev))
 	  (else (lp (cdr lst) lst)))))
 
-(define (read/source-info-hook class data val)
+(define (read-with-source-info-hook class data val)
   (when (and (eq? 'list-info class) (symbol? (car data)))
     (let ((old-value (or (hash-table-ref ##sys#line-number-database (car data)) '())))
       (assq/drop-bwp! (car data) old-value) ;; Hack to clean out garbage values
@@ -747,12 +747,12 @@
 
 (define-constant line-number-database-size 997) ; Copied from core.scm
 
-(define (read/source-info #!optional (in ##sys#standard-input))
+(define (read-with-source-info #!optional (in ##sys#standard-input))
   ;; Initialize line number db on first use
   (unless ##sys#line-number-database
     (set! ##sys#line-number-database (make-vector line-number-database-size '())))
-  (##sys#check-input-port in #t 'read/source-info)
-  (##sys#read in read/source-info-hook) )
+  (##sys#check-input-port in #t 'read-with-source-info)
+  (##sys#read in read-with-source-info-hook) )
 
 
 (define (get-line-number sexp)

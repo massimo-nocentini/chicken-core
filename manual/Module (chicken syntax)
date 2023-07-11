@@ -356,13 +356,13 @@ identifiers will not have been renamed (most often at toplevel), but
 there may be other contexts in which identifiers ''will'' have been
 renamed.
 
-==== read/source-info
+==== read-with-source-info
 
-<procedure>(read/source-info [port])</procedure>
+<procedure>(read-with-source-info [port])</procedure>
 
 Exactly like {{{read}}} from the {{{scheme}}} module, except it
 registers the expression it read into the line number database, so
-that if {{{(read/source-info)}}} returns {{{OBJ}}},
+that if {{{(read-with-source-info)}}} returns {{{OBJ}}},
 {{{(get-line-number OBJ)}}} will return the line number in {{{port}}}.
 
 The port argument may be omitted, in which case it defaults to the

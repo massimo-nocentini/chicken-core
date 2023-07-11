@@ -152,7 +152,7 @@
 		      (c #f)))))
 		(##sys#read-prompt-hook)
 		;; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
-		(let ((exp ((or ##sys#repl-read-hook chicken.syntax#read/source-info))))
+		(let ((exp ((or ##sys#repl-read-hook chicken.syntax#read-with-source-info))))
 		  (unless (eof-object? exp)
 		    (when (eq? #\newline (##sys#peek-char-0 ##sys#standard-input))
 		      (##sys#read-char-0 ##sys#standard-input))

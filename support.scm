@@ -1657,7 +1657,7 @@
 
 ;; DEPRECATED
 (define (read/source-info in)
-  (chicken.syntax#read/source-info in) )
+  (chicken.syntax#read-with-source-info in) )
 
 ;;; "#> ... <#" syntax:
 

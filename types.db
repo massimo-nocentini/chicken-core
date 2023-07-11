@@ -2359,7 +2359,7 @@
   chicken.syntax#ir-macro-transformer
   ((procedure (* (procedure (*) *) (procedure (* *) *)) *))
   (struct transformer)))
-(chicken.syntax#read/source-info (#(procedure #:enforce) chicken.syntax#read/source-info (#!optional input-port) *))
+(chicken.syntax#read-with-source-info (#(procedure #:enforce) chicken.syntax#read-with-source-info (#!optional input-port) *))
 (chicken.syntax#strip-syntax (#(procedure #:clean) chicken.syntax#strip-syntax (*) *))
 (chicken.syntax#syntax-error (procedure chicken.syntax#syntax-error (* #!rest) noreturn))
 

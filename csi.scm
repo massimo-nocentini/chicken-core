@@ -280,7 +280,7 @@ EOF
 (define default-evaluator
   (let ((eval eval)
 	(load-noisily load-noisily)
-	(read (lambda () (chicken.syntax#read/source-info (current-input-port)))) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
+	(read (lambda () (chicken.syntax#read-with-source-info (current-input-port)))) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
 	(read-line read-line)
 	(display display)
 	(string-split string-split)
@@ -1047,8 +1047,8 @@ EOF
                  (load home-fn) ) ) ) )
       (define (evalstring str #!optional (rec (lambda _ (void))))
 	(let ((in (open-input-string str))
-	      (read/source-info chicken.syntax#read/source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
-	  (do ([x (read/source-info in) (read/source-info in)])
+	      (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
+	  (do ([x (read-with-source-info in) (read-with-source-info in)])
 	      ((eof-object? x))
 	    (rec (receive (eval x))) ) ) )
       (when (member* '("-h" "-help" "--help") args)
