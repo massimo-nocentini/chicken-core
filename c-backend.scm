@@ -118,6 +118,7 @@
 	       ((nil) (gen "C_SCHEME_END_OF_LIST"))
 	       ((fix) (gen "C_fix(" (second params) #\)))
 	       ((eof) (gen "C_SCHEME_END_OF_FILE"))
+	       ((bwp) (gen "C_SCHEME_BROKEN_WEAK_PTR"))
 	       (else (bomb "bad immediate")) ) )
 
 	    ((##core#literal) 

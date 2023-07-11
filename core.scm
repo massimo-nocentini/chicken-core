@@ -229,7 +229,7 @@
 ; [##core#setglobal {<literal> <block-mode> <name>} <exp>]
 ; [##core#setglobal_i {<literal> <block-mode> <name>} <exp>]
 ; [##core#literal {<literal>}]
-; [##core#immediate {<type> [<immediate>]}]     - type: bool/fix/nil/char
+; [##core#immediate {<type> [<immediate>]}]     - type: bool/fix/nil/char/bwp
 ; [##core#proc {<name> [<non-internal>]}]
 ; [##core#provide <literal>]
 ; [##core#recurse {<tail-flag> <call-id>} <exp1> ...]
