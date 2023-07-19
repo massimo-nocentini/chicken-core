@@ -1180,8 +1180,8 @@
 (##sys#register-core-module
  'srfi-88 'library
  '((keyword? . chicken.keyword#keyword?)
-   (keyword->string chicken.keyword#keyword->string)
-   (string->keyword chicken.keyword#string->keyword)))
+   (keyword->string . chicken.keyword#keyword->string)
+   (string->keyword . chicken.keyword#string->keyword)))
 
 (##sys#register-core-module
  'srfi-98 'posix
