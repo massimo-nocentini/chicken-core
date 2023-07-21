@@ -105,9 +105,12 @@ EOF
 (define +egg-extension+ "egg")
 
 (define (validate-environment)
-  (let ((var (get-environment-variable "CHICKEN_INSTALL_REPOSITORY")))
-    (unless (or (not var) (absolute-pathname? var))
-      (error "CHICKEN_INSTALL_REPOSITORY must be an absolute pathname" var))))
+  (let ((var1 (get-environment-variable "CHICKEN_INSTALL_REPOSITORY"))
+        (var2 (get-environment-variable "CHICKEN_INSTALL_PREFIX")))
+    (unless (or (not var1) (absolute-pathname? var1))
+      (error "CHICKEN_INSTALL_REPOSITORY must be an absolute pathname" var1))
+    (unless (or (not var2) (absolute-pathname? var2))
+      (error "CHICKEN_INSTALL_PREFIX must be an absolute pathname" var2))))
 
 (define (destination-repository mode #!optional run)
   (if (eq? 'target mode)

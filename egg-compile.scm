@@ -118,6 +118,14 @@
 (define (uses-compiled-import-library? mode)
   (not (and (eq? mode 'host) staticbuild)))
 
+;; this one overrides "destination-repository" in egg-environment to allow use of
+;; CHICKEN_INSTALL_PREFIX (via "override-prefix")
+(define (effective-destination-repository mode #!optional run)
+   (if (eq? 'target mode)
+       (if run target-run-repo target-repo)
+       (or (get-environment-variable "CHICKEN_INSTALL_REPOSITORY")
+           (override-prefix (string-append "/lib/chicken/" (number->string binary-version))
+                            host-repo))))
 
 ;;; topological sort with cycle check
 
@@ -148,7 +156,7 @@
         (error "destination must be relative to CHICKEN install prefix" dest)
         (normalize-pathname
          (make-pathname (if (eq? mode 'target)
-                            default-prefix    ; XXX wrong!
+                            default-prefix
                             (override-prefix "/" host-prefix))
                         dest*)))))
 
@@ -228,7 +236,7 @@
                       (mods #f)
                       (opts opts))
             (for-each compile-extension/program (cddr info))
-            (let ((dest (destination-repository mode #t))
+            (let ((dest (effective-destination-repository mode #t))
                   ;; Respect install-name if specified
                   (rtarget (or oname target)))
               (when (eq? #t tfile) (set! tfile rtarget))
@@ -272,7 +280,7 @@
                       (mods #f)
                       (opts opts))
             (for-each compile-extension/program (cddr info))
-            (let ((dest (destination-repository mode #t))
+            (let ((dest (effective-destination-repository mode #t))
                   ;; Respect install-name if specified
                   (rtarget (or oname target)))
               (set! objs
@@ -291,7 +299,7 @@
             (for-each compile-data/include (cddr info))
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
-                                 default-sharedir    ; XXX wrong!
+                                 default-sharedir
                                  (override-prefix "/share" host-sharedir))))
                    (dest (normalize-pathname (conc dest "/"))))
               (addfiles (map (cut conc dest <>) files)))
@@ -320,7 +328,7 @@
             (for-each compile-data/include (cddr info))
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
-                                 default-incdir   ; XXX wrong!
+                                 default-incdir
                                  (override-prefix "/include" host-incdir))))
                    (dest (normalize-pathname (conc dest "/"))))
               (addfiles (map (cut conc dest <>) files)))
@@ -335,7 +343,7 @@
             (for-each compile-data/include (cddr info))
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
-                                 default-sharedir   ; XXX wrong!
+                                 default-sharedir
                                  (override-prefix "/share" host-sharedir))))
                    (dest (normalize-pathname (conc dest "/"))))
               (addfiles (map (cut conc dest <>) files)))
@@ -356,7 +364,7 @@
                       (opts opts))
             (for-each compile-extension/program (cddr info))
             (let ((dest (if (eq? mode 'target) 
-                            default-bindir   ; XXX wrong!
+                            default-bindir
                             (override-prefix "/bin" host-bindir)))
                   ;; Respect install-name if specified
                   (rtarget (or oname target)))
@@ -905,7 +913,7 @@
          (out (qs* (target-file (conc sname ".static" ext) mode)
 		   platform #t))
          (outlnk (qs* (conc sname +link-file-extension+) platform #t))
-         (dest (destination-repository mode))
+         (dest (effective-destination-repository mode))
          (dfile (qs* dest platform #t))
          (ddir (shell-variable "DESTDIR" platform)))
     (print "\n" mkdir " " ddir dfile)
@@ -923,7 +931,7 @@
          (mkdir (mkdir-command platform))
          (sname (prefix srcdir name))
          (out (qs* (target-file (conc sname ext) mode) platform #t))
-         (dest (destination-repository mode))
+         (dest (effective-destination-repository mode))
          (dfile (qs* dest platform #t))
          (ddir (shell-variable "DESTDIR" platform))
          (destf (qs* (conc dest "/" output-file ext) platform #t)))
@@ -944,7 +952,7 @@
          (sname (prefix srcdir name))
          (out (qs* (target-file (conc sname ".import.scm") mode)
 		   platform #t))
-         (dest (destination-repository mode))
+         (dest (effective-destination-repository mode))
          (dfile (qs* dest platform #t))
          (ddir (shell-variable "DESTDIR" platform)))
     (print "\n" mkdir " " ddir dfile)
@@ -958,7 +966,7 @@
          (mkdir (mkdir-command platform))
          (out (qs* (prefix srcdir (conc types-file ".types"))
 		   platform #t))
-         (dest (destination-repository mode))
+         (dest (effective-destination-repository mode))
          (dfile (qs* dest platform #t))
          (ddir (shell-variable "DESTDIR" platform)))
     (print "\n" mkdir " " ddir dfile)
@@ -972,7 +980,7 @@
          (mkdir (mkdir-command platform))
          (out (qs* (prefix srcdir (conc inline-file ".inline"))
 		   platform #t))
-         (dest (destination-repository mode))
+         (dest (effective-destination-repository mode))
          (dfile (qs* dest platform #t))
          (ddir (shell-variable "DESTDIR" platform)))
     (print "\n" mkdir " " ddir dfile)

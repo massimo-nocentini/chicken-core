@@ -71,7 +71,20 @@ separated by {{:}}/{{;}}) where eggs are to be
 loaded from for all chicken-based programs. {{CHICKEN_INSTALL_REPOSITORY}}
 is the place where eggs will be installed and which the egg-related
 tools like {{chicken-install}}, {{chicken-uninstall}} and
-{{chicken-status}} consult and update. Make sure the paths given in these 
+{{chicken-status}} consult and update.
+
+Finally, {{CHICKEN_INSTALL_PREFIX}} allows you to override where any
+installed files should be stored, including extension libraries, programs
+and data files. Effectively this variable overrides the installation
+prefix given when building and installing chicken. When installing eggs,
+the location where dependency extensions and tools are installed will
+not be automatically found, so setting this variable usually only makes
+sense when used in combination with {{CHICKEN_REPOSITORY_PATH}}.
+
+{{CHICKEN_INSTALL_PREFIX}} is intended for special sitautions and should be used 
+with care. It is a last-resort utility to customize where build-results are placed.
+
+Make sure the paths given in these 
 environment variables are absolute and not relative.
 
 === Static linking
