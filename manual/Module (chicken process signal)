@@ -19,34 +19,41 @@ that's the case, the description contains a note.
 
 Sets an internal timer to raise the {{signal/alrm}}
 after {{SECONDS}} are elapsed.  You can use the
-{{set-signal-handler!}} procedure to write a handler for this signal.
+{{make-signal-handler}} procedure to write a handler for this signal.
 
 '''NOTE''': On native Windows builds (all except cygwin), this
 procedure is unimplemented and will raise an error.
 
-=== signal-handler
-=== set-signal-handler!
+=== make-signal-handler
 
-<procedure>(signal-handler SIGNUM)</procedure>
+<procedure>(make-signal-handler SIGNUM ...)</procedure>
 
-Returns the signal handler for the code {{SIGNUM}} or {{#f}}.
+Establishes a handler for the POSIX signals with the numbers {{SIGNUM ...}} and returns
+a procedure of zero or one argument. Should one of the given signals be raised, then it will be stored in a
+queue. Invoking the procedure returned by {{make-signal-handler}} with zero arguments or
+with the argument {{#f}} will remove the oldest
+entry in the queue and return it to the caller. Invoking the procedure with argument {{#t}} when no signal was
+raised since the creation of the signal handler or the most recent call to the handler
+will result in suspending the execution until one of the signals given in {{SIGNUM ...}}
+occurs.
 
-<procedure>(set-signal-handler! SIGNUM PROC)</procedure>
-
-Establishes the procedure of one argument {{PROC}} as the handler
-for the signal with the code {{SIGNUM}}. {{PROC}} is called
-with the signal number as its sole argument. If the argument {{PROC}} is {{#f}}
-then any signal handler will be removed, and the corresponding signal set to {{SIG_IGN}}.
-
-Notes
-
-* it is unspecified in which thread of execution the signal handler will be invoked.
+Notes:
 
 * when signals arrive in quick succession (specifically, before the handler for a signal has been started), then signals will be queued (up to a certain limit); the order in which the queued signals will be handled is not specified
 
-* {{(set! (signal-handler SIG) PROC)}} can be used as an alternative to {{(set-signal-handler! SIG PROC)}}
-
 * Any signal handlers for the signals {{signal/segv}}, {{signal/bus}}, {{signal/fpe}} and {{signal/ill}} will be ignored and these signals will always trigger an exception, unless the executable was started with the {{-:S}} runtime option. This feature is only available on platforms that support the {{sigprocmask(3)}} POSIX API function.
+
+=== signal-ignore
+
+<procedure>(signal-ignore SIGNUM)</procedure>
+
+Ignores any future occurrences if the signal {{SIGNUM}} by setting its disposition to {{SIG_IGN}}.
+
+=== signal-default
+
+<procedure>(signal-default SIGNUM)</procedure>
+
+Sets the default disposition for the signal {{SIGNUM}} by setting its disposition to {{SIG_DFL}}.
 
 === set-signal-mask!
 

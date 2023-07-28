@@ -263,8 +263,10 @@
 
 
 (module chicken.process.signal
-  (set-alarm! set-signal-handler! set-signal-mask!
-   signal-handler signal-mask signal-mask! signal-masked? signal-unmask!
+  (set-alarm! set-signal-mask!
+   make-signal-handler signal-ignore signal-default
+   set-signal-handler! signal-handler ; DEPRECATED
+   signal-mask signal-mask! signal-masked? signal-unmask!
    signal/abrt signal/alrm signal/break signal/bus signal/chld
    signal/cont signal/fpe signal/hup signal/ill signal/int signal/io
    signal/kill signal/pipe signal/prof signal/quit signal/segv
@@ -276,9 +278,12 @@
 
 ;; These are all set! inside the posix module
 (define set-alarm!)
-(define set-signal-handler!)
+(define set-signal-handler!) ; DEPRECATED
 (define set-signal-mask!)
-(define signal-handler)
+(define signal-handler) ; DEPRECATED
+(define make-signal-handler)
+(define signal-ignore)
+(define signal-default)
 
 (define signal-mask)
 (define signal-mask!)

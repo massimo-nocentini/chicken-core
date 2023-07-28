@@ -11,6 +11,8 @@
     the first non-runtime option or after "-:", whichever comes first.
 
 - Core libraries
+  - Added new thread-safe API for POSIX signals ("make-signal-handler", 
+    "signal-ignore" and "signal-default") and deprecated the existing one.
   - Added "make-finalizer" to execute finalizers in a thread-safe
     manner.
   - Added weak pairs to (chicken base), with similar behaviour to Chez Scheme.

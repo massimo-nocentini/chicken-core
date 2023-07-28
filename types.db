@@ -2111,9 +2111,10 @@
 ;; process.signal
 
 (chicken.process.signal#set-alarm! (#(procedure #:clean #:enforce) chicken.process#set-alarm! (integer) integer))
-(chicken.process.signal#set-signal-handler! (#(procedure #:clean #:enforce) chicken.process.signal#set-signal-handler! (fixnum (or false (procedure (fixnum) . *))) undefined))
+(chicken.process.signal#make-signal-handler (#(procedure #:clean #:enforce) chicken.process.signal#make-signal-handler (#!rest fixnum) (procedure () fixnum)))
 (chicken.process.signal#set-signal-mask! (#(procedure #:clean #:enforce) chicken.process.signal#set-signal-mask! ((list-of fixnum)) undefined))
-(chicken.process.signal#signal-handler (#(procedure #:clean #:enforce) chicken.process.signal#signal-handler (fixnum) (or false (procedure (fixnum) . *))))
+(chicken.process.signal#signal-ignore (#(procedure #:clean #:enforce) chicken.process.signal#signal-ignore (fixnum) undefined))
+(chicken.process.signal#signal-default (#(procedure #:clean #:enforce) chicken.process.signal#signal-default (fixnum) undefined))
 (chicken.process.signal#signal-mask (#(procedure #:clean) chicken.process.signal#signal-mask () fixnum))
 (chicken.process.signal#signal-mask! (#(procedure #:clean #:enforce) chicken.process.signal#signal-mask! (fixnum) undefined))
 (chicken.process.signal#signal-masked? (#(procedure #:clean #:enforce) chicken.process.signal#signal-masked? (fixnum) boolean))

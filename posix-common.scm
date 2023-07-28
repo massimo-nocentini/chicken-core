@@ -625,19 +625,46 @@ EOF
 
 ;;; Signals
 
-(set! chicken.process.signal#set-signal-handler!
+(set! chicken.process.signal#set-signal-handler!   ; DEPRECATED
   (lambda (sig proc)
     (##sys#check-fixnum sig 'set-signal-handler!)
     (##core#inline "C_establish_signal_handler" sig (and proc sig))
     (vector-set! ##sys#signal-vector sig proc) ) )
 
-(set! chicken.process.signal#signal-handler
+(set! chicken.process.signal#signal-handler   ; DEPRECATED
   (getter-with-setter
    (lambda (sig)
      (##sys#check-fixnum sig 'signal-handler)
      (##sys#slot ##sys#signal-vector sig) )
    chicken.process.signal#set-signal-handler!
    "(chicken.process.signal#signal-handler sig)"))
+                        
+(set! chicken.process.signal#make-signal-handler
+  (lambda sigs
+    (let ((q (##sys#make-event-queue)))
+      (for-each
+        (lambda (sig)
+          (##sys#check-fixnum sig 'make-signal-handler)
+          (##core#inline "C_establish_signal_handler" sig sig)
+          (vector-set! ##sys#signal-vector sig 
+                       (lambda (sig) (##sys#add-event-to-queue! q sig))))
+        sigs)
+      (lambda (#!optional wait) 
+        (if wait
+            (##sys#wait-for-next-event q)
+            (##sys#get-next-event q))))))
+                        
+(set! chicken.process.signal#signal-ignore
+  (lambda (sig)
+    (##sys#check-fixnum sig 'signal-ignore)
+    (##core#inline "C_establish_signal_handler" sig #f)
+    (vector-set! ##sys#signal-vector sig #f)))
+
+(set! chicken.process.signal#signal-default
+  (lambda (sig)
+    (##sys#check-fixnum sig 'signal-default)
+    (##core#inline "C_establish_signal_handler" sig #t)
+    (vector-set! ##sys#signal-vector sig #f)))
 
 
 ;;; Processes

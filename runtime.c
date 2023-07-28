@@ -4942,6 +4942,7 @@ C_regparm C_word C_fcall C_establish_signal_handler(C_word signum, C_word reason
 #endif
 
   if(reason == C_SCHEME_FALSE) C_signal(sig, SIG_IGN);
+  else if(reason == C_SCHEME_TRUE) C_signal(sig, SIG_DFL);
   else {
     signal_mapping_table[ sig ] = C_unfix(reason);
 #if defined(HAVE_SIGACTION)
