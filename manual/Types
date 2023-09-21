@@ -99,7 +99,7 @@ or {{:}} should follow the syntax given below:
 
 <table>  
 <tr><th>VALUETYPE</th><th>meaning</th></tr>
-<tr><td>{{(or VALUETYPE ...)}}</td><td>"union" or "sum" type</td></tr>
+<tr><td>{{(or VALUETYPE1 VALUETYPE2 ...)}}</td><td>"union" or "sum" type</td></tr>
 <tr><td>{{(not VALUETYPE)}}</td><td>non-matching type (*)</td></tr>
 <tr><td>{{(struct STRUCTURENAME)}}</td><td>record structure of given kind</td></tr>
 <tr><td>{{(procedure [NAME] (VALUETYPE ... [#!optional VALUETYPE ...] [#!rest [VALUETYPE]]) . RESULTS)}}</td><td>procedure type, optionally with name</td></tr>
@@ -241,7 +241,7 @@ Procedure types are assumed to be not referentially transparent and
 are assumed to possibly modify locally held state. Using the
 {{(... --> ...)}} syntax, you can declare a procedure to not modify
 local state, i.e. not causing any side-effects on local variables or
-data contain in local variables. This gives more opportunities for
+data contained in local variables. This gives more opportunities for
 optimization but may not be violated or the results are undefined.
 
 

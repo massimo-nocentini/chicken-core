@@ -75,7 +75,7 @@
 ; result specifiers:
 ;
 ;   SPEC = * | (TYPE1 ...)
-;   TYPE = (or TYPE1 ...)
+;   TYPE = (or TYPE1 TYPE2 ...)
 ;        | (not TYPE)
 ;        | (struct NAME)
 ;        | (procedure [NAME] (TYPE1 ... [#!optional TYPE1 ...] [#!rest [TYPE | values]]) . RESULTS)
@@ -1911,6 +1911,7 @@
 		  v))
 	    ((eq? 'or (car t)) 
 	     (and (list? t)
+		  (not (null? (cdr t)))
 		  (let ((ts (map validate (cdr t))))
 		    (and (every identity ts)
 			 `(or ,@ts)))))
