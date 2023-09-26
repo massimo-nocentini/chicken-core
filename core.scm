@@ -372,8 +372,6 @@
 
 (define-inline (gensym-f-id) (gensym 'f_))
 
-(define-foreign-variable installation-home c-string "C_INSTALL_SHARE_HOME")
-
 (define-constant initial-analysis-database-size 3001)
 (define-constant default-line-number-database-size 997)
 (define-constant inline-table-size 301)
