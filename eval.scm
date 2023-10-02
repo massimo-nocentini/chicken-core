@@ -851,6 +851,7 @@
 		   define-interface
 		   delay-force
 		   export
+                   export/rename
 		   functor
 		   import
 		   import-for-syntax

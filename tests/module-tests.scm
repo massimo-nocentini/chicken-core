@@ -380,6 +380,28 @@
    (import (scheme) (chicken module))
    (eq? (current-module) 'm33)))
 
+(module m34 ((syn bar) alias)
+  (import scheme (chicken base) (chicken module))
+  (export/rename (bar baz) (syn syn2))
+  (define bar 123)
+  (assert (equal? bar 123))
+  (define-syntax alias 
+    (syntax-rules () 
+      ((_) (syn))))
+  (define-syntax syn
+    (syntax-rules ()
+      ((_) (list bar)))))
+
+(module m35 ()
+  (import scheme (chicken base) (chicken module))
+  (import (only (rename m34 (syn2 syn3)) syn3 alias))
+  (import (rename m34 (baz bax)))
+  (define bar 99)
+  (assert (equal? bax 123))
+  (assert (equal? (syn3) '(123)))
+  (assert (equal? (alias) '(123)))
+  (assert (equal? bar 99)))
+
 (test-end "modules")
 
 (test-exit)

@@ -1199,6 +1199,25 @@
       '(##core#undefined)))))
 
 (##sys#extend-macro-environment
+ 'export/rename '()
+ (##sys#er-transformer
+  (lambda (x r c)
+    (let ((exps (map (lambda (ren)
+                       (if (and (pair? ren) 
+                                (symbol? (car ren))
+                                (pair? (cdr ren))
+                                (symbol? (cadr ren))
+                                (null? (cddr ren)))
+                           (cons (car ren) (cadr ren))
+                           (##sys#syntax-error-hook "invalid item in export rename list" 
+                                                    ren)))
+                  (strip-syntax (cdr x))))
+          (mod (##sys#current-module)))
+      (when mod
+	(##sys#add-to-export/rename-list mod exps))
+      '(##core#undefined)))))
+
+(##sys#extend-macro-environment
  'reexport '()
  (##sys#er-transformer
   (cut ##sys#expand-import <> <> <>

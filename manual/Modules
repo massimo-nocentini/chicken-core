@@ -121,6 +121,17 @@ Allows augmenting module-exports from inside the module-body.
 
 If used outside of a module, then this form does nothing.
 
+==== export/rename
+
+<macro>(export/rename (NAME EXPORT) ...)</macro>
+
+Allows augmenting module-exports from inside the module-body.
+Each argument should be a two-element list containing the name
+of the local value- or syntax-definition (NAME) and the name under which the
+definition should be exported (EXPORT).
+
+If used outside of a module, then this form does nothing.
+
 ==== import
 
 <macro>(import IMPORT ...)</macro>

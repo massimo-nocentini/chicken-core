@@ -90,12 +90,13 @@
 	module-meta-expressions set-module-meta-expressions!
 	module-defined-syntax-list set-module-defined-syntax-list!
 	module-saved-environments set-module-saved-environments!
-	module-iexports set-module-iexports!))
+	module-iexports set-module-iexports!
+        module-rename-list set-module-rename-list!))
 
 (define-record-type module
   (%make-module name library export-list defined-list exist-list defined-syntax-list
 		undefined-list import-forms meta-import-forms meta-expressions 
-		vexports sexports iexports saved-environments) 
+		vexports sexports iexports saved-environments rename-list) 
   module?
   (name module-name)			; SYMBOL
   (library module-library)		; SYMBOL
@@ -111,7 +112,8 @@
   (sexports module-sexports set-module-sexports!)	      ; ((SYMBOL SE TRANSFORMER) ...)
   (iexports module-iexports set-module-iexports!)	      ; ((SYMBOL . SYMBOL) ...)
   ;; for csi's ",m" command, holds (<env> . <macroenv>)
-  (saved-environments module-saved-environments set-module-saved-environments!))
+  (saved-environments module-saved-environments set-module-saved-environments!)
+  (rename-list module-rename-list set-module-rename-list!))
 
 (define ##sys#module-name module-name)
 
@@ -121,8 +123,9 @@
    (module-vexports m)
    (module-sexports m)))
 
-(define (make-module name lib explist vexports sexports iexports)
-  (%make-module name lib explist '() '() '() '() '() '() '() vexports sexports iexports #f))
+(define (make-module name lib explist vexports sexports iexports #!optional (renames '()))
+  (%make-module name lib explist '() '() '() '() '() '() '() vexports sexports iexports #f
+                renames))
 
 (define (##sys#register-module-alias alias name)
   (##sys#module-alias-environment
@@ -180,6 +183,11 @@
 	  (set-module-sexports! mod (append sexps (module-sexports mod)))
 	  (set-module-exist-list! mod (append el exps)))
 	(set-module-export-list! mod (append xl exps)))))
+
+(define (##sys#add-to-export/rename-list mod renames)
+  (let ((rl (module-rename-list mod)))
+    (set-module-rename-list! mod (append rl renames))
+    (##sys#add-to-export-list mod (map car renames))))
 
 (define (##sys#toplevel-definition-hook sym renamed exported?) #f)
 
@@ -303,8 +311,7 @@
 	    ((or (eq? last-se (car ses)) (null? (car ses)))
 	     (loop (cdr ses) last-se se2))
 	    ((not last-se)
-	     (unless (null? ses)
-	       (for-each (lambda (e) (hash-table-set! seen (car e) #t)) se2))
+             (for-each (lambda (e) (hash-table-set! seen (car e) #t)) se2)
 	     (loop ses se2 se2))
 	    (else (let lp ((se (car ses)) (se2 se2))
 		    (cond ((null? se) (loop (cdr ses) (car ses) se2))
@@ -369,14 +376,18 @@
                             (else
                               (let ((name (caar sd)))
                                 (cons `(scheme#cons ',(caar sd) ,(strip-syntax (cdar sd)))
-                                      (loop (cdr sd)))))))))))))))
+                                      (loop (cdr sd)))))))))
+            (scheme#list   ; renames
+              ,@(map (lambda (ren)
+                       `(scheme#cons ',(car ren) ',(cdr ren)))
+                  (module-rename-list mod)))))))))
 
 ;; iexports = indirect exports (syntax dependencies on value idents, explicitly included in module export list)
 ;; vexports = value (non-syntax) exports
 ;; sexports = syntax exports
 ;; sdefs = unexported definitions from syntax environment used by exported macros (not in export list)
 (define (##sys#register-compiled-module name lib iexports vexports sexports #!optional
-					(sdefs '()))
+					(sdefs '()) (renames '()))
   (define (find-reexport name)
     (let ((a (assq name (##sys#macro-environment))))
       (if (and a (pair? (cdr a)))
@@ -396,7 +407,8 @@
 	  (map (lambda (ne)
 		 (list (car ne) #f (##sys#ensure-transformer (cdr ne) (car ne))))
 	       sdefs))
-	 (mod (make-module name lib '() vexports (append sexps reexp-sexps) iexports))
+	 (mod (make-module name lib '() vexports (append sexps reexp-sexps) iexports
+                           renames))
 	 (senv (if (or (not (null? sexps))  ; Only macros have an senv
 		       (not (null? nexps))) ; which must be patched up
 		   (merge-se
@@ -660,6 +672,16 @@
 	    ((symbol? x) (##sys#symbol->string x))
 	    ((number? x) (number->string x))
 	    (else (##sys#syntax-error-hook loc "invalid prefix" ))))
+    (define (export-rename mod lst)
+      (let ((ren (module-rename-list mod)))
+        (if (null? ren)
+            lst
+            (map (lambda (a)
+                   (cond ((assq (car a) ren) =>
+                          (lambda (b) 
+                            (cons (cdr b) (cdr a))))
+                         (else a)))
+              lst))))
     (call-with-current-continuation
      (lambda (k)
        (define (module-imports name)
@@ -670,10 +692,10 @@
 	       (values (module-name mod)
 		       (module-library mod)
 		       (module-name mod)
-		       (module-vexports mod)
-		       (module-sexports mod)
+		       (export-rename mod (module-vexports mod))
+		       (export-rename mod (module-sexports mod))
 		       (module-iexports mod)))))
-       (let loop ((x x))
+       (let outer ((x x))
 	 (cond ((symbol? x)
 		(module-imports (strip-syntax x)))
 	       ((not (pair? x))
@@ -682,7 +704,7 @@
 		(let ((head (car x)))
 		  (cond ((c %only head)
 			 (##sys#check-syntax loc x '(_ _ . #(symbol 0)))
-			 (let-values (((name lib spec impv imps impi) (loop (cadr x)))
+			 (let-values (((name lib spec impv imps impi) (outer (cadr x)))
 				      ((imports) (strip-syntax (cddr x))))
 			   (let loop ((ids imports) (v '()) (s '()) (missing '()))
 			     (cond ((null? ids)
@@ -701,11 +723,11 @@
 				    (loop (cdr ids) v s (cons (car ids) missing)))))))
 			((c %except head)
 			 (##sys#check-syntax loc x '(_ _ . #(symbol 0)))
-			 (let-values (((name lib spec impv imps impi) (loop (cadr x)))
+			 (let-values (((name lib spec impv imps impi) (outer (cadr x)))
 				      ((imports) (strip-syntax (cddr x))))
-			   (let loop ((impv impv) (v '()) (ids imports))
+			   (let loopv ((impv impv) (v '()) (ids imports))
 			     (cond ((null? impv)
-				    (let loop ((imps imps) (s '()) (ids ids))
+				    (let loops ((imps imps) (s '()) (ids ids))
 				      (cond ((null? imps)
 					     (for-each
 					      (lambda (id)
@@ -714,21 +736,21 @@
 					     (values name lib `(,head ,spec ,@imports) v s impi))
 					    ((memq (caar imps) ids) =>
 								    (lambda (id)
-								      (loop (cdr imps) s (delete (car id) ids eq?))))
+								      (loops (cdr imps) s (delete (car id) ids eq?))))
 					    (else
-					     (loop (cdr imps) (cons (car imps) s) ids)))))
+					     (loops (cdr imps) (cons (car imps) s) ids)))))
 				   ((memq (caar impv) ids) =>
 							   (lambda (id)
-							     (loop (cdr impv) v (delete (car id) ids eq?))))
+							     (loopv (cdr impv) v (delete (car id) ids eq?))))
 				   (else
-				    (loop (cdr impv) (cons (car impv) v) ids))))))
+				    (loopv (cdr impv) (cons (car impv) v) ids))))))
 			((c %rename head)
 			 (##sys#check-syntax loc x '(_ _ . #((symbol symbol) 0)))
-			 (let-values (((name lib spec impv imps impi) (loop (cadr x)))
+			 (let-values (((name lib spec impv imps impi) (outer (cadr x)))
 				      ((renames) (strip-syntax (cddr x))))
-			   (let loop ((impv impv) (v '()) (ids renames))
+			   (let loopv ((impv impv) (v '()) (ids renames))
 			     (cond ((null? impv)
-				    (let loop ((imps imps) (s '()) (ids ids))
+				    (let loops ((imps imps) (s '()) (ids ids))
 				      (cond ((null? imps)
 					     (for-each
 					      (lambda (id)
@@ -737,21 +759,21 @@
 					     (values name lib `(,head ,spec ,@renames) v s impi))
 					    ((assq (caar imps) ids) =>
 					     (lambda (a)
-					       (loop (cdr imps)
+					       (loops (cdr imps)
 						     (cons (cons (cadr a) (cdar imps)) s)
 						     (delete a ids eq?))))
 					    (else
-					     (loop (cdr imps) (cons (car imps) s) ids)))))
+					     (loops (cdr imps) (cons (car imps) s) ids)))))
 				   ((assq (caar impv) ids) =>
 				    (lambda (a)
-				      (loop (cdr impv)
-					    (cons (cons (cadr a) (cdar impv)) v)
-					    (delete a ids eq?))))
+				      (loopv (cdr impv)
+					     (cons (cons (cadr a) (cdar impv)) v)
+					     (delete a ids eq?))))
 				   (else
-				    (loop (cdr impv) (cons (car impv) v) ids))))))
+				    (loopv (cdr impv) (cons (car impv) v) ids))))))
 			((c %prefix head)
 			 (##sys#check-syntax loc x '(_ _ _))
-			 (let-values (((name lib spec impv imps impi) (loop (cadr x)))
+			 (let-values (((name lib spec impv imps impi) (outer (cadr x)))
 				      ((prefix) (strip-syntax (caddr x))))
 			   (define (rename imp)
 			     (cons
