@@ -31,6 +31,7 @@ SRCDIR ?= ./
 ARCH ?= $(shell sh $(SRCDIR)/config-arch.sh)
 
 C_COMPILER ?= cc
+CXX_COMPILER ?= c++
 
 # options
 C_COMPILER_OPTIONS ?= -fno-strict-aliasing -fwrapv -DHAVE_CHICKEN_CONFIG_H
