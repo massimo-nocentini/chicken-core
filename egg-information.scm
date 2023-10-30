@@ -34,8 +34,11 @@
     (if (file-exists? fname*) fname* fname)))
 
 (define (load-egg-info fname)
-  (let ((fname (locate-egg-file fname)))
-    (with-input-from-file fname read)))
+  (let* ((fname (locate-egg-file fname))
+         (info (with-input-from-file fname read)))
+    (if (eof-object? info)
+        (error "empty egg-info file, possibly due to an aborted egg-install - please remove the file and reinstall the corresponding egg" fname)
+        info)))
 
 
 ;;; lookup specific toplevel properties of egg-information
