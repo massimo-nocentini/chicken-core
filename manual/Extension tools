@@ -81,7 +81,7 @@ the location where dependency extensions and tools are installed will
 not be automatically found, so setting this variable usually only makes
 sense when used in combination with {{CHICKEN_REPOSITORY_PATH}}.
 
-{{CHICKEN_INSTALL_PREFIX}} is intended for special sitautions and should be used 
+{{CHICKEN_INSTALL_PREFIX}} is intended for special situations and should be used
 with care. It is a last-resort utility to customize where build-results are placed.
 
 Make sure the paths given in these 
