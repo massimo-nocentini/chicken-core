@@ -86,18 +86,20 @@
   (import m1)
   ((lambda () (f1)))) ; should use new lambda (but should be folded by compiler)
 
-
-;;; local define should work even with redefined define
-
+;; #1132 - internal definitions honor redefinitions of defining forms
 (module m3 ()
   (import (rename scheme (define s:define)))
   (import (only (chicken base) assert))
   (define-syntax define
     (syntax-rules ()
-      ((_) (display 'oink))))
+      ((_) (display 'oink))
+      ((_ var value) (s:define var (+ value 1)))))
   (define)
+  ;; Internal definition uses new "define"
   (let ()
     (define a 1)
-    (assert (= a 1)))
-  (define)
-  (newline))
+    (assert (= a 2)))
+
+  ;; Toplevel definition also uses new "define"
+  (define b 5)
+  (assert (= b 6)))

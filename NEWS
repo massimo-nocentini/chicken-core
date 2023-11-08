@@ -58,6 +58,7 @@
 - Syntax expander
   - When passing a module as an environment to eval, correctly resolve
     identifiers in macro expansions (#1295 reported by Caolan McMahon).
+  - Internal definitions honor rebindings of core special forms (#1132).
 
 - Compiler
   - When emitting types files, the output list is now sorted, to ensure
