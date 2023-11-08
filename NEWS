@@ -54,6 +54,7 @@
   - chicken-install now accepts the -location command line option
     (short: -l) to specify local directories where to get egg sources
     from.
+  - chicken-install now gives a warning on unexpected properties (#1492).
 
 - Syntax expander
   - When passing a module as an environment to eval, correctly resolve
