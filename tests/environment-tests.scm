@@ -1,6 +1,6 @@
 ;;;; environment-tests.scm
 
-(import (chicken load))
+(import (chicken load) (chicken eval))
 
 (load-relative "test.scm")
 
@@ -52,6 +52,16 @@
 (test-error (eval 'baz csi-env))
 (test-equal (eval '(format "~a" 1) format-env) "1")
 (test-error (eval 'baz format-env))
+
+;; #1295
+(module example *
+  (import scheme)
+  (define (add a b) (+ a b))
+  (define-syntax double
+    (syntax-rules ()
+      ((_ x) (add x x)))))
+
+(test-equal (eval '(double 10) (module-environment 'example)) 20)
 
 (test-end)
 

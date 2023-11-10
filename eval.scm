@@ -145,8 +145,9 @@
 			(let ((var (cond ((not (symbol? j)) x) ; syntax?
 					 ((assq x (##sys#current-environment)) j)
 					 ((not static)
-					  (##sys#alias-global-hook j #f cntr))
-					 (else #f))))
+                                          (##sys#alias-global-hook j #f cntr))
+                                         ((not (eq? x j)) j) ; has macro-alias
+                                         (else #f))))
 			  (when (and ##sys#unbound-in-eval
 				     (or (not var)
 					 (not (##sys#symbol-has-toplevel-binding? var))))

@@ -55,6 +55,10 @@
     (short: -l) to specify local directories where to get egg sources
     from.
 
+- Syntax expander
+  - When passing a module as an environment to eval, correctly resolve
+    identifiers in macro expansions (#1295 reported by Caolan McMahon).
+
 - Compiler
   - When emitting types files, the output list is now sorted, to ensure
     deterministic build output (fixes #1783, reported by "ss2").
