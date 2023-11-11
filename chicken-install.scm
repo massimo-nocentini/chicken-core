@@ -425,7 +425,15 @@
         (delete-directory cached #t))
       (create-directory cached #t)
       (fetch-egg-sources name version cached lax))
-    (cond ((or (not (probe-dir cached))
+    (cond ((and (probe-dir cached)
+                (not (file-exists? status)))
+           ;; If for whatever reason the status file doesn't exist
+           ;; (e.g., it was renamed, as in 2f6a7221), reset the cache
+           ;; of the egg to prevent the object files in there from
+           ;; being reused.
+           (d "resetting ~a, as ~a does not exist~%" cached status)
+           (fetch #f))
+	  ((or (not (probe-dir cached))
                (not (file-exists? eggfile)))
            (d "~a not cached~%" name)
            (when cached-only (error "extension not cached" name))
