@@ -1334,3 +1334,27 @@ other-eval
 ;; changes, and any other imports are simply aliases.
 ;;(t 'old (reimported-foo reimported-foo))
 (t 'new (reimported-foo reimported-foo))
+
+;; #1166
+(module val-vs-syn1 *
+  (import scheme)
+  (define-syntax bar (syntax-rules () ((_) 'bar)))
+  (define (bar) 99)
+)
+
+(module test-val-vs-syn1 ()
+   (import scheme (chicken base) val-vs-syn1)
+   (assert (eq? 99 (bar))))
+
+(module val-vs-syn2 *
+  (import scheme)
+  (define (bar) 99)
+  (define-syntax bar (syntax-rules () ((_) 'bar)))
+)
+
+(module test-val-vs-syn2 ()
+   (import scheme (chicken base) val-vs-syn2)
+   (assert (eq? 'bar (bar))))
+
+(define begin -)
+(assert (eq? -1 (begin 0 1)))

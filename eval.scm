@@ -265,6 +265,7 @@
 			 ((##core#ensure-toplevel-definition)
 			  (unless tl?
 			    (##sys#error "toplevel definition in non-toplevel context for variable" (cadr x)))
+                          (##sys#put/restore! (cadr x) '##sys#override 'value)
 			  (compile
 			   '(##core#undefined) e #f tf cntr #f))
 
@@ -508,6 +509,7 @@
 				 (name (rename var)))
 			    (when (and static (not (assq var (##sys#current-environment))))
 			      (##sys#error 'eval "environment is not mutable" evalenv var))
+                            (##sys#put/restore! name '##sys#override 'syntax)
 			    (##sys#register-syntax-export 
 			     name (##sys#current-module)
 			     body)	; not really necessary, it only shouldn't be #f

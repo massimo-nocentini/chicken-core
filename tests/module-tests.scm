@@ -402,6 +402,19 @@
   (assert (equal? (alias) '(123)))
   (assert (equal? bar 99)))
 
+;; corner case, found by DeeEff, actually not really a good idea,
+;; but the expander looped here endlessly
+(module m36 (xcons)
+  (import scheme)
+  (define (xcons x y) (cons y x)))
+  
+(module m37 ()
+  (import (rename m36
+                  (xcons m36#xcons)))
+  (import scheme (chicken base))
+  (define (xcons x y) (m36#xcons 'X x))
+  (assert (equal? '(1 . X) (xcons 1 2))))
+
 (test-end "modules")
 
 (test-exit)

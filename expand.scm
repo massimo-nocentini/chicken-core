@@ -56,6 +56,7 @@
 (include "mini-srfi-1.scm")
 
 (define-syntax d (syntax-rules () ((_ . _) (void))))
+;(define-syntax d (syntax-rules () ((_ args ...) (print args ...))))
 
 ;; Macro to avoid "unused variable map-se" when "d" is disabled
 (define-syntax map-se
@@ -261,10 +262,13 @@
 	    (let ((head2 (or (lookup head dse) head)))
 	      (unless (pair? head2)
 		(set! head2 (or (lookup head2 (##sys#macro-environment)) head2)) )
-	      (cond [(eq? head2 '##core#let)
+	      (cond ((and (pair? head2)
+                          (eq? (##sys#get head '##sys#override) 'value))
+                     (values exp #f))
+                    ((eq? head2 '##core#let)
 		     (##sys#check-syntax 'let body '#(_ 2) #f dse)
-		     (let ([bindings (car body)])
-		       (cond [(symbol? bindings) ; expand named let
+		     (let ((bindings (car body)))
+		       (cond ((symbol? bindings) ; expand named let
 			      (##sys#check-syntax 'let body '(_ #((variable _) 0) . #(_ 1)) #f dse)
 			      (let ([bs (cadr body)])
 				(values
@@ -275,8 +279,8 @@
 				       ,(map (lambda (b) (car b)) bs) ,@(cddr body))])
 				    ,bindings)
 				   ,@(##sys#map cadr bs) )
-				 #t) ) ]
-			     [else (values exp #f)] ) ) ]
+				 #t) ) )
+			     (else (values exp #f)) ) ) )
 		    ((and cs? (symbol? head2) (getp head2 '##compiler#compiler-syntax)) =>
 		     (lambda (cs)
 		       (let ((result (call-handler head (car cs) exp (cdr cs) #t)))
@@ -285,7 +289,7 @@
 				(when ##sys#compiler-syntax-hook
 				  (##sys#compiler-syntax-hook head2 result))
 				(loop result))))))
-		    [else (expand head exp head2)] ) )
+		    (else (expand head exp head2)) ) )
 	    (values exp #f) ) )
       (values exp #f) ) ) )
 
@@ -462,16 +466,20 @@
     (define (comp s id)
       (let ((f (or (lookup id se)
                    (lookup id (##sys#macro-environment)))))
-        (or (eq? f id) (eq? s id))))
+        (and (or (not (symbol? f))
+                 (not (eq? (##sys#get id '##sys#override) 'value)))
+             (or (eq? f s) (eq? s id)))))
     (define (comp-def def)
       (lambda (id)
         (let repeat ((id id))
           (let ((f (or (lookup id se)
                        (lookup id (##sys#macro-environment)))))
-            (or (eq? f def)
-                (and (symbol? f)
-                     (not (eq? f id))
-                     (repeat f)))))))
+            (and (or (not (symbol? f))
+                     (not (eq? (##sys#get id '##sys#override) 'value)))
+                 (or (eq? f def)
+                     (and (symbol? f) 
+                          (not (eq? f id))
+                          (repeat f))))))))
     (define comp-define (comp-def define-definition))
     (define comp-define-syntax (comp-def define-syntax-definition))
     (define comp-define-values (comp-def define-values-definition))
@@ -569,6 +577,7 @@
       ;; Each #t in "mvars" indicates an MV-capable "var".  Non-MV
       ;; vars (#f in mvars) are 1-element lambda-lists for simplicity.
       (let loop ((body body) (vars '()) (vals '()) (mvars '()))
+        (d "BODY: " body)
 	(if (not (pair? body))
 	    (fini vars vals mvars body)
 	    (let* ((x (car body))

@@ -907,6 +907,7 @@
 					 `(##core#lambda ,(cdadr x) ,@(cddr x))
 					 (caddr x)))
 			       (name (lookup var)))
+                          (##sys#put/restore! name '##sys#override 'syntax)
 			  (##sys#register-syntax-export name (##sys#current-module) body)
 			  (##sys#extend-macro-environment
 			   name
@@ -924,6 +925,7 @@
 			(let* ((var (cadr x))
 			       (body (caddr x))
 			       (name (lookup var)))
+                          (##sys#put/restore! name '##sys#override 'syntax)
 			  (when body
 			    (set! compiler-syntax
 			      (alist-cons
@@ -1109,15 +1111,16 @@
 			  `(##core#lambda ,aliases ,body) ) )
 
 		       ((##core#ensure-toplevel-definition)
-			(unless tl?
-			  (let* ((var0 (cadr x))
-				 (var (lookup var0))
-				 (ln (get-line-number x)))
-			   (quit-compiling
-			    "~atoplevel definition of `~s' in non-toplevel context"
-			    (if ln (sprintf "(~a) - " ln) "")
-			    var)))
-			'(##core#undefined))
+                         (let* ((var0 (cadr x))
+                                (var (lookup var0)))
+                           (unless tl?
+                             (let ((ln (get-line-number x)))
+                               (quit-compiling
+                                 "~atoplevel definition of `~s' in non-toplevel context"
+                                (if ln (sprintf "(~a) - " ln) "")
+                                var)))
+                           (##sys#put/restore! var '##sys#override 'value)
+                           '(##core#undefined)))
 
 		       ((##core#set!)
 			(let* ((var0 (cadr x))

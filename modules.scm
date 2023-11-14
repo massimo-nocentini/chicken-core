@@ -534,18 +534,27 @@
 
 	  (##sys#error (get-output-string out))))
 
+      (define (filter-sdlist mod)
+        (let loop ((syms (module-defined-syntax-list mod)))
+          (cond ((null? syms) '())
+                ((eq? (##sys#get (caar syms) '##sys#override) 'value)
+                 (loop (cdr syms)))
+                (else (cons (assq (caar syms) (##sys#macro-environment))
+                            (loop (cdr syms)))))))
+
       (let* ((explist (module-export-list mod))
 	     (name (module-name mod))
 	     (dlist (module-defined-list mod))
 	     (elist (module-exist-list mod))
 	     (missing #f)
-	     (sdlist (map (lambda (sym) (assq (car sym) (##sys#macro-environment)))
-			  (module-defined-syntax-list mod)))
+	     (sdlist (filter-sdlist mod))
 	     (sexports
 	      (if (eq? #t explist)
 		  (merge-se (module-sexports mod) sdlist)
 		  (let loop ((me (##sys#macro-environment)))
 		    (cond ((null? me) '())
+                          ((eq? (##sys#get (caar me) '##sys#override) 'value)
+                           (loop (cdr me)))
 			  ((find-export (caar me) mod #f)
 			   (cons (car me) (loop (cdr me))))
 			  (else (loop (cdr me)))))))
@@ -555,7 +564,9 @@
 		    '()
 		    (let* ((h (car xl))
 			   (id (if (symbol? h) h (car h))))
-		      (cond ((assq id sexports) (loop (cdr xl)))
+		      (cond ((eq? (##sys#get id '##sys#override) 'syntax)
+                              (loop (cdr xl)))
+                            ((assq id sexports) (loop (cdr xl)))
                             (else 
                               (cons 
                                 (cons 
@@ -810,17 +821,20 @@
     (dd `(S: ,(if cm (module-name cm) '<toplevel>) ,(map-se vss)))
     (for-each
      (lambda (imp)
-       (and-let* ((id (car imp))
-                  (a (assq id (import-env)))
-                  (aid (cdr imp))
-                  ((not (eq? aid (cdr a)))))
-         (##sys#notice "re-importing already imported identifier" id)))
+       (let ((id (car imp)))
+         (##sys#put! id '##sys#override #f)
+         (and-let* ((a (assq id (import-env)))
+                    (aid (cdr imp))
+                    ((not (eq? aid (cdr a)))))
+              (##sys#notice "re-importing already imported identifier" id))))
      vsv)
     (for-each
      (lambda (imp)
-       (and-let* ((a (assq (car imp) (macro-env)))
-                  ((not (eq? (cdr imp) (cdr a)))))
-         (##sys#notice "re-importing already imported syntax" (car imp))))
+       (let ((id (car imp)))
+         (##sys#put! id '##sys#override #f)
+         (and-let* ((a (assq (car imp) (macro-env)))
+                    ((not (eq? (cdr imp) (cdr a)))))
+              (##sys#notice "re-importing already imported syntax" (car imp)))))
      vss)
     (when reexp?
       (unless cm
