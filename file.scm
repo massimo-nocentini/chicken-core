@@ -304,18 +304,13 @@ EOF
 (define create-temporary-file)
 (define create-temporary-directory)
 
-(let ((temp #f)
-      (temp-prefix "temp")
+(let ((temp-prefix "temp")
       (string-append string-append))
   (define (tempdir)
-    (or temp
-	(let ((tmp
-	       (or (get-environment-variable "TMPDIR")
-		   (get-environment-variable "TEMP")
-		   (get-environment-variable "TMP")
-		   "/tmp")))
-	  (set! temp tmp)
-	  tmp)))
+    (or (get-environment-variable "TMPDIR")
+        (get-environment-variable "TEMP")
+        (get-environment-variable "TMP")
+        "/tmp"))
   (set! create-temporary-file
     (lambda (#!optional (ext "tmp"))
       (##sys#check-string ext 'create-temporary-file)

@@ -479,7 +479,7 @@ del /f /q ec.so ec.import.*
 if errorlevel 1 exit /b 1
 %compile_s% ec.scm -emit-import-library ec -o ec.so
 if errorlevel 1 exit /b 1
-%compile_s% ec.import.scm -o ec.import.so 
+%compile_s% ec.import.scm -o ec.import.so
 if errorlevel 1 exit /b 1
 %interpret% -bnq ec.so ec-tests.scm
 rem %compile% ec-tests.scm
@@ -586,7 +586,11 @@ echo ======================================== find-files tests ...
 %interpret% -bnq test-find-files.scm
 if errorlevel 1 exit /b 1
 
-echo "======================================== record-renaming tests ..."
+echo ======================================== create-temporary-file tests ...
+$interpret -bnq test-create-temporary-file.scm
+
+
+echo ======================================== record-renaming tests ...
 %interpret% -bnq record-rename-test.scm
 if errorlevel 1 exit /b 1
 

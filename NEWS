@@ -31,6 +31,8 @@
     using it from there is deprecated.
   - Added "export/rename" to (chicken module) for renaming identifiers on
     export.
+  - The values of the TMPDIR, TMP and TEMP environment variables are no
+    longer memoized (fixes #1830).
 
 - Tools
   - The -R option for csi and csc now accepts list-notation like

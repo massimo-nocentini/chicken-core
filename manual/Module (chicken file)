@@ -129,22 +129,36 @@ write or execute permissions on the file named {{FILENAME}}.
 <procedure>(create-temporary-file [EXTENSION])</procedure>
 
 Creates an empty temporary file and returns its pathname. If
-{{EXTENSION}} is not given, then {{.tmp}} is used. If the
-environment variable {{TMPDIR, TEMP}} or {{TMP}} is set,
-then the pathname names a file in that directory. If none of
-the environment variables is given the location of the
-temporary file defaults to {{/tmp}} if it exists or the 
-current-directory
+{{EXTENSION}} is not given, then {{.tmp}} is used. If the environment
+variable {{TMPDIR}}, {{TEMP}} or {{TMP}} is set, then the pathname
+names a file in that directory. If none of the environment variables
+is given, the location of the temporary file defaults to {{/tmp}}.
 
+Note that {{TMPDIR}}, {{TEMP}} and {{TMP}} are checked in this order.
+It means that, for example, if both {{TMPDIR}} and {{TEMP}} are set,
+the value of {{TMPDIR}} will be used.
+
+Changed in CHICKEN 5.4.0: the values of the {{TMPDIR}}, {{TEMP}} and
+{{TMP}} environment variables are no longer memoized (see
+[[#1830|https://bugs.call-cc.org/ticket/1830]]).
 
 ==== create-temporary-directory
 
 <procedure>(create-temporary-directory)</procedure>
 
 Creates an empty temporary directory and returns its pathname. If the
-environment variable {{TMPDIR, TEMP}} or {{TMP}} is set, then the
-temporary directory is created at that location.
+environment variable {{TMPDIR}}, {{TEMP}} or {{TMP}} is set, then the
+temporary directory is created at that location. If none of the
+environment variables is given, the location of the temporary
+directory defaults to {{/tmp}}.
 
+Note that {{TMPDIR}}, {{TEMP}} and {{TMP}} are checked in this order.
+It means that, for example, if both {{TMPDIR}} and {{TEMP}} are set,
+the value of {{TMPDIR}} will be used.
+
+Changed in CHICKEN 5.4.0: the values of the {{TMPDIR}}, {{TEMP}} and
+{{TMP}} environment variables are no longer memoized (see
+[[#1830|https://bugs.call-cc.org/ticket/1830]]).
 
 === Finding files
 
