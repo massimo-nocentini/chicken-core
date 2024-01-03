@@ -112,7 +112,9 @@
     (let ((version
 	   (or (let ((info (read-info egg dir ext)))
 		 (and info (get-egg-property info 'version)))
-	       (let ((file (chicken.load#find-file +version-file+ dir)))
+               (let ((file (file-exists?
+                            (make-pathname (list cache-metadata-directory egg)
+                                           +version-file+))))
 		 (and file (with-input-from-file file read)))
 	       "unknown")))
       (print (format-string (string-append egg " ")

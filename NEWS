@@ -45,10 +45,6 @@
   - When `location' is specified in setup.defaults, chicken-install
     will consider two location layouts when looking for eggs:
     <location>/<egg> and <location>/<egg>/<version>.
-  - chicken-install now prefixes special files like VERSION, STATUS
-    and TIMESTAMP with an underscore to reduce likelihood of
-    collisions with source files on case-insensitive file systems
-    like on MacOS (#1753, reported by Kon Lovett).
   - chicken-install: Fix #1684 (programs that specify
     component-dependencies should build-depend on their import
     libraries).
@@ -57,6 +53,10 @@
     (short: -l) to specify local directories where to get egg sources
     from.
   - chicken-install now gives a warning on unexpected properties (#1492).
+  - chicken-install now uses a directory specific for cache metadata
+    (VERSION, STATUS and TIMESTAMP files) to avoid collisions with source
+    files on case-insensitive file systems like on MacOS (#1753, reported
+    by Kon Lovett).
 
 - Syntax expander
   - When passing a module as an environment to eval, correctly resolve

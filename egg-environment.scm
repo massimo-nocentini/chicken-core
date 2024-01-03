@@ -99,9 +99,6 @@ EOF
   (string-append default-runlibdir "/chicken/" (number->string binary-version)))
 
 (define +egg-info-extension+ "egg-info")
-(define +version-file+ "_VERSION")
-(define +timestamp-file+ "_TIMESTAMP")
-(define +status-file+ "_STATUS")
 (define +egg-extension+ "egg")
 
 (define (validate-environment)
@@ -126,3 +123,12 @@ EOF
       (make-pathname (or (system-cache-directory)
                          (current-directory))
                      chicken-install-program)))
+
+(define cache-metadata-directory
+  ;; Directory where the VERSION, TIMESTAMP and STATUS files are
+  ;; stored (under their corresponding egg directory).
+  (make-pathname cache-directory ".cache-metadata"))
+
+(define +version-file+ "VERSION")
+(define +timestamp-file+ "TIMESTAMP")
+(define +status-file+ "STATUS")

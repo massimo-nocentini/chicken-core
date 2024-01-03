@@ -417,13 +417,17 @@
   
 (define (locate-egg name version)
   (let* ((cached (make-pathname cache-directory name))
+         (metadata-dir (make-pathname cache-metadata-directory name))
          (now (current-seconds))
-         (status (make-pathname cached +status-file+))
+         (status (make-pathname metadata-dir +status-file+))
          (eggfile (make-pathname cached name +egg-extension+)))
     (define (fetch lax)
       (when (file-exists? cached)
         (delete-directory cached #t))
+      (when (file-exists? metadata-dir)
+        (delete-directory metadata-dir #t))
       (create-directory cached #t)
+      (create-directory metadata-dir #t)
       (fetch-egg-sources name version cached lax))
     (cond ((and (probe-dir cached)
                 (not (file-exists? status)))
@@ -448,8 +452,8 @@
                        (error "cached egg does not match CHICKEN version - use `-force' to install anyway" name)))
                  (else (fetch #f)))))
     (let* ((info (validate-egg-info (load-egg-info eggfile)))
-           (vfile (make-pathname cached +version-file+))
-           (tfile (make-pathname cached +timestamp-file+))
+           (vfile (make-pathname metadata-dir +version-file+))
+           (tfile (make-pathname metadata-dir +timestamp-file+))
            (lversion (or (get-egg-property info 'version)
                          (and (file-exists? vfile)
                               (with-input-from-file vfile read)))))
@@ -503,14 +507,15 @@
                   (values (make-pathname egg-dir (->string latest))
                           latest)))))))))
 
-(define (write-cache-metadata egg-cache-dir egg-version)
-  (when egg-version
-    (with-output-to-file (make-pathname egg-cache-dir +version-file+)
-      (cut write egg-version)))
-  (with-output-to-file (make-pathname egg-cache-dir +timestamp-file+)
-    (cut write (current-seconds)))
-  (with-output-to-file (make-pathname egg-cache-dir +status-file+)
-    (cut write current-status)))
+(define (write-cache-metadata egg egg-version)
+  (let ((metadata-dir (make-pathname cache-metadata-directory egg)))
+    (when egg-version
+      (with-output-to-file (make-pathname metadata-dir +version-file+)
+        (cut write egg-version)))
+    (with-output-to-file (make-pathname metadata-dir +timestamp-file+)
+      (cut write (current-seconds)))
+    (with-output-to-file (make-pathname metadata-dir +status-file+)
+      (cut write current-status))))
 
 (define (fetch-egg-sources name version dest lax)
   (print "fetching " name)
@@ -538,7 +543,7 @@
                        (cond (dir
                                (copy-egg-sources tmpdir dest)
                                (delete-directory tmpdir #t)
-			       (write-cache-metadata dest ver))
+			       (write-cache-metadata name ver))
                              (else (loop (cdr srvs))))))))))
           (else
            (receive (dir version-from-path)
@@ -560,7 +565,7 @@
                            (version>=? rversion version))
                        (begin
                          (copy-egg-sources dir dest)
-                         (write-cache-metadata dest (or rversion version)))
+                         (write-cache-metadata name (or rversion version)))
                        (loop (cdr locs))))
                  (loop (cdr locs))))))))
 
@@ -865,9 +870,10 @@
     (lambda (egg)
       (let* ((name (car egg))
              (dir (cadr egg))
+             (metadata-dir (make-pathname cache-metadata-directory name))
              (eggfile (make-pathname dir name +egg-extension+))
              (info (load-egg-info eggfile))
-             (vfile (make-pathname dir +version-file+))
+             (vfile (make-pathname metadata-dir +version-file+))
              (ver (and (file-exists? vfile)
                        (with-input-from-file vfile read))))
         (when (or host-extension 
@@ -1048,10 +1054,14 @@
           (for-each
             (lambda (egg)
               (let* ((name (if (pair? egg) (car egg) egg))
-                     (dname (make-pathname cache-directory name)))
-                (when (file-exists? dname)
-                  (d "purging ~a from cache at ~a~%" name dname)
-                  (delete-directory dname #t))))
+                     (cache-dir (make-pathname cache-directory name))
+                     (metadata-dir (make-pathname cache-metadata-directory name)))
+                (when (file-exists? cache-dir)
+                  (d "purging ~a from cache at ~a~%" name cache-dir)
+                  (delete-directory cache-dir #t))
+                (when (file-exists? metadata-dir)
+                  (d "purging metadata of ~a from cache at ~a~%" name metadata-dir)
+                  (delete-directory metadata-dir #t))))
             eggs))))
 
 
