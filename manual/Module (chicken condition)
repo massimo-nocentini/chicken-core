@@ -102,6 +102,10 @@ possible. If the unwinding and handling of the signal raises one of
 these signals once again, the process will abort with an error
 message.
 
+* New in CHICKEN 5.4.0: condition objects produced by procedures that
+change errno have an {{errno}} property.  To access it, use
+{{(get-condition-property <the-condition-object> 'exn 'errno)}}.
+
 === Additional API
 
 ==== condition-case

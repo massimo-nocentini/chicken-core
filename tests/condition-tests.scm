@@ -32,3 +32,20 @@
 (assert (equal? (condition->list condition3)
 		'((exn message "foo" arguments ("bar") location test)
 		  (sam age 23 partner "max"))))
+
+;; testing errno in condition objects
+
+(import (chicken errno)
+        (chicken file)
+        (chicken process-context))
+
+(let ((nonexistent-path "this/path/does/not/exist/,hopefully"))
+  (assert (not (file-exists? nonexistent-path)))
+
+  (handle-exceptions exn
+    (assert (= (get-condition-property exn 'exn 'errno) errno/noent))
+    (delete-file nonexistent-path))
+
+  (handle-exceptions exn
+    (assert (= (get-condition-property exn 'exn 'errno) errno/noent))
+    (change-directory nonexistent-path)))

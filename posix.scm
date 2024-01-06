@@ -199,8 +199,8 @@
   (##sys#check-string cmd 'system)
   (let ((r (##core#inline "C_execute_shell_command" cmd)))
     (cond ((fx< r 0)
-	   (##sys#update-errno)
-	   (##sys#signal-hook #:process-error 'system "`system' invocation failed" cmd))
+           (##sys#signal-hook/errno
+            #:process-error (##sys#update-errno) 'system "`system' invocation failed" cmd))
 	  (else r))))
 
 ;;; Like `system', but bombs on nonzero return code:

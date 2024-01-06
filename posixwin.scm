@@ -525,8 +525,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	(##sys#check-fixnum mode 'file-open)
 	(let ([fd (##core#inline "C_open" (##sys#make-c-string filename 'file-open) flags mode)])
 	  (when (eq? -1 fd)
-	    (##sys#update-errno)
-	    (##sys#signal-hook #:file-error 'file-open "cannot open file" filename flags mode) )
+            (##sys#signal-hook/errno
+             #:file-error (##sys#update-errno) 'file-open "cannot open file" filename flags mode))
 	  fd) ) ) ) )
 
 (set! chicken.file.posix#file-close
@@ -548,8 +548,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	(##sys#signal-hook #:type-error 'file-read "bad argument type - not a string or blob" buf) )
       (let ([n (##core#inline "C_read" fd buf size)])
 	(when (eq? -1 n)
-	  (##sys#update-errno)
-	  (##sys#signal-hook #:file-error 'file-read "cannot read from file" fd size) )
+          (##sys#signal-hook/errno
+           #:file-error (##sys#update-errno) 'file-read "cannot read from file" fd size))
 	(list buf n) ) ) ) )
 
 (set! chicken.file.posix#file-write
@@ -561,8 +561,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
       (##sys#check-fixnum size 'file-write)
       (let ([n (##core#inline "C_write" fd buffer size)])
 	(when (eq? -1 n)
-	  (##sys#update-errno)
-	  (##sys#signal-hook #:file-error 'file-write "cannot write to file" fd size) )
+          (##sys#signal-hook/errno
+           #:file-error (##sys#update-errno) 'file-write "cannot write to file" fd size))
 	n) ) ) )
 
 (set! chicken.file.posix#file-mkstemp
@@ -612,8 +612,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   (lambda (#!optional (mode (fxior chicken.file.posix#open/binary
                                    chicken.file.posix#open/noinherit)))
     (when (fx< (##core#inline "C_pipe" #f mode) 0)
-      (##sys#update-errno)
-      (##sys#signal-hook #:file-error 'create-pipe "cannot create pipe") )
+      (##sys#signal-hook/errno
+       #:file-error (##sys#update-errno) 'create-pipe "cannot create pipe"))
     (values _pipefd0 _pipefd1) ) )
 
 ;;; Signal processing:
@@ -676,8 +676,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 		    (##sys#check-fixnum n 'duplicate-fileno)
 		    (##core#inline "C_dup2" old n) ) ) ] )
       (when (fx< fd 0)
-	(##sys#update-errno)
-	(##sys#signal-hook #:file-error 'duplicate-fileno "cannot duplicate file descriptor" old) )
+        (##sys#signal-hook/errno
+         #:file-error (##sys#update-errno) 'duplicate-fileno "cannot duplicate file descriptor" old))
       fd) ) )
 
 
@@ -754,9 +754,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   (or (get-environment-variable "COMSPEC")
       (if (##core#inline "C_get_shlcmd")
 	  _shlcmd
-	  (begin
-	    (##sys#update-errno)
-	    (##sys#error loc "cannot retrieve system directory") ) ) ) )
+          (##sys#error/errno
+           (##sys#update-errno) loc "cannot retrieve system directory"))))
 
 (define (shell-command-arguments cmdlin)
   (list "/c" cmdlin) )
@@ -820,9 +819,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	       handle
 	       (and stderrf (chicken.file.posix#open-input-file*
 			     stderr_fd)))
-	      (begin
-		(##sys#update-errno)
-		(##sys#signal-hook #:process-error loc "cannot execute process" cmdlin))) ) ) ) ) ) )
+              (##sys#signal-hook/errno
+               #:process-error (##sys#update-errno) loc "cannot execute process" cmdlin))))))))
 
 ;; TODO: See if this can be moved to posix-common
 (let ((%process
@@ -867,9 +865,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   (lambda ()
     (if (##core#inline "C_get_user_name")
         _username
-        (begin
-          (##sys#update-errno)
-          (##sys#error 'current-user-name "cannot retrieve current user-name") ) ) ) )
+        (##sys#error/errno
+         (##sys#update-errno) 'current-user-name "cannot retrieve current user-name"))))
 
 
 ;;; unimplemented stuff:

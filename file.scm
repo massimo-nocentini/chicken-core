@@ -116,7 +116,8 @@ EOF
 	[string-append string-append] )
     (lambda (type loc msg . args)
       (let ([rn (##sys#update-errno)])
-	(apply ##sys#signal-hook type loc (string-append msg " - " (strerror rn)) args) ) ) ) )
+        (apply ##sys#signal-hook/errno
+               type rn loc (string-append msg " - " (strerror rn)) args)))))
 
 
 ;;; Existence checks:
@@ -225,11 +226,10 @@ EOF
 (define (delete-file filename)
   (##sys#check-string filename 'delete-file)
   (unless (eq? 0 (##core#inline "C_remove" (##sys#make-c-string filename 'delete-file)))
-    (##sys#update-errno)
-    (##sys#signal-hook
-     #:file-error 'delete-file
-     (##sys#string-append "cannot delete file - " strerror) filename))
-  filename)
+    (##sys#signal-hook/errno
+     #:file-error (##sys#update-errno) 'delete-file
+     (##sys#string-append "cannot delete file - " strerror) filename)
+    filename))
 
 (define (delete-file* file)
   (and (file-exists? file) (delete-file file)))
@@ -243,9 +243,8 @@ EOF
 		  "C_rename"
 		  (##sys#make-c-string oldfile 'rename-file)
 		  (##sys#make-c-string newfile 'rename-file)))
-    (##sys#update-errno)
-    (##sys#signal-hook
-     #:file-error 'rename-file
+    (##sys#signal-hook/errno
+     #:file-error (##sys#update-errno) 'rename-file
      (##sys#string-append "cannot rename file - " strerror) oldfile newfile))
   newfile)
 

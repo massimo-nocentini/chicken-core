@@ -604,8 +604,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
    (lambda (id)
      (##sys#check-fixnum id 'current-user-id)
      (when (fx< (##core#inline "C_setuid" id) 0)
-       (##sys#update-errno)
-       (##sys#error 'current-user-id!-setter "cannot set user ID" id) ) )
+       (##sys#error/errno (##sys#update-errno)
+                          'current-user-id!-setter "cannot set user ID" id)))
    "(chicken.process-context.posix#current-user-id)"))
 
 (set! chicken.process-context.posix#current-effective-user-id
@@ -614,9 +614,9 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
    (lambda (id)
      (##sys#check-fixnum id 'current-effective-user-id)
      (when (fx< (##core#inline "C_seteuid" id) 0)
-       (##sys#update-errno)
-       (##sys#error
-	'effective-user-id!-setter "cannot set effective user ID" id) ) )
+       (##sys#error/errno (##sys#update-errno)
+                          'effective-user-id!-setter
+                          "cannot set effective user ID" id)))
    "(chicken.process-context.posix#current-effective-user-id)"))
 
 (set! chicken.process-context.posix#current-group-id
@@ -625,8 +625,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
    (lambda (id)
      (##sys#check-fixnum id 'current-group-id)
      (when (fx< (##core#inline "C_setgid" id) 0)
-       (##sys#update-errno)
-       (##sys#error 'current-group-id!-setter "cannot set group ID" id) ) )
+       (##sys#error/errno (##sys#update-errno)
+                          'current-group-id!-setter "cannot set group ID" id)))
    "(chicken.process-context.posix#current-group-id)") )
 
 (set! chicken.process-context.posix#current-effective-group-id
@@ -635,9 +635,9 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
    (lambda (id)
      (##sys#check-fixnum id 'current-effective-group-id)
      (when (fx< (##core#inline "C_setegid" id) 0)
-       (##sys#update-errno)
-       (##sys#error
-	'effective-group-id!-setter "cannot set effective group ID" id) ) )
+       (##sys#error/errno (##sys#update-errno)
+                          'effective-group-id!-setter
+                          "cannot set effective group ID" id)))
    "(chicken.process-context.posix#current-effective-group-id)") )
 
 (define-foreign-variable _user-name nonnull-c-string "C_user->pw_name")
@@ -697,8 +697,8 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   (lambda ()
    (let ([a (##core#inline "C_setsid" #f)])
      (when (fx< a 0)
-	   (##sys#update-errno)
-	   (##sys#error 'create-session "cannot create session") )
+       (##sys#error/errno (##sys#update-errno)
+                          'create-session "cannot create session"))
      a)) )
 
 (set! chicken.process-context.posix#process-group-id
@@ -707,15 +707,16 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
      (##sys#check-fixnum pid 'process-group-id)
      (let ([a (##core#inline "C_getpgid" pid)])
        (when (fx< a 0)
-         (##sys#update-errno)
-         (##sys#error 'process-group-id "cannot retrieve process group ID" pid) )
+         (##sys#error/errno (##sys#update-errno)
+                            'process-group-id
+                            "cannot retrieve process group ID" pid))
        a))
    (lambda (pid pgid)
      (##sys#check-fixnum pid 'process-group)
      (##sys#check-fixnum pgid 'process-group)
      (when (fx< (##core#inline "C_setpgid" pid pgid) 0)
-       (##sys#update-errno)
-       (##sys#error 'process-group "cannot set process group ID" pid pgid) ) )
+       (##sys#error/errno (##sys#update-errno)
+                          'process-group "cannot set process group ID" pid pgid)))
    "(chicken.process-context.posix#process-group-id pid)"))
 
 

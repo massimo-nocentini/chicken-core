@@ -33,6 +33,8 @@
     export.
   - The values of the TMPDIR, TMP and TEMP environment variables are no
     longer memoized (fixes #1830).
+  - Condition objects produced by procedures that change errno now have
+    an `errno' property.
 
 - Tools
   - The -R option for csi and csc now accepts list-notation like

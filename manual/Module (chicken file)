@@ -10,6 +10,11 @@ directories.  For more specific operations, see also
 All errors related to failing file-operations will signal a condition
 of kind {{(exn i/o file)}}.
 
+* New in CHICKEN 5.4.0: Errors caused by underlying C calls that
+  change errno will produce a condition object with an {{errno}}
+  property, which can be accessed with
+  {{(get-condition-property <the-condition-object> 'exn 'errno)}}.
+
 === Basic file operations
 
 ==== create-directory

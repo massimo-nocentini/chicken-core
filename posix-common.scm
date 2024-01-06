@@ -189,7 +189,8 @@ EOF
 	[string-append string-append] )
     (lambda (type loc msg . args)
       (let ([rn (##sys#update-errno)])
-	(apply ##sys#signal-hook type loc (string-append msg " - " (strerror rn)) args) ) ) ) )
+        (apply ##sys#signal-hook/errno
+               type rn loc (string-append msg " - " (strerror rn)) args)))))
 
 (define ##sys#posix-error posix-error)
 

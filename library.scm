@@ -40,7 +40,7 @@
 	+maximum-allowed-exponent+ mantexp->dbl ldexp round-quotient
 	##sys#string->compnum ##sys#internal-gcd)
   (not inline chicken.base#sleep-hook ##sys#change-directory-hook
-       ##sys#user-read-hook ##sys#error-hook ##sys#signal-hook
+       ##sys#user-read-hook ##sys#error-hook ##sys#signal-hook ##sys#signal-hook/errno
        ##sys#default-read-info-hook ##sys#infix-list-hook
        ##sys#sharp-number-hook ##sys#user-print-hook
        ##sys#user-interrupt-hook ##sys#windows-platform
@@ -1048,6 +1048,11 @@ EOF
 (define ##sys#error error)
 (define ##sys#warn warning)
 (define ##sys#notice notice)
+
+(define (##sys#error/errno err . args)
+  (if (pair? args)
+      (apply ##sys#signal-hook/errno #:error err #f args)
+      (##sys#signal-hook/errno #:error err #f)))
 
 (define-foreign-variable strerror c-string "strerror(errno)")
 
@@ -3225,24 +3230,26 @@ EOF
 	      (let ((c (##core#inline "C_read_char" p)))
 		(cond
 		 ((eq? -1 c)
-		  (if (eq? (##sys#update-errno) (foreign-value "EINTR" int))
-		      (##sys#dispatch-interrupt loop)
-		      (##sys#signal-hook
-		       #:file-error 'read-char
-		       (##sys#string-append "cannot read from port - " strerror)
-		       p)))
+                  (let ((err (##sys#update-errno)))
+                    (if (eq? err (foreign-value "EINTR" int))
+                        (##sys#dispatch-interrupt loop)
+                        (##sys#signal-hook/errno
+                         #:file-error err 'read-char
+                         (##sys#string-append "cannot read from port - " strerror)
+                         p))))
 		 (else c)))))
 	  (lambda (p)			; peek-char
 	    (let loop ()
 	      (let ((c (##core#inline "C_peek_char" p)))
 		(cond
 		 ((eq? -1 c)
-		  (if (eq? (##sys#update-errno) (foreign-value "EINTR" int))
-		      (##sys#dispatch-interrupt loop)
-		      (##sys#signal-hook
-		       #:file-error 'peek-char
-		       (##sys#string-append "cannot read from port - " strerror)
-		       p)))
+                  (let ((err (##sys#update-errno)))
+                    (if (eq? err (foreign-value "EINTR" int))
+                        (##sys#dispatch-interrupt loop)
+                        (##sys#signal-hook/errno
+                         #:file-error err 'peek-char
+                         (##sys#string-append "cannot read from port - " strerror)
+                         p))))
 		 (else c)))))
 	  (lambda (p c)			; write-char
 	    (##core#inline "C_display_char" p c) )
@@ -3261,14 +3268,15 @@ EOF
 		(cond ((eof-object? len) ; EOF returns 0 bytes read
 		       act)
 		      ((fx< len 0)
-		       (if (eq? (##sys#update-errno) (foreign-value "EINTR" int))
-			   (##sys#dispatch-interrupt
-			    (lambda ()
-			      (loop (fx- rem len) (fx+ act len) (fx+ start len))))
-			   (##sys#signal-hook
-			    #:file-error 'read-string!
-			    (##sys#string-append "cannot read from port - " strerror)
-			    p n dest start)))
+                       (let ((err (##sys#update-errno)))
+                         (if (eq? err (foreign-value "EINTR" int))
+                             (##sys#dispatch-interrupt
+                              (lambda ()
+                                (loop (fx- rem len) (fx+ act len) (fx+ start len))))
+                             (##sys#signal-hook/errno
+                              #:file-error err 'read-string!
+                              (##sys#string-append "cannot read from port - " strerror)
+                              p n dest start))))
 		      ((fx< len rem)
 		       (loop (fx- rem len) (fx+ act len) (fx+ start len)))
 		      (else
@@ -3295,18 +3303,19 @@ EOF
 				   (##sys#string-append result buffer)
 				   #t)) ]
 			((fx< n 0)
-			 (if (eq? (##sys#update-errno) (foreign-value "EINTR" int))
-			     (let ((n (fx- (fxneg n) 1)))
-			       (##sys#dispatch-interrupt
-				(lambda ()
-				  (loop len limit buffer
-					(##sys#string-append
-					 result (##sys#substring buffer 0 n))
-					#t))))
-			     (##sys#signal-hook
-			      #:file-error 'read-line
-			      (##sys#string-append "cannot read from port - " strerror)
-			      p rlimit)))
+                         (let ((err (##sys#update-errno)))
+                           (if (eq? err (foreign-value "EINTR" int))
+                               (let ((n (fx- (fxneg n) 1)))
+                                 (##sys#dispatch-interrupt
+                                  (lambda ()
+                                    (loop len limit buffer
+                                          (##sys#string-append
+                                           result (##sys#substring buffer 0 n))
+                                          #t))))
+                               (##sys#signal-hook/errno
+                                #:file-error err 'read-line
+                                (##sys#string-append "cannot read from port - " strerror)
+                                p rlimit))))
 			[f (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
 			   (##sys#string-append result (##sys#substring buffer 0 n))]
 			[else
@@ -3400,8 +3409,9 @@ EOF
             [else (##sys#error loc "invalid file option" o)] ) ) )
       (let ((port (##sys#make-port (if inp 1 2) ##sys#stream-port-class name 'stream)))
         (unless (##sys#open-file-port port name (##sys#string-append fmode bmode))
-          (##sys#update-errno)
-          (##sys#signal-hook #:file-error loc (##sys#string-append "cannot open file - " strerror) name) )
+          (##sys#signal-hook/errno #:file-error (##sys#update-errno) loc
+                                   (##sys#string-append "cannot open file - " strerror)
+                                   name))
         port) ) )
 
   (define (close port inp loc)
@@ -5105,7 +5115,7 @@ EOF
 (import scheme chicken.base chicken.fixnum chicken.foreign)
 (import chicken.internal.syntax)
 
-(define (##sys#signal-hook mode msg . args)
+(define (##sys#signal-hook/errno mode errno msg . args)
   (##core#inline "C_dbg_hook" #f)
   (##core#inline "signal_debug_event" mode msg args)
   (case mode
@@ -5132,7 +5142,7 @@ EOF
 	   (##sys#write-char-0 #\newline ##sys#standard-error))))
       args)
      (##sys#flush-output ##sys#standard-error)]
-    [else
+    (else
      (when (and (symbol? msg) (null? args))
        (set! msg (symbol->string msg)))
      (let* ([hasloc (and (or (not msg) (symbol? msg)) (pair? args))]
@@ -5158,10 +5168,19 @@ EOF
 	   [(#:domain-error)		'(exn domain)]
 	   ((#:memory-error)            '(exn memory))
 	   [else			'(exn)] )
-	 (list '(exn . message) msg
-	       '(exn . arguments) args
-	       '(exn . call-chain) (get-call-chain)
-	       '(exn . location) loc) ) ) ) ] ) )
+         (let ((props
+                (list '(exn . message) msg
+                      '(exn . arguments) args
+                      '(exn . call-chain) (get-call-chain)
+                      '(exn . location) loc)))
+           (if errno
+               (cons '(exn . errno) (cons errno props))
+               props))))))))
+
+(define (##sys#signal-hook mode msg . args)
+  (if (pair? args)
+      (apply ##sys#signal-hook/errno mode #f msg args)
+      (##sys#signal-hook/errno mode #f msg)))
 
 (define (abort x)
   (##sys#current-exception-handler x)
@@ -6034,8 +6053,7 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
   (##sys#check-string name 'change-directory)
   (let ((sname (##sys#make-c-string name 'change-directory)))
     (unless (fx= (##core#inline "C_chdir" sname) 0)
-      (##sys#update-errno)
-      (##sys#signal-hook #:file-error 'change-directory
+      (##sys#signal-hook/errno #:file-error (##sys#update-errno) 'change-directory
        (string-append "cannot change current directory - " strerror) name))
     name))
 
@@ -6052,9 +6070,10 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 	(##sys#update-errno))
       (if len
 	  (##sys#substring buffer 0 len)
-	  (##sys#signal-hook
-	   #:file-error
-	   'current-directory "cannot retrieve current directory"))))
+          (##sys#signal-hook/errno
+           #:file-error
+           (##sys#errno)
+           'current-directory "cannot retrieve current directory"))))
    (lambda (dir)
      (##sys#change-directory-hook dir))
    "(chicken.process-context#current-directory)"))

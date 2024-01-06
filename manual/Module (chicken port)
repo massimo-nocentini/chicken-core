@@ -5,6 +5,14 @@
 
 This module contains various extended port definitions.
 
+All errors related to failing port operations will signal a condition
+of kind {{exn}}.
+
+* New in CHICKEN 5.4.0: Errors caused by underlying C calls that
+  change errno will produce a condition object with an {{errno}}
+  property, which can be accessed with
+  {{(get-condition-property <the-condition-object> 'exn 'errno)}}.
+
 === Port attributes
 
 ==== port-name
