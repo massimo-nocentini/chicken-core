@@ -16,7 +16,7 @@ For representation and manipulation of calendar time, see
 Returns the used CPU time of the current process in milliseconds as
 two values: the time spent in user code, and the time spent in system
 code. On platforms where user and system time can not be differentiated,
-system time will be always be 0.
+system time is always 0.
 
 
 ==== current-process-milliseconds

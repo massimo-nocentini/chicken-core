@@ -68,15 +68,6 @@ Returns the object that contains the element referred to by {{LOC}} or
 
  (locative->object (make-locative "abc" 1)) ==> "abc"
 
-
-=== locative-index
-
-<procedure>(locative-index LOC)</procedure>
-
-Returns the index (position) of the element that {{LOC}} refers to.
-
- (locative-index (make-locative "abcde" 3)) ==> 3
-
 ---
 Previous: [[Module (chicken load)]]
 

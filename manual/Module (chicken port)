@@ -52,6 +52,7 @@ Sets the buffering-mode for the file associated with {{PORT}} to
 {{#:line}} or {{#:none}}. If {{BUFSIZE}} is specified it
 determines the size of the buffer to be used (if any).
 
+This procedure doesn't work on custom ports, such as those created with {{make-input-port}} or {{make-output-port}}.
 
 === Terminal ports
 

@@ -10,8 +10,8 @@ operating-system specific functionality.
 Note that this interface is source-based, since CHICKEN translates
 Scheme code to C. It is not binary, as in many other Scheme implementations.
 
-Several special forms of this interface refer to ''foreign type specifiers'', 
-consult the [[Foreign type specifiers|relevant chapter]] of this manual for
+Several special forms of this interface refer to ''foreign type specifiers'',
+consult the [[/manual/Foreign type specifiers|relevant chapter]] of this manual for
 more information.
 
 
@@ -116,7 +116,7 @@ See that {{define-foreign-variable}} will not generate C declarations
 or memory allocation code; use it to include references to variables
 in external C code. To actually create Scheme variables visible from C,
 use {{define-external}} (see the Manual section on
-[[Callbacks]]).
+[[/manual/Module (chicken foreign)#Callbacks|Callbacks]]).
 For example, the following code:
 <enscript lang="scheme">
 (import (chicken foreign))
@@ -165,7 +165,7 @@ commences in the calling code.
 <macro>(foreign-safe-lambda RETURNTYPE NAME ARGTYPE ...)</macro>
 
 This is similar to {{foreign-lambda}}, but also allows the called
-function to call Scheme functions. See [[Callbacks]].
+function to call Scheme functions. See [[/manual/Module (chicken foreign)#Callbacks|Callbacks]].
 
 
 === foreign-safe-lambda*
@@ -173,7 +173,8 @@ function to call Scheme functions. See [[Callbacks]].
 <macro>(foreign-safe-lambda* RETURNTYPE ((ARGTYPE VARIABLE)...) STRING ...)</macro>
 
 This is similar to {{foreign-lambda*}}, but also allows the called
-function to call Scheme functions and allocate Scheme data-objects. See [[Callbacks]].
+function to call Scheme functions and allocate Scheme data-objects.
+See [[/manual/Module (chicken foreign)#Callbacks|Callbacks]].
 
 
 
@@ -247,13 +248,17 @@ is an optional qualifier for the foreign procedure definition, like
 (define-external (foo (c-string x)) int (string-length x))
 </enscript>
 
+You can use [[/manual/Module (chicken foreign)#location|{{location}}]]
+to get a pointer to the defined C function, which can be passed to a
+C function that takes a callback function pointer argument, for example.
+
 The second form of {{define-external}} can be used to define
 variables that are accessible from foreign code. It declares
 a global variable named by the symbol {{NAME}} that
 has the type {{TYPE}}. {{INIT}} can be an arbitrary
 expression that is used to initialize the variable. {{NAME}} is
 accessible from Scheme just like any other foreign variable defined by
-{{define-foreign-variable}}.  
+{{define-foreign-variable}}.
 
 <enscript highlight=scheme>
 (define-external foo int 42)
@@ -326,24 +331,24 @@ Defines a lexically bound location.
 <read>#$</read>
 
 This form returns a pointer object
-that contains the address of the variable {{NAME}}. 
+that contains the address of the variable {{NAME}}.
 If the argument to {{location}} is not a location defined by {{define-location}},
 {{define-external}} or {{let-location}}, then
 
  (location X)
 
-is essentially equivalent to 
+is essentially equivalent to
 
  (make-locative X)
 
-(See the [[Module (chicken locative)|manual section on locatives]] for more
+(See the [[/manual/Module (chicken locative)|manual section on locatives]] for more
 information about locatives)
 
 Note that {{(location X)}} may be abbreviated as {{#$X}}.
 
 <enscript highlight=scheme>
 (define-external foo int)
-((foreign-lambda* void (((c-pointer int) ip)) "*ip = 123;") 
+((foreign-lambda* void (((c-pointer int) ip)) "*ip = 123;")
   (location foo))
 foo                                                                    ==> 123
 </enscript>
@@ -364,7 +369,7 @@ returns more than one result value:
     (print "i=" i ", f=" f) ) )
 </enscript>
 
-See [[/location-and-c-string-star|location and c-string*]] 
+See [[/location-and-c-string-star|location and c-string*]]
 for a tip on returning a {{c-string*}} type.
 
 {{location}} returns a value of type {{c-pointer}}, when given

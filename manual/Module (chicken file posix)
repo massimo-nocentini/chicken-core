@@ -532,7 +532,7 @@ given and not false, then it should specify the number of seconds after
 which the wait is to be aborted (the value may be a floating point
 number). This procedure returns two values:
 the lists of file-descriptors ready for input and output, respectively.
-{{READFDLIST}} and '''WRITEFDLIST''' may also by file-descriptors
+{{READFDLIST}} and {{WRITEFDLIST}} may also be file-descriptors
 instead of lists.  In this case the returned values are booleans
 indicating whether input/output is ready by {{#t}} or {{#f}}
 otherwise.  You can also pass {{#f}} as {{READFDLIST}} or

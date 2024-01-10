@@ -2,7 +2,7 @@
 
 == Acknowledgements
 
-Many thanks to "alicemaz", "acdw", Jules Altfas, Nico Amtsberg, Alonso Andres, William
+Many thanks to "alicemaz", Jules Altfas, Nico Amtsberg, Alonso Andres, William
 Annis, Jason E. Aten, Marc Baily, Peter Barabas, Andrei Barbu, Jonah
 Beckford, Arto Bendiken, Andy Bennett, Kevin Beranek, Peter Bex,
 Jean-Francois Bignolles, Oivind Binde, Alaric Blagrave Snell-Pym, Dave
@@ -11,9 +11,9 @@ Christopher Brannon, Terence Brannon, Roy Bryant, Adam Buchbinder, Hans Bulfone,
 "Category 5", Taylor Campbell, Naruto Canada, Mark Carter, Esteban U. Caamano
 Castro, Semih Cemiloglu, Alex Charlton, Franklin Chen, Joo ChurlSoo,
 Thomas Chust, Gian Paolo Ciceri, Fulvio Ciriaco, Paul Colby, Tobia
-Conforto, Wolfgang Corcoran-Mathe, John Cowan, Grzegorz Chrupala, James Crippen,
-John Croisant, Evan Hanson, Adhi Hargo, Moritz Heidkamp, Tollef Fog Heen, Drew Hess,
-Alejandro Forero Cuervo, Peter Danenberg, Linh Dang, Brian Denheyer, Sean
+Conforto, John Cowan, Grzegorz Chrupala, James Crippen, Evan Hanson,
+Adhi Hargo, Moritz Heidkamp, Tollef Fog Heen, Drew Hess, Alejandro
+Forero Cuervo, Peter Danenberg, Linh Dang, Brian Denheyer, Sean
 D'Epagnier, "dgym", "Don", Chris Double, "Brown Dragon", David
 Dreisigmeyer, Jarod Eells, Petter Egesund, Stephen Eilert, Steve
 Elkins, Daniel B. Faken, Erik Falor, Will Farr, Graham Fawcett, Marc
@@ -22,7 +22,7 @@ Martin Gasbichler, Abdulaziz Ghuloum, Joey Gibson, Stephen C. Gilardi,
 Mario Domenech Goulart, Joshua Griffith, Johannes Groedem, Damian
 Gryski, Matt Gushee, Andreas Gustafsson, Sven Hartrumpf, Jun-ichiro
 itojun Hagino, Ahdi Hargo, Matthias Heiler, Karl M. Hegbloom, Moritz Heidkamp,
-William P. Heinemann, Christian Himpe, Bill Hoffman, Eric Hoffman, Bruce Hoult, Hans Hübner,
+William P. Heinemann, Bill Hoffman, Eric Hoffman, Bruce Hoult, Hans Hübner,
 Markus Hülsmann, Götz Isenmann, Paulo Jabardo, Wietse Jacobs, David Janssens,
 Christian Jäger, Robert Jensen, Matt Jones, Dale Jordan, Valentin Kamyshenko,
 Daishi Kato, Peter Keller, Christian Kellermann, Brad Kind, Ron Kneusel, "Kooda",
@@ -45,15 +45,15 @@ Andreas Rottman, David Rush, Lars Rustemeier, Daniel Sadilek,
 Otavio Salvador, Burton Samograd, "Sandro", "satori", Aleksej Saushev,
 Oskar Schirmer, Vasilij Schneidermann, Reed Sheridan, Ronald Schröder,
 Spencer Schumann, Ivan Shcheklein, Alexander Shendi, Alex Shinn, Ivan
-Shmakov, "Shmul", "siiky", Tony Sidaway, Jeffrey B. Siegal, Andrey Sidorenko,
+Shmakov, "Shmul", Tony Sidaway, Jeffrey B. Siegal, Andrey Sidorenko,
 Michele Simionato, Iruata Souza, Volker Stolz, Jon Strait, Dorai Sitaram,
 Robert Skeels, Sandra Snan, Jason Songhurst, Clifford Stein, David Steiner,
 "Sunnan", Zbigniew Szadkowski, Rick Taube, Nathan Thern, Mike Thomas, Minh
 Thu, Christian Tismer, Andre van Tonder, John Tobey, Henrik Tramberend,
 Vladimir Tsichevsky, James Ursetto, Neil van Dyke, Sam Varner,
 Taylor Venable, Sander Vesik, Jaques Vidrine, Panagiotis Vossos,
-Shawn Wagner, Peter Wang, Xin Wang, Ed Watkeys, Brad Watson, Thomas Weidner,
-Göran Weinholt, Matthew Welland, Drake Wilson, Jörg Wittenberger, Peter
+Shawn Wagner, Peter Wang, Ed Watkeys, Brad Watson, Thomas Weidner, Göran
+Weinholt, Matthew Welland, Drake Wilson, Jörg Wittenberger, Peter
 Wright, Mark Wutka, Adam Young, Richard Zidlicky, Houman Zolfaghari and
 Florian Zumbiehl for bug-fixes, tips and suggestions.
 

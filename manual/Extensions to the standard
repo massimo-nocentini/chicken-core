@@ -28,28 +28,22 @@ always present in a module, even without imports.
 
 Expands by selecting feature clauses. This form is allowed to appear in non-toplevel expressions.
 
-The following features are built-in and always available by default:
-{{chicken}}, {{srfi-0}}, {{srfi-2}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}},
-{{srfi-11}}, {{srfi-12}}, {{srfi-15}}, {{srfi-16}}, {{srfi-17}}, {{srfi-23}},
-{{srfi-26}}, {{srfi-28}}, {{srfi-30}}, {{srfi-31}}, {{srfi-39}}, {{srfi-46}},
-{{srfi-55}}, {{srfi-61}}, {{srfi-62}}, {{srfi-87}}, {{srfi-88}}.
+Predefined feature-identifiers are "situation" specific:
 
-There are also situation-specific feature identifiers: {{compiling}} during
-compilation, {{csi}} when running in the interpreter, and {{compiler-extension}}
-when running within the compiler.
+; compile : {{chicken}}, {{chicken-5}}, {{compiling}}, {{library}}, {{eval}}, {{extras}}, {{regex}}, {{srfi-0}}, {{srfi-2}}, {{srfi-4}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}}, {{srfi-10}}, {{srfi-11}}, {{srfi-12}}, {{srfi-15}}, {{srfi-16}}, {{srfi-17}}, {{srfi-23}}, {{srfi-26}}, {{srfi-28}}, {{srfi-30}}, {{srfi-31}}, {{srfi-39}}, {{srfi-55}}, {{srfi-61}}, {{srfi-62}}
 
-The symbols returned by the following procedures from
-[[Module (chicken platform)|(chicken platform)]] are also available
-as feature-identifiers in all situations: {{(machine-byte-order)}},
-{{(machine-type)}}, {{(software-type)}}, {{(software-version)}}. For
-example, the {{machine-type}} class of feature-identifiers include
-{{arm}}, {{alpha}}, {{mips}}, etc.
+; load : {{chicken}}, {{chicken-5}}, {{extras}}, {{srfi-0}}, {{srfi-2}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}}, {{srfi-10}}, {{srfi-12}}, {{srfi-17}}, {{srfi-23}}, {{srfi-28}}, {{srfi-30}}, {{srfi-39}}, {{srfi-55}}, {{srfi-61}}, {{srfi-62}}. {{library}} is implicit.
 
-Platform endianness is indicated by the {{little-endian}} and {{big-endian}}
-features.
+; eval : {{csi}}, {{chicken}}, {{chicken-5}}, {{extras}}, {{srfi-0}}, {{srfi-2}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}}, {{srfi-10}}, {{srfi-11}}, {{srfi-12}}, {{srfi-15}}, {{srfi-16}}, {{srfi-17}}, {{srfi-23}}, {{srfi-26}}, {{srfi-28}}, {{srfi-30}}, {{srfi-31}}, {{srfi-39}}, {{srfi-55}}, {{srfi-61}}, {{srfi-62}}. {{library}} is implicit.
 
-In addition the following feature-identifiers may exist: {{cross-chicken}},
-{{dload}}, {{gchooks}}, {{ptables}}, {{case-insensitive}}.
+Also, features of the form {{chicken-5.X}}, where {{X}} denotes the minor version, are available.
+
+The symbols returned by the following procedures from [[Module (chicken platform)|(chicken platform)]] are also available as feature-identifiers in all situations: {{(machine-byte-order)}}, {{(machine-type)}}, {{(software-type)}}, {{(software-version)}}. For example, the {{machine-type}} class of feature-identifiers include {{arm}},
+{{alpha}}, {{mips}}, etc.
+
+The [[Module (chicken platform)|(chicken platform)]] module also provides a function {{(features)}} that returns a list of all registered features.
+
+In addition the following feature-identifiers may exist: {{cross-chicken}}, {{dload}}, {{manyargs}}, {{ptables}}.
 
 For further information, see the documentation for
 [[http://srfi.schemers.org/srfi-0/srfi-0.html|SRFI-0]].
@@ -142,7 +136,7 @@ any whitespace characters:
  SYMBOL:
  :SYMBOL
 
-Syntax for keywords. Keywords are symbols that evaluate to themselves, and as such don't have to be quoted.  Either {{SYMBOL:}} or {{:SYMBOL}} is accepted, depending on the setting of the {{keyword-style}} parameter, but never both.  {{#:SYMBOL}} is always accepted.
+Syntax for keywords. Keywords are symbol-like objects that evaluate to themselves, and as such don't have to be quoted.  Either {{SYMBOL:}} or {{:SYMBOL}} is accepted, depending on the setting of the {{keyword-style}} parameter, but never both.  {{#:SYMBOL}} is always accepted.
 
 === Multiline String Constant
 

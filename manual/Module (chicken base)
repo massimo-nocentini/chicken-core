@@ -511,7 +511,7 @@ between each sublist. {{LIST}} defaults to the empty list.
 <procedure>(rassoc KEY LIST [TEST])</procedure>
 
 Similar to {{assoc}}, but compares {{KEY}} with the {{cdr}} of each pair in {{LIST}} using
-{{TEST}} as the comparison procedures (which defaults to {{eqv?}}.
+{{TEST}} as the comparison procedures (which defaults to {{eqv?}}).
 
 
 ==== tail?

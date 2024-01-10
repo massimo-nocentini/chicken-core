@@ -196,14 +196,19 @@ To cross compile from Linux to Windows, you will need to use a Linux build of Mi
 As far as the runtime is concerned, the procedure is the same that what have been shown before, using the platform name {{cross-linux-mingw}}.
 
 The procedure to compile the compiler however require some more care:
-* The platform name is {{linux}} because it is where you want your compiler to run
-* You have to set the {{TARGET_LIBRARIES}} as this is different between Linux and Windows:
-  For Linux target, this variable contains {{-ldl -lm}}, while for Windows target it should be {{-lm -lws2_32}}.
+* The platform name is {{linux}} because it is where you want your compiler to run.
+* You have to change {{TARGET_LIBRARIES}} to {{-lm -lws2_32}}.
 * You have to make sure you are pointing to the right toolchain (see next paragraph).
 
 In order to compile the C sources that Chicken will produce you have to make sure that you provide the right toolchain in both runtime and compiler steps.
 
-In most cases, you want to do that by setting {{HOSTSYSTEM}} when building the runtime and {{TARGETSYSTEM}} when building the compiler to something similar to {{x86_64-w64-mingw32}} (check you distribution binaries).
+In most cases, you want to do that by setting {{HOSTSYSTEM}} when building the runtime and {{TARGETSYSTEM}} when building the compiler to something similar to {{x86_64-w64-mingw32}} (check you distribution binaries). For example:
+
+ # build a CHICKEN runtime for windows
+ > make PREFIX=$HOME/target PLATFORM=cross-linux-mingw HOSTSYSTEM=x86_64-w64-mingw32 install
+ > make confclean
+ # build a CHICKEN cross-compiler that uses the runtime above
+ > make PREFIX=$HOME/cross PROGRAM_PREFIX=mingw- TARGET_PREFIX=$HOME/target PLATFORM=linux TARGETSYSTEM=x86_64-w64-mingw32 TARGET_LIBRARIES="-lm -lws2_32" install
 
 If your distribution does not stick to the {{PREFIX-TOOLNAME}} convention you may want to set some following variables (runtime step/compiler step):
 * {{C_COMPILER}}/{{TARGET_C_COMPILER}}
@@ -241,6 +246,33 @@ So running {{arm-chicken-install}} will compile and install the extension
 for the host system and for the cross-target. To selectively install, uninstall
 or list extensions for either the host or the target system use the
 {{-host}} and {{-target}} options for the tools.
+
+For example, using the mingw-cross-compiler from above, we can create
+a standalone Windows exe file that includes the CHICKEN runtime and all
+egg dependencies.
+
+ # install an egg using the mingw cross compiler above
+ > $HOME/cross/bin/mingw-chicken-install fmt
+ > cat hello.scm
+ (import fmt chicken.platform)
+ (fmt #t "hello world from " (software-type) nl
+      (pretty (features)))
+ # create a standalone exe file with the CHICKEN and fmt statically linked
+ > $HOME/cross/bin/mingw-csc -static hello.scm
+ # hello.exe should now run on Window without any runtime DLL dependencies:
+ > x86_64-w64-mingw32-objdump -p hello.exe | grep "DLL Name"
+    DLL Name: KERNEL32.dll 
+    DLL Name: msvcrt.dll 
+    DLL Name: USER32.dll
+    DLL Name: WS2_32.dll
+ # or using wine
+ > wine hello.exe
+ hello world from windows
+ (#:windows            #:64bit              #:cross-chicken
+  #:ptables            #:dload              #:little-endian
+  #:x86-64             #:gnu                #:mingw32
+  ...)
+
 
 === "Target-only" extensions
 

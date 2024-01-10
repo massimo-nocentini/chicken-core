@@ -277,7 +277,7 @@ in this section into the primitive constructs described in the
 previous section.  This does not necessarily mean that's exactly how
 it's implemented in CHICKEN.
 
-==== Conditionals
+==== Derived Conditionals
 
 <macro>(cond <clause[1]> <clause[2]> ...)</macro><br>
 

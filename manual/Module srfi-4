@@ -245,8 +245,9 @@ Return a newly-allocated SRFI-4 homogeneous number vector of length N.
 
 If the optional fill VALUE is specified, it specifies the initial
 value for each slot in the vector.  If not, the content of the vector
-is unspecified but individual elements of the vector are guaranteed to
-be in the range of values permitted for that type of vector.
+is unspecified as the underlying memory is uninitialized.
+Particularly this means that entries in {{f32vector}} or {{f64vector}}
+may be i.e. a NaN-value.
 
 The type of the fill value must be compatible with the elements of the
 vector datatype.  It is an error if otherwise -- for example, if an

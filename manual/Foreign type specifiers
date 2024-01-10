@@ -72,7 +72,7 @@ prior to CHICKEN 4.7.2.
 Notes for 64-bit architectures:
 
 * C's {{int}} is 32 bits on most 64-bit systems
-([[http://en.wikipedia.org/wiki/64-bit#Specific_C-language_data_models|LP64]]),
+([[https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models|LP64]]),
 so {{int}} and {{int32}} are functionally (if not semantically) equivalent.
 
 * The fixnum type is larger than 32 bits and consequently the entire
@@ -86,33 +86,26 @@ should use (unsigned) {{integer}} or {{integer32}}.
 <type>integer32</type><br>
 <type>unsigned-integer32</type><br>
 
-A fixnum or integral flonum, mapping to {{int}} or {{int32_t}} or
+A fixnum or bignum, mapping to {{int}} or {{int32_t}} or
 their unsigned variants.  When outside of fixnum range the value will
-overflow into a flonum.
+overflow into a bignum. Prior to CHICKEN 5, the value would overflow
+into a flonum.
 
 C's {{int}} is 32 bits on most 64-bit systems
-([[http://en.wikipedia.org/wiki/64-bit#Specific_C-language_data_models|LP64]]),
+([[https://en.wikipedia.org/wiki/64-bit_computing#64-bit_data_models|LP64]]),
 so {{integer}} and {{integer32}} are functionally (if not semantically) equivalent.
 
 <type>integer64</type><br>
 <type>unsigned-integer64</type>
 
-A fixnum or integral flonum, mapping to {{int64_t}} or {{uint64_t}}.
-When outside of fixnum range the value will overflow into a flonum.
-
-On a 32-bit system, the effective precision of this type is 52 bits
-plus the sign bit, as it is stored in a {{double}} flonum.  (In other
-words, numbers between 2^52 and 2^64-1 can be represented but there are
-gaps in the sequence; the same goes for their negative counterparts.)  
-On a 64-bit system the range is 62 bits plus the sign bit, the
-maximum range of a fixnum.  (Numbers between 2^62 and 2^64-1 have gaps.)
-
-{{unsigned-integer64}} is not valid as a return type until CHICKEN 4.6.4.
+A fixnum or bignum, mapping to {{int64_t}} or {{uint64_t}}.
+When outside of fixnum range the value will overflow into a bignum.
+Prior to CHICKEN 5, the value would overflow into a flonum.
 
 <type>long</type><br>
 <type>unsigned-long</type>
 
-Either a fixnum or a flonum in the range of an (unsigned) machine ''long''.
+A fixnum or bignum, mapping to {{long}} or {{unsigned long}}.
 Similar to {{integer32}} on 32-bit systems or {{integer64}} on 64-bit.
 
 <type>size_t</type>
@@ -243,7 +236,7 @@ e.g. via {{(address->pointer 0)}}.)
 <type>pointer-vector</type><br>
 <type>nonnull-pointer-vector</type>
 
-A vector of foreign pointer objects; see [[Module (chicken memory)#pointer-vectors|Pointer vectors]].
+A vector of foreign pointer objects; see [[/man/5/Module (chicken memory)#pointer-vectors|Pointer vectors]].
 Permitted only as an argument type, not as return type.  This type was introduced in CHICKEN 4.6.3.
 
 A pointer vector contains a C array of void pointers, and the argument
