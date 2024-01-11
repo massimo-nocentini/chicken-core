@@ -70,6 +70,13 @@ built and installed if they do not already exist in the repository.
 newest available egg with this name and the latter specifies
 a specific version or higher.
 
+This property can also be used to specify a minimum version of CHICKEN
+required by the egg.  For example, to require at least CHICKEN 5.3.0:
+
+<enscript highlight=scheme>
+(dependencies (chicken "5.3.0"))
+</enscript>
+
 ==== test-dependencies
 
  [egg property] (test-dependencies EGG ...)
