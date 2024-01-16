@@ -796,14 +796,14 @@
 				      vars tmps)
 			       (##core#let () ,@body) ) )
 			    e dest ldest h ln #f)))
-          
+
                         ((##core#with-forbidden-refs)
                          (let* ((loc (caddr x))
                                 (vars (map (lambda (v)
                                              (cons (resolve-variable v e dest ldest h outer-ln)
                                                    loc))
                                         (cadr x))))
-                           (fluid-let ((forbidden-refs 
+                           (fluid-let ((forbidden-refs
                                          (append vars forbidden-refs)))
                              (walk (cadddr x) e dest ldest h ln #f))))
 
@@ -921,38 +921,37 @@
 			       '(##core#undefined) )
 			   e dest ldest h ln #f)) )
 
-		       ((##core#define-compiler-syntax)
-			(let* ((var (cadr x))
-			       (body (caddr x))
-			       (name (lookup var)))
-                          (##sys#put/restore! name '##sys#override 'syntax)
-			  (when body
-			    (set! compiler-syntax
-			      (alist-cons
-			       name
-			       (##sys#get name '##compiler#compiler-syntax)
-			       compiler-syntax)))
-			  (##sys#put!
-			   name '##compiler#compiler-syntax
-			   (and body
-				(##sys#cons
-				 (##sys#ensure-transformer
-				  (##sys#eval/meta body)
-				  var)
-				 (##sys#current-environment))))
-			  (walk
-			   (if ##sys#enable-runtime-macros
-			       `(##sys#put!
-				(##core#syntax ,name)
-				'##compiler#compiler-syntax
-				,(and body
-				      `(##sys#cons
-					(##sys#ensure-transformer
-					 ,body
-					 (##core#quote ,var))
-					(##sys#current-environment))))
-			       '(##core#undefined) )
-			   e dest ldest h ln #f)))
+                       ((##core#define-compiler-syntax)
+                        (let* ((var (cadr x))
+                               (body (caddr x))
+                               (name (lookup var)))
+                          (when body
+                            (set! compiler-syntax
+                              (alist-cons
+                               name
+                               (##sys#get name '##compiler#compiler-syntax)
+                               compiler-syntax)))
+                          (##sys#put!
+                           name '##compiler#compiler-syntax
+                           (and body
+                                (##sys#cons
+                                 (##sys#ensure-transformer
+                                  (##sys#eval/meta body)
+                                  var)
+                                 (##sys#current-environment))))
+                          (walk
+                           (if ##sys#enable-runtime-macros
+                               `(##sys#put!
+                                (##core#syntax ,name)
+                                '##compiler#compiler-syntax
+                                ,(and body
+                                      `(##sys#cons
+                                        (##sys#ensure-transformer
+                                         ,body
+                                         (##core#quote ,var))
+                                        (##sys#current-environment))))
+                               '(##core#undefined) )
+                           e dest ldest h ln #f)))
 
 		       ((##core#let-compiler-syntax)
 			(let ((bs (map
@@ -2089,10 +2088,10 @@
                             (not (db-get db name 'global))
                             (not (db-get db name 'unknown))
                             (eq? '##core#lambda (node-class val))
-                            (not (llist-match? (third (node-parameters val)) 
+                            (not (llist-match? (third (node-parameters val))
                                                (cdr subs))))
                     (quit-compiling
-		      "known procedure called with wrong number of arguments: `~A'" 
+		      "known procedure called with wrong number of arguments: `~A'"
 	              (real-name name)))
 		 (collect! db name 'call-sites (cons here n))))
 	     (walk (first subs) env localenv fullenv here)
@@ -2709,8 +2708,8 @@
 						  boxedaliases) ))
 				   (if (null? aliases)
 				       body
-				       (make-node 'let (list (car aliases)) 
-						  (list (car values) 
+				       (make-node 'let (list (car aliases))
+						  (list (car values)
 							(loop (cdr aliases) (cdr values))))))
 				 body) ) ) )
 		    (let ((cvars (map (lambda (v) (ref-var (varnode v) here closure))
