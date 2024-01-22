@@ -56,7 +56,7 @@
      register-foreign-type! lookup-foreign-type clear-foreign-type-table!
      estimate-foreign-result-size estimate-foreign-result-location-size
      finish-foreign-result foreign-type->scrutiny-type scan-used-variables
-     scan-free-variables chop-separator
+     scan-free-variables
      make-block-variable-literal block-variable-literal?
      block-variable-literal-name make-random-name
      clear-real-name-table! get-real-name set-real-name!
@@ -1459,18 +1459,9 @@
     (values vars hvars) ) )		; => freevars hiddenvars
 
 
-;;; Some pathname operations:
-
-(define (chop-separator str)		; Used only in batch-driver.scm
-  (let ([len (sub1 (string-length str))])
-    (if (and (> len 0) 
-	     (memq (string-ref str len) '(#\\ #\/)))
-	(substring str 0 len)
-	str) ) )
-
 ;;; Special block-variable literal type:
 
-(define-record-type block-variable-literal 
+(define-record-type block-variable-literal
   (make-block-variable-literal name)
   block-variable-literal?
   (name block-variable-literal-name))	; symbol

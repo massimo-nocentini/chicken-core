@@ -219,7 +219,7 @@
 			      '()
 			      `((import-syntax ,@default-imports)))))
 	(cleanup-forms '(((chicken.base#implicit-exit-handler))))
-	(outfile (cond ((memq 'output-file options) 
+	(outfile (cond ((memq 'output-file options)
 			=> (lambda (node)
 			     (let ((oname (option-arg node)))
 			       (if (symbol? oname)
@@ -227,18 +227,15 @@
 				   oname) ) ) )
 		       ((memq 'to-stdout options) #f)
 		       (else (make-pathname #f (if filename (pathname-file filename) "out") "c")) ) )
-	(ipath (map chop-separator
-		    (##sys#split-path
-		     (or (get-environment-variable "CHICKEN_INCLUDE_PATH") "")))) 
 	(opasses (default-optimization-passes))
 	(time0 #f)
 	(time-breakdown #f)
 	(forms '())
 	(inline-output-file #f)
 	(profile (or (memq 'profile options)
-		     (memq 'accumulate-profile options) 
+		     (memq 'accumulate-profile options)
 		     (memq 'profile-name options)))
-	(profile-name 
+	(profile-name
 	 (and-let* ((pn (memq 'profile-name options))) (cadr pn)))
 	(hsize (memq 'heap-size options))
 	(kwstyle (memq 'keyword-style options))
@@ -339,6 +336,13 @@
 		  no contf) )
 	  db) ) )
 
+    (define (chop-separator str)
+      (let ((len (sub1 (string-length str))))
+        (if (and (> len 0)
+                 (memq (string-ref str len) '(#\\ #\/)))
+            (substring str 0 len)
+            str) ) )
+
     (when unit
       (set! unit-name (string->symbol (option-arg unit))))
     (when (or unit-name dynamic)
@@ -347,7 +351,7 @@
       (set! ##sys#dload-disabled #t)
       (repository-path #f))
     (set! enable-specialization (memq 'specialize options))
-    (set! debugging-chicken 
+    (set! debugging-chicken
       (append-map
        (lambda (do)
 	 (map (lambda (c) (string->symbol (string c)))
@@ -452,8 +456,7 @@
     (set! ##sys#read-error-with-line-number #t)
     (set! ##sys#include-pathnames
       (append (map chop-separator (collect-options 'include-path))
-	      ##sys#include-pathnames
-	      ipath) )
+	      ##sys#include-pathnames) )
     (when (and outfile filename (string=? outfile filename))
       (quit-compiling "source- and output-filename are the same") )
     (when (memq 'keep-shadowed-macros options)

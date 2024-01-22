@@ -8,6 +8,10 @@ Deprecated functions and variables
 - "set-signal-handler!" and "signal-handler" have been deprecated
   in favor of "make-signal-handler" and "ignore-signal" which are
   better suited in a multithreaded environment.
+- "chicken-home" is deprecated as it is not possible to override
+  when installing eggs into a custom location. Use "include-path" instead
+  (or "##sys#include-pathnames" for code that is intended to be
+  backwards compatible) when accessing the data location.
 
 5.2.1
 - current-milliseconds and its C implementations C_milliseconds and

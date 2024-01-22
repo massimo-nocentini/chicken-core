@@ -6555,7 +6555,9 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 ;;; Platform configuration inquiry:
 
 (module chicken.platform
-    (build-platform chicken-version chicken-home
+    (build-platform chicken-version
+     chicken-home 	;; DEPRECATED
+     include-path
      feature? features machine-byte-order machine-type
      repository-path installation-repository
      register-feature! unregister-feature!
@@ -6628,6 +6630,7 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
 (define-foreign-variable installation-home c-string "C_INSTALL_SHARE_HOME")
 (define-foreign-variable install-egg-home c-string "C_INSTALL_EGG_HOME")
 
+;; DEPRECATED
 (define (chicken-home) installation-home)
 
 (define path-list-separator
@@ -6677,6 +6680,21 @@ static C_word C_fcall C_setenv(C_word x, C_word y) {
    (or (foreign-value "C_private_repository_path()" c-string)
        (get-environment-variable "CHICKEN_INSTALL_REPOSITORY")
        install-egg-home)))
+
+(define (chop-separator str)
+  (let ((len (fx- (string-length str) 1)))
+    (if (and (> len 0)
+             (memq (string-ref str len) '(#\\ #\/)))
+        (substring str 0 len)
+        str) ) )
+
+(define ##sys#include-pathnames
+  (cond ((get-environment-variable "CHICKEN_INCLUDE_PATH")
+         => (lambda (p)
+              (map chop-separator (##sys#split-path p))))
+        (else (list installation-home))))
+
+(define (include-path) ##sys#include-pathnames)
 
 
 ;;; Feature identifiers:

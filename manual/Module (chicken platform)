@@ -26,12 +26,6 @@ building the executing system, which is one of the following:
  sun
  unknown
 
-==== chicken-home
-
-<procedure>(chicken-home)</procedure>
-
-Returns a string which represents the installation directory (usually {{/usr/local/share/chicken}} on UNIX-like systems).
-
 ==== chicken-version
 
 <procedure>(chicken-version [FULL])</procedure>
@@ -39,6 +33,16 @@ Returns a string which represents the installation directory (usually {{/usr/loc
 Returns a string containing the version number of the CHICKEN runtime
 system. If the optional argument {{FULL}} is given and true, then
 a full version string is returned.
+
+==== include-path
+
+<procedure>(include-path)</procedure>
+
+Returns a list of strings representing directory names where included files are located,
+which defaults to the value of the environment variable
+{{CHICKEN_INCLUDE_PATH}}, split on {{:}} (or {{;}} on Windows).
+If the variable is not set, the list is initialized to contain the installation directory
+(usually {{/usr/local/share/chicken}} on UNIX-like systems).
 
 ==== repository-path
 

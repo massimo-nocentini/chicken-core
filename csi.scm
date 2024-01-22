@@ -1022,13 +1022,10 @@ EOF
     (let* ([eval? (member* '("-e" "-p" "-P" "-eval" "-print" "-pretty-print") args)]
 	   [batch (or script (member* '("-b" "-batch") args) eval?)]
 	   [quietflag (member* '("-q" "-quiet") args)]
-	   [quiet (or script quietflag eval?)]
-	   [ipath (map chop-separator 
-		       (##sys#split-path
-			(or (get-environment-variable "CHICKEN_INCLUDE_PATH") "")))])
+	   [quiet (or script quietflag eval?)])
       (define (collect-options opt)
 	(let loop ([opts args])
-	  (cond [(member opt opts) 
+	  (cond [(member opt opts)
 		 => (lambda (p)
 		      (if (null? (cdr p))
 			  (##sys#error "missing argument to command-line option" opt)
@@ -1072,12 +1069,11 @@ EOF
       (for-each register-feature! (collect-options "-feature"))
       (for-each register-feature! (collect-options "-D"))
       (for-each unregister-feature! (collect-options "-no-feature"))
-      (set! ##sys#include-pathnames 
+      (set! ##sys#include-pathnames
 	(delete-duplicates
 	 (append (map chop-separator (collect-options "-include-path"))
 		 (map chop-separator (collect-options "-I"))
-		 ##sys#include-pathnames
-		 ipath)
+		 ##sys#include-pathnames)
 	 string=?) )
       (when kwstyle
 	(cond [(not (pair? (cdr kwstyle)))

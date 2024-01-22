@@ -1356,7 +1356,8 @@
 
 (chicken.platform#build-platform (#(procedure #:pure) chicken.platform#build-platform () symbol))
 (chicken.platform#chicken-version (#(procedure #:pure) chicken.platform#chicken-version (#!optional *) string))
-(chicken.platform#chicken-home (#(procedure #:clean) chicken.platform#chicken-home () string))
+(chicken.platform#chicken-home deprecated)
+(chicken.platform#include-path (#(procedure #:clean) chicken.platform#include-path () string))
 (chicken.platform#feature? (#(procedure #:clean) chicken.platform#feature? (#!rest (or keyword symbol string)) boolean))
 (chicken.platform#features (#(procedure #:clean) chicken.platform#features () (list-of keyword)))
 (chicken.platform#software-type (#(procedure #:pure) chicken.platform#software-type () symbol))

@@ -1283,8 +1283,6 @@
 
 ;;; Find included file:
 
-(define ##sys#include-pathnames (list (chicken-home)))
-
 (define ##sys#resolve-include-filename
   (let ((string-append string-append) )
     (lambda (fname exts repo source)
