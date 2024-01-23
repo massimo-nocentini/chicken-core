@@ -528,8 +528,8 @@ the buffer containing the data and the number of bytes read.
 Waits until any of the file-descriptors given in the lists
 {{READFDLIST}} and {{WRITEFDLIST}} is ready for input or
 output, respectively. If the optional argument {{TIMEOUT}} is
-given and not false, then it should specify the number of milliseconds after
-which the wait is to be aborted. This procedure returns two values:
+given and not false, then it should specify the number of seconds after
+which the wait is to be aborted (the value may be a float). This procedure returns two values:
 the lists of file-descriptors ready for input and output, respectively.
 {{READFDLIST}} and {{WRITEFDLIST}} may also be file-descriptors
 instead of lists.  In this case the returned values are booleans
