@@ -1170,21 +1170,21 @@
 
 (define ##sys#include-forms-from-file
   (let ((call-with-input-file call-with-input-file)
-	(reverse reverse))
+        (reverse reverse))
     (lambda (filename source k)
       (let ((path (##sys#resolve-include-filename filename #t #f source))
-	    (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
-	(when (not path)
-	  (##sys#signal-hook #:file-error 'include "cannot open file" filename))
-	(when (load-verbose)
-	  (print "; including " path " ..."))
-	(call-with-input-file path
-	  (lambda (in)
-	    (fluid-let ((##sys#current-source-filename path))
-	      (do ((x (read-with-source-info in) (read-with-source-info in))
-		   (xs '() (cons x xs)))
-		  ((eof-object? x)
-		   (k (reverse xs)))))))))))
+            (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
+        (when (not path)
+          (##sys#signal-hook #:file-error 'include "cannot open file" filename))
+        (when (load-verbose)
+          (print "; including " path " ..."))
+        (call-with-input-file path
+          (lambda (in)
+            (k (fluid-let ((##sys#current-source-filename path))
+                 (do ((x (read-with-source-info in) (read-with-source-info in))
+                      (xs '() (cons x xs)))
+                     ((eof-object? x)
+                      (reverse xs)))))))))))
 
 
 ;;; Extensions:
