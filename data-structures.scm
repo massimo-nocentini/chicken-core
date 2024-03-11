@@ -155,11 +155,13 @@
 (define (##sys#substring=? s1 s2 start1 start2 n)
   (##sys#check-string s1 'substring=?)
   (##sys#check-string s2 'substring=?)
-  (let ((len (or n
-		 (fxmin (fx- (##sys#size s1) start1)
-			(fx- (##sys#size s2) start2) ) ) ) )
-    (##sys#check-fixnum start1 'substring=?)
-    (##sys#check-fixnum start2 'substring=?)
+  (##sys#check-range start1 0 (##sys#size s1) 'substring=?)
+  (##sys#check-range start2 0 (##sys#size s2) 'substring=?)
+  (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
+                        (fx- (##sys#size s2) start2)))
+         (len (if n
+                  (begin (##sys#check-range n 0 maxlen 'substring=?) n)
+                  maxlen)))
     (##core#inline "C_substring_compare" s1 s2 start1 start2 len) ) )
 
 (define (substring=? s1 s2 #!optional (start1 0) (start2 0) len)
@@ -168,11 +170,13 @@
 (define (##sys#substring-ci=? s1 s2 start1 start2 n)
   (##sys#check-string s1 'substring-ci=?)
   (##sys#check-string s2 'substring-ci=?)
-  (let ((len (or n
-		 (fxmin (fx- (##sys#size s1) start1)
-			(fx- (##sys#size s2) start2) ) ) ) )
-    (##sys#check-fixnum start1 'substring-ci=?)
-    (##sys#check-fixnum start2 'substring-ci=?)
+  (##sys#check-range start1 0 (##sys#size s1) 'substring-ci=?)
+  (##sys#check-range start2 0 (##sys#size s2) 'substring-ci=?)
+  (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
+                        (fx- (##sys#size s2) start2)))
+         (len (if n
+                  (begin (##sys#check-range n 0 maxlen 'substring-ci=?) n)
+                  maxlen)))
     (##core#inline "C_substring_compare_case_insensitive"
 		   s1 s2 start1 start2 len) ) )
 
