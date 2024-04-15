@@ -160,7 +160,7 @@
   (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
                         (fx- (##sys#size s2) start2)))
          (len (if n
-                  (begin (##sys#check-range n 0 maxlen 'substring=?) n)
+                  (begin (##sys#check-range n 0 (fx+ maxlen 1) 'substring=?) n)
                   maxlen)))
     (##core#inline "C_substring_compare" s1 s2 start1 start2 len) ) )
 
@@ -175,7 +175,7 @@
   (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
                         (fx- (##sys#size s2) start2)))
          (len (if n
-                  (begin (##sys#check-range n 0 maxlen 'substring-ci=?) n)
+                  (begin (##sys#check-range n 0 (fx+ maxlen 1) 'substring-ci=?) n)
                   maxlen)))
     (##core#inline "C_substring_compare_case_insensitive"
 		   s1 s2 start1 start2 len) ) )
