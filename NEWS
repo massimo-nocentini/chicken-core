@@ -37,6 +37,11 @@
     an `errno' property.
   - Deprecated "chicken-home" and added "include-path" in the
     chicken.platform module.
+  - Irregex has been updated to upstream 0.9.11 plus an additional fix
+    for sre->string.  The 0.9.11 release fixes a few problems related to
+    utf-8 handling (which should not affect CHICKEN) and expands the
+    definition for the 'whitespace character set to include vertical tab,
+    carriage return and form feed.
 
 - Tools
   - The -R option for csi and csc now accepts list-notation like

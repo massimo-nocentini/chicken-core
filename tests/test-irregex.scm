@@ -419,6 +419,12 @@
   (test-equal "***x***"
       (irregex-replace/all
        (irregex '(: #\space) 'dfa) "   x   " "*"))
+  (test-equal "A:42"
+      (irregex-replace/all "^" "42" "A:"))
+  (test-equal "A:42"
+      (irregex-replace/all 'bos "42" "A:"))
+  (test-equal "A:42"
+      (irregex-replace/all 'bol "42" "A:"))
   (test-equal "xaac"
       (irregex-replace/all
        (irregex '(or (seq bos "a") (seq bos "b")) 'backtrack) "aaac" "x"))
@@ -457,6 +463,15 @@
       (irregex-extract '(: newline "blah" eol) "\nblah\nblah\nblah\n"))
   )
 
+
+(test-group "parsing"
+  (test-equal "c+" (sre->string '(+ "c")))
+  (test-equal "(?:abc)+" (sre->string '(+ "abc")))
+  (test-equal "(?:abc|def)+" (sre->string '(+ (or "abc" "def"))))
+  (test-equal '(+ #\c) (string->sre "c+"))
+  (test-equal '(+ "abc") (string->sre "(?:abc)+"))
+  (test-equal '(+ (or "abc" "def")) (string->sre "(?:abc|def)+"))
+  )
 
 (define (extract name irx str)
   (irregex-match-substring (irregex-match irx str) name))

@@ -1,6 +1,6 @@
 ;;;; irregex.scm -- IrRegular Expressions
 ;;
-;; Copyright (c) 2005-2021 Alex Shinn.  All rights reserved.
+;; Copyright (c) 2005-2024 Alex Shinn.  All rights reserved.
 ;; BSD-style license: http://synthcode.com/license.txt
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -30,6 +30,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; History
+;; 0.9.11: 2024/02/23 - Guile test and packaging support from Tomas Volf.
 ;; 0.9.10: 2021/07/06 - fixes for submatches under kleene star, empty seqs
 ;;                     in alternations, and bol in folds for backtracking
 ;;                     matcher (thanks John Clements and snan for reporting
@@ -425,7 +426,12 @@
 ;; (define *all-chars* `(/ ,(integer->char (- (char->integer #\space) 32)) ,(integer->char (+ (char->integer #\space) 223))))
 
 ;; set to #f to ignore even an explicit request for utf8 handling
-(define *allow-utf8-mode?* #t)
+;; The utf8-mode is undesired on any implementation with native unicode support.
+;; It is a workaround for those that treat strings as a raw byte sequences, and
+;; does not work well otherwise.  So disable it on implementations known to
+;; handle unicode natively.
+(define *allow-utf8-mode?* (cond-expand ((and chicken (not full-unicode)) #t)
+                                        (else #f)))
 
 ;; (define *named-char-properties* '())
 
@@ -1568,8 +1574,8 @@
          (cons (car sre) (map rec (cdr sre))))))
      (else
       (case sre
-        ((any) 'utf8-any)
-        ((nonl) 'utf8-nonl)
+        ((any) (if utf8? 'utf8-any 'any))
+        ((nonl) (if utf8? 'utf8-nonl 'nonl))
         (else
          (if (and utf8? (char? sre) (high-char? sre))
              (sre-sequence (map integer->char (char->utf8-list sre)))
@@ -2292,10 +2298,11 @@
      . (or alphanumeric punctuation #\$ #\+ #\< #\= #\> #\^ #\` #\| #\~))
     (graph . graphic)
     (blank . (or #\space ,(integer->char (- (char->integer #\space) 23))))
-    (whitespace . (or blank #\newline))
+    ;; 0B - vertical tab, 0C - form feed
+    (whitespace . (or blank #\newline #\x0C #\return #\x0B))
     (space . whitespace)
     (white . whitespace)
-    (printing or graphic whitespace)
+    (printing . (or graphic whitespace))
     (print . printing)
 
     ;; XXXX we assume a (possibly shifted) ASCII-based ordering
