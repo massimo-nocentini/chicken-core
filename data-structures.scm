@@ -155,8 +155,8 @@
 (define (##sys#substring=? s1 s2 start1 start2 n)
   (##sys#check-string s1 'substring=?)
   (##sys#check-string s2 'substring=?)
-  (##sys#check-range start1 0 (##sys#size s1) 'substring=?)
-  (##sys#check-range start2 0 (##sys#size s2) 'substring=?)
+  (##sys#check-range start1 0 (fx+ (##sys#size s1) 1) 'substring=?)
+  (##sys#check-range start2 0 (fx+ (##sys#size s2) 1) 'substring=?)
   (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
                         (fx- (##sys#size s2) start2)))
          (len (if n
@@ -170,8 +170,8 @@
 (define (##sys#substring-ci=? s1 s2 start1 start2 n)
   (##sys#check-string s1 'substring-ci=?)
   (##sys#check-string s2 'substring-ci=?)
-  (##sys#check-range start1 0 (##sys#size s1) 'substring-ci=?)
-  (##sys#check-range start2 0 (##sys#size s2) 'substring-ci=?)
+  (##sys#check-range start1 0 (fx+ (##sys#size s1) 1) 'substring-ci=?)
+  (##sys#check-range start2 0 (fx+ (##sys#size s2) 1) 'substring-ci=?)
   (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
                         (fx- (##sys#size s2) start2)))
          (len (if n
