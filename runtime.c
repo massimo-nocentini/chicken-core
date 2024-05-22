@@ -9243,7 +9243,8 @@ C_s_a_u_i_integer_remainder(C_word **ptr, C_word n, C_word x, C_word y)
 C_regparm C_word C_fcall
 C_s_a_i_modulo(C_word **ptr, C_word n, C_word x, C_word y)
 {
-  C_word ab[C_SIZEOF_FIX_BIGNUM], *a = ab, r;
+  C_word ab[C_SIZEOF_FIX_BIGNUM], *a = ab, r,
+         nx = C_SCHEME_FALSE, ny = C_SCHEME_FALSE;
 
   if (!C_truep(C_i_integerp(x)))
     barf(C_BAD_ARGUMENT_TYPE_NO_INTEGER_ERROR, "modulo", x);
@@ -9251,13 +9252,41 @@ C_s_a_i_modulo(C_word **ptr, C_word n, C_word x, C_word y)
     barf(C_BAD_ARGUMENT_TYPE_NO_INTEGER_ERROR, "modulo", y);
   if (C_truep(C_i_zerop(y))) C_div_by_zero_error("modulo");
 
-  r = C_s_a_i_remainder(&a, 2, x, y);
-  if (C_i_positivep(y) != C_i_positivep(r) && !C_truep(C_i_zerop(r))) {
+  if (C_truep(C_i_flonump(x))) {
+    if C_truep(C_i_flonump(y)) {
+      double dx = C_flonum_magnitude(x), dy = C_flonum_magnitude(y), tmp;
+
+      C_modf(dx / dy, &tmp);
+      tmp = dx - tmp * dy;
+      if ((dx > 0.0) != (dy > 0.0) && tmp != 0.0) {
+        return C_flonum(ptr, tmp + dy);
+      } else {
+        return C_flonum(ptr, tmp);
+      }
+    }
+    x = nx = C_s_a_u_i_flo_to_int(&a, 1, x);
+  }
+  if (C_truep(C_i_flonump(y))) {
+    y = ny = C_s_a_u_i_flo_to_int(&a, 1, y);
+  }
+
+  integer_divrem(&a, x, y, NULL, &r);
+  if (C_i_positivep(y) != C_i_positivep(r) && r != C_fix(0)) {
     C_word m = C_s_a_i_plus(ptr, 2, r, y);
     m = move_buffer_object(ptr, ab, m);
     clear_buffer_object(ab, r);
     r = m;
   }
+
+  if (C_truep(nx) || C_truep(ny)) {
+    C_word newr = C_a_i_exact_to_inexact(ptr, 1, r);
+    clear_buffer_object(ab, r);
+    r = newr;
+
+    clear_buffer_object(ab, nx);
+    clear_buffer_object(ab, ny);
+  }
+
   return move_buffer_object(ptr, ab, r);
 }
 
@@ -9267,7 +9296,7 @@ C_s_a_u_i_integer_modulo(C_word **ptr, C_word n, C_word x, C_word y)
   C_word ab[C_SIZEOF_FIX_BIGNUM], *a = ab, r;
   if (y == C_fix(0)) C_div_by_zero_error("modulo");
 
-  r = C_s_a_i_remainder(&a, 2, x, y);
+  integer_divrem(&a, x, y, NULL, &r);
   if (C_i_positivep(y) != C_i_positivep(r) && r != C_fix(0)) {
     C_word m = C_s_a_u_i_integer_plus(ptr, 2, r, y);
     m = move_buffer_object(ptr, ab, m);
