@@ -3675,13 +3675,16 @@ C_regparm void C_fcall C_reclaim(void *trampoline, C_word c)
   }
 
   /* GC will have copied any live objects out of scratch space: clear it */
-  if (C_scratchspace_start != NULL) {
-    C_free(C_scratchspace_start);
-    C_scratchspace_start = NULL;
-    C_scratchspace_top = NULL;
-    C_scratchspace_limit = NULL;
+  if (C_scratchspace_start != C_scratchspace_top) {
+    /* And drop the scratchspace in case of a major or reallocating collection */
+    if (gc_mode != GC_MINOR) {
+      C_free(C_scratchspace_start);
+      C_scratchspace_start = NULL;
+      C_scratchspace_limit = NULL;
+      scratchspace_size = 0;
+    }
+    C_scratchspace_top = C_scratchspace_start;
     C_scratch_usage = 0;
-    scratchspace_size = 0;
   }
 
   if(gc_mode == GC_MAJOR) {
