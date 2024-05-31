@@ -1,4 +1,4 @@
-5.3.1
+5.4.0rc1
 
 - Security fixes
   - CVE-2022-45145: Neutralize possible escape characters in egg metadata
