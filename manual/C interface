@@ -425,9 +425,11 @@ returns that vector to its continuation:
 
 #include <assert.h>
 
-void fill_vector(C_word c, C_word closure, C_word vec)
+void fill_vector(C_word c, C_word *av)
 {
+  C_word closure = av[0];
   C_word kontinuation = C_block_item(closure, 1);
+  C_word vec = av[1];
 
   C_block_item(vec, 0) = C_fix(1);
   C_block_item(vec, 1) = C_fix(2);
@@ -437,7 +439,7 @@ void fill_vector(C_word c, C_word closure, C_word vec)
   C_kontinue(kontinuation, vec);
 }
 
-void one_two_three(C_word c, C_word self, C_word k, C_word str)
+void one_two_three(C_word continuation, C_word str)
 {
   /*
    * Allocate room on the stack to hold the closure:  1 word for
@@ -447,8 +449,11 @@ void one_two_three(C_word c, C_word self, C_word k, C_word str)
    */
   C_word closure[4], *cp = closure;
 
+  /* Allocate room for the argvector for C_allocate_vector */
+  C_word av[6];
+
   /* Create the closure.  It holds 3 values, not counting the tag */
-  C_word closure_object = C_closure(&cp, 3, (C_word)fill_vector, k, str);
+  C_word closure_object = C_closure(&cp, 3, (C_word)fill_vector, continuation, str);
 
   /*
    * After this, cp points just beyond the last word of the allocated
@@ -460,18 +465,22 @@ void one_two_three(C_word c, C_word self, C_word k, C_word str)
   assert(  C_data_pointer(closure_object) == (closure + 1)  );
   assert(  C_block_item(closure_object, 0) == (*(closure + 1))  );
 
+  /* Set up the arguments for C_allocate_vector */
+  av[0] = (C_word)NULL;   /* Closure of allocate_vector - unused, so pass NULL */
+  av[1] = closure_object; /* Continuation to call after allocating Scheme vector */
+  av[2] = C_fix(4);       /* Size of Scheme vector to allocate */
+  av[3] = C_SCHEME_FALSE; /* We want a regular vector, not a bytevector */
+  av[4] = C_SCHEME_FALSE; /* Initialization value for slots.  Don't care */
+  av[5] = C_SCHEME_FALSE; /* Do not align at 8 byte (64-bit word) boundary */
   /* Make a vector of 4 objects and use closure_object as continuation */
-  C_allocate_vector(6, (C_word)NULL, closure_object, C_fix(4),
-                    C_SCHEME_FALSE,  /* not a byte vector */
-                    C_SCHEME_FALSE,  /* initialization value. Don't care */
-                    C_SCHEME_FALSE); /* don't align at 8 bytes */
+  C_allocate_vector(6, av);
   /* .. C_allocate_vector does not return ... */
 }
 <#
 
 
 (define one-two-three
-   (foreign-primitive ((scheme-object str)) "one_two_three(C_c, C_self, C_k, str);"))
+   (foreign-primitive ((scheme-object str)) "one_two_three(C_k, str);"))
 
 (print (one-two-three "hi"))
 </enscript>

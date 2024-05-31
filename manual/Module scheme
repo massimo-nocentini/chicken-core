@@ -93,7 +93,7 @@ initial environment; for example, the addition and multiplication
 procedures in the above examples are the values of the variables + and
 *.  New procedures are created by evaluating lambda
 expressions. Procedure calls may return any number of values (see the
-{{values}} procedure [[#control-features|below]]).
+{{values}} procedure [[#Control_features|below]]).
 
 Procedure calls are also called combinations.
 
@@ -352,7 +352,7 @@ All the <datum>s must be distinct. The last <clause> may be an
 Semantics: A case expression is evaluated as follows. <Key> is
 evaluated and its result is compared against each <datum>. If the
 result of evaluating <key> is equivalent (in the sense of {{eqv?}};
-see [[#equivalence-predicates|below]]) to a <datum>, then the
+see [[#Equivalence_predicates|below]]) to a <datum>, then the
 expressions in the corresponding <clause> are evaluated from left to
 right and the result(s) of the last expression in the <clause> is(are)
 returned as the result(s) of the case expression. If the selected
@@ -441,7 +441,7 @@ returned. Each binding of a <variable> has <body> as its region.
          (z (+ x y)))
      (* z x)))                           ===>  35
 
-See also "named let", [[#iteration|below]].
+See also "named let", [[#Iteration|below]].
 
 <macro>(let* <bindings> <body>)</macro><br>
 
@@ -1460,7 +1460,7 @@ Rational operations such as + should always produce exact results when
 given exact arguments. If the operation is unable to produce an exact
 result, then it may either report the violation of an implementation
 restriction or it may silently coerce its result to an inexact value.
-See [[#implementation-restrictions|the next section]].
+See [[#Implementation restrictions|the next section]].
 
 With the exception of inexact->exact, the operations described in this
 section must generally return inexact results when given any inexact
@@ -1596,7 +1596,7 @@ which are encoded in the naming conventions of the arguments as
 given in the procedure's signature.  The conventions are as follows:
 
 ; {{obj}} : any object
-; {{list, list1, ... listj, ...	list : (see "[[#pairs-and-lists|Pairs and lists]]" below)
+; {{list, list1, ... listj, ...	list : (see "[[#Pairs_and_lists|Pairs and lists]]" below)
 ; {{z, z1, ... zj, ...}} : complex number
 ; {{x, x1, ... xj, ...}} : real number
 ; {{y, y1, ... yj, ...}} : real number
