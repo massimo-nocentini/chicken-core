@@ -8,11 +8,11 @@
 # conditions are met:
 #
 #   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-#     disclaimer. 
+#     disclaimer.
 #   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-#     disclaimer in the documentation and/or other materials provided with the distribution. 
+#     disclaimer in the documentation and/or other materials provided with the distribution.
 #   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-#     products derived from this software without specific prior written permission. 
+#     products derived from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 # OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -28,14 +28,12 @@ SRCDIR ?= ./
 
 # platform configuration
 
-XCODE_DEVELOPER ?= /Applications/Xcode.app/Contents/Developer
-XCODE_TOOL_PATH ?= $(XCODE_DEVELOPER)/Toolchains/XcodeDefault.xctoolchain/usr/bin
-C_COMPILER ?= $(XCODE_DEVELOPER)/usr/bin/gcc
+C_COMPILER ?= gcc
 ARCH ?= $(shell sh $(SRCDIR)/config-arch.sh)
 
 # commands
 
-POSTINSTALL_PROGRAM = $(XCODE_TOOL_PATH)/install_name_tool
+POSTINSTALL_PROGRAM = install_name_tool
 
 # options
 
@@ -49,7 +47,7 @@ else
 C_COMPILER_OPTIMIZATION_OPTIONS ?= -Os -fomit-frame-pointer
 endif
 endif
-LIBRARIAN ?= $(XCODE_TOOL_PATH)/ar
+LIBRARIAN ?= ar
 LINKER_LINK_SHARED_LIBRARY_OPTIONS = -dynamiclib -compatibility_version 1 -current_version 1.0 -install_name $@
 HERE = $(shell pwd)
 PREINSTALL_PROGRAM_FIXUP = $(POSTINSTALL_PROGRAM) -change lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(SO) $(HERE)/lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(SO)
