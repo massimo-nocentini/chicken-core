@@ -335,7 +335,8 @@ name of the procedure) where the error occurred.
 
 <macro>(assert EXP [OBJ ...])</macro>
 
-Evaluates {{EXP}}, if it returns #f, applies {{error}} on {{OBJ ...}}.
+Evaluates {{EXP}}, if it returns #f, {{error}} is applied to {{OBJ ...}},
+else the result of {{EXP}} is returned.
 When compiling in unsafe mode, assertions of this kind are disabled.
 
 
@@ -533,9 +534,6 @@ elements to be copied. If not given, the minimum of the lengths of the
 argument vectors is copied.
 
 Exceptions: {{(exn bounds)}}
-
-This procedure is compatible with the definition from the R7RS
-{{(scheme base)}} library.
 
 ==== vector-resize
 

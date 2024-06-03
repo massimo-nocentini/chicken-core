@@ -46,7 +46,7 @@ the source text should be read from standard input.
 
 ; -epilogue FILENAME : Includes the file named {{FILENAME}} at the end of the compiled source file. The include-path is not searched. This option may be given multiple times.
 
-; -emit-all-import-libraries : emit import libraries for all modules defined in the current compulation unit (see also: {{-emit-import-library}}).
+; -emit-all-import-libraries : emit import libraries for all modules defined in the current compilation unit (see also: {{-emit-import-library}}).
 
 ; -emit-external-prototypes-first : Emit prototypes for callbacks defined with {{define-external}} before any other foreign declarations. This is sometimes useful, when C/C++ code embedded into the a Scheme program has to access the callbacks. By default the prototypes are emitted after foreign declarations.
 

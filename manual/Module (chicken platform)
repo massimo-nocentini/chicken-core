@@ -167,8 +167,8 @@ in the current system. Additionally the {{cond-expand}} form accesses this
 feature list to infer what features are provided. Predefined features are
 {{chicken}}, and the SRFIs (Scheme Request For Implementation) provided by the
 base system: {{srfi-23, srfi-30, srfi-39}}. If the {{eval}} unit
-is used (the default), the features {{srfi-0, srfi-2, srfi-6, srfi-8}} and {{srfi-9}}
-are defined. When compiling code (during compile-time) the
+is used (the default), the features {{srfi-0, srfi-2, srfi-6, srfi-8, srfi-9}}
+and {{srfi-10}} are defined. When compiling code (during compile-time) the
 feature {{compiling}} is registered. When evaluating code in the interpreter
 (csi), the feature {{csi}} is registered.
 

@@ -196,9 +196,10 @@ C_values(N + 2, av);
 </enscript>
 
 where {{N}} is the number of values to be returned, and {{X1, ...}}
-are the results, which should be Scheme data objects. When returning
-multiple values, the return-type should be omitted.  Of course, if you
-have to dynamically compute the values, you do not have to use C's
+are the results, which should be Scheme data objects.
+See [[/manual/C interface#constructors|Constructors]] for the APIs to construct Scheme data objects from C primitives.
+When returning multiple values, the return-type should be omitted.
+Of course, if you have to dynamically compute the values, you do not have to use C's 
 array initialization syntax, but you can just assign them one by one.
 
 Returning just a single value can still be done via the {{C_return(...)}} macro.

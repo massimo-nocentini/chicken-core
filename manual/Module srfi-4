@@ -179,8 +179,8 @@ is {{#XXX( ...elements... )}}.
 
 For example, 
 
- #u8(0 #e1e2 #xff)}}  ; a {{u8vector}} of length 3 containing 0, 100, 255
- #f64(-1.5)           ; a {{f64vector}} of length 1 containing -1.5.
+ #u8(0 #e1e2 #xff)  ; a u8vector of length 3 containing 0, 100, 255
+ #f64(-1.5)         ; a f64vector of length 1 containing -1.5.
 
 This external representation is also available in program source code. For example, 
 
