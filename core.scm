@@ -989,17 +989,18 @@
 				 bs) ) ) ) )
 
 		       ((##core#include)
-			(##sys#include-forms-from-file
-			 (cadr x)
-			 (caddr x)
-			 (lambda (forms)
-			   (walk (if (pair? (cdddr x)) ; body?
-				     (canonicalize-body/ln
-				      ln
-				      (append forms (cadddr x))
-				      compiler-syntax-enabled)
-				     `(##core#begin ,@forms))
-				 e dest ldest h ln tl?))))
+                         (##sys#include-forms-from-file
+                          (cadr x)
+                          (caddr x)
+                          (lambda (forms path)
+                            (let ((code (if (pair? (cdddr x)) ; body?
+                                            (canonicalize-body/ln
+                                              ln
+                                              (append forms (cadddr x))
+                                              compiler-syntax-enabled)
+                                            `(##core#begin ,@forms))))
+                              (fluid-let ((##sys#current-source-filename path))
+                                (walk code e dest ldest h ln tl?))))))
 
 		       ((##core#let-module-alias)
 			(##sys#with-module-aliases
