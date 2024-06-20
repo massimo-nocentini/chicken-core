@@ -434,7 +434,11 @@ echo "======================================== find-files tests ..."
 $interpret -bnq test-find-files.scm
 
 echo "======================================== create-temporary-file tests ..."
-$interpret -bnq test-create-temporary-file.scm
+if test -z "$MSYSTEM"; then
+  echo "== SKIPPED due to problematic unsetenv behaviour on Windows =="
+else
+  $interpret -bnq test-create-temporary-file.scm
+fi
 
 echo "======================================== record-renaming tests ..."
 $interpret -bnq record-rename-test.scm
