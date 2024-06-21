@@ -309,7 +309,12 @@ EOF
     (or (get-environment-variable "TMPDIR")
         (get-environment-variable "TEMP")
         (get-environment-variable "TMP")
-        "/tmp"))
+        (if ##sys#windows-platform
+            (let ((up (get-environment-variable "USERPROFILE")))
+              (if up
+                  (string-append up "/AppData/Local/Temp")
+                  "."))
+            "/tmp")))
   (set! create-temporary-file
     (lambda (#!optional (ext "tmp"))
       (##sys#check-string ext 'create-temporary-file)
