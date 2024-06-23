@@ -1185,14 +1185,16 @@ copy /y nul ~a~a~%
 ~a
 EOF
                mkdir ddir qdir
-	       ddir dest
-	       (string-intersperse (map (lambda (line)
-					  (ensure-line-limit
-                                             (caretize (format "echo ~a >>~a~a"
-                                                               line ddir dest))
-                                             8191 ))
-					(string-split infostr "\n"))
-				   "\n"))))))
+               ddir dest
+               (string-intersperse (map (lambda (line)
+                                          (ensure-line-limit
+                                            (format "echo ~a >>~a~a"
+                                                    (caretize line)
+                                                    (caretize ddir)
+                                                    (caretize dest))
+                                            8191))
+                                        (string-split infostr "\n"))
+                                   "\n"))))))
 
 ;;; some utilities for mangling + quoting
 

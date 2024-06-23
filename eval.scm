@@ -523,7 +523,7 @@
 			  (compile '(##core#undefined) e #f tf cntr #f))
 
 			 ((##core#let-compiler-syntax)
-			  (compile 
+			  (compile
 			   (##sys#canonicalize-body (cddr x) (##sys#current-environment) #f)
 			   e #f tf cntr #f))
 
@@ -531,14 +531,14 @@
 			  (##sys#include-forms-from-file
 			   (cadr x)
 			   (caddr x)
-			   (lambda (forms)
-			     (compile
-			      (if (pair? (cdddr x)) ; body?
-				  (##sys#canonicalize-body
-				   (append forms (cadddr x))
-				   (##sys#current-environment))
-				  `(##core#begin ,@forms))
-			      e #f tf cntr tl?))))
+			   (lambda (forms path)
+			     (let ((code (if (pair? (cdddr x)) ; body?
+			 	     	     (##sys#canonicalize-body
+				               (append forms (cadddr x))
+				               (##sys#current-environment))
+				             `(##core#begin ,@forms))))
+			       (fluid-let ((##sys#current-source-filename path))
+			         (compile code e #f tf cntr tl?))))))
 
 			 ((##core#let-module-alias)
 			  (##sys#with-module-aliases
@@ -1184,7 +1184,8 @@
                  (do ((x (read-with-source-info in) (read-with-source-info in))
                       (xs '() (cons x xs)))
                      ((eof-object? x)
-                      (reverse xs)))))))))))
+                      (reverse xs))))
+               path)))))))
 
 
 ;;; Extensions:
