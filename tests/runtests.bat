@@ -587,8 +587,9 @@ echo ======================================== find-files tests ...
 if errorlevel 1 exit /b 1
 
 echo ======================================== create-temporary-file tests ...
-$interpret -bnq test-create-temporary-file.scm
-
+echo == SKIPPED due to problematic unsetenv behaviour on Windows ==
+@rem %interpret% -bnq test-create-temporary-file.scm
+@rem if errorlevel 1 exit /b 1
 
 echo ======================================== record-renaming tests ...
 %interpret% -bnq record-rename-test.scm

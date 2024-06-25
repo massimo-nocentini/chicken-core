@@ -243,7 +243,7 @@ EOF
      else C_return(ntohs(se->s_port));") )     
 
 (define gethostaddr
-  (foreign-lambda* bool ((scheme-pointer saddr) (c-string host) (unsigned-short port))
+  (foreign-lambda* bool ((nonnull-scheme-pointer saddr) (c-string host) (unsigned-short port))
     "struct hostent *he = gethostbyname(host);"
     "struct sockaddr_in *addr = (struct sockaddr_in *)saddr;"
     "if(he == NULL) C_return(0);"
@@ -292,7 +292,7 @@ EOF
 		    (loop (fx+ i 1)) ) ) ) ) ) ) ) )
 
 (define fresh-addr
-  (foreign-lambda* void ((scheme-pointer saddr) (unsigned-short port))
+  (foreign-lambda* void ((nonnull-scheme-pointer saddr) (unsigned-short port))
     "struct sockaddr_in *addr = (struct sockaddr_in *)saddr;"
     "memset(addr, 0, sizeof(struct sockaddr_in));"
     "addr->sin_family = AF_INET;"
