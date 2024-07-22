@@ -52,6 +52,11 @@ USES_SONAME = yes
 
 # architectures
 
+ifeq ($(ARCH),xtensa)
+C_COMPILER_OPTIONS += -mtext-section-literals
+LINKER_OPTIONS += -mtext-section-literals
+endif
+
 ifeq ($(ARCH),x32)
 C_COMPILER_OPTIONS += -mx32
 LINKER_OPTIONS += -mx32
