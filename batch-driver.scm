@@ -37,6 +37,7 @@
 
 (import scheme
 	chicken.base
+        chicken.file
 	chicken.fixnum
 	chicken.format
 	chicken.gc
@@ -46,6 +47,7 @@
 	chicken.platform
 	chicken.pretty-print
 	chicken.process-context
+        chicken.process-context.posix
 	chicken.string
 	chicken.syntax
         chicken.port
@@ -227,6 +229,10 @@
 				   oname) ) ) )
 		       ((memq 'to-stdout options) #f)
 		       (else (make-pathname #f (if filename (pathname-file filename) "out") "c")) ) )
+        ;; Create a temporary file to receive the C code, so that it
+        ;; can atomically be renamed to the actual output file after
+        ;; the C generation.
+        (tmp-outfile (conc outfile ".tmp." (current-process-id) (current-seconds)))
 	(opasses (default-optimization-passes))
 	(time0 #f)
 	(time-breakdown #f)
@@ -882,12 +888,15 @@
 				  (with-output-to-file emit-link-file (cut pp exts))))
 
                                ;; Code generation
-			      (let ((out (if outfile (open-output-file outfile) (current-output-port))) )
-				(dribble "generating `~A' ..." outfile)
+			      (let ((out (if outfile
+                                             (open-output-file tmp-outfile)
+                                             (current-output-port))) )
+				(dribble "generating `~A' ..." tmp-outfile)
 				(generate-code literals lliterals lambda-table out filename
 					       user-supplied-options dynamic db dbg-info)
-				(when outfile
-				  (close-output-port out)))
+				(when tmp-outfile
+				  (close-output-port out))
+                                (rename-file tmp-outfile outfile #t))
 			      (end-time "code generation")
 			      (when (memq 't debugging-chicken)
 				(##sys#display-times (##sys#stop-timer)))
