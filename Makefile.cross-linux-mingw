@@ -86,35 +86,37 @@ TARGETS = libchicken$(A) $(CHICKEN_PROGRAM)$(EXE) $(CSI_PROGRAM)$(EXE) \
 endif
 
 chicken-config.h: chicken-defaults.h
-	echo "/* GENERATED */" >$@
-	echo "#define HAVE_DIRENT_H 1" >>$@
-	echo "#define HAVE_INTTYPES_H 1" >>$@
-	echo "#define HAVE_LIMITS_H 1" >>$@
-	echo "#define HAVE_LONG_LONG 1" >>$@
-	echo "#define HAVE_MEMMOVE 1" >>$@
-	echo "#define HAVE_MEMORY_H 1" >>$@
-	echo "#define NO_POSIX_POLL 1" >>$@
-	echo "#define HAVE_STDINT_H 1" >>$@
-	echo "#define HAVE_STDLIB_H 1" >>$@
-	echo "#define HAVE_STRERROR 1" >>$@
-	echo "#define HAVE_STRINGS_H 1" >>$@
-	echo "#define HAVE_STRING_H 1" >>$@
-	echo "#define HAVE_STRTOLL 1" >>$@
-	echo "#define HAVE_SYS_STAT_H 1" >>$@
-	echo "#define HAVE_SYS_TYPES_H 1" >>$@
-	echo "#define HAVE_UNISTD_H 1" >>$@
-	echo "#define HAVE_UNSIGNED_LONG_LONG 1" >>$@
-	echo "#define STDC_HEADERS 1" >>$@
-	echo "#define HAVE_ALLOCA 1" >>$@
-	echo "#define HAVE_DIRECT_H 1" >>$@
-	echo "#define HAVE_ERRNO_H 1" >>$@
-	echo "#define HAVE_LOADLIBRARY 1" >>$@
-	echo "#define HAVE_GETPROCADDRESS 1" >>$@
-	echo "#define C_STACK_GROWS_DOWNWARD 1" >>$@
+	echo "/* GENERATED */" >$@.tmp
+	echo "#define HAVE_DIRENT_H 1" >>$@.tmp
+	echo "#define HAVE_INTTYPES_H 1" >>$@.tmp
+	echo "#define HAVE_LIMITS_H 1" >>$@.tmp
+	echo "#define HAVE_LONG_LONG 1" >>$@.tmp
+	echo "#define HAVE_MEMMOVE 1" >>$@.tmp
+	echo "#define HAVE_MEMORY_H 1" >>$@.tmp
+	echo "#define NO_POSIX_POLL 1" >>$@.tmp
+	echo "#define HAVE_STDINT_H 1" >>$@.tmp
+	echo "#define HAVE_STDLIB_H 1" >>$@.tmp
+	echo "#define HAVE_STRERROR 1" >>$@.tmp
+	echo "#define HAVE_STRINGS_H 1" >>$@.tmp
+	echo "#define HAVE_STRING_H 1" >>$@.tmp
+	echo "#define HAVE_STRTOLL 1" >>$@.tmp
+	echo "#define HAVE_SYS_STAT_H 1" >>$@.tmp
+	echo "#define HAVE_SYS_TYPES_H 1" >>$@.tmp
+	echo "#define HAVE_UNISTD_H 1" >>$@.tmp
+	echo "#define HAVE_UNSIGNED_LONG_LONG 1" >>$@.tmp
+	echo "#define STDC_HEADERS 1" >>$@.tmp
+	echo "#define HAVE_ALLOCA 1" >>$@.tmp
+	echo "#define HAVE_DIRECT_H 1" >>$@.tmp
+	echo "#define HAVE_ERRNO_H 1" >>$@.tmp
+	echo "#define HAVE_LOADLIBRARY 1" >>$@.tmp
+	echo "#define HAVE_GETPROCADDRESS 1" >>$@.tmp
+	echo "#define C_STACK_GROWS_DOWNWARD 1" >>$@.tmp
 ifdef GCHOOKS
-	echo "#define C_GC_HOOKS" >>$@
+	echo "#define C_GC_HOOKS" >>$@.tmp
 endif
-	echo "#define C_USE_STD_FEATURE_MACROS" >>$@
-	cat chicken-defaults.h >>$@
+	echo "#define C_USE_STD_FEATURE_MACROS" >>$@.tmp
+	cat $@.tmp chicken-defaults.h >$@.tmp2
+	rm $@.tmp
+	mv $@.tmp2 $@
 
 include $(SRCDIR)rules.make
