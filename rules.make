@@ -271,7 +271,7 @@ install: $(TARGETS) install-target install-bin install-libs install-dev install-
 
 install-target: install-libs
 
-install-libs:
+install-libs: libs $(LIBCHICKEN_IMPORT_LIBRARY)
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(ILIBDIR)"
 ifneq ($(LIBCHICKEN_IMPORT_LIBRARY),) 
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_STATIC_LIBRARY_OPTIONS) $(LIBCHICKEN_IMPORT_LIBRARY) "$(DESTDIR)$(ILIBDIR)"
@@ -314,7 +314,7 @@ endif
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)types.db "$(DESTDIR)$(IEGGDIR)"
 
 ifeq ($(NEEDS_RELINKING),yes)
-install-bin:
+install-bin: $(TARGETS) install-libs install-dev
 	$(foreach prog,$(INSTALLED_PROGRAMS),\
 		$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) $(prog)$(EXE) $(NL))
 
