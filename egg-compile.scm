@@ -705,7 +705,8 @@
                  modules))
          (targets (append (list out)
                           (maybe inline-file ifile)
-                          (maybe types-file tfile)
+                          (maybe (and types-file
+                                      (not predefined-types)) tfile)
                           imps)))
     (add-dependency-target name out)
     (when custom
