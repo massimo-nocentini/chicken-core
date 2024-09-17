@@ -232,7 +232,8 @@
         ;; Create a temporary file to receive the C code, so that it
         ;; can atomically be renamed to the actual output file after
         ;; the C generation.
-        (tmp-outfile (conc outfile ".tmp." (current-process-id) (current-seconds)))
+        (tmp-outfile (and outfile
+                          (conc outfile ".tmp." (current-process-id) (current-seconds))))
 	(opasses (default-optimization-passes))
 	(time0 #f)
 	(time-breakdown #f)
@@ -888,15 +889,16 @@
 				  (with-output-to-file emit-link-file (cut pp exts))))
 
                                ;; Code generation
-			      (let ((out (if outfile
+			      (let ((out (if tmp-outfile
                                              (open-output-file tmp-outfile)
                                              (current-output-port))) )
-				(dribble "generating `~A' ..." tmp-outfile)
+                                (when tmp-outfile
+                                  (dribble "generating `~A' ..." tmp-outfile))
 				(generate-code literals lliterals lambda-table out filename
 					       user-supplied-options dynamic db dbg-info)
 				(when tmp-outfile
-				  (close-output-port out))
-                                (rename-file tmp-outfile outfile #t))
+                                  (close-output-port out)
+                                  (rename-file tmp-outfile outfile #t)))
 			      (end-time "code generation")
 			      (when (memq 't debugging-chicken)
 				(##sys#display-times (##sys#stop-timer)))
