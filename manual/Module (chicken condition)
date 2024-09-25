@@ -345,7 +345,7 @@ precedes it. Returns a ''kind-key'' condition that associates the given
 
 <procedure>(make-composite-condition condition ...)</procedure><br>
 
-Returns a newly-allocated condition whose components correspond to the the
+Returns a newly-allocated condition whose components correspond to the
 given ''condition''s. A predicate created by {{condition-predicate}} returns
 true for the new condition if and only if it returns true for one or more
 of its component conditions.

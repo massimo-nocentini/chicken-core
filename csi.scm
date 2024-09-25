@@ -1096,7 +1096,7 @@ EOF
 	(keyword-style #:none)
 	(parentheses-synonyms #f)
 	(symbol-escape #f) )
-      ;; Load the the default modules into the evaluation environment.
+      ;; Load the default modules into the evaluation environment.
       ;; This is done before setting load-verbose => #t to avoid
       ;; spurious import messages.
       (eval `(import-for-syntax ,@default-syntax-imports))

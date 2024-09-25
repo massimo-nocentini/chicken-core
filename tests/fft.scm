@@ -1913,7 +1913,7 @@
   ;; This is an complex fft, using a decimation-in-frequency algorithm
   ;; with inputs in bit-reversed order and outputs in natural order.
 
-  ;; The organization of the algorithm has little to do with the the
+  ;; The organization of the algorithm has little to do with the
   ;; associated algorithm on page 41 of Chu and George,
   ;; I just reversed the operations of the direct algorithm given
   ;; above (without dividing by 2 each time, so that this has to

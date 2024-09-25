@@ -517,7 +517,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
           - Make sure the "XCODE_PATH" setting is correct (see
             Makefile.ios), it defaults to "/Applications/Xcode.app".
 
-          - The paths for the the various build tools changed between
+          - The paths for the various build tools changed between
             Xcode 4 and 5. The makefile used for iOS builds of CHICKEN
             assume Xcode 5 is used. If you are using Xcode 4, override
             the XCODE_TOOLPATH and C_COMPILER make-variables providing
