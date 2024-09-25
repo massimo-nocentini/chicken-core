@@ -534,6 +534,7 @@ batch-driver.c: batch-driver.scm mini-srfi-1.scm \
 		chicken.platform.import.scm \
 		chicken.pretty-print.import.scm \
 		chicken.process-context.import.scm \
+		chicken.process-context.posix.import.scm \
 		chicken.condition.import.scm \
 		chicken.port.import.scm \
 		chicken.string.import.scm \
