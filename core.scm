@@ -83,7 +83,7 @@
 ;   ##compiler#local -> BOOL
 ;   ##compiler#visibility -> #f | 'hidden | 'exported
 ;   ##compiler#constant -> BOOL                             defined as constant
-;   ##compiler#intrinsic -> #f | 'standard | 'extended
+;   ##compiler#intrinsic -> #f | 'standard | 'extended | 'internal
 ;   ##compiler#inline -> 'no | 'yes
 ;   ##compiler#inline-global -> 'yes | 'no | <node>
 ;   ##compiler#profile -> BOOL
@@ -115,6 +115,7 @@
 ; (##core#ensure-toplevel-definition <variable>)
 ; (##core#begin <exp> ...)
 ; (##core#include <string> <string> | #f [<body>])
+; (##core#include-ci <string> <string> | #f [<body>])
 ; (##core#loop-lambda <llist> <body>)
 ; (##core#undefined)
 ; (##core#primitive <name>)
@@ -270,6 +271,7 @@
 ;   constant -> <boolean>                    If true: variable has fixed value
 ;   hidden-refs -> <boolean>                 If true: procedure that refers to hidden global variables
 ;   inline-transient -> <boolean>            If true: was introduced during inlining
+;   has-bad-calls -> <boolean>               If true: the procedure has calls with wrong argument counts
 ;
 ; <lambda-id>:
 ;
@@ -339,6 +341,7 @@
      line-number-database-size)
 
 (import scheme
+	(only (scheme base) open-output-string get-output-string)
 	chicken.base
 	chicken.condition
 	chicken.compiler.scrutinizer
@@ -630,6 +633,17 @@
 		 (for-each pretty-print imps)
 		 (print "\n;; END OF FILE"))))) ) )
 
+   (define (include-file x ci e dest ldest h ln tl?)
+       (##sys#include-forms-from-file
+              (cadr x) (caddr x) ci
+              (lambda (forms)
+                (walk (if (pair? (cdddr x)) ; body?
+                        (canonicalize-body/ln ln
+                                              (append forms (cadddr x))
+                                              compiler-syntax-enabled)
+                        `(##core#begin ,@forms))
+                    e dest ldest h ln tl?))))
+
   (define (walk x e dest ldest h outer-ln tl?)
     (cond ((keyword? x) `(quote ,x))
 	  ((symbol? x) (resolve-variable x e dest ldest h outer-ln))
@@ -640,10 +654,6 @@
 	  ((symbol? (car x))
 	   (let ((ln (or (get-line-number x) outer-ln)))
 	     (emit-syntax-trace-info x #f)
-	     (unless (list? x)
-	       (if ln
-		   (##sys#syntax-error/context (sprintf "(~a) - malformed expression" ln) x)
-		   (##sys#syntax-error/context "malformed expression" x)))
 	     (set! ##sys#syntax-error-culprit x)
 	     (let* ((name (lookup (car x)))
 		    (xexpanded
@@ -652,6 +662,11 @@
 		       (expand x (##sys#current-environment) compiler-syntax-enabled))))
 	       (cond ((not (eq? x xexpanded))
 		      (walk xexpanded e dest ldest h ln tl?))
+
+                     ((not (list? x))
+                      (if ln
+                          (##sys#syntax-error/context (sprintf "(~a) - malformed expression" ln) x)
+                          (##sys#syntax-error/context "malformed expression" x)))
 
 		     ((hash-table-ref inline-table name)
 		      => (lambda (val)
@@ -989,18 +1004,10 @@
 				 bs) ) ) ) )
 
 		       ((##core#include)
-                         (##sys#include-forms-from-file
-                          (cadr x)
-                          (caddr x)
-                          (lambda (forms path)
-                            (let ((code (if (pair? (cdddr x)) ; body?
-                                            (canonicalize-body/ln
-                                              ln
-                                              (append forms (cadddr x))
-                                              compiler-syntax-enabled)
-                                            `(##core#begin ,@forms))))
-                              (fluid-let ((##sys#current-source-filename path))
-                                (walk code e dest ldest h ln tl?))))))
+                        (include-file x #f e dest ldest h ln tl?))
+
+		       ((##core#include-ci)
+                        (include-file x #t e dest ldest h ln tl?))
 
 		       ((##core#let-module-alias)
 			(##sys#with-module-aliases
@@ -1027,13 +1034,13 @@
 								       (loop (cdr exp))))))
 						       exp)
 						      (else
-						       (##sys#syntax-error-hook
+						       (##sys#syntax-error
 							'module
 							"invalid export syntax" exp name))))
 					      (strip-syntax (caddr x))))))
 			       (csyntax compiler-syntax))
 			  (when (##sys#current-module)
-			    (##sys#syntax-error-hook
+			    (##sys#syntax-error
 			     'module "modules may not be nested" name))
 			  (let ((body (parameterize ((##sys#current-module mod)
 						     (##sys#current-environment '())
@@ -1408,7 +1415,7 @@
 			     (when (or (not (list? vars))
 				       (not (list? atypes))
 				       (not (= (length vars) (length atypes))) )
-			       (syntax-error
+			       (##sys#syntax-error
 				"non-matching or invalid argument list to foreign callback-wrapper"
 				vars atypes) )
 			     `(##core#foreign-callback-wrapper
@@ -1452,7 +1459,7 @@
 						    c-string*
 						    c-string-list
 						    c-string-list*))
-						 (syntax-error
+						 (##sys#syntax-error
 						  "not a valid result type for callback procedures"
 						  rtype
 						  name) )
@@ -1542,7 +1549,7 @@
   (define (check-decl spec minlen . maxlen)
     (let ([n (length (cdr spec))])
       (if (or (< n minlen) (> n (optional maxlen 99999)))
-	  (syntax-error "invalid declaration" spec) ) ) )
+	  (##sys#syntax-error "invalid declaration" spec) ) ) )
   (define (globalize var)
     (cond ((local? var)
 	   (note-local var)
@@ -1556,7 +1563,7 @@
   (call-with-current-continuation
    (lambda (return)
      (unless (pair? spec)
-       (syntax-error "invalid declaration specification" spec) )
+       (##sys#syntax-error "invalid declaration specification" spec) )
      (case (strip-syntax (car spec)) ; no global aliasing
        ((uses)
 	(let ((units (strip-syntax (cdr spec))))
@@ -1616,7 +1623,7 @@
 	(let ([fds (cdr spec)])
 	  (if (every string? fds)
 	      (set! foreign-declarations (append foreign-declarations fds))
-	      (syntax-error 'declare "invalid declaration" spec) ) ) )
+	      (##sys#syntax-error 'declare "invalid declaration" spec) ) ) )
        ((block) (set! block-compilation #t))
        ((separate) (set! block-compilation #f))
        ((keep-shadowed-macros) (set! undefine-shadowed-macros #f))
@@ -1818,17 +1825,15 @@
 
 ;;; Expand "foreign-lambda"/"foreign-safe-lambda" forms and add item to stub-list:
 
-(define-record-type foreign-stub
-  (make-foreign-stub id return-type name argument-types argument-names body cps callback)
-  foreign-stub?
-  (id foreign-stub-id)			; symbol
-  (return-type foreign-stub-return-type)	  ; type-specifier
-  (name foreign-stub-name)			  ; string or #f
-  (argument-types foreign-stub-argument-types) ; (type-specifier...)
-  (argument-names foreign-stub-argument-names) ; #f or (symbol ...)
-  (body foreign-stub-body)		       ; #f or string
-  (cps foreign-stub-cps)		       ; boolean
-  (callback foreign-stub-callback))	       ; boolean
+(define-record foreign-stub
+  id			; symbol
+  return-type	  ; type-specifier
+  name 		  ; string or #f
+  argument-types ; (type-specifier...)
+  argument-names ; #f or (symbol ...)
+  body		       ; #f or string
+  cps		       ; boolean
+  callback)	       ; boolean
 
 (define (create-foreign-stub rtype sname argtypes argnames body callback cps)
   ;; try to describe a foreign-lambda type specification
@@ -2084,16 +2089,11 @@
 	     (when (eq? '##core#variable (node-class fun))
 	       (let* ((name (first (node-parameters fun)))
                       (val (db-get db name 'value)))
-                 (when (and first-analysis
-                            val
-                            (not (db-get db name 'global))
-                            (not (db-get db name 'unknown))
+                 (when (and val
                             (eq? '##core#lambda (node-class val))
                             (not (llist-match? (third (node-parameters val))
                                                (cdr subs))))
-                    (quit-compiling
-		      "known procedure called with wrong number of arguments: `~A'"
-	              (real-name name)))
+                   (db-put! db name 'has-bad-calls #t))
 		 (collect! db name 'call-sites (cons here n))))
 	     (walk (first subs) env localenv fullenv here)
 	     (walkeach (cdr subs) env localenv fullenv here)))
@@ -2350,7 +2350,7 @@
 				  (lambda (v) (db-get db v 'global))
 				  (nth-value 0 (scan-free-variables
 						value block-compilation)) ) ) )
-		    (if (and (= 1 nreferences) (= 1 ncall-sites))
+		    (if (and (not (db-get db sym 'has-bad-calls)) (= 1 nreferences) (= 1 ncall-sites))
 			(quick-put! plist 'contractable #t)
 			(quick-put! plist 'inlinable #t) ) ) ) )
 	       (local-value
@@ -2574,13 +2574,15 @@
 						(and refs sites
 						     (= (length refs) (length sites))
 						     (test varname 'value)
+						     (not (test varname 'has-bad-calls))
 						     (list? llist) ) ] )
 					  (cond ((and name
                                                       (not (llist-match? llist (cdr subs))))
                                                    '())
                                                 (else
    					          (register-direct-call! id)
-					          (when custom (register-customizable! varname id))
+					          (when custom
+					            (register-customizable! varname id))
 					          (list id custom) ) ) )
 					'() ) )
 				  '() ) )
@@ -2762,7 +2764,7 @@
 	    '##core#closure (list (if emit-closure-info 2 1))
 	    (cons (make-node '##core#proc (list (car params) #t) '())
 		  (if emit-closure-info
-		      (list (qnode (##sys#make-lambda-info (car params))))
+		      (list (qnode (##sys#make-lambda-info (->string (car params)))))
 		      '() ) ) ) )
 
 	  ((##core#ref) n)
@@ -2793,29 +2795,25 @@
 
 ;;; Do some preparations before code-generation can commence:
 
-(define-record-type lambda-literal
-  (make-lambda-literal id external arguments argument-count rest-argument temporaries
-		       float-temporaries callee-signatures allocated directly-called
-		       closure-size looping customizable rest-argument-mode body direct)
-  lambda-literal?
-  (id lambda-literal-id)			       ; symbol
-  (external lambda-literal-external)		       ; boolean
+(define-record lambda-literal
+  id 		       ; symbol
+  external      ; boolean
   ;; lambda-literal-arguments is used nowhere
-  (arguments lambda-literal-arguments)		       ; (symbol ...)
-  (argument-count lambda-literal-argument-count)       ; integer
-  (rest-argument lambda-literal-rest-argument)	       ; symbol | #f
-  (temporaries lambda-literal-temporaries)	       ; integer
-  (float-temporaries lambda-literal-float-temporaries)   ; (integer ...)
-  (callee-signatures lambda-literal-callee-signatures) ; (integer ...)
-  (allocated lambda-literal-allocated)		       ; integer
+  arguments 	       ; (symbol ...)
+  argument-count      ; integer
+  rest-argument        ; symbol | #f
+  temporaries      ; integer
+  float-temporaries    ; (integer ...)
+  callee-signatures  ; (integer ...)
+  allocated        ; integer
   ;; lambda-literal-directly-called is used nowhere
-  (directly-called lambda-literal-directly-called)     ; boolean
-  (closure-size lambda-literal-closure-size)	       ; integer
-  (looping lambda-literal-looping)		       ; boolean
-  (customizable lambda-literal-customizable)	       ; boolean
-  (rest-argument-mode lambda-literal-rest-argument-mode) ; #f | LIST | NONE
-  (body lambda-literal-body)				 ; expression
-  (direct lambda-literal-direct))			 ; boolean
+  directly-called     ; boolean
+  closure-size      ; integer
+  looping      ; boolean
+  customizable     ; boolean
+  rest-argument-mode ; #f | LIST | NONE
+  body				 ; expression
+  direct)			 ; boolean
 
 (define (prepare-for-code-generation node db)
   (let ((literals '())
@@ -3160,8 +3158,7 @@
 			   ((char? x) `(char ,x))
 			   ((null? x) '(nil))
 			   ((eof-object? x) '(eof))
-			   ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
-			   ((##core#inline "C_bwpp" x) #;(bwp-object? x) '(bwp))
+			   ((bwp-object? x) '(bwp))
 			   (else (bomb "bad immediate (prepare)")) )
 		     '() ) ) )
 

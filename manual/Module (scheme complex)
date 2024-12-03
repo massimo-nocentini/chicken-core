@@ -1,0 +1,46 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (scheme complex)
+
+
+R7RS Operations on complex numbers.
+
+
+<procedure>(make-rectangular x[1] x[2])</procedure><br>
+<procedure>(make-polar x[3] x[4])</procedure><br>
+<procedure>(real-part z)</procedure>
+<procedure>(imag-part z)</procedure>
+<procedure>(magnitude z)</procedure>
+<procedure>(angle z)</procedure>
+
+Let x[1], x[2], x[3] and x[4] be real numbers and z be a complex number such that
+
+   z  =  x[1]  +  x[2] * i =  x[3] * e^(i * x[4])
+
+Then all of
+
+ (make-rectangular x[1] x[2])   ==> z
+ (make-polar x[3] x[4])         ==> z
+ (real-part z)                  ==> x[1]
+ (imag-part z)                  ==> x[2]
+ (magnitude z)                  ==> |x[3]|
+ (angle z)                      ==> x[angle]
+
+are true, where 
+
+    −π ≤ x[angle] ≤ π with x[angle] = x[4] + 2 * π * n for some integer n.
+
+The make-polar procedure may return an inexact complex number even if its
+arguments are exact. The real-part and imag-part procedures may return exact
+real numbers when applied to an inexact complex number if the corresponding
+argument passed to make-rectangular was exact.
+
+Rationale: The magnitude procedure is the same as abs for a real argument,
+but abs is in the base library, whereas magnitude is in the optional
+complex library.
+
+---
+Previous: [[Module (scheme char)]]
+
+Next: [[Module (scheme cxr)]]

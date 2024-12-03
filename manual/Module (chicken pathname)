@@ -113,6 +113,6 @@ uses a 16-bit UNICODE encoding with special system calls for
 wide-character support.  Only single-byte string encoding can be used.
 
 ---
-Previous: [[Module (chicken module)]]
+Previous: [[Module (chicken number-vector)]]
 
 Next: [[Module (chicken platform)]]

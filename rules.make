@@ -8,11 +8,11 @@
 # conditions are met:
 #
 #   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-#     disclaimer. 
+#     disclaimer.
 #   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-#     disclaimer in the documentation and/or other materials provided with the distribution. 
+#     disclaimer in the documentation and/or other materials provided with the distribution.
 #   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-#     products derived from this software without specific prior written permission. 
+#     products derived from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 # OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -37,8 +37,8 @@ LIBCHICKEN_SCHEME_OBJECTS_1 = \
        library eval read-syntax repl data-structures pathname port file \
        extras lolevel tcp srfi-4 continuation $(POSIXFILE) internal \
        irregex scheduler debugger-client profiler stub expand modules \
-       chicken-syntax chicken-ffi-syntax build-version
-LIBCHICKEN_OBJECTS_1 = $(LIBCHICKEN_SCHEME_OBJECTS_1) runtime
+       chicken-syntax chicken-ffi-syntax build-version r7lib
+LIBCHICKEN_OBJECTS_1 = $(LIBCHICKEN_SCHEME_OBJECTS_1) runtime utf
 LIBCHICKEN_SHARED_OBJECTS = $(LIBCHICKEN_OBJECTS_1:=$(O))
 LIBCHICKEN_STATIC_OBJECTS = $(LIBCHICKEN_OBJECTS_1:=-static$(O)) \
 	eval-modules-static$(O)
@@ -65,7 +65,7 @@ INSTALLED_PROGRAMS = \
 
 # These generated files make up a bootstrapped distribution build.
 # They are not cleaned by the 'clean' target, but only by 'spotless'.
-DISTFILES = $(filter-out runtime.c,$(LIBCHICKEN_OBJECTS_1:=.c)) \
+DISTFILES = $(filter-out runtime.c utf.c,$(LIBCHICKEN_OBJECTS_1:=.c)) \
 	$(UTILITY_PROGRAM_OBJECTS_1:=.c) \
 	$(COMPILER_OBJECTS_1:=.c) \
 	$(IMPORT_LIBRARIES:=.import.c) \
@@ -84,12 +84,6 @@ DISTFILES := $(sort $(DISTFILES))
 ## This output then needs to be $(eval)ed in order to be added to the
 ## ruleset evaluated by Make.  This allows us to automatically generate
 ## similar rules for long lists of targets.
-
-## Note: in some of the rules that follow it is important to add
-## $(INCLUDES) last, because on raw mingw (using the DOS shell) the
-## backslash in "-I.\" seems to be interpreted as a line-terminator.
-## This may be caused by cmd.exe-stupidness or a bug in mingw32-make
-## or some other obscure reason.
 
 define declare-shared-library-object
 $(1)$(O): $(1).c chicken.h $$(CHICKEN_CONFIG_H)
@@ -168,7 +162,7 @@ define declare-utility-program-object
 $(1)$(O): $(1).c chicken.h $$(CHICKEN_CONFIG_H)
 	$$(C_COMPILER) $$(C_COMPILER_OPTIONS) $$(C_COMPILER_SHARED_OPTIONS) \
 	  $$(C_COMPILER_COMPILE_OPTION) $$(C_COMPILER_OPTIMIZATION_OPTIONS) $$< $$(C_COMPILER_OUTPUT) \
-	 $$(INCLUDES) 
+	 $$(INCLUDES)
 endef
 
 $(foreach obj, $(UTILITY_PROGRAM_OBJECTS_1),\
@@ -203,7 +197,7 @@ cyg$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-0.dll: $(LIBCHICKEN_SHARED_OBJECTS)
 	    -Wl,--whole-archive $(LIBCHICKEN_SHARED_OBJECTS) \
 	    -Wl,--no-whole-archive $(LIBCHICKEN_SO_LIBRARIES)
 
-lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A): $(LIBCHICKEN_STATIC_OBJECTS)
+lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A): $(LIBCHICKEN_STATIC_OBJECTS)
 	$(LIBRARIAN) $(LIBRARIAN_OPTIONS) $(LIBRARIAN_OUTPUT) $^
 
 # import libraries and extensions
@@ -241,12 +235,12 @@ $(eval $(call declare-program-from-object,$(CSC_PROGRAM)$(EXE),csc))
 
 # static executables
 
-$(CHICKEN_STATIC_EXECUTABLE): $(COMPILER_STATIC_OBJECTS) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A)
-	$(LINKER) $(LINKER_OPTIONS) $(LINKER_STATIC_OPTIONS) $(COMPILER_STATIC_OBJECTS) $(LINKER_OUTPUT) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A) $(LIBRARIES)
+$(CHICKEN_STATIC_EXECUTABLE): $(COMPILER_STATIC_OBJECTS) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A)
+	$(LINKER) $(LINKER_OPTIONS) $(LINKER_STATIC_OPTIONS) $(COMPILER_STATIC_OBJECTS) $(LINKER_OUTPUT) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A) $(LIBRARIES)
 
 define declare-static-program-from-object
-$(1): $(2)$(O) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A)
-	$$(LINKER) $$(LINKER_OPTIONS) $$(LINKER_STATIC_OPTIONS) $$< $$(LINKER_OUTPUT) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A) $$(LIBRARIES)
+$(1): $(2)$(O) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A)
+	$$(LINKER) $$(LINKER_OPTIONS) $$(LINKER_STATIC_OPTIONS) $$< $$(LINKER_OUTPUT) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A) $$(LIBRARIES)
 endef
 
 $(eval $(call declare-program-from-object,$(CSI_STATIC_EXECUTABLE),csi))
@@ -255,11 +249,6 @@ $(eval $(call declare-program-from-object,$(CSI_STATIC_EXECUTABLE),csi))
 
 $(CHICKEN_DO_PROGRAM)$(EXE): $(SRCDIR)chicken-do.c chicken.h $(CHICKEN_CONFIG_H)
 	$(C_COMPILER) $(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS) $< -o $@
-
-# scripts
-
-$(CHICKEN_DEBUGGER_PROGRAM): $(SRCDIR)feathers$(SCRIPT_EXT).in
-	$(GENERATE_DEBUGGER)
 
 
 # installation
@@ -273,7 +262,7 @@ install-target: install-libs
 
 install-libs: libs $(LIBCHICKEN_IMPORT_LIBRARY)
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(ILIBDIR)"
-ifneq ($(LIBCHICKEN_IMPORT_LIBRARY),) 
+ifneq ($(LIBCHICKEN_IMPORT_LIBRARY),)
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_STATIC_LIBRARY_OPTIONS) $(LIBCHICKEN_IMPORT_LIBRARY) "$(DESTDIR)$(ILIBDIR)"
 endif
 ifndef STATICBUILD
@@ -301,9 +290,9 @@ install-dev: install-libs
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(IEGGDIR)"
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(ICHICKENINCDIR)"
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(IDATADIR)"
-	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_STATIC_LIBRARY_OPTIONS) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A) "$(DESTDIR)$(ILIBDIR)"
+	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_STATIC_LIBRARY_OPTIONS) lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A) "$(DESTDIR)$(ILIBDIR)"
 ifneq ($(POSTINSTALL_STATIC_LIBRARY),true)
-	$(POSTINSTALL_STATIC_LIBRARY) $(POSTINSTALL_STATIC_LIBRARY_FLAGS) "$(ILIBDIR)$(SEP)libchicken$(A)"
+	$(POSTINSTALL_STATIC_LIBRARY) $(POSTINSTALL_STATIC_LIBRARY_FLAGS) "$(ILIBDIR)$(SEP)lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A)"
 endif
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)chicken.h "$(DESTDIR)$(ICHICKENINCDIR)"
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(CHICKEN_CONFIG_H) "$(DESTDIR)$(ICHICKENINCDIR)"
@@ -336,8 +325,6 @@ install-bin: $(TARGETS) install-libs install-dev
 		$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_EXECUTABLE_OPTIONS) \
 		$(prog)$(EXE) "$(DESTDIR)$(IBINDIR)" $(NL))
 
-	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_EXECUTABLE_OPTIONS) $(CHICKEN_DEBUGGER_PROGRAM) "$(DESTDIR)$(IBINDIR)"
-
 ifdef STATICBUILD
 	$(foreach lib,$(IMPORT_LIBRARIES),\
 		$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) \
@@ -367,9 +354,6 @@ else
 	@echo
 endif
 endif
-ifdef WINDOWS_SHELL
-	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_EXECUTABLE_OPTIONS) $(SRCDIR)csibatch.bat "$(DESTDIR)$(IBINDIR)"
-endif
 
 install-other-files:
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(IMAN1DIR)"
@@ -384,7 +368,6 @@ install-other-files:
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)chicken-uninstall$(MAN) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_UNINSTALL_PROGRAM).1"
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)chicken-status$(MAN) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_STATUS_PROGRAM).1"
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)chicken-profile$(MAN) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_PROFILE_PROGRAM).1"
-	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)feathers$(MAN) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_DEBUGGER_PROGRAM).1"
 
 	$(MAKEDIR_COMMAND) $(MAKEDIR_COMMAND_OPTIONS) "$(DESTDIR)$(IDOCDIR)$(SEP)manual"
 	-$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)manual-html$(SEP)* "$(DESTDIR)$(IDOCDIR)$(SEP)manual"
@@ -392,11 +375,10 @@ install-other-files:
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)DEPRECATED "$(DESTDIR)$(IDOCDIR)"
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)LICENSE "$(DESTDIR)$(IDOCDIR)"
 	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)setup.defaults "$(DESTDIR)$(IDATADIR)"
-	$(INSTALL_PROGRAM) $(INSTALL_PROGRAM_FILE_OPTIONS) $(SRCDIR)feathers.tcl "$(DESTDIR)$(IDATADIR)"
 
 install-wrappers:
 ifeq ($(WRAPPERDIR),)
-	@echo 
+	@echo
 	@echo Error: WRAPPERDIR is not set
 	@echo
 	@exit 1
@@ -408,8 +390,7 @@ uninstall:
 	$(foreach prog,$(INSTALLED_PROGRAMS),\
 		$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS)\
 		"$(DESTDIR)$(IBINDIR)$(SEP)$(prog)$(EXE)" $(NL))
-	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(IBINDIR)$(SEP)$(CHICKEN_DEBUGGER_PROGRAM)"
-	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(ILIBDIR)$(SEP)lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A)"
+	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(ILIBDIR)$(SEP)lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A)"
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(ILIBDIR)$(SEP)lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(SO)"
 ifdef USES_SONAME
 	-$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(ILIBDIR)$(SEP)lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(SO).$(BINARYVERSION)"
@@ -430,15 +411,11 @@ endif
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_UNINSTALL_PROGRAM).1"
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_STATUS_PROGRAM).1"
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_PROFILE_PROGRAM).1"
-	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(IMAN1DIR)$(SEP)$(CHICKEN_DEBUGGER_PROGRAM).1"
 
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(ICHICKENINCDIR)$(SEP)chicken.h"
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(ICHICKENINCDIR)$(SEP)$(CHICKEN_CONFIG_H)"
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_RECURSIVE_OPTIONS) "$(DESTDIR)$(IDATADIR)"
 	$(REMOVE_COMMAND) $(REMOVE_COMMAND_RECURSIVE_OPTIONS) "$(DESTDIR)$(IEGGDIR)"
-ifdef WINDOWS_SHELL
-	$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) "$(DESTDIR)$(IBINDIR)$(SEP)csibatch.bat"
-endif
 
 # build versioning
 
@@ -489,7 +466,7 @@ $(eval $(call declare-emitted-import-lib-dependency,chicken.process,$(POSIXFILE)
 $(eval $(call declare-emitted-import-lib-dependency,chicken.process.signal,$(POSIXFILE)))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.process-context.posix,$(POSIXFILE)))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.bitwise,library))
-$(eval $(call declare-emitted-import-lib-dependency,chicken.blob,library))
+$(eval $(call declare-emitted-import-lib-dependency,chicken.bytevector,library))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.fixnum,library))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.flonum,library))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.gc,library))
@@ -500,14 +477,19 @@ $(eval $(call declare-emitted-import-lib-dependency,chicken.process-context,libr
 $(eval $(call declare-emitted-import-lib-dependency,chicken.time,library))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.load,eval))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.format,extras))
-$(eval $(call declare-emitted-import-lib-dependency,chicken.io,extras))
+$(eval $(call declare-emitted-import-lib-dependency,chicken.io,library))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.pretty-print,extras))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.random,extras))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.locative,lolevel))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.memory,lolevel))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.memory.representation,lolevel))
+$(eval $(call declare-emitted-import-lib-dependency,chicken.number-vector,srfi-4))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.sort,data-structures))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.string,data-structures))
+$(eval $(call declare-emitted-import-lib-dependency,scheme.write,r7lib))
+$(eval $(call declare-emitted-import-lib-dependency,scheme.time,r7lib))
+$(eval $(call declare-emitted-import-lib-dependency,scheme.file,r7lib))
+$(eval $(call declare-emitted-import-lib-dependency,scheme.process-context,r7lib))
 
 chicken.c: chicken.scm mini-srfi-1.scm \
 		chicken.compiler.batch-driver.import.scm \
@@ -607,7 +589,7 @@ chicken-ffi-syntax.c: chicken-ffi-syntax.scm \
 		chicken.string.import.scm
 support.c: support.scm mini-srfi-1.scm \
 		chicken.bitwise.import.scm \
-		chicken.blob.import.scm \
+		chicken.bytevector.import.scm \
 		chicken.condition.import.scm \
 		chicken.file.import.scm \
 		chicken.fixnum.import.scm \
@@ -627,6 +609,7 @@ support.c: support.scm mini-srfi-1.scm \
 		chicken.time.import.scm
 modules.c: modules.scm \
 		chicken.internal.import.scm \
+		chicken.format.import.scm \
 		chicken.keyword.import.scm \
 		chicken.base.import.scm \
 		chicken.syntax.import.scm \
@@ -658,7 +641,8 @@ csi.c: csi.scm \
 		chicken.process-context.import.scm \
 		chicken.repl.import.scm \
 		chicken.sort.import.scm \
-		chicken.string.import.scm
+		chicken.string.import.scm \
+		scheme.write.import.scm
 chicken-profile.c: chicken-profile.scm \
 		chicken.internal.import.scm \
 		chicken.file.import.scm \
@@ -715,6 +699,7 @@ chicken-syntax.c: chicken-syntax.scm \
 		chicken.internal.import.scm
 srfi-4.c: srfi-4.scm \
 		chicken.bitwise.import.scm \
+		chicken.bytevector.import.scm \
 		chicken.fixnum.import.scm \
 		chicken.foreign.import.scm \
 		chicken.gc.import.scm \
@@ -745,7 +730,7 @@ data-structures.c: data-structures.scm \
 		chicken.fixnum.import.scm \
 		chicken.foreign.import.scm
 expand.c: expand.scm \
-		chicken.blob.import.scm \
+		chicken.bytevector.import.scm \
 		chicken.condition.import.scm \
 		chicken.fixnum.import.scm \
 		chicken.keyword.import.scm \
@@ -757,7 +742,7 @@ extras.c: extras.scm \
 		chicken.string.import.scm \
 		chicken.time.import.scm
 eval.c: eval.scm \
-		chicken.blob.import.scm \
+		chicken.bytevector.import.scm \
 		chicken.condition.import.scm \
 		chicken.fixnum.import.scm \
 		chicken.foreign.import.scm \
@@ -808,7 +793,12 @@ profiler.c: profiler.scm \
 		chicken.fixnum.import.scm
 stub.c: stub.scm \
 		chicken.platform.import.scm
-
+r7lib.c: r7lib.scm \
+		chicken.platform.import.scm \
+		chicken.process-context.import.scm \
+		chicken.time.import.scm \
+		chicken.io.import.scm \
+		chicken.file.import.scm
 
 define profile-flags
 $(if $(filter $(basename $(1)),$(PROFILE_OBJECTS)),-profile)
@@ -820,13 +810,14 @@ library.c: $(SRCDIR)library.scm
 	$(bootstrap-lib) \
 	-no-module-registration \
 	-emit-import-library chicken.bitwise \
-	-emit-import-library chicken.blob \
+	-emit-import-library chicken.bytevector \
 	-emit-import-library chicken.fixnum \
 	-emit-import-library chicken.flonum \
 	-emit-import-library chicken.gc \
 	-emit-import-library chicken.keyword \
 	-emit-import-library chicken.platform \
 	-emit-import-library chicken.plist \
+	-emit-import-library chicken.io \
 	-emit-import-library chicken.process-context
 internal.c: $(SRCDIR)internal.scm $(SRCDIR)mini-srfi-1.scm
 	$(bootstrap-lib) -emit-import-library chicken.internal
@@ -834,6 +825,11 @@ eval.c: $(SRCDIR)eval.scm $(SRCDIR)common-declarations.scm $(SRCDIR)mini-srfi-1.
 	$(bootstrap-lib) \
 	-emit-import-library chicken.eval \
 	-emit-import-library chicken.load
+r7lib.c: $(SRCDIR)r7lib.scm $(SRCDIR)common-declarations.scm
+	$(bootstrap-lib) -emit-import-library scheme.write \
+	-emit-import-library scheme.time \
+	-emit-import-library scheme.file \
+	-emit-import-library scheme.process-context
 read-syntax.c: $(SRCDIR)read-syntax.scm $(SRCDIR)common-declarations.scm
 	$(bootstrap-lib) -emit-import-library chicken.read-syntax
 repl.c: $(SRCDIR)repl.scm $(SRCDIR)common-declarations.scm
@@ -846,7 +842,6 @@ modules.c: $(SRCDIR)modules.scm $(SRCDIR)common-declarations.scm $(SRCDIR)mini-s
 extras.c: $(SRCDIR)extras.scm $(SRCDIR)common-declarations.scm
 	$(bootstrap-lib) \
 	-emit-import-library chicken.format \
-	-emit-import-library chicken.io \
 	-emit-import-library chicken.pretty-print \
 	-emit-import-library chicken.random
 posixunix.c: $(SRCDIR)posix.scm $(SRCDIR)posixunix.scm $(SRCDIR)posix-common.scm $(SRCDIR)common-declarations.scm
@@ -893,13 +888,14 @@ lolevel.c: $(SRCDIR)lolevel.scm $(SRCDIR)common-declarations.scm
 tcp.c: $(SRCDIR)tcp.scm $(SRCDIR)common-declarations.scm
 	$(bootstrap-lib) -emit-import-library chicken.tcp
 srfi-4.c: $(SRCDIR)srfi-4.scm $(SRCDIR)common-declarations.scm
-	$(bootstrap-lib) -emit-import-library srfi-4
+	$(bootstrap-lib) -emit-import-library srfi-4 \
+	 -emit-import-library chicken.number-vector
 scheduler.c: $(SRCDIR)scheduler.scm $(SRCDIR)common-declarations.scm
-	$(bootstrap-lib) 
+	$(bootstrap-lib)
 profiler.c: $(SRCDIR)profiler.scm $(SRCDIR)common-declarations.scm
-	$(bootstrap-lib) 
+	$(bootstrap-lib)
 stub.c: $(SRCDIR)stub.scm $(SRCDIR)common-declarations.scm
-	$(bootstrap-lib) 
+	$(bootstrap-lib)
 debugger-client.c: $(SRCDIR)debugger-client.scm $(SRCDIR)common-declarations.scm dbg-stub.c
 	$(bootstrap-lib)
 build-version.c: $(SRCDIR)build-version.scm $(SRCDIR)buildversion buildbranch buildid
@@ -920,7 +916,7 @@ $(foreach obj, $(IMPORT_LIBRARIES),\
 define declare-bootstrap-compiler-object
 $(1).c: $$(SRCDIR)$(1).scm $$(SRCDIR)tweaks.scm
 	$$(CHICKEN) $$< $$(CHICKEN_PROGRAM_OPTIONS) -emit-import-library chicken.compiler.$(1) \
-		-output-file $$@ 
+		-output-file $$@
 endef
 
 $(foreach obj, $(COMPILER_OBJECTS_1),\
@@ -929,15 +925,15 @@ $(foreach obj, $(COMPILER_OBJECTS_1),\
 csi.c: $(SRCDIR)csi.scm $(SRCDIR)banner.scm $(SRCDIR)mini-srfi-1.scm
 	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@
 chicken-profile.c: $(SRCDIR)chicken-profile.scm $(SRCDIR)mini-srfi-1.scm
-	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@ 
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@
 chicken-install.c: $(SRCDIR)chicken-install.scm $(SRCDIR)mini-srfi-1.scm $(SRCDIR)egg-compile.scm $(SRCDIR)egg-download.scm $(SRCDIR)egg-environment.scm $(SRCDIR)egg-information.scm
-	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@ 
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@
 chicken-uninstall.c: $(SRCDIR)chicken-uninstall.scm $(SRCDIR)mini-srfi-1.scm $(SRCDIR)egg-environment.scm $(SRCDIR)egg-information.scm
-	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@ 
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@
 chicken-status.c: $(SRCDIR)chicken-status.scm $(SRCDIR)mini-srfi-1.scm $(SRCDIR)egg-environment.scm $(SRCDIR)egg-information.scm
-	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@ 
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@
 csc.c: $(SRCDIR)csc.scm $(SRCDIR)mini-srfi-1.scm $(SRCDIR)egg-environment.scm
-	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@ 
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -output-file $@
 
 # distribution files
 
@@ -946,6 +942,7 @@ csc.c: $(SRCDIR)csc.scm $(SRCDIR)mini-srfi-1.scm $(SRCDIR)egg-environment.scm
 distfiles: $(DISTFILES)
 
 dist: distfiles html
+	echo '# this file is intentionally empty' > config.make
 	CSI=$(CSI) $(CSI) -s $(SRCDIR)scripts$(SEP)makedist.scm -platform $(PLATFORM) CHICKEN=$(CHICKEN)
 
 # Jim's `manual-labor' must be installed (just run "chicken-install manual-labor")
@@ -970,10 +967,9 @@ clean:
 	  $(CHICKEN_STATUS_PROGRAM)$(EXE) \
 	  *$(O) \
 	  $(CHICKEN_DO_PROGRAM)$(EXE) \
-	  $(CHICKEN_DEBUGGER_PROGRAM) \
 	  $(LIBCHICKEN_SO_FILE) \
 	  $(PRIMARY_LIBCHICKEN) \
-	  lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A) \
+	  lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A) \
 	  $(IMPORT_LIBRARIES:=.import.so) $(LIBCHICKEN_IMPORT_LIBRARY) \
 	  $(foreach lib,$(DYNAMIC_IMPORT_LIBRARIES),chicken.$(lib).import.scm) \
 	  $(BUILD_CONFIG_FILES)
@@ -983,6 +979,7 @@ endif
 
 confclean:
 	-$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) $(BUILD_CONFIG_FILES)
+	touch config.make
 
 spotless: clean testclean
 	-$(REMOVE_COMMAND) $(REMOVE_COMMAND_OPTIONS) $(DISTFILES) \
@@ -1017,11 +1014,7 @@ export PROGRAM_PREFIX
 export PROGRAM_SUFFIX
 
 check: $(TARGETS)
-ifndef WINDOWS_SHELL
 	cd tests; sh runtests.sh
-else
-	cd tests & runtests.bat
-endif
 
 # benchmark
 

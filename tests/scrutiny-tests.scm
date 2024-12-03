@@ -117,14 +117,14 @@
 ; - assignment inside first conditional does not invalidate blist
 ;;  entries for "ins"/"del" in outer flow.
 
-(define (write-blob-to-sql sql identifier last blob c-c)
+(define (write-bytevector-to-sql sql identifier last bytevector c-c)
  (define ins '())
  (define del '())
- (if (vector? blob)
+ (if (vector? bytevector)
      (begin
-	(set! ins (vector-ref blob 1))
-	(set! del (vector-ref blob 2))
-	(set! blob (vector-ref blob 0))))
+	(set! ins (vector-ref bytevector 1))
+	(set! del (vector-ref bytevector 2))
+	(set! bytevector (vector-ref bytevector 0))))
  (if (or (pair? ins)
 	 (pair? del))
      (<handle-ins-and-del>))
@@ -322,3 +322,4 @@
 (compiler-typecase (list 2 'a)
   ((forall (x) (list x x)) 1)
   (else #t))
+

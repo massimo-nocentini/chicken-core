@@ -39,7 +39,6 @@
    get-line-number
    read-with-source-info
    strip-syntax
-   syntax-error
    er-macro-transformer
    ir-macro-transformer)
 
@@ -51,6 +50,7 @@
 	chicken.keyword
 	chicken.platform
 	chicken.string)
+(import (only (scheme base) make-parameter open-output-string get-output-string))
 
 (include "common-declarations.scm")
 (include "mini-srfi-1.scm")
@@ -215,7 +215,7 @@
 			   '(exn . message)
 			   (cons (string-append
 				  "during expansion of ("
-				  (##sys#slot name 1) 
+				  (##sys#symbol->string/shared name) 
 				  " ...) - "
 				  (car r) )
 				 (cdr r) ) )
@@ -229,9 +229,9 @@
 		   (handler exp se dse))
 		 (handler exp se dse))) )
 	(when (and (not cs) (eq? exp exp2))
-	  (##sys#syntax-error-hook
+	  (##sys#syntax-error
 	   (string-append
-	    "syntax transformer for `" (symbol->string name)
+	    "syntax transformer for `" (##sys#symbol->string/shared name)
 	    "' returns original form, which would result in endless expansion")
 	   exp))
 	(dx `(,name ~~> ,exp2))
@@ -246,14 +246,12 @@
 	  ,(if (pair? mdef)
 	       `(SE: ,@(map-se (car mdef)))
 	       mdef)))
-    (cond ((not (list? exp))
-	   (##sys#syntax-error-hook "invalid syntax in macro form" exp) )
-	  ((pair? mdef)
-	   (values 
-	    ;; force ref. opaqueness by passing dynamic se [what does this comment mean? I forgot ...]
-	    (call-handler head (cadr mdef) exp (car mdef) #f)
-	    #t))
-	  (else (values exp #f)) ) )
+    (if (pair? mdef)
+        (values 
+	 ;; force ref. opaqueness by passing dynamic se [what does this comment mean? I forgot ...]
+           (call-handler head (cadr mdef) exp (car mdef) #f)
+           #t)
+	(values exp #f)) )
   (let loop ((exp exp))
     (if (pair? exp)
       (let ((head (car exp))
@@ -331,7 +329,7 @@
   (let ((reverse reverse))
     (lambda (llist0 body errh se)
       (define (err msg) (errh msg llist0))
-      (define (->keyword s) (string->keyword (##sys#slot s 1)))
+      (define (->keyword s) (string->keyword (##sys#symbol->string/shared s)))
       (let ((rvar #f)
 	    (hasrest #f)
 	    ;; These might not exist in se, use default or chicken env:
@@ -353,7 +351,7 @@
 			     body
 			     `((,%let*
 				,(map (lambda (k)
-					(let ([s (car k)])
+					(let ((s (car k)))
 					  `(,s (##sys#get-keyword
 						(##core#quote ,(->keyword (strip-syntax s))) ,(or hasrest rvar)
 						,@(if (pair? (cdr k)) 
@@ -427,7 +425,7 @@
 ; (i.e.`"(define define ...)")
 
 (define (defjam-error form)
-  (##sys#syntax-error-hook
+  (##sys#syntax-error
    "redefinition of currently used defining form" ; help me find something better
    form))
 
@@ -674,16 +672,18 @@
 
 (define ##sys#line-number-database #f)
 
+
 ;;; General syntax checking routine:
 
 (define ##sys#syntax-error-culprit #f)
 (define ##sys#syntax-context '())
 
-(define (syntax-error . args)
+(define (##sys#syntax-error-hook . args)
   (apply ##sys#signal-hook #:syntax-error
 	 (strip-syntax args)))
 
-(define ##sys#syntax-error-hook syntax-error)
+(define (##sys#syntax-error . args)
+  (apply ##sys#syntax-error-hook args))
 
 (define ##sys#syntax-error/context
   (lambda (msg arg)
@@ -808,18 +808,18 @@
   (define (mapupdate xs)
     (let loop ((xs xs))
       (when (pair? xs)
-	(walk (car xs))
-	(loop (cdr xs)) ) ) )
+        (walk (car xs))
+        (loop (cdr xs)) ) ))
   (define (walk x)
     (cond ((not (pair? x)))
-	  ((symbol? (car x))
-	   (let* ((name (car x))
-		  (old (or (hash-table-ref ##sys#line-number-database name) '())))
-	     (unless (assq x old)
-	       (hash-table-set! ##sys#line-number-database name (alist-cons x ln old)))
-	     (mapupdate (cdr x)) ) )
-	  (else (mapupdate x)) ) )
-  (walk exp) )
+          ((symbol? (car x))
+           (let* ((name (car x))
+                  (old (or (hash-table-ref ##sys#line-number-database name) '())))
+             (unless (assq x old)
+               (hash-table-set! ##sys#line-number-database name (alist-cons x ln old)))
+             (when (list? x) (mapupdate (cdr x)) )))
+          (else (mapupdate x)) ) )
+  (walk exp))
 
 
 (define-constant +default-argument-count-limit+ 99999)
@@ -833,7 +833,7 @@
     (define (err msg)
       (let* ([sexp ##sys#syntax-error-culprit]
 	     [ln (get-line-number sexp)] )
-	(##sys#syntax-error-hook
+	(##sys#syntax-error
 	 (if ln 
 	     (string-append "(" ln ") in `" (symbol->string id) "' - " msg)
 	     (string-append "in `" (symbol->string id) "' - " msg) )
@@ -1038,8 +1038,9 @@
 
 ) ; chicken.syntax module
 
-(import scheme chicken.base chicken.blob chicken.fixnum)
+(import scheme chicken.base chicken.bytevector chicken.fixnum)
 (import chicken.syntax chicken.internal chicken.platform)
+(import (only (scheme base) make-parameter))
 
 ;;; Macro definitions:
 
@@ -1067,10 +1068,10 @@
 		 (let-values (((name lib spec v s i) (##sys#decompose-import x r c 'import))
 			      ((mod) (##sys#current-module)))
 		   (when (and mod (eq? name (##sys#module-name mod)))
-		     (##sys#syntax-error-hook
+		     (##sys#syntax-error
 		      'import "cannot import from module currently being defined" name))
 		   (if (not spec)
-		       (##sys#syntax-error-hook
+		       (##sys#syntax-error
 			'import "cannot import from undefined module" name)
 		       (##sys#import
 			spec v s i
@@ -1087,17 +1088,23 @@
     (##sys#register-meta-expression `(,(r 'import) ,@(cdr x)))
     `(##core#elaborationtimeonly (,(r 'import) ,@(cdr x))))))
 
-
-(##sys#extend-macro-environment
- 'cond-expand
- '()
- (##sys#er-transformer
-  (lambda (form r c)
-    (let ((clauses (cdr form)))
+(define (process-cond-expand clauses)
       (define (err x)
-	(##sys#error "syntax error in `cond-expand' form"
+	(##sys#syntax-error "syntax error in `cond-expand' form"
 		     x
 		     (cons 'cond-expand clauses)))
+      (define (file-exists? fname)
+        (##sys#file-exists? fname #f #f 'cond-expand))
+      (define (locate-library name)
+        (let* ((name2 (library-id name))
+               (sname2 (symbol->string name2)))
+          (or (##sys#find-module name2 #f)
+              (let loop ((rp (repository-path)))
+                (and (pair? rp)
+                     (let ((p (car rp)))
+                       (or (file-exists? (string-append p "/" sname2 ".import.so"))
+                           (file-exists? (string-append p "/" sname2 ".import.scm"))
+                           (loop (cdr rp)))))))))
       (define (test fx)
 	(cond ((symbol? fx) (feature? (strip-syntax fx)))
 	      ((not (pair? fx)) (err fx))
@@ -1118,6 +1125,11 @@
 				 (test `(or ,@(cdr rest))))
 			     (err fx))))
 		   ((not) (not (test (cadr fx))))
+                   ((library) 
+                    (if (and (pair? rest)
+                             (null? (cdr rest)))
+                        (locate-library (strip-syntax (car rest)))
+                        (err fx)))
 		   (else (err fx)))))))
       (let expand ((cls clauses))
 	(cond ((eq? cls '())
@@ -1137,7 +1149,14 @@
 				    '(##core#undefined)
 				    `(##core#begin ,@rest))))
 			     ((test id) `(##core#begin ,@(cdr clause)))
-			     (else (expand rclauses)))))))))))))
+			     (else (expand rclauses))))))))))
+
+(##sys#extend-macro-environment
+ 'cond-expand
+ '()
+ (##sys#er-transformer
+  (lambda (form r c)
+    (process-cond-expand (cdr form)))))
 
 ;; The "initial" macro environment, containing only import forms and
 ;; cond-expand.  TODO: Eventually, cond-expand should move to the
@@ -1205,6 +1224,114 @@
 			 `((##core#include ,(car body) ,##sys#current-source-filename))
 			 body))))))))))
 
+;;; R7RS define-library
+
+(##sys#extend-macro-environment
+  'define-library '()
+  (##sys#er-transformer
+   (lambda (x r c)
+     (define (register-r7rs-module name)
+       (let ((dummy (string->symbol (string-append (string #\x04) "r7rs" (symbol->string name)))))
+         (##sys#put! name '##r7rs#module dummy)
+         dummy))
+     (define implicit-r7rs-library-bindings
+       '(begin
+          cond-expand
+          export
+          import
+          import-for-syntax
+          include
+          include-ci
+          syntax-rules))
+     (##sys#check-syntax 'define-library x '(_ . #(_ 0)))
+     (let* ((x (strip-syntax x))
+            (name (cadr x))
+            (real-name (library-id name))
+            (decls (cddr x))
+            (dummy (register-r7rs-module real-name)))
+       (define (parse-exports specs)
+	 (map (lambda (spec)
+                (cond ((and (list? spec) 
+                            (= 3 (length spec))
+                            (eq? 'rename (car spec)))
+                       `(export/rename ,(cdr spec)))
+                      ((symbol? spec) `(export ,spec))
+                      (else 
+                        (##sys#syntax-error 'define-library "invalid export specifier" spec name))))
+            specs))
+       (define (parse-imports specs)
+	 ;; XXX TODO: Should be import-for-syntax'ed as well?
+	 `(import ,@specs))
+       (define (process-includes fnames ci?)
+	 `(##core#begin
+	   ,@(map (lambda (fname)
+                    (if (string? fname)
+                        `(##core#begin ,@(read-forms fname ci?)))
+		    (fname (##sys#syntax-error 'include "invalid include-filename" fname)))
+		  fnames)))
+       (define (expand/begin e)
+         (let ((e2 (expand e '())))
+           (if (and (pair? e2) (eq? '##core#begin (car e2)))
+               (cons '##core#begin (map expand/begin (cdr e2)))
+               e2)))
+       (define (read-forms filename ci?)
+         (fluid-let ((##sys#default-read-info-hook
+                       (let ((name 'chicken.compiler.support#read-info-hook))
+                         (and (feature? 'compiling)
+                              (##sys#symbol-has-toplevel-binding? name)
+                              (##sys#slot name 0)))))
+           (##sys#include-forms-from-file
+               filename
+               ##sys#current-source-filename ci?
+               (lambda (forms) (map expand/begin forms)))))
+       (define (process-include-decls fnames)
+	 (parse-decls (append-map (lambda (fname) (read-forms fname #t)) fnames)))
+       (define (fail spec)
+         (##sys#syntax-error 'define-library "invalid library declaration" spec))
+       (define (parse-decls decls)
+	 (cond ((null? decls) '(##core#begin))
+               ((and (pair? decls) (pair? (car decls)))
+                (let ((spec (car decls))
+                      (more (cdr decls)))
+                 (case (car spec)
+                  ((export)
+                   (##sys#check-syntax 'export spec '(_ . #(_ 0)))
+                   `(##core#begin ,@(parse-exports (cdr spec))
+                                  ,(parse-decls more)))
+                  ((import)
+                   (##sys#check-syntax 'import spec '(_ . #(_ 0)))
+                   `(##core#begin ,(parse-imports (cdr spec))
+                                  ,(parse-decls more)))
+                  ((include)
+                   (##sys#check-syntax 'include spec '(_ . #(_ 0)))
+                   `(##core#begin ,(process-includes (cdr spec) #f)
+                                  ,(parse-decls more)))
+                  ((include-ci)
+                   (##sys#check-syntax 'include-ci spec '(_ . #(_ 0)))
+                   `(##core#begin ,(process-includes (cdr spec) #t)
+                                  ,(parse-decls more)))
+                  ((include-library-declarations)
+                   `(##core#begin ,(process-include-decls (cdr spec))
+                                  ,(parse-decls more)))
+                  ((cond-expand)
+                   `(##core#begin ,@(process-cond-expand (cdr spec))
+                                  ,(parse-decls more)))
+                  ((begin)
+                   `(##core#begin ,@(cdr spec)
+                                  ,(parse-decls more)))
+                  (else (fail spec)))))
+                (else (fail (car decls)))))
+       `(##core#module ,real-name ((,dummy))
+	 ;; gruesome hack: we add a dummy export for adding indirect exports
+	 (##core#define-syntax ,dummy
+	  (##sys#er-transformer (##core#lambda (x r c) (##core#undefined))))
+	 ;; Set up an R7RS environment for the module's body.
+	 (import-for-syntax (only scheme.base ,@implicit-r7rs-library-bindings))
+	 (import (only scheme.base ,@implicit-r7rs-library-bindings)
+            (only chicken.module export/rename))
+	 ;; Now process all toplevel library declarations
+	 ,(parse-decls decls))))))
+
 (##sys#extend-macro-environment
  'export '()
  (##sys#er-transformer
@@ -1226,7 +1353,7 @@
                                 (symbol? (cadr ren))
                                 (null? (cddr ren)))
                            (cons (car ren) (cadr ren))
-                           (##sys#syntax-error-hook "invalid item in export rename list" 
+                           (##sys#syntax-error "invalid item in export rename list" 
                                                     ren)))
                   (strip-syntax (cdr x))))
           (mod (##sys#current-module)))
@@ -1266,7 +1393,7 @@
 					  (= 2 (length argname))
 					  (symbol? (car argname))
 					  (valid-library-specifier? (cadr argname))))
-			   (##sys#syntax-error-hook "invalid functor argument" name arg))
+			   (##sys#syntax-error "invalid functor argument" name arg))
 			 (cons argname exps)))
 		     args))
 	      (##core#quote ,(##sys#validate-exports exps 'functor))
@@ -1285,7 +1412,7 @@
     (##sys#check-syntax 'define-interface x '(_ variable _))
     (let ((name (strip-syntax (cadr x))))
       (when (eq? '* name)
-	(syntax-error-hook
+	(##sys#syntax-error
 	 'define-interface "`*' is not allowed as a name for an interface"))
       `(##core#elaborationtimeonly
 	(##sys#put/restore!
@@ -1298,7 +1425,7 @@
 		   ((list? exps)
 		    (##sys#validate-exports exps 'define-interface))
 		   (else
-		    (syntax-error-hook
+		    (##sys#syntax-error
 		     'define-interface "invalid exports" (caddr x))))))))))))
 
 (##sys#extend-macro-environment
@@ -1500,10 +1627,8 @@
                          (char? (car clause))
                          (string? (car clause))
                          (eof-object? (car clause))
-			 ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
-			 (##core#inline "C_bwpp" (car clause))
-                         #;(bwp-object? (car clause))
-                         (blob? (car clause))
+                         (bytevector? (car clause))
+                         (bwp-object? (car clause))
                          (vector? (car clause))
                          (##sys#srfi-4-vector? (car clause))
                          (and (pair? (car clause))
@@ -1688,6 +1813,14 @@
     `(,(r 'delay-force)
       (##sys#make-promise
        (##sys#call-with-values (##core#lambda () ,(cadr form)) ##sys#list))))))
+
+(##sys#extend-macro-environment
+ 'syntax-error
+ '()
+ (##sys#er-transformer
+  (lambda (form r c)
+    (##sys#check-syntax 'syntax-error form '(_ string . #(_ 0)))
+    (apply ##sys#syntax-error (cadr form) (cddr form)))))
 
 ;;; syntax-rules
 

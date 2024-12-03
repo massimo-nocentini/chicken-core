@@ -11,7 +11,7 @@ Note that this interface is source-based, since CHICKEN translates
 Scheme code to C. It is not binary, as in many other Scheme implementations.
 
 Several special forms of this interface refer to ''foreign type specifiers'',
-consult the [[/manual/Foreign type specifiers|relevant chapter]] of this manual for
+consult the [[Foreign type specifiers|relevant chapter]] of this manual for
 more information.
 
 
@@ -62,7 +62,7 @@ Scheme namespace.  The optional arguments {{ARGCONVERT}} and
 result-values to a value that can be transformed to {{TYPE}}:
 
 <enscript highlight=scheme>
-(define-foreign-type char-vector 
+(define-foreign-type char-vector
   nonnull-c-string
   (compose list->string vector->list)
   (compose list->vector string->list) )
@@ -75,7 +75,7 @@ result-values to a value that can be transformed to {{TYPE}}:
 (define memset
   (foreign-lambda char-vector "memset" char-vector char int) )
 
-(memset '#(#_ #_ #_) #\X 3)                ==> #(#\X #\X #\X)
+(memset '#(#\_ #\_ #\_) #\X 3)                ==> #(#\X #\X #\X)
 </enscript>
 
 Foreign type-definitions are only visible in the compilation-unit in which
@@ -199,7 +199,7 @@ where {{N}} is the number of values to be returned, and {{X1, ...}}
 are the results, which should be Scheme data objects.
 See [[/manual/C interface#constructors|Constructors]] for the APIs to construct Scheme data objects from C primitives.
 When returning multiple values, the return-type should be omitted.
-Of course, if you have to dynamically compute the values, you do not have to use C's 
+Of course, if you have to dynamically compute the values, you do not have to use C's
 array initialization syntax, but you can just assign them one by one.
 
 Returning just a single value can still be done via the {{C_return(...)}} macro.
@@ -307,7 +307,7 @@ that the value pointed to by {{ptr}} is located in the stack.
 It is also possible to define variables containing unboxed C data,
 so called ''locations''. It should be noted that locations may
 only contain simple data, that is: everything that fits into a
-machine word, and double-precision floating point values. 
+machine word, and double-precision floating point values.
 
 
 
@@ -316,7 +316,7 @@ machine word, and double-precision floating point values.
 <macro>(define-location NAME TYPE [INIT])</macro>
 
 Identical to {{(define-external NAME TYPE [INIT])}}, but the variable
-is not accessible from outside of the current compilation unit (it is 
+is not accessible from outside of the current compilation unit (it is
 declared {{static}}).
 
 === let-location

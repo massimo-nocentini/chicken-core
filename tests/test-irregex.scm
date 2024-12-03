@@ -6,6 +6,8 @@
         chicken.format chicken.io chicken.irregex chicken.port)
 
 (include "test.scm")
+              
+(import (only (scheme base) open-output-string get-output-string open-input-string))
 
 (define (cat . args)
   (let ((out (open-output-string)))

@@ -79,7 +79,7 @@
            ""))
 
     (let-values (((in out)
-                  (tcp-connect (or proxy-host host) (or proxy-port port))))
+                  (tcp-connect (or proxy-host host) (or proxy-port port) 'binary)))
       (d "requesting ~s ...~%" locn)
       (display req out)
       (flush-output out)
@@ -137,13 +137,14 @@
 	    (d "reading chunks ")
 	    (let ((data (read-chunks in)))
 	      (close-input-port in)
-	      (set! in (open-input-string data))) )
+	      (set! in (open-input-bytevector data))) )
 	  (values in out datalen))
 	 (else (network-failure "invalid response from server" h1)))))))
 
 (define (http-retrieve-files in out dest)
   (d "reading files ...~%")
-  (let ((version #f))
+  (let ((version #f)
+        (ws (list->string '(#\tab #\newline #\x0b #\space #\x0c #\x0d #\xa0))))
     (define (skip)
       (let ((ln (read-line in)))
         (cond ((or (eof-object? ln)
@@ -154,18 +155,18 @@
 		   (let ((v (irregex-match-substring m 1)))
 		     (cond ((or (string=? "" v) (string=? "#f" v)))
 			   ((and version (not (string=? v version)))
-			    (warning "files versions are not identical" 
-                              ln version)     
+			    (warning "file versions are not identical"
+                              ln version)
 			    (set! version #f))
 			   (else
 			    (set! version v)))
 		     (open-input-string ln))))
 	       ((irregex-match "^[ ]*\\(error .*\\)[ ]*$" ln)
 		 (open-input-string ln)) ; get-files deals with errors
-	       ((irregex-match '(* ("\x09\x0a\x0b\x0c\x0d\x20\xa0")) ln)
+	       ((irregex-match `(* (,ws)) ln)
 		 (skip)) ; Blank line.
 	       (else
-		 (error "unrecognized file-information - possibly corrupt transmission" 
+		 (error "unrecognized file-information - possibly corrupt transmission"
 			ln)))))
     (let get-files ((files '()))
       (let* ((ins (skip))
@@ -177,18 +178,19 @@
 	        (close-output-port out)
 	        version)
 	      ((not (string? name))
-	        (error "invalid file name - possibly corrupt transmission" 
-                       name) )         
+	        (error "invalid file name - possibly corrupt transmission"
+                       name) )
 	      ((string-suffix? "/" name)
 	        (d "  ~a~%" name)
 	        (create-directory (make-pathname dest name))
 	        (get-files files) )
 	      (else
-	        (d "  ~a~%" name)
 	        (let* ((size (read ins))
-	      	       (data (read-string size in)) )
+	               (_ (d "  ~a (~a bytes)~%" name size))
+	      	       (data (read-bytevector size in)) )
 		  (with-output-to-file (make-pathname dest name)
-                    (cut display data) #:binary ) )
+                    (lambda () (write-bytevector data))
+                    #:binary ) )
 		(get-files (cons name files)) ) ) ) ) ))
 
 (define (http-retrieve-response in len)
@@ -215,9 +217,9 @@
 	       (error "invalid response from server - please try again"))
             ((zero? size)
                (d "~%")
-	       (string-intersperse (reverse data) ""))
+               (apply bytevector-append (reverse data)))
 	    (else
-	       (let ((chunk (read-string size in)))
+	       (let ((chunk (read-bytevector size in)))
 		 (d ".")
 		 (read-line in)
 		 (get-chunks (cons chunk data)) ) ) ) ) ))
@@ -227,7 +229,7 @@
        (irregex-match "HTTP/[0-9.]+\\s+([0-9]+)\\s+.*" rsp)) )
 
 (define (response-match-code? mrsp code)
-  (and mrsp (string=? (number->string code) 
+  (and mrsp (string=? (number->string code)
                       (irregex-match-substring mrsp 1))) )
 
 (define (match-chunked-transfer-encoding ln)
@@ -249,8 +251,8 @@
                            (content-length 0)
                      	     proxy-host proxy-port proxy-user-pass)
   (conc
-     "GET " 
-     (if proxy-host 
+     "GET "
+     (if proxy-host
 	 (string-append "http://" host location)
 	 location)
      " HTTP/1.1" "\r\n"
@@ -269,7 +271,7 @@
      (make-composite-condition
       (make-property-condition
        'exn
-       'message "invalid response from server"
+       'message msg
        'arguments args)
       (make-property-condition 'http-fetch))) )
 
@@ -299,7 +301,7 @@
        #f)
     (e (exn setup-download-error)
 	 (print "Server error:")
-	 (print-error-message e) 
+	 (print-error-message e)
 	 #f)
     (e () (abort e) )))
 
@@ -318,7 +320,7 @@
 	  ;; If we get here then version of egg exists
 	  (values eggdir (or fversion version "")) )) ) )
 
-(define (try-download name url #!key version destination tests 
+(define (try-download name url #!key version destination tests
                       proxy-host proxy-port proxy-user-pass)
   (d "downloading ~a: ~a~%" name url)
   (condition-case
@@ -338,6 +340,6 @@
        (values #f "") )
     (e (exn setup-download-error)
 	 (print "Server error:")
-	 (print-error-message e) 
+	 (print-error-message e)
 	 (values #f ""))
     (e () (abort e) )))

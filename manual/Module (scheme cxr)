@@ -1,0 +1,42 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (scheme cxr)
+
+<procedure>(caaar x)</procedure><br>
+<procedure>(caadr x)</procedure><br>
+<procedure>(cadar x)</procedure><br>
+<procedure>(cdaar x)</procedure><br>
+<procedure>(cdadr x)</procedure><br>
+<procedure>(cddar x)</procedure><br>
+<procedure>(cdddr x)</procedure><br>
+<procedure>(caaaar x)</procedure><br>
+<procedure>(caaadr x)</procedure><br>
+<procedure>(caadar x)</procedure><br>
+<procedure>(caaddr x)</procedure><br>
+<procedure>(cadaar x)</procedure><br>
+<procedure>(cadadr x)</procedure><br>
+<procedure>(caddar x)</procedure><br>
+<procedure>(cadddr x)</procedure><br>
+<procedure>(cdaaar x)</procedure><br>
+<procedure>(cdaadr x)</procedure><br>
+<procedure>(cdadar x)</procedure><br>
+<procedure>(cdaddr x)</procedure><br>
+<procedure>(cddaar x)</procedure><br>
+<procedure>(cddadr x)</procedure><br>
+<procedure>(cdddar x)</procedure><br>
+<procedure>(cddddr x)</procedure><br>
+
+These twenty-four procedures are further compositions of car and cdr on the
+same principles. For example, caddr could be defined by
+
+ (define caddr (lambda (x) (car (cdr (cdr x)))))
+
+Arbitrary compositions up to
+four deep are provided.
+
+
+---
+Previous: [[Module (scheme complex)]]
+
+Next: [[Module (scheme file)]]

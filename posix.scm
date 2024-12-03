@@ -47,7 +47,7 @@
    file-close file-control file-creation-mode file-group file-link
    file-lock file-lock/blocking file-mkstemp file-open file-owner
    file-permissions file-position file-read file-select file-size
-   file-stat file-test-lock file-truncate file-unlock file-write
+   file-stat file-truncate file-unlock file-write
    file-type block-device? character-device? directory? fifo?
    regular-file? socket? symbolic-link?
    fileno/stderr fileno/stdin fileno/stdout
@@ -95,7 +95,6 @@
 (define file-select)
 (define file-size)
 (define file-stat)
-(define file-test-lock)
 (define file-truncate)
 (define file-unlock)
 (define file-write)
@@ -108,14 +107,14 @@
 (define regular-file?)
 (define socket?)
 (define symbolic-link?)
-  
+
 (define fileno/stderr)
 (define fileno/stdin)
 (define fileno/stdout)
-  
+
 (define open-input-file*)
 (define open-output-file*)
-  
+
 (define open/append)
 (define open/binary)
 (define open/creat)
@@ -132,7 +131,7 @@
 (define open/trunc)
 (define open/write)
 (define open/wronly)
-  
+
 (define perm/irgrp)
 (define perm/iroth)
 (define perm/irusr)
@@ -148,7 +147,7 @@
 (define perm/ixgrp)
 (define perm/ixoth)
 (define perm/ixusr)
-  
+
 (define port->fileno)
 
 (define seek/cur)
@@ -214,8 +213,8 @@
 ;;; Quote string for shell:
 
 (define (qs str #!optional (platform (software-version)))
-  (let* ((delim (if (eq? platform 'mingw32) #\" #\'))
-	 (escaped (if (eq? platform 'mingw32) "\"\"" "'\\''"))
+  (let* ((delim (if (eq? platform 'mingw) #\" #\'))
+	 (escaped (if (eq? platform 'mingw) "\"\"" "'\\''"))
 	 (escaped-parts
 	  (map (lambda (c)
 		 (cond

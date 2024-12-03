@@ -1,11 +1,11 @@
 
 
-                                                                          
-     _/_/_/  _/    _/  _/_/_/    _/_/_/  _/    _/  _/_/_/_/  _/      _/   
-  _/        _/    _/    _/    _/        _/  _/    _/        _/_/    _/    
- _/        _/_/_/_/    _/    _/        _/_/      _/_/_/    _/  _/  _/     
-_/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/      
- _/_/_/  _/    _/  _/_/_/    _/_/_/  _/    _/  _/_/_/_/  _/      _/       
+
+     _/_/_/  _/    _/  _/_/_/    _/_/_/  _/    _/  _/_/_/_/  _/      _/
+  _/        _/    _/    _/    _/        _/  _/    _/        _/_/    _/
+ _/        _/_/_/_/    _/    _/        _/_/      _/_/_/    _/  _/  _/
+_/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
+ _/_/_/  _/    _/  _/_/_/    _/_/_/  _/    _/  _/_/_/_/  _/      _/
 
 
 
@@ -16,7 +16,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
   (c) 2008-2022, The CHICKEN Team
   (c) 2000-2007, Felix L. Winkelmann
 
-  version 5.4.1
+  version 6.0.0
 
 
  1. Introduction
@@ -53,47 +53,63 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
  2. Installation
 
         Building CHICKEN requires GNU Make. Other "make" derivates are
-        not supported. If you are using a Windows system and do not
-        have GNU Make, download
-        http://www.call-with-current-continuation.org/tarballs/UnxUtils.zip.
-        It contains a precompiled set of UNIX utilities, which among
-        other useful tools contains "make".
+        not supported.
 
-        Configuration and customization of the build process is done by 
-        either setting makefile variables on the "make" command line or 
-        by editing the platform-specific makefile.
+        Configuration and customization of the build process is done by
+        either using the "configure" script, setting makefile variables
+        on the "make" command line or by editing the platform-specific
+        makefile.
 
     2.1. Building from a release tarball
 
         To build CHICKEN, first extract the archive ("tar xzf
         chicken-<version>.tar.gz" on UNIX or use your favorite
         extraction program on Windows), then change to the
-        chicken-<version> directory and invoke "make" like this:
+        chicken-<version> directory and invoke "configure" like this:
+
+            ./configure [OPTION ...]
+
+        This will overwrite a configuration file for the subsequent
+        "make" invocation that builds the CHICKEN tools and libraries.
+        Enter "./configure --help" to see the available options.
+        Usually you want to set the installation prefix where the
+        results of the build should be installed:
+
+            ./configure --prefix $HOME/.local
+
+        If not given, the installation prefix defaults to "/usr/local".
+        You can also define the build platform and whether you want to
+        build with debug-information, in addition to other specialized
+        settings. The platform is determined automatically if not
+        specified.
+
+        Once you have configured the system you can start building it
+        by entering
+
+            make
+
+        Note that GNU make is currently required, so use
+
+            gmake
+
+        On systems that use BSD make.
+
+        The old style invocation of "make" is still supported, where
+        you pass platform and prefix information on the make command
+        line, like this:
 
             make PLATFORM=<platform> PREFIX=<destination>
 
-        where "PLATFORM" specifies on what kind of system CHICKEN
-        shall be built and "PREFIX" specifies where the executables
-        and libraries shall be installed. Out-of-directory builds are
-        currently not supported, so you must be in the toplevel source
-        directory to invoke "make".
-
-        If you enter "make" without the PLATFORM option, CHICKEN will
-        attempt to figure out what platform you are using. If it cannot
-        do so, you will see a list of supported platforms. If you are
-        cross-building, you must specify PLATFORM; for example,
-        PLATFORM=cross-linux-mingw will build CHICKEN on Linux to
-        deploy on Windows.
+	Out-of-directory builds are currently not supported, so you must
+	be in the toplevel source directory to invoke "configure" and
+	"make".
 
         If CHICKEN somehow detects the wrong platform, type
 
-            make PLATFORM=""
+            ./configure --platform=list
 
-        to get a list of available platforms, and re-run "make" using
+        to get a list of available platforms, and re-run "configure" using
         the correct platform.
-
-	Note that parallel builds (using the "-j" make(1) option) are
-	*not* supported.
 
         If you invoke "make" later with different configuration parameters,
         it is advisable to run:
@@ -108,6 +124,21 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         of the git repository, you will need a "chicken" executable to
         generate the compiled C files from the Scheme library sources.
         See section 2.1 for platform detection issues.
+
+        Configuration is the same as when building from the distribution
+        tarball. You may have to use the "--chicken" option to define
+        which "chicken" compiler binary should be used to translate the
+        Scheme source code in the repository:
+
+            ./configure --prefix ... --chicken <install-dir>/bin/chicken
+
+        If you do not want to use the "configure" script, create an empty
+        "config.make", like this:
+
+            touch config.make
+
+        "Config.make" is required by the build process, even if it
+        contains no settings.
 
         If you are building in a checkout where you have built other
         versions of chicken, you need to make sure that all traces of
@@ -124,10 +155,6 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         recommended, if necessary you can install it to a temporary
         location in your homedir for example.
 
-        Then, to build you can run:
-
-            make CHICKEN=<install-dir>/bin/chicken
-
         In some cases, the sources may have diverged enough to
         become unbuildable even with the snapshot.  Then you'll need
         to first build a bootstrapping compiler with the installed
@@ -139,26 +166,18 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         If CHICKEN is built successfully, you can install it on your
         system by entering
 
-            make PREFIX=<destination> install
+            make install
 
-        "PREFIX" defaults to "/usr/local". Note that the PREFIX is
-        compiled into several CHICKEN tools and must be the same
-        while building the system and during installation.
-
-        To install CHICKEN for a particular PREFIX on a different
-        location, set the "DESTDIR" variable in addition to "PREFIX":
-        It designates the directory where the files are installed
-        into.
+	To install CHICKEN for a particular prefix on a different
+	location, set the "DESTDIR" variable: It designates the
+	directory where the files are installed into.
 
     2.4. Verifying your installation is correct
 
         You can check whether CHICKEN is functioning correctly by
         running
 
-            make <vars> check
-
-        where <vars> are all the variables you used while building
-        CHICKEN.
+            make check
 
         This will run the test scripts, which show a lot of output.
         The only thing that matters is the exit status at the end.
@@ -170,40 +189,32 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     2.5. Optional features
 
         You can further enable various optional features by adding
-        one or more of the following variables to the "make"
+        one or more of the following variables to the "configure"
         invocation:
 
-        DEBUGBUILD=1
+        --debugbuild
           Disable optimizations in compiled C code and enable
           debug information.
 
-        STATICBUILD=1
+        --staticbuild
           Build only static versions of the runtime library, compiler
           and interpreter.
 
-        EXTRA_CHICKEN_OPTIONS=...
-          Additional options that should be passed to `chicken' when
-          building the system.
-
-        C_COMPILER_OPTIMIZATION_OPTIONS=...
-          Override built-in C compiler optimization options. Available
-          for debug or release build.
-
-        PROGRAM_PREFIX= 
-          A prefix to prepend to the names of all generated executables. 
-          This allows having multiple CHICKEN versions in your PATH 
+        --program-prefix PREFIX
+          A prefix to prepend to the names of all generated executables.
+          This allows having multiple CHICKEN versions in your PATH
           (but note that they have to be installed at different locations).
 
-        PROGRAM_SUFFIX=
+        --program-suffix SUFFIX
           A suffix to be appended to the names of all generated executables.
 
-        HOSTSYSTEM=
+        --host SYSTEM
           A "<machine>-<platform>" name prefix to use for the C compiler to
           use to compile the runtime system and executables. Set this variable
           if you want to compile CHICKEN for a different architecture than
           the one on which you are building it.
 
-        TARGETSYSTEM= 
+        --target SYSTEM
           Similar to "HOSTSYSTEM", but specifies the name
           prefix to use for compiling code with the "csc" compiler
           driver. This is required for creating a "cross chicken", a
@@ -214,40 +225,28 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
           process and the variables that you should set are provided
           in the manual (see the "Cross development" chapter).
 
-        SRCDIR= 
+        --srcdir DIRECTORY
           Specifies that CHICKEN should be built outside of its source
           tree. The SRCDIR variable indicates the location of the
           CHICKEN source tree. The executables and object files will
           be generated in the current directory.
 
-	VARDIR=
+	--vardir DIRECTORY
 	  If set, this directory overrides the location where
 	  extensions along with their metadata are stored. Normally
 	  this will be equivalent to "<PREFIX>/lib/chicken/<BINARYVERSION>".
 	  When VARDIR is specified, extensions will be stored in
 	  "<VARDIR>/chicken/<BINARYVERSION>", conforming to the FHS.
 
-	CONFIG=
-	  If you build CHICKEN often, passing all those make variables
-	  can get annoying. An alternative is to create a configuration
-	  file defining the required variables and passing 
-          "CONFIG=<configfile>" to make(1).
-          Even simpler is editing the included "config.make"
-	  and just invoke make(1) without any extra parameters.
+	--c-compiler PROGRAM
+	  If set, determines the C compiler used to compiler C sources.
 
-        C_COMPILER=
-	  You can select an alternative compiler by setting this variable.
-	  The default compiler is "gcc". CHICKEN can be built with the
-	  LLVM version of gcc and with "clang", the LLVM-based C compiler,
-	  just set C_COMPILER to "llvm-gcc" or "clang".
+	--linker PROGRAM
+	  Determines the executable used for linking compiled object files,
+	  usually the same as the C compiler executable.
 
-        LINKER=
-	  Selects the linker to be used for creating executables and 
-	  dynamic libraries from compiled C code. This should normally
-	  be the same as C_COMPILER.
-
-	PROFILE_OBJECTS=
-	  This variable allows you to profile (parts of) CHICKEN itself.
+	--profile-object "FILENAME ..."
+	  This option allows you to profile (parts of) CHICKEN itself.
 	  Just pass in a whitespace-separated list of objects, without
 	  the .scm-extension.  (An "object" here is an individual
 	  .scm-file which gets compiled to a .c-file)
@@ -255,12 +254,26 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	  Be warned that this is a highly experimental option and
 	  profiling doesn't work for every component of CHICKEN.
 
+        The "configure" script respects the "CC" and "CFLAGS" environment
+        variables which allow overriding the C compiler to use and any
+        additional C compiler flags that should be used when compiling
+        the runtime system and C files generated by "chicken".
+
+	The default compiler is "gcc" ("cc" on *BSD systems). CHICKEN
+	can be built with the LLVM version of gcc and with "clang",
+	the LLVM-based C compiler, just set C_COMPILER to "llvm-gcc"
+	or "clang". CHICKEN has also been successfully built with "zig cc",
+	the C frontend of the "Zig" language toolchain.
+
+ 	Less frequently used settings are available by variables that can
+ 	be passed on the "make" command line:
+
     2.6. Uninstalling CHICKEN
 
         To remove CHICKEN from your file-system, enter (probably as
         root):
 
-            make PREFIX=<destination> uninstall
+            make uninstall
 
         (If you gave DESTDIR during installation, you have to pass
         the same setting to "make" when uninstalling)
@@ -270,7 +283,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	These files will be installed under the prefix given during
 	build and installation:
 
-        <PREFIX>
+    <PREFIX>
 	|-- bin
 	|   |-- chicken
 	|   |-- chicken-install
@@ -279,19 +292,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	|   |-- chicken-uninstall
  	|   |-- libchicken.dll                        (Windows)
 	|   |-- csc
-	|   |-- csi
-	|   |-- feathers.bat                          (Windows)
-	|   `-- feathers                              (Unix)
+	|   `-- csi
 	|-- include
 	|   `-- chicken
 	|       |-- chicken-config.h
 	|       `-- chicken.h
 	|-- lib
 	|   |-- chicken
-	|   |   `-- 9
+	|   |   `-- 12
 	|   |       |-- chicken.base.import.so
 	|   |       |-- chicken.bitwise.import.so
-	|   |       |-- chicken.blob.import.so
+	|   |       |-- chicken.bytevector.import.so
 	|   |       |-- chicken.compiler.user-pass.import.so
 	|   |       |-- chicken.condition.import.so
 	|   |       |-- chicken.continuation.import.so
@@ -331,25 +342,28 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	|   |       |-- chicken.tcp.import.so
 	|   |       |-- chicken.time.import.so
 	|   |       |-- chicken.time.posix.import.so
+	|   |       |-- scheme.file.import.so
+	|   |       |-- scheme.process-context.import.so
+	|   |       |-- scheme.time.import.so
+	|   |       |-- scheme.write.import.so
 	|   |       |-- modules.db
 	|   |       |-- srfi-4.import.so
 	|   |       `-- types.db
-	|   |-- libchicken.a
+	|   |-- libchicken-static.a
 	|   |-- libchicken.dll.a                      (Windows)
 	|   |-- libchicken.dylib                      (Macintosh)
-	|   |-- libchicken.so -> libchicken.so.11     (Unix)
-	|   `-- libchicken.so.11                      (Unix)
+	|   |-- libchicken.so -> libchicken.so.12     (Unix)
+	|   `-- libchicken.so.12                      (Unix)
 	`-- share
 	    |-- chicken
 	    |   |-- doc
 	    |   |   |-- LICENSE
 	    |   |   |-- README
 	    |   |   |-- DEPRECATED
-	    |   |   |-- manual-html
 	    |   |   |-- chicken.png
-	    |   |   `-- *.html
+	    |   |   |-- manual-html
+	    |   |       `-- *.html
 	    |   |-- chicken.rc.o                      (Windows)
-	    |   |-- feathers.tcl
 	    |   `-- setup.defaults
 	    `-- man
 		`-- man1
@@ -359,8 +373,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 		    |-- chicken-uninstall.1
 		    |-- chicken.1
 		    |-- csc.1
-		    |-- csi.1
-		    `-- feathers.1
+		    `-- csi.1
 
 
  3. Usage
@@ -384,11 +397,11 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         are also available at:
         <http://www.call-with-current-continuation.org/tarballs/>.
 
-        
+
  5. Platform issues
 
-        Android:
-     
+    Android:
+
 	  - The Android SDK and NDK are required. Make sure you have
 	    set up a project and have a suitable NDK toolchain
 	    available. You will have to override the make(1) variable
@@ -439,26 +452,25 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	    Note that this may cause build-problems, if you already have
 	    an existing CHICKEN installation in the /usr/pkg prefix.
 
-        Linux:
+    Linux:
 
 	  - If you want to build Linux binaries which use the "X32 ABI",
 	    you can pass ARCH=x32 on the Make command line.
 
-          - There have been reports where the library directory
+      - There have been reports where the library directory
 	    "/usr/lib64" could not be found at build-time on a Fedora
 	    12 system. If you build a 64-bit version of CHICKEN and
 	    the library directory is set incorrectly, you can override
 	    it by passing "LIBDIR=/usr/lib64" as an additional
 	    argument when you invoke "make".
 
-        Solaris:
+    Solaris:
 
 	  - By default, CHICKEN is build with the GNU C compiler (`gcc').
-	    To use the SunPro C compiler (`cc') instead, pass
+	    To use the SunPro C compiler (`cc') instead, override the
+	    used compiler like this:
 
-	      C_COMPILER=cc
-
-	    to the "make" invocation.
+	      CC=cc ./configure ...
 
 	  - Older versions of Solaris have a bug in ld.so that causes
 	    trouble with dynamic loading.  Patching Solaris fixes the
@@ -473,7 +485,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
 	Mac OS X:
 
-          - The build currently assumes the C toolchain is in the path,
+         - The build currently assumes the C toolchain is in the path,
             use the "xcode-select(1)" tool to make them available on the
             command line if you haven't already done so.
 
@@ -511,68 +523,65 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	  - On 10.3 and earlier, you must first install `dlcompat'
 	    which can be found at http://distfiles.macports.org/dlcompat/.
 
+    iOS:
 
-        iOS:
+      - Make sure the "XCODE_PATH" setting is correct (see
+        Makefile.ios), it defaults to "/Applications/Xcode.app".
 
-          - Make sure the "XCODE_PATH" setting is correct (see
-            Makefile.ios), it defaults to "/Applications/Xcode.app".
+      - The paths for the the various build tools changed between
+        Xcode 4 and 5. The makefile used for iOS builds of CHICKEN
+        assume Xcode 5 is used. If you are using Xcode 4, override
+        the XCODE_TOOLPATH and C_COMPILER make-variables providing
+        the correct paths, see Makefile.ios for suggestions.
 
-          - The paths for the various build tools changed between
-            Xcode 4 and 5. The makefile used for iOS builds of CHICKEN
-            assume Xcode 5 is used. If you are using Xcode 4, override
-            the XCODE_TOOLPATH and C_COMPILER make-variables providing
-            the correct paths, see Makefile.ios for suggestions.
+      - The iOS build is static (iOS doesn't support dynamic
+        loading of executable code). Only the runtime library
+        (libchicken.a) is of interest. To use it, integrate
+        libchicken.a in your Xcode project and use a normal MacOS
+        build to compile your Scheme sources into C files, adding
+        them to you project.
 
-          - The iOS build is static (iOS doesn't support dynamic
-            loading of executable code). Only the runtime library
-            (libchicken.a) is of interest. To use it, integrate
-            libchicken.a in your Xcode project and use a normal MacOS
-            build to compile your Scheme sources into C files, adding
-            them to you project.
+      - Core library units must by accessed via "(declare (uses
+        ...))" and "(import ...)", "require", "require-library",
+        "require-extension" and "use" will not work, due to the
+        reasons mentioned above.
 
-          - Core library units must by accessed via "(declare (uses
-            ...))" and "(import ...)", "require", "require-library",
-            "require-extension" and "use" will not work, due to the
-            reasons mentioned above.
+      - As dynamic loading is not supported, eggs can not be used
+        as usual, you will have to compile them manually and
+        integrate what you need into your project.
 
-          - As dynamic loading is not supported, eggs can not be used
-            as usual, you will have to compile them manually and
-            integrate what you need into your project.
-
-          - If you want to build for the iPhone Simulator, override
-            the ARCH and XCODE_SDK variables accordingly, see also in
-            Makefile.ios for suggestions.
+      - If you want to build for the iPhone Simulator, override
+        the ARCH and XCODE_SDK variables accordingly, see also in
+        Makefile.ios for suggestions.
 
    	Windows:
 
-	  - On Windows, mingw32, <http://mingw.sourceforge.net/> and
+	  - On Windows, native builds using the "MingW" toolchain and
 	    Cygwin are supported (Microsoft Visual Studio is *NOT*).
-	    Makefiles for mingw under MSYS and the Windows shell are
-	    provided (`Makefile.mingw-msys' and `Makefile.mingw'). 
+	    Makefiles for MingW are provided (`Makefile.MingW').
+	    GNU make and a POSIX sh(1) are required to build the system.
 	    Please also read the notes below.
 
-	  - When installing under the mingw-msys platform, PREFIX must be an
+	  - Since there are various distributions of the MingW toolchain
+	    we recommend to use "w64devkit" by Chrstopher Wellons:
+
+	      https://github.com/skeeto/w64devkit
+
+	    This toolset is very complete, includes GNU make and a
+	    POSIX shell and is the development environment we use to
+	    test CHICKEN. Other distributions of MingW may work but
+	    are not tested by us.
+
+	  - When installing under the MingW platform, PREFIX must be an
 	    absolute path name (i.e. it must include the drive letter) and
 	    must use forward slashes (no backward slashes), for example
-            "PREFIX=C:/chicken/".
 
-	  - When installing under mingw, with a windows shell
-	    ("cmd.exe"), pass an absolute pathname (including the
-	    drive letter) as PREFIX and use forward slashes. If you
-	    are building the sources from git, use backslashes to
-	    specify the path to `chicken' (the "CHICKEN" variable).
+              ./configure --prefix C:/chicken/
 
-	  - When installing under mingw without MSYS, make sure that the
-	    MSYS tools (in case you have some of them, in particular the
-	    sh.exe UNIX shell) are *NOT* visible in your PATH.
-
-	  - 64-bit Windows is supported, invoke mingw32-make with the
-	    "ARCH=x86-64" argument (this is currently not detected
-	    automatically). The build has been tested on Windows 7
-	    with the SJLJ binary package from "MinGW-builds", which
-	    can be found here:
-
-	    http://sourceforge.net/projects/mingwbuilds/
+      - Under MingW, the "csc" compiler driver and "chicken-install"
+        expect the compiler executable and the usual UNIX tools are
+        in the PATH, so make sure to run them inside a shell that
+        provides the necessary stuff.
 
 	  - Cygwin will not be able to find the chicken shared libraries
 	    until Windows is rebooted.
@@ -645,17 +654,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
         To build a bootstrapping compiler yourself, get the most
         recent development snapshot tarball from
-        http://code.call-cc.org, unpack it, build and install it.
+        http://code.call-cc.org, unpack it, build and install everything.
         Then change to the directory containing the git code and run:
 
-            make CHICKEN=<path-to-existing-chicken> \
-              boot-chicken
+            ./configure --chicken <path-to-existing-chicken>
+            make boot-chicken
 
-        This will produce a statically linked binary with the name
-        "chicken-boot[.exe]" that can be given as the value of the
-        "CHICKEN" argument when invoking make(1). Note that the path
-        to an existing `chicken' binary must be given to use it for
-        compiling the Scheme code of the runtime-system and compiler.
+	This will produce a statically linked binary with the name
+	"chicken-boot[.exe]" that can be given as the value of the
+	"--chicken" configuration option. Note that the path to an
+	existing `chicken' binary must be given to use it for
+	compiling the Scheme code of the runtime-system and compiler.
 
         "scripts/bootstrap.sh" automates this process; use this script
         if you are unsure how to build from the repository sources. It
@@ -663,7 +672,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         builds the boot-chicken that you can use to compile the
         development sources. The invocation is:
 
-            scripts/bootstrap.sh ...
+            ./scripts/bootstrap.sh ...
 
         You can add additional parameters if you like to customize the
         build, but this should not be necessary. Note that your current
@@ -673,6 +682,11 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         with the additional parameter:
 
             make CHICKEN=./chicken-boot ...
+
+        or run "configure" again:
+
+            ./configure --chicken ./chicken-boot ...
+            make
 
 
  7. Emacs support

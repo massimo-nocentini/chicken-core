@@ -1,7 +1,7 @@
 [[tags: manual]]
 [[toc:]]
 
-== Module r4rs
+== Module (scheme r4rs)
 
 This module provides the subset of procedures and macros from the
 {{scheme}} module which are from the R4RS standard.
@@ -10,6 +10,6 @@ This is every procedure and macro from [[/manual/Module scheme|Module scheme]] e
 {{dynamic-wind}}, {{eval}}, {{call-with-values}} and {{values}}.
 
 ---
-Previous: [[Module r5rs]]
+Previous: [[Module scheme]]
 
-Next: [[Module srfi-4]]
+Next: [[Module (scheme r5rs)]]

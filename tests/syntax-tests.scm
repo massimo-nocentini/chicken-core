@@ -2,6 +2,7 @@
 
 (import-for-syntax chicken.pretty-print)
 (import chicken.gc chicken.pretty-print chicken.port)
+(import (only (scheme base) call/cc))
 
 (define-syntax t
   (syntax-rules ()
@@ -44,14 +45,14 @@
 ;; some basic contrived testing
 
 (define (fac n)
-  (let-syntax ((m1 
+  (let-syntax ((m1
 		(er-macro-transformer
-		 (lambda (n r c) 
+		 (lambda (n r c)
 		   (pp `(M1: ,n))
 		   (list (r 'sub1) (cadr n))))))
     (define (sub1 . _)			; ref. transp.? (should not be used here)
       (error "argh.") )
-    #;(print "fac: " n)		  
+    #;(print "fac: " n)
     (if (test n (zero? n))
 	1
 	(* n (fac (m1 n))))))
@@ -113,7 +114,7 @@
 (let ((x 'outer))
   (let-syntax ((m (syntax-rules () ((m) x))))
     (let ((x 'inner))
-      (m))))       
+      (m))))
 )
 
 (t 7
@@ -227,10 +228,10 @@
 
 ;;; strip-syntax cuts across multiple levels of syntax
 ;;; reported by Matthew Flatt
-(define-syntax c 
-  (syntax-rules () 
-    [(_) 
-     (let ([x 10]) 
+(define-syntax c
+  (syntax-rules ()
+    [(_)
+     (let ([x 10])
        (let-syntax ([z (syntax-rules ()
                          [(_) (quote x)])])
          (z)))]))
@@ -298,8 +299,8 @@
 ;;; alternative ellipsis test (SRFI-46)
 
 (define-syntax foo
-  (syntax-rules 
-      ___ () 
+  (syntax-rules
+      ___ ()
       ((_ vals ___) (list '... vals ___))))
 
 (t '(... 1 2 3)
@@ -371,7 +372,7 @@
 
 (define-syntax usetmp
   (syntax-rules ()
-    ((_ var) 
+    ((_ var)
      (list var))))
 
 (define-syntax withtmp
@@ -424,7 +425,7 @@
 
 (let ((n 10))
   (loop
-   (print* n " ") 
+   (print* n " ")
    (set! n (sub1 n))
    (when (zero? n) (exit #f)))
   (newline))
@@ -432,7 +433,7 @@
 (define-syntax while0
   (syntax-rules ()
     ((_ t b ...)
-     (loop (if (not t) (exit #f)) 
+     (loop (if (not t) (exit #f))
 	   b ...))))
 
 (f (while0 #f (print "no.")))
@@ -440,7 +441,7 @@
 (define-syntax while
   (er-macro-transformer
    (lambda (x r c)
-     `(,(r 'loop) 
+     `(,(r 'loop)
        (,(r 'if) (,(r 'not) ,(cadr x)) (exit #f))
        ,@(cddr x)))))
 
@@ -561,7 +562,7 @@
   (import scheme (prefix (chicken base) c:) (prefix (chicken condition) c:))
   (c:define-values (a b c) (values 1 2 3))
   (c:print "ok")
-  (c:condition-case 
+  (c:condition-case
    (c:abort "ugh")
    (ex () (c:print "caught"))))
 
@@ -606,7 +607,7 @@
     (er-macro-transformer
      (lambda (x r c)
        (r `(vector (s1 ,(cadr x))))))) )	; without renaming the local version of `s1'
-					; below will be captured 
+					; below will be captured
 
 (import m1)
 
@@ -625,7 +626,7 @@
 
 (let ((n 10))
   (loop2
-   (print* n " ") 
+   (print* n " ")
    (set! n (sub1 n))
    (when (zero? n) (exit #f)))
   (newline))
@@ -633,7 +634,7 @@
 (define-syntax while20
   (syntax-rules ()
     ((_ t b ...)
-     (loop2 (if (not t) (exit #f)) 
+     (loop2 (if (not t) (exit #f))
 	    b ...))))
 
 (f (while20 #f (print "no.")))
@@ -641,7 +642,7 @@
 (define-syntax while2
   (ir-macro-transformer
    (lambda (x i c)
-     `(loop 
+     `(loop
        (if (not ,(cadr x)) (,(i 'exit) #f))
        ,@(cddr x)))))
 
@@ -661,7 +662,7 @@
     (ir-macro-transformer
      (lambda (x r c)
        `(vector (s3 ,(cadr x)))))) ) ; without implicit renaming the local version
-                                     ; of `s3' below would be captured 
+                                     ; of `s3' below would be captured
 
 (import m2)
 
@@ -1085,7 +1086,7 @@
 ;; The following are explicitly left undefined by R5RS. For consistency
 ;; we define any unquote-(splicing) or quasiquote that occurs in the CAR of
 ;; a pair to decrease, respectively increase the level count by one.
-  
+
 (t '(quasiquote . #(1 (unquote x) 3))   ; cdr is not a pair
    (quasiquote (quasiquote . #(1 (unquote x) 3))))
 (t '(quasiquote #(1 (unquote x) 3))     ; cdr is a list of one
@@ -1177,7 +1178,7 @@ other-eval
 
 ;; #805: case-lambda is unhygienic (see 4706afb4 and bc5cc698)
 (module case-lambda-and-ensure-hygiene ()
-  (import (prefix (chicken base) c/) (prefix scheme s/))
+  (import (prefix (scheme case-lambda) c/) (prefix scheme s/))
   (c/case-lambda ((a) a)))
 
 
@@ -1294,7 +1295,7 @@ other-eval
 		     tmp)))
        (bar #f)))
 
-;; Deeper issue uncovered by fixing the above issue 
+;; Deeper issue uncovered by fixing the above issue
 (t 1 (letrec ((bar (lambda (x) (if x 1 (bar bar)))))
        (bar #f)))
 
@@ -1358,3 +1359,47 @@ other-eval
 
 (define begin -)
 (assert (eq? -1 (begin 0 1)))
+
+;; #1736 - dotted pairs after ellipsis
+
+(define-syntax match-ellipsis-and-dotted-tail1
+  (syntax-rules ()
+    ((_ a ... . b)
+     '(a ... b))))
+
+(t '(x y z) (match-ellipsis-and-dotted-tail1 x y . z))
+
+(define-syntax match-ellipsis-and-dotted-tail2
+  (syntax-rules ()
+    ((_ (a) ... . (b))
+     '(a ... b))))
+
+(t '(x y z) (match-ellipsis-and-dotted-tail2 (x) (y) z))
+
+;; from SRFI-46 document:
+(define-syntax fake-begin
+  (syntax-rules ()
+    ((fake-begin ?body ... ?tail)
+     (let* ((ignored ?body) ...) ?tail))))
+
+(t 3 (fake-begin 1 2 3))
+
+;; #1793
+
+(let ([x 'outer])
+   (define-syntax m
+     (syntax-rules ()
+       ((m a)
+        (let ([a 'inner]) x))))
+   (t 'outer (m x)))
+
+; fails with error when compiled ("toplevel def. in non-toplevel context")
+#;(let ([x 'outer])
+   (define-syntax m
+     (syntax-rules ()
+       ((m a)
+        (begin
+          (define a 'inner)
+          x))))
+   (m x)
+   (t 'inner x))

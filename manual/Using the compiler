@@ -112,8 +112,6 @@ the source text should be read from standard input.
 
 ; -no-procedure-checks-for-toplevel-bindings :  disable bound and procedure call checks for calls to procedures referenced through a toplevel variable.
 
-; -no-symbol-escape : Disables support for escaped symbols, the |...| form.
-
 ; -no-trace : Disable generation of tracing information. If a compiled executable should halt due to a runtime error, then a list of the name and the line-number (if available) of the last procedure calls is printed, unless {{-no-trace}} is specified. With this option the generated code is slightly faster.
 
 ; -no-warnings : Disable generation of compiler warnings.
@@ -172,7 +170,7 @@ the source text should be read from standard input.
 
 ; -prologue FILENAME : Includes the file named {{FILENAME}} at the start of the compiled source file.  The include-path is not searched. This option may be given multiple times.
 
-; -r5rs-syntax : Disables the CHICKEN extensions to R5RS syntax. Does not disable non-standard read syntax.
+; -r7rs-syntax : Disables the CHICKEN extensions to R7RS syntax. Does not disable non-standard read syntax.
 
 ; -raw : Disables the generation of any implicit code that uses the Scheme libraries (that is all runtime system files besides {{runtime.c}} and {{chicken.h}}). Use this only when you know what you are doing.
 

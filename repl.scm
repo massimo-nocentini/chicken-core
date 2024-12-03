@@ -38,6 +38,7 @@
 	chicken.foreign
 	chicken.load
 	chicken.syntax)
+(import (only (scheme base) make-parameter))
 
 (include "common-declarations.scm")
 

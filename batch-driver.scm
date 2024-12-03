@@ -8,11 +8,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -78,7 +78,7 @@
      (printf ";   variables with known values: \t~s\n" kvars)
      (printf ";   known procedures: \t~s\n" kprocs)
      (printf ";   global variables: \t~s\n" globs)
-     (printf ";   known call sites: \t~s\n" sites) 
+     (printf ";   known call sites: \t~s\n" sites)
      (printf ";   database entries: \t~s\n" entries) ) ) )
 
 ;;; Initialize analysis database:
@@ -117,11 +117,11 @@
 		 (undefined . und) (replacing . rpg) (unused . uud) (extended-binding . xtb)
 		 (inline-export . ilx) (hidden-refs . hrf)
 		 (value-ref . vvf)
-		 (customizable . cst) (has-unused-parameters . hup) (boxed-rest . bxr) ) ) 
+		 (customizable . cst) (has-unused-parameters . hup) (boxed-rest . bxr) ) )
 	(omit #f))
     (lambda (db)
       (unless omit
-	(set! omit 
+	(set! omit
 	  (append default-standard-bindings
 		  default-extended-bindings
 		  internal-bindings) ) )
@@ -200,7 +200,7 @@
   (let* ((dynamic (memq 'dynamic options))
 	(unit (memq 'unit options))
 	(init-forms `((##core#declare
-		      ,@(append 
+		      ,@(append
 			 default-declarations
 			 (if emit-debug-info
 			     '((uses debugger-client))
@@ -283,8 +283,8 @@
 
     (define (print-expr mode dbgmode xs)
       (when (print-header mode dbgmode)
-	(for-each 
-	 (lambda (x) 
+	(for-each
+	 (lambda (x)
 	   (pretty-print x)
 	   (newline))
 	 xs) ) )
@@ -298,12 +298,12 @@
 	      ((char-whitespace? (string-ref str (sub1 back)))
 	       (loop front (sub1 back)))
 	      (else (substring str front back)))))
-       
+
     (define (string->extension-name str)
       (let ((str (string-trim str)))
         (if (and (positive? (string-length str))
                  (char=? #\( (string-ref str 0)))
-            (handle-exceptions ex 
+            (handle-exceptions ex
               (##sys#error "invalid import specification" str)
               (with-input-from-string str read))
             (string->symbol str))))
@@ -329,7 +329,7 @@
 
     (define (end-time pass)
       (when time-breakdown
-	(printf "milliseconds needed for ~a: \t~s~%" 
+	(printf "milliseconds needed for ~a: \t~s~%"
 	  pass
 	  (inexact->exact (round (- (cputime) time0)) ) )))
 
@@ -370,7 +370,7 @@
     (set! dumpnodes (memq '|D| debugging-chicken))
     (set! import-libraries
       (map (lambda (il)
-	     (cons (string->symbol il) 
+	     (cons (string->symbol il)
 		   (string-append il ".import.scm")))
 	   (collect-options 'emit-import-library)))
     (when (and (memq 'emit-all-import-libraries options)
@@ -400,12 +400,12 @@
     (when (memq 'strict-types options)
       (set! strict-variable-types #t)
       (set! enable-specialization #t))
-    (when (memq 'no-warnings options) 
+    (when (memq 'no-warnings options)
       (dribble "Warnings are disabled")
-      (set! ##sys#warnings-enabled #f) 
+      (set! ##sys#warnings-enabled #f)
       (set! do-scrutinize #f))		; saves some processing time
     (when (memq 'optimize-leaf-routines options) (set! optimize-leaf-routines #t))
-    (when (memq 'unsafe options) 
+    (when (memq 'unsafe options)
       (set! unsafe #t) )
     (when (memq 'setup-mode options)
       (set! ##sys#setup-mode #t))
@@ -426,7 +426,7 @@
     (and-let* ((tfile (memq 'emit-types-file options)))
       (set! types-output-file (option-arg tfile)))
     (and-let* ([inlimit (memq 'inline-limit options)])
-      (set! inline-max-size 
+      (set! inline-max-size
 	(let ([arg (option-arg inlimit)])
 	  (or (string->number arg)
 	      (quit-compiling
@@ -437,7 +437,7 @@
 	  (or (string->number arg)
 	      (quit-compiling
 	       "invalid argument to `-unroll-limit' option: `~A'" arg) ) ) ) )
-    (when (memq 'case-insensitive options) 
+    (when (memq 'case-insensitive options)
       (dribble "Identifiers and symbols are case insensitive")
       (register-feature! 'case-insensitive)
       (case-sensitive #f) )
@@ -451,15 +451,11 @@
     (when (memq 'no-parentheses-synonyms options)
       (dribble "Disabled support for parentheses synonyms")
       (parentheses-synonyms #f) )
-    (when (memq 'no-symbol-escape options) 
-      (dribble "Disabled support for escaped symbols")
-      (symbol-escape #f) )
-    (when (memq 'r5rs-syntax options)
-      (dribble "Disabled the CHICKEN extensions to R5RS syntax")
+    (when (memq 'r7rs-syntax options)
+      (dribble "Disabled the CHICKEN extensions to R7RS syntax")
       (case-sensitive #f)
       (keyword-style #:none)
-      (parentheses-synonyms #f)
-      (symbol-escape #f) )
+      (parentheses-synonyms #f))
     (set! ##sys#read-error-with-line-number #t)
     (set! ##sys#include-pathnames
       (append (map chop-separator (collect-options 'include-path))
@@ -477,12 +473,12 @@
     (when (memq 'no-procedure-checks-for-toplevel-bindings options)
       (set! no-global-procedure-checks #t) )
     (when (memq 'no-procedure-checks-for-usual-bindings options)
-      (for-each 
+      (for-each
        (lambda (v)
          (mark-variable v '##compiler#always-bound-to-procedure)
          (mark-variable v '##compiler#always-bound) )
        default-standard-bindings)
-      (for-each 
+      (for-each
        (lambda (v)
          (mark-variable v '##compiler#always-bound-to-procedure)
          (mark-variable v '##compiler#always-bound) )
@@ -490,10 +486,10 @@
     (when (memq 'p debugging-chicken) (load-verbose #t))
 
     ;; Handle feature options:
-    (for-each 
+    (for-each
      register-feature!
      (append-map (cut string-split <> ", ") (collect-options 'feature)))
-    (for-each 
+    (for-each
      unregister-feature!
      (append-map (cut string-split <> ",") (collect-options 'no-feature)))
 
@@ -578,7 +574,7 @@
 	  ((or (memq 'help options) (memq '-help options) (memq 'h options) (memq '-h options))
 	   (print-usage))
 	  ((memq 'release options)
-	   (display (chicken-version)) 
+	   (display (chicken-version))
 	   (newline) )
 	  ((not filename)
 	   (print-version #t)
@@ -598,8 +594,8 @@
 	   ;; Read toplevel expressions:
 	   (set! ##sys#line-number-database (make-vector line-number-database-size '()))
 	   (let ([prelude (collect-options 'prelude)]
-		 [postlude (collect-options 'postlude)] 
-		 [files (append 
+		 [postlude (collect-options 'postlude)]
+		 [files (append
 			 (collect-options 'prologue)
 			 (list filename)
 			 (collect-options 'epilogue) ) ]  )
@@ -621,7 +617,7 @@
 			    (let loop ()
 			      (let ((x (chicken.syntax#read-with-source-info in))) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
 
-				(cond ((eof-object? x) 
+				(cond ((eof-object? x)
 				       (close-checked-input-file in f) )
 				      (else
 				       (set! forms (cons x forms))
@@ -676,7 +672,7 @@
 		'S
 		(lambda ()
 		  (print "applied compiler syntax:")
-		  (for-each 
+		  (for-each
 		   (lambda (cs) (printf "  ~a\t\t~a~%" (car cs) (cdr cs)))
 		   compiler-syntax-statistics))))
    	     (when (debugging '|N| "real name table:")
@@ -721,7 +717,7 @@
 		 (let ((ifs (collect-options 'consult-inline-file)))
 		   (unless (null? ifs)
 		     (set! inline-locally #t)
-		     (for-each 
+		     (for-each
 		      (lambda (ilf)
 			(dribble "Loading inline file ~a ..." ilf)
 			(load-inline-file ilf) )
@@ -734,7 +730,7 @@
 						 enable-specialization)
 		       (quit-compiling
 			"default type-database `types.db' not found")))
-		   (for-each 
+		   (for-each
 		    (lambda (fn)
 		      (or (load-type-database fn enable-specialization #f)
 			  (quit-compiling "type-database `~a' not found" fn)))
@@ -801,7 +797,7 @@
 		     (end-time "analysis")
 		     (print-db "analysis" '|4| db i)
 
-		     (when (memq 's debugging-chicken) 
+		     (when (memq 's debugging-chicken)
 		       (print-program-statistics db))
 
 		     ;; Optimize (once)
@@ -835,14 +831,14 @@
 				       (let ((progress
 					      (transform-direct-lambdas! node2 db)))
 					 (end-time "leaf routine optimization")
-					 (loop (add1 i) 
+					 (loop (add1 i)
 					       node2
 					       progress
 					       #f
 					       l/d-done) ) ) )
 				    (else
 				     (loop (add1 i) node2 #f #f l/d-done)) ) ) )
-			   
+
 			   (else
 			    ;; Secondary flow-analysis
 			    (when do-lfa2

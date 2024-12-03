@@ -4,6 +4,7 @@
 
 (import (only chicken.string ->string))
 (import (only chicken.time current-process-milliseconds))
+(import (only (scheme base) make-parameter))
 
 (define *current-group-name* "")
 (define *pass* 0)

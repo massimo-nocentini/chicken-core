@@ -8,11 +8,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -41,7 +41,7 @@ EOF
 ) )
 
 (module chicken.csi
-  (editor-command toplevel-command set-describer! default-evaluator)
+  (editor-command toplevel-command default-evaluator)
 
 (import scheme
 	chicken.base
@@ -67,6 +67,10 @@ EOF
 	chicken.syntax
 	chicken.time)
 
+(import (rename (only (scheme write) write) (write write/labels)))
+(import (only (scheme base) make-parameter open-input-string open-output-string
+              get-output-string port?))
+
 (include "banner.scm")
 (include "mini-srfi-1.scm")
 
@@ -78,10 +82,15 @@ EOF
 (set! ##sys#features (cons #:csi ##sys#features))
 (set! ##sys#notices-enabled #t)
 
+(set! ##sys#repl-print-hook
+   (lambda (o p)
+     (write/labels o p)
+     (newline)))
+
 (define editor-command (make-parameter #f))
 (define selected-frame #f)
 
-(define default-editor 
+(define default-editor
   (or (get-environment-variable "EDITOR")
       (get-environment-variable "VISUAL")
       (if (get-environment-variable "EMACS")
@@ -96,7 +105,7 @@ EOF
 usage: csi [OPTION ...] [FILENAME ...]
 
   `csi' is the CHICKEN interpreter.
-  
+
   FILENAME is a Scheme source file name with optional extension. OPTION may be
   one of the following:
 
@@ -124,9 +133,8 @@ EOF
     -K  -keyword-style STYLE      enable alternative keyword-syntax
                                    (prefix, suffix or none)
         -no-parentheses-synonyms  disables list delimiter synonyms
-        -no-symbol-escape         disables support for escaped symbols
-        -r5rs-syntax              disables the CHICKEN extensions to
-                                   R5RS syntax
+        -r7rs-syntax              disables the CHICKEN extensions to
+                                   R7RS syntax
     -s  -script PATHNAME          use csi as interpreter for Scheme scripts
         -ss PATHNAME              same as `-s', but invoke `main' procedure
         -sx PATHNAME              same as `-s', but print each expression
@@ -150,10 +158,10 @@ EOF
   (or (and ##sys#windows-platform (char=? c #\\))
       (char=? c #\/)))
 
-(define chop-separator 
+(define chop-separator
   (let ([substring substring] )
     (lambda (str)
-      (let* ((len (sub1 (##sys#size str)))
+      (let* ((len (sub1 (string-length str)))
 	     (c (string-ref str len)))
 	(if (and (fx> len 0) (dirseparator? c))
 	    (substring str 0 len)
@@ -162,7 +170,7 @@ EOF
 
 ;;; Find script in PATH (only used for Windows/DOS):
 
-(define lookup-script-file 
+(define lookup-script-file
   (let* ([buf (make-string 256)]
 	 [_getcwd (foreign-lambda nonnull-c-string "_getcwd" scheme-pointer int)] )
     (define (addext name)
@@ -171,14 +179,14 @@ EOF
 	  (let ([n2 (string-append name ".bat")])
 	    (and (file-exists? n2) n2) ) ) )
     (define (string-index proc str1)
-      (let ((len (##sys#size str1)))
+      (let ((len (string-length str1)))
 	(let loop ((i 0))
 	  (cond ((fx>= i len) #f)
-		((proc (##core#inline "C_subchar" str1 i)) i)
+		((proc (string-ref str1 i)) i)
 		(else (loop (fx+ i 1))) ) ) ) )
     (lambda (name)
       (let ([path (get-environment-variable "PATH")])
-	(and (> (##sys#size name) 0)
+	(and (> (string-length name) 0)
 	     (cond [(dirseparator? (string-ref name 0)) (addext name)]
 		   [(string-index dirseparator? name)
 		    (let ((p (_getcwd buf 256)))
@@ -191,7 +199,7 @@ EOF
 			     (let ([name2 (string-append (chop-separator (##sys#slot ps 0)) name2)])
 			       (or (addext name2)
 				   (loop (##sys#slot ps 1)) ) ) ) ) ) ] ) ) ) ) ) )
-				   
+
 
 
 ;;; REPL history references:
@@ -228,7 +236,7 @@ EOF
 (define (history-ref index)
   (let ([i (inexact->exact index)])
     (if (and (fx> i 0) (fx<= i history-count))
-	(vector-ref history-list i) 
+	(vector-ref history-list i)
 	(##sys#error "history entry index out of range" index) ) ) )
 
 ;;; Reader hooks for REPL history:
@@ -320,7 +328,7 @@ EOF
 			((dur)
 			 (let* ([x (read)]
 				[n (read)]
-				[xe (eval x)] 
+				[xe (eval x)]
 				[xn (eval n)] )
 			   (dump xe xn) ) )
 			((r) (report))
@@ -329,7 +337,7 @@ EOF
 			 (let ((fns (string-split (read-line))))
 			   (for-each load fns)
 			   (##sys#void) ) )
-			((ln) 
+			((ln)
 			 (let ((fns (string-split (read-line))))
 			   (for-each (cut load-noisily <> printer: (lambda (x) (pretty-print x) (print* "==> "))) fns)
 			   (##sys#void) ) )
@@ -338,13 +346,13 @@ EOF
 			   (receive rs (time (eval x))
 			     (history-add rs)
 			     (apply values rs) ) ) )
-			((exn) 
+			((exn)
 			 (when ##sys#last-exception
 			   (history-add (list ##sys#last-exception))
 			   (describe ##sys#last-exception) ) )
 			((e)
 			 (let ((r (system
-				   (string-append 
+				   (string-append
 				    (or (editor-command) default-editor)
 				    " " (read-line)))))
 			   (if (not (zero? r))
@@ -369,7 +377,7 @@ EOF
 			   (history-add (list r))
 			   r) )
 			((?)
-			 (display 
+			 (display
 			  "Toplevel commands:
 
  ,?                Show this text
@@ -392,7 +400,7 @@ EOF
  ,t EXP            Evaluate form and print elapsed time
  ,x EXP            Pretty print expanded expression EXP\n")
 			 (for-each
-			  (lambda (a) 
+			  (lambda (a)
 			    (let ((help (caddr a)))
 			      (if help
 				  (print #\space help)
@@ -400,7 +408,7 @@ EOF
 			  command-table)
 			 (##sys#void) )
 			(else
-			 (printf "undefined toplevel command ~s - enter `,?' for help~%" form) 
+			 (printf "undefined toplevel command ~s - enter `,?' for help~%" form)
 			 (##sys#void) ) ) ) ) ) )
 	    (else
 	     (receive rs (eval form)
@@ -411,7 +419,7 @@ EOF
 ;;; Builtin toplevel commands:
 
 (toplevel-command
- 'm 
+ 'm
  (let ((printf printf))
    (lambda ()
      (let ((name (read)))
@@ -449,7 +457,7 @@ EOF
   (let ((printf printf)
 	(sort sort)
 	(with-output-to-port with-output-to-port)
-	(current-output-port current-output-port) 
+	(current-output-port current-output-port)
 	(argv argv)
 	(prefix (foreign-value "C_INSTALL_PREFIX" c-string)))
     (lambda port
@@ -477,7 +485,7 @@ EOF
 		   (cond ((>= c 3)
 			  (display "\n")
 			  (set! c 0))
-			 (else 
+			 (else
 			  (display (make-string pad #\space))))))
 	       fs))
 	    (printf "~%~%~
@@ -493,7 +501,7 @@ EOF
                    Symbol-table load:\t~S~%  ~
                      Avg bucket length:\t~S~%  ~
                      Total symbol count:\t~S~%~
-                   Memory:\theap size is ~S bytes~A with ~S bytes currently in use~%~  
+                   Memory:\theap size is ~S bytes~A with ~S bytes currently in use~%~
                      nursery size is ~S bytes, stack grows ~A~%~
                    Command line:    \t~S~%"
 		    (machine-type)
@@ -551,11 +559,9 @@ EOF
 
 (define-constant max-describe-lines 40)
 
-(define describer-table (make-vector 37 '()))
-
 (define describe
   (let ([sprintf sprintf]
-	[printf printf] 
+	[printf printf]
 	[fprintf fprintf]
 	[length length]
 	[list-ref list-ref]
@@ -577,7 +583,7 @@ EOF
 			       (lambda ()
 				 (fprintf out " ~S: ~S" i v)))
 			      (if (fx> n 1)
-				  (fprintf out "\t(followed by ~A identical instance~a)~% ...~%" 
+				  (fprintf out "\t(followed by ~A identical instance~a)~% ...~%"
 					   (fx- n 1)
 					   (if (eq? n 2) "" "s"))
 				  (newline out) )
@@ -592,8 +598,7 @@ EOF
 	    ((eq? x #t) (fprintf out "boolean true~%"))
 	    ((eq? x #f) (fprintf out "boolean false~%"))
 	    ((null? x) (fprintf out "empty list~%"))
-            ((##core#inline "C_bwpp" x) 
-             ;; TODO: replace with bwp-object? later
+            ((bwp-object? x)
              (fprintf out "broken weak pointer~%"))
 	    ((eof-object? x) (fprintf out "end-of-file object~%"))
 	    ((eq? (##sys#void) x) (fprintf out "unspecified object~%"))
@@ -613,17 +618,17 @@ EOF
 	    ((cplxnum? x) (fprintf out "~A complex number ~S~%"
 			    (if (exact? x) "exact" "inexact") x))
 	    ((number? x) (fprintf out "number ~S~%" x))
-	    ((string? x) (descseq "string" ##sys#size string-ref 0))
+	    ((string? x) (descseq "string" string-length string-ref 0))
 	    ((vector? x) (descseq "vector" ##sys#size ##sys#slot 0))
 	    ((keyword? x)
-	     (fprintf out "keyword symbol with name ~s~%" 
-	       (##sys#symbol->string x)))
+	     (fprintf out "keyword symbol with name ~s~%"
+	       (##sys#symbol->string/shared x)))
 	    ((symbol? x)
 	     (unless (##sys#symbol-has-toplevel-binding? x)
 	       (display "unbound " out))
 	     (fprintf out "~asymbol with name ~S~%"
 	       (if (##sys#interned-symbol? x) "" "uninterned ")
-	       (##sys#symbol->string x))
+	       (##sys#symbol->string/shared x))
 	     (let ((plist (##sys#slot x 2)))
 	       (unless (null? plist)
 		 (display "  \nproperties:\n\n" out)
@@ -650,24 +655,24 @@ EOF
 	    ((pair? x) (fprintf out "pair with car ~S~%and cdr ~S~%" (car x) (cdr x)))
 	    ((procedure? x)
 	     (let ([len (##sys#size x)])
-	       (descseq 
+	       (descseq
 		(sprintf "procedure with code pointer 0x~X" (##sys#peek-unsigned-integer x 0))
 		##sys#size ##sys#slot 1) ) )
 	    ((port? x)
 	     (fprintf out
-		 "~A port of type ~A with name ~S and file pointer ~X~%"
+		 "~A port of type ~A with name ~S and ~A encoding~%"
 	       (if (##sys#slot x 1) "input" "output")
 	       (##sys#slot x 7)
 	       (##sys#slot x 3)
-	       (##sys#peek-unsigned-integer x 0) ) )
-            ((not (##core#inline "C_blockp" x)) 
+	       (##sys#slot x 15) ) )
+            ((not (##core#inline "C_blockp" x))
              ;; catch immediates here, as ##sys#locative? crashes on non-block
              (fprintf out "unknown immediate object~%"))
 	    ((##sys#locative? x)
 	     (fprintf out "locative~%  pointer ~X~%  index ~A~%  type ~A~%"
 	       (##sys#peek-unsigned-integer x 0)
 	       (##sys#slot x 1)
-	       (case (##sys#slot x 2) 
+	       (case (##sys#slot x 2)
 		 ((0) "slot")
 		 ((1) "char")
 		 ((2) "u8vector")
@@ -683,7 +688,7 @@ EOF
 	    ((##sys#pointer? x) (fprintf out "machine pointer ~X~%" (##sys#peek-unsigned-integer x 0)))
 	    ((##sys#bytevector? x)
 	     (let ([len (##sys#size x)])
-	       (fprintf out "blob of size ~S:~%" len)
+	       (fprintf out "bytevector of size ~S:~%" len)
 	       (hexdump x len ##sys#byte out) ) )
 	    ((##core#inline "C_lambdainfop" x)
 	     (fprintf out "lambda information: ~s~%" (##sys#lambda-info->string x)) )
@@ -718,9 +723,8 @@ EOF
 		    (loop (cddr props)) ) ) )
 	      (##sys#slot x 1) ) )
 	    ((##sys#generic-structure? x)
-	     (let ([st (##sys#slot x 0)])
-	       (cond ((hash-table-ref describer-table st) => (cut <> x out))
-		     ((assq st bytevector-data) =>
+	     (let ((st (##sys#slot x 0)))
+	       (cond ((assq st bytevector-data) =>
 		      (lambda (data)
 			(apply descseq (append (map eval (cdr data)) (list 0)))) )
 		     (else
@@ -728,10 +732,6 @@ EOF
 		      (descseq #f ##sys#size ##sys#slot 1) ) ) ) )
 	    (else (fprintf out "unknown object~%")) )
       (##sys#void) ) ) )
-
-(define (set-describer! tag proc)
-  (##sys#check-symbol tag 'set-describer!)
-  (hash-table-set! describer-table tag proc))
 
 
 ;;; Display hexdump:
@@ -744,7 +744,9 @@ EOF
       (define (bestlen n) (if len (min len n) n))
       (cond [(##sys#immediate? x) (##sys#error 'dump "cannot dump immediate object" x)]
 	    [(##sys#bytevector? x) (hexdump x (bestlen (##sys#size x)) ##sys#byte out)]
-	    [(string? x) (hexdump x (bestlen (##sys#size x)) ##sys#byte out)]
+	    [(string? x)
+             (let ((bv (##sys#slot x 0)))
+               (hexdump bv (bestlen (fx- (##sys#size bv) 1)) ##sys#byte out))]
 	    [(and (not (##sys#immediate? x)) (##sys#pointer? x))
 	     (hexdump x 32 ##sys#peek-byte out) ]
 	    [(and (##sys#generic-structure? x) (assq (##sys#slot x 0) bytevector-data))
@@ -761,7 +763,7 @@ EOF
 
       (define (justify n m base lead)
 	(let* ([s (number->string n base)]
-	       [len (##sys#size s)] )
+	       [len (string-length s)] )
 	  (if (fx< len m)
 	      (string-append (make-string (fx- m len) lead) s)
 	      s) ) )
@@ -778,7 +780,7 @@ EOF
 		 (unless (fx= o 0)
 		   (do ((k (fx- 16 o) (fx- k 1)))
 		       ((fx= k 0))
-		     (display "   " out) ) ) ) ) ) 
+		     (display "   " out) ) ) ) ) )
 	  (write-char #\space out)
 	  (display (justify (ref bv a) 2 16 #\0) out) )
 	(write-char #\space out)
@@ -788,7 +790,7 @@ EOF
 	  (let ([c (ref bv a)])
 	    (if (and (fx>= c 32) (fx< c 128))
 		(write-char (integer->char c) out)
-		(write-char #\. out) ) ) ) 
+		(write-char #\. out) ) ) )
 	(write-char #\newline out) ) ) ) )
 
 
@@ -805,7 +807,7 @@ EOF
 	   (##sys#print x #t ##sys#standard-output))))
       (let* ((ct (or ##sys#repl-recent-call-chain '()))
 	     (len (length ct)))
-	(set! selected-frame 
+	(set! selected-frame
 	  (or (and (memq fn ct) fn)
 	      (and (fx> len 0)
 		   (list-ref ct (fx- len 1)))))
@@ -818,7 +820,7 @@ EOF
 		 (data (##sys#slot info 2)) ; cooked2 (cntr/frameinfo)
 		 (finfo (##sys#structure? data 'frameinfo))
 		 (cntr (if finfo (##sys#slot data 1) data))) ; cntr
-	    (printf "~a~a:~a\t~a\t  " 
+	    (printf "~a~a:~a\t~a\t  "
 	      (if here #\* #\space)
 	      i
 	      (if (and finfo (pair? (##sys#slot data 2))) "[]" "  ") ; e
@@ -839,7 +841,7 @@ EOF
 		     (newline))))
 	       (##sys#slot data 2)	   ; e
 	       (##sys#slot data 3)))))))))	   ; v
-	  
+
 (define select-frame
   (let ((display display))
     (lambda (n)
@@ -850,7 +852,7 @@ EOF
 	     (display "no such frame\n"))
 	    (else
 	     (set! selected-frame
-	       (list-ref 
+	       (list-ref
 		##sys#repl-recent-call-chain
 		(fx- (length ##sys#repl-recent-call-chain) (fx+ n 1))))
 	     (show-frameinfo selected-frame))))))
@@ -858,14 +860,14 @@ EOF
 (define copy-from-frame
   (let ((display display)
 	(newline newline)
-	(call/cc call/cc))
+	(call/cc call-with-current-continuation))
     (lambda (name)
       (let* ((ct (or ##sys#repl-recent-call-chain '()))
 	     (len (length ct))
-	     (name 
+	     (name
 	      (cond ((symbol? name) (##sys#slot name 1)) ; name
 		    ((string? name) name)
-		    (else 
+		    (else
 		     (display "string or symbol required for `,g'\n")
 		     #f))))
 	(define (compare sym)
@@ -881,7 +883,7 @@ EOF
 		 (newline)
 		 (return (##sys#void)))
 	       (do ((ct ct (cdr ct)))
-		   ((null? ct) (fail "no environment in frame")) 
+		   ((null? ct) (fail "no environment in frame"))
 		 ;;XXX this should be refactored as it duplicates the code above
 		 (let* ((info (car ct))
 			(here (eq? selected-frame info))
@@ -909,7 +911,7 @@ EOF
 
 (define-foreign-variable _sigint int "SIGINT")
 
-(define-syntax defhandler 
+(define-syntax defhandler
   (syntax-rules ()
     ((_ sig handler)
      (begin
@@ -929,14 +931,14 @@ EOF
 		 ((equal? (car ks) (car set)) set)
 		 (else (find (cdr ks))) ) ) ) ) )
 
-(define-constant short-options 
+(define-constant short-options
   '(#\k #\s #\h #\D #\e #\i #\R #\b #\n #\q #\w #\- #\I #\p #\P #\K) )
 
 (define-constant long-options
   '("-ss" "-sx" "-script" "-version" "-help" "--help" "-feature" "-no-feature" "-eval"
     "-case-insensitive" "-keyword-style" "-no-parentheses-synonyms" "-no-symbol-escape"
-    "-r5rs-syntax" "-setup-mode"
-    "-require-extension" "-batch" "-quiet" "-no-warnings" "-no-init" 
+    "-r7rs-syntax" "-setup-mode"
+    "-require-extension" "-batch" "-quiet" "-no-warnings" "-no-init"
     "-include-path" "-release" "-print" "-pretty-print" "--") )
 
 (define (canonicalize-args args)
@@ -945,15 +947,15 @@ EOF
 	'()
 	(let ((x (car args)))
 	  (cond ((member x '("-s" "-ss" "-script" "-sx" "--")) args)
-                ((and (fx= (##sys#size x) 2)
-                      (char=? #\- (##core#inline "C_subchar" x 0)))
-                 (if (memq (##core#inline "C_subchar" x 1) short-options)
+                ((and (fx= (string-length x) 2)
+                      (char=? #\- (string-ref x 0)))
+                 (if (memq (string-ref x 1) short-options)
                      (cons x (loop (cdr args)))
                      (##sys#error "invalid option" x)))
-                ((and (fx> (##sys#size x) 2)
-                       (char=? #\- (##core#inline "C_subchar" x 0))
+                ((and (fx> (string-length x) 2)
+                       (char=? #\- (string-ref x 0))
                        (not (member x long-options)) )
-                 (if (char=? #\: (##core#inline "C_subchar" x 1))
+                 (if (char=? #\: (string-ref x 1))
                      (loop (cdr args))
                      (let ((cs (string->list (substring x 1))))
                        (if (findall cs short-options)
@@ -968,9 +970,9 @@ EOF
 	     (loop (cdr chars))))))
 
 (define-constant simple-options
-  '("--" "-b" "-batch" "-q" "-quiet" "-n" "-no-init" "-w" "-no-warnings" 
+  '("--" "-b" "-batch" "-q" "-quiet" "-n" "-no-init" "-w" "-no-warnings"
     "-i" "-case-insensitive"
-    "-no-parentheses-synonyms" "-no-symbol-escape" "-r5rs-syntax" "-setup-mode"
+    "-no-parentheses-synonyms" "-r7rs-syntax" "-setup-mode"
     ; Not "simple" but processed early
     "-ss" "-sx" "-s" "-script") )
 
@@ -986,12 +988,12 @@ EOF
 	  ((char-whitespace? (string-ref str (sub1 back)))
 	   (loop front (sub1 back)))
 	  (else (substring str front back)))))
-   
+
 (define (string->extension-name str)
   (let ((str (string-trim str)))
     (if (and (positive? (string-length str))
              (char=? #\( (string-ref str 0)))
-        (handle-exceptions ex 
+        (handle-exceptions ex
           (##sys#error "invalid import specification" str)
           (with-input-from-string str read))
         (string->symbol str))))
@@ -1011,7 +1013,7 @@ EOF
 	   (command-line-arguments (cddr script))
 	   ;; 2012-10-04 (felix) left 'script activated to avoid breaking too much code
 	   (register-feature! 'chicken-script)
-	   (set-cdr! (cdr script) '()) 
+	   (set-cdr! (cdr script) '())
 	   (when ##sys#windows-platform
 	     (and-let* ((sname (lookup-script-file (cadr script))))
 	       (set-car! (cdr script) sname) ) ) ]
@@ -1087,16 +1089,12 @@ EOF
       (when (member* '("-no-parentheses-synonyms") args)
 	(unless quiet (display "Disabled support for parentheses synonyms\n"))
         (parentheses-synonyms #f) )
-      (when (member* '("-no-symbol-escape") args)
-	(unless quiet (display "Disabled support for escaped symbols\n"))
-	(symbol-escape #f) )
-      (when (member* '("-r5rs-syntax") args)
-	(unless quiet (display "Disabled the CHICKEN extensions to R5RS syntax\n"))
+      (when (member* '("-r7rs-syntax") args)
+	(unless quiet (display "Disabled the CHICKEN extensions to R7RS syntax\n"))
 	(case-sensitive #f)
 	(keyword-style #:none)
-	(parentheses-synonyms #f)
-	(symbol-escape #f) )
-      ;; Load the default modules into the evaluation environment.
+	(parentheses-synonyms #f) )
+      ;; Load the the default modules into the evaluation environment.
       ;; This is done before setting load-verbose => #t to avoid
       ;; spurious import messages.
       (eval `(import-for-syntax ,@default-syntax-imports))

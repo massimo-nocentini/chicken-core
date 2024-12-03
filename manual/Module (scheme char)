@@ -1,0 +1,95 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (scheme char)
+
+R7RS Operations on characters.
+
+<procedure>(char-ci=? char[1] char[2] char[3] ...)</procedure><br>
+<procedure>(char-ci>? char[1] char[2] char[3] ...)</procedure><br>
+<procedure>(char-ci<? char[1] char[2] char[3] ...)</procedure><br>
+<procedure>(char-ci>=? char[1] char[2] char[3] ...)</procedure><br>
+<procedure>(char-ci<=? char[1] char[2] char[3] ...)</procedure><br>
+
+These procedures are similar to char=?​ ​et cetera, but they treat upper case
+and lower case letters as the same. For example, {{(char-ci=?​ ​#\A #\a)}} returns 
+#t.
+
+Specifically, these procedures behave as if char-foldcase were applied to their
+arguments before they were compared.
+
+<procedure>(char-alphabetic? char)</procedure><br>
+<procedure>(char-numeric? char)</procedure><br>
+<procedure>(char-whitespace? char)</procedure><br>
+<procedure>(char-upper-case? letter)</procedure><br>
+<procedure>(char-lower-case? letter)</procedure><br>
+
+These procedures return #t if their arguments are alphabetic, numeric,
+whitespace, upper case, or lower case characters, respectively, otherwise they
+return #f. Specifically, they must return #t when applied to characters with
+the Unicode properties Alphabetic, Numeric_Type=Decimal, White_Space,
+Uppercase, and Lowercase respectively, and #f when applied to any other Unicode
+characters. Note that many Unicode characters are alphabetic but neither upper
+nor lower case.
+
+<procedure>(digit-value char)</procedure>
+
+This procedure returns the numeric value (0 to 9) of its argument if it is a
+numeric digit (that is, if char-numeric? returns #t), or #f on any other
+character.
+
+ (digit-value #\3)  ==> 3
+ (digit-value #\x0664)  ==> 4
+ (digit-value #\x0AE6)  ==> 0
+ (digit-value #\x0EA6)  ==> #f
+
+<procedure>(char-upcase char)</procedure><br>
+<procedure>(char-downcase char)</procedure><br>
+<procedure>(char-foldcase char)</procedure><br>
+
+The char-upcase procedure, given an argument that is the lowercase part of a
+Unicode casing pair, returns the uppercase member of the pair. Note that
+language-sensitive casing pairs are not used. If the argument is not the
+lowercase member of such a pair, it is returned.
+
+The char-downcase procedure, given an argument that is the uppercase part of a
+Unicode casing pair, returns the lowercase member of the pair. Note that
+language-sensitive casing pairs are not used. If the argument is not the
+uppercase member of such a pair, it is returned.
+
+The char-foldcase procedure applies the Unicode simple case-folding algorithm
+to its argument and returns the result. Note that language-sensitive folding is
+not used. If the character that results from folding is not supported by the
+implementation, the argument is returned. See UAX #44 (part of the Unicode
+Standard) for details.
+
+Note that many Unicode lowercase characters do not have uppercase equivalents.
+
+<procedure>(string-ci=? string[1] string[2] string[3] ...)</procedure><br>
+<procedure>(string-ci<? string[1] string[2] string[3] ...)</procedure><br>
+<procedure>(string-ci>? string[1] string[2] string[3] ...)</procedure><br>
+<procedure>(string-ci<=? string[1] string[2] string[3] ...)</procedure><br>
+<procedure>(string-ci>=? string[1] string[2] string[3] ...)</procedure><br>
+
+The "-ci" procedures behave as if they applied string-foldcase to their
+arguments before invoking the corresponding procedures without “-ci”.
+
+<procedure>(string-upcase string)</procedure><br>
+<procedure>(string-downcase string)</procedure><br>
+<procedure>(string-foldcase string)</procedure><br>
+
+These procedures apply the Unicode full string uppercasing, lowercasing, and
+case-folding algorithms to their arguments and return the result. In certain
+cases, the result differs in length from the argument. If the result is equal
+to the argument in the sense of string=?, the argument may be returned. Note
+that language-sensitive mappings and foldings are not used. The Unicode
+Standard prescribes special treatment of the Greek letter Σ, whose normal
+lower-case form is σ but which becomes ς at the end of a word. See UAX #44
+(part of the Unicode Standard) for details. However, implementations of 
+string-downcase are not required to provide this behavior, and may choose to
+change Σ to σ in all cases.
+
+---
+Previous: [[Module (scheme case-lambda)]]
+
+Next: [[Module (scheme complex)]]

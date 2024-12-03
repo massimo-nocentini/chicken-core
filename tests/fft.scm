@@ -59,7 +59,7 @@
     (defalias list->f64vector list->vector)
     (defalias f64vector-length vector-length)) )
  (chicken
-  (import srfi-4))
+  (import (chicken number-vector)))
  (else) )
 
 ;;; end of *ignored* definitions

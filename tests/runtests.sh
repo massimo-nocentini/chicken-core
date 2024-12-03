@@ -5,13 +5,13 @@
 #   (just the compiler and the Windows shell, without MSYS)
 
 set -e
+if [ $(uname) = Windows_NT ]; then
+    MSYSTEM=1
+fi
+TEST_DIR=`pwd`
 if test -z "$MSYSTEM"; then
-    TEST_DIR=`pwd`
     PATH_SEP=':'
 else
-    # Use Windows-native format with drive letters instead of awkward
-    # MSYS /c/blabla "pseudo-paths" which break when used in syscalls.
-    TEST_DIR=`pwd -W`
     PATH_SEP=';'
 fi
 
@@ -21,7 +21,7 @@ LIBRARY_PATH=${TEST_DIR}/..:${LIBRARY_PATH}
 # Cygwin uses LD_LIBRARY_PATH for dlopen(), but the dlls linked into
 # the binary are read by the OS itself, which uses $PATH (mingw too)
 # Oddly, prefixing .. with ${TEST_DIR}/ does _not_ work on mingw!
-PATH=..:${PATH}
+PATH=..${PATH_SEP}${PATH}
 
 export DYLD_LIBRARY_PATH LD_LIBRARY_PATH LIBRARY_PATH PATH
 
@@ -85,6 +85,10 @@ $compile version-tests.scm
 
 echo "======================================== compiler tests ..."
 $compile compiler-tests.scm
+./a.out
+
+echo "======================================== FFI tests ..."
+$compile ffi-tests.scm
 ./a.out
 
 echo "======================================== csc tests ..."
@@ -207,6 +211,13 @@ $interpret -s record-printer-test.scm
 $compile record-printer-test.scm
 ./a.out
 
+echo "======================================== unicode tests ..."
+$interpret -s unicode-tests.scm
+$compile -specialize unicode-tests.scm
+./a.out
+$interpret -s invalid-utf-test.scm
+$interpret -s file-encoding-test.scm
+
 echo "======================================== reader tests ..."
 $interpret -s reader-tests.scm
 
@@ -325,7 +336,9 @@ echo "(expect two failures)"
 $interpret -i -s r5rs_pitfalls.scm
 
 echo "======================================== r7rs tests ..."
-$interpret -i -s r7rs-tests.scm
+$interpret -s r7rs-tests.scm
+$interpret -s r7rs-tests-2.scm
+$interpret -s life.scm
 
 echo "======================================== module tests ..."
 $interpret -include-path ${TEST_DIR}/.. -s module-tests.scm
@@ -357,7 +370,7 @@ echo "======================================== module tests (ec) ..."
 rm -f ec.so ec.import.*
 $interpret -bqn ec.scm ec-tests.scm
 $compile_s ec.scm -emit-import-library ec -o ec.so
-$compile_s ec.import.scm -o ec.import.so 
+$compile_s ec.import.scm -o ec.import.so
 $interpret -bnq ec.so ec-tests.scm
 # $compile ec-tests.scm
 # ./a.out        # takes ages to compile
@@ -432,13 +445,6 @@ fi
 
 echo "======================================== find-files tests ..."
 $interpret -bnq test-find-files.scm
-
-echo "======================================== create-temporary-file tests ..."
-if test -z "$MSYSTEM"; then
-  echo "== SKIPPED due to problematic unsetenv behaviour on Windows =="
-else
-  $interpret -bnq test-create-temporary-file.scm
-fi
 
 echo "======================================== record-renaming tests ..."
 $interpret -bnq record-rename-test.scm
@@ -545,7 +551,7 @@ echo "======================================== private repository test ..."
 mkdir -p tmp
 $compile private-repository-test.scm -private-repository -o tmp/xxx
 tmp/xxx ${TEST_DIR}/tmp
-# This MUST be `pwd`: ${PWD} is not portable, and ${TEST_DIR} breaks mingw-msys
+# This MUST be `pwd`: ${PWD} is not portable, and ${TEST_DIR} breaks mingw
 PATH=`pwd`/tmp:$PATH xxx ${TEST_DIR}/tmp
 # this may crash, if the PATH contains a non-matching libchicken.dll on Windows:
 #PATH=$PATH:${TEST_DIR}/tmp xxx ${TEST_DIR}/tmp

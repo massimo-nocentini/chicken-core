@@ -19,7 +19,7 @@ Returns a symbol specifying the toolset which has been used for
 building the executing system, which is one of the following:
 
  cygwin
- mingw32
+ mingw
  gnu
  intel
  clang
@@ -36,13 +36,11 @@ a full version string is returned.
 
 ==== include-path
 
-<procedure>(include-path)</procedure>
+<procedure>(include-path [PATHLIST])</procedure>
 
-Returns a list of strings representing directory names where included files are located,
-which defaults to the value of the environment variable
-{{CHICKEN_INCLUDE_PATH}}, split on {{:}} (or {{;}} on Windows).
-If the variable is not set, the list is initialized to contain the installation directory
-(usually {{/usr/local/share/chicken}} on UNIX-like systems).
+Returns a list of directory names where {{include}} and {{include-ci}} locate
+files to be included. If {{PATHLIST}} is given, the current include path
+is changed to that value, which must be a list of strings.
 
 ==== repository-path
 
@@ -171,14 +169,6 @@ is used (the default), the features {{srfi-0, srfi-2, srfi-6, srfi-8, srfi-9}}
 and {{srfi-10}} are defined. When compiling code (during compile-time) the
 feature {{compiling}} is registered. When evaluating code in the interpreter
 (csi), the feature {{csi}} is registered.
-
-
-==== features
-
-<procedure>(features)</procedure>
-
-Returns a list of all registered features that will be accepted as valid
-feature-identifiers by {{cond-expand}}.
 
 
 ==== feature?

@@ -1,7 +1,8 @@
 ;;;; typematch-tests.scm
 
 
-(import chicken.blob chicken.condition chicken.memory chicken.locative)
+(import chicken.bytevector chicken.condition chicken.memory chicken.locative)
+(import (only (scheme base) port? open-output-string open-input-string get-output-string))
 
 (include "test.scm")
 
@@ -169,7 +170,7 @@
 (check null '() 1)
 (check port (current-input-port) 1.2)
 (check input-port (current-input-port) 1.2)
-(check blob (make-blob 10) 1.2)
+(check bytevector (make-bytevector 10) 1.2)
 (check pointer (address->pointer 0) 1.2)
 (check pointer-vector (make-pointer-vector 1) 1.2)
 (check locative (make-locative "a") 1.2)
@@ -191,7 +192,7 @@
 (ms '() 1 null)
 (ms (void) 1.2 undefined)
 (ms (current-input-port) 1.2 input-port)
-(ms (make-blob 10) 1.2 blob)
+(ms (make-bytevector 10) 1.2 bytevector)
 (ms (address->pointer 0) 1.2 pointer)
 (ms (make-pointer-vector 1) 1.2 pointer-vector)
 (ms (make-locative "a") 1.2 locative)
@@ -222,7 +223,7 @@
 (checkp string? string "a")
 (checkp vector? vector '#())
 (checkp procedure? procedure +)
-(checkp blob? blob (make-blob 1))
+(checkp bytevector? bytevector (make-bytevector 1))
 (checkp condition? (struct condition) (##sys#make-structure 'condition))
 (checkp fixnum? fixnum 1)
 (checkp flonum? float 1.2)
@@ -451,3 +452,4 @@
   (infer fixnum (unconverted)))
 
 (test-exit)
+

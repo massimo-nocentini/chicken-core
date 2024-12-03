@@ -132,7 +132,7 @@
 			 type1
 			 (strip-syntax name1))))
 	    (cond ((not type)
-		   (syntax-error ': "invalid type syntax" name1 type1))
+		   (##sys#syntax-error ': "invalid type syntax" name1 type1))
 		  (else
 		   `(##core#declare
 		     (type (,name1 ,type1 ,@(cdddr x)))
@@ -212,7 +212,7 @@
 				  (cadr arg)
 				  'define-specialization)
 				 atypes)))
-			      (else (syntax-error
+			      (else (##sys#syntax-error
 				     'define-specialization
 				     "invalid argument syntax" arg head)))))))))))))
 
@@ -349,7 +349,7 @@
 			       (null? (cddr slot)))
 			  (cadr slot))
 			 (else
-			  (syntax-error
+			  (##sys#syntax-error
 			   'define-record "invalid slot specification" slot))))
 		 slots)))
       `(##core#begin
@@ -432,15 +432,26 @@
  'include '()
  (##sys#er-transformer
   (lambda (form r c)
-    (##sys#check-syntax 'include form '(_ string))
-    `(##core#include ,(cadr form) #f))))
+    (##sys#check-syntax 'include form '(_ . #(string 1)))
+    `(##core#begin ,@(map (lambda (x) `(##core#include ,x #f))
+                       (cdr form))))))
+
+(##sys#extend-macro-environment
+ 'include-ci '()
+ (##sys#er-transformer
+  (lambda (form r c)
+    (##sys#check-syntax 'include-ci form '(_ . #(string 1)))
+    `(##core#begin ,@(map (lambda (x) `(##core#include-ci ,x #f))
+                       (cdr form))))))
 
 (##sys#extend-macro-environment
  'include-relative '()
  (##sys#er-transformer
   (lambda (form r c)
-    (##sys#check-syntax 'include-relative form '(_ string))
-    `(##core#include ,(cadr form) ,##sys#current-source-filename))))
+    (##sys#check-syntax 'include-relative form '(_ . #(string 1)))
+    `(##core#begin ,@(map (lambda (x) 
+                            `(##core#include ,x ,##sys#current-source-filename))
+                       (cdr form))))))
 
 (##sys#extend-macro-environment
  'fluid-let '()
@@ -706,7 +717,7 @@
 		  (when (or (not (pair? val)) 
 			    (and (not (eq? '##core#lambda (car val)))
 				 (not (c (r 'lambda) (car val)))))
-		    (syntax-error
+		    (##sys#syntax-error
 		     'define-inline "invalid substitution form - must be lambda"
 		     name val) )
 		  (list name val) ) ) ] )
@@ -965,8 +976,329 @@
 				      ,(loop rvar2 (cdr vardefs)) ) )
 		       `(##core#let ((,head ,args)) ,@body) ) ) ) ) ) ) ))))
 
+;;; SRFI-9:
+
+(##sys#extend-macro-environment
+ 'define-record-type
+ `()
+ (##sys#er-transformer
+  (lambda (form r c)
+    (##sys#check-syntax 
+     'define-record-type 
+     form
+     '(_ variable #(variable 1) variable . _)) 
+    (let* ((type-name (cadr form))
+	   (plain-name (strip-syntax type-name))
+	   (tag (if (##sys#current-module)
+		    (symbol-append
+		     (##sys#module-name (##sys#current-module))
+		     '|#| plain-name)
+		    plain-name))
+	   (conser (caddr form))
+	   (pred (cadddr form))
+	   (slots (cddddr form))
+	   (%define (r 'define))
+           (%vector (r 'vector))
+           (%let (r 'let))
+           (%tagvar (r 'tag))
+	   (%getter-with-setter (r 'chicken.base#getter-with-setter))
+	   (vars (cdr conser))
+	   (x (r 'x))
+	   (y (r 'y))
+	   (slotnames (map car slots)))
+      ;; Check for inconsistencies in slot names vs constructor args
+      (for-each (lambda (vname)
+		  (unless (memq vname slotnames)
+		    (##sys#syntax-error
+		     'define-record-type
+		     "unknown slot name in constructor definition"
+		     vname)))
+		vars)
+      `(##core#begin
+	(,%define ,type-name (,%vector (##core#quote ,tag)))
+	(,%define ,(car conser)
+           (,%let ((,%tagvar ,type-name))
+                  (##core#lambda ,(cdr conser)
+                                 (##sys#make-structure 
+                                                       ,%tagvar
+                                                       ,@(map (lambda (sname)
+                                                                (if (memq sname vars)
+                                                                    sname
+                                                                    '(##core#undefined) ) )
+                                                           slotnames) ) ) ))
+	(,%define ,pred
+           (,%let ((,%tagvar ,type-name))
+                  (##core#lambda (,x)
+                                 (##sys#structure? ,x ,%tagvar))))
+	,@(let loop ((slots slots) (i 1))
+	    (if (null? slots)
+		'()
+		(let* ((slot (car slots))
+		       (settable (pair? (cddr slot))) 
+		       (setr (and settable (caddr slot)))
+		       (ssetter (and (pair? setr)
+				     (pair? (cdr setr))
+				     (c 'setter (car setr))
+				     (cadr setr)))
+		       (get `(##core#lambda 
+			      (,x)
+			      (##core#check
+			       (##sys#check-structure
+				,x
+				,%tagvar
+				(##core#quote ,(cadr slot))))
+			      (##sys#block-ref ,x ,i) ) )
+		       (set (and settable
+				 `(##core#lambda
+				   (,x ,y)
+				   (##core#check
+				    (##sys#check-structure
+				     ,x
+				     ,%tagvar
+				     (##core#quote ,ssetter)))
+				   (##sys#block-set! ,x ,i ,y)) )))
+		  `((,%define
+		     ,(cadr slot)
+                     (,%let ((,%tagvar ,type-name))
+                            ,(if (and ssetter (c ssetter (cadr slot)))
+                                 `(,%getter-with-setter ,get ,set)
+                                 get)))
+		    ,@(if settable
+			  (if ssetter
+			      (if (not (c ssetter (cadr slot)))
+				  `((,%let ((,%tagvar ,type-name))
+                                       ((##sys#setter ##sys#setter) ,ssetter ,set)))
+				  '())
+			      `((,%define ,setr (,%let ((,%tagvar ,type-name)) ,set))))
+			  '())
+		    ,@(loop (cdr slots) (add1 i)) ) ) ) ) ) ) ) ) )
+
+
+;;; SRFI-26:
+
+(##sys#extend-macro-environment
+ 'cut 
+ `((apply . scheme#apply))
+ (##sys#er-transformer
+  (lambda (form r c)
+    (let ((%<> (r '<>))
+	  (%<...> (r '<...>))
+	  (%apply (r 'apply)))
+      (when (null? (cdr form))
+        (##sys#syntax-error 'cut "you need to supply at least a procedure" form))
+      (let loop ([xs (cdr form)] [vars '()] [vals '()] [rest #f])
+	(if (null? xs)
+	    (let ([rvars (reverse vars)]
+		  [rvals (reverse vals)] )
+	      (if rest
+		  (let ([rv (r (gensym))])
+		    `(##core#lambda
+		      (,@rvars . ,rv)
+		      (,%apply ,(car rvals) ,@(cdr rvals) ,rv) ) )
+		  ;;XXX should we drop the begin?
+		  `(##core#lambda ,rvars ((##core#begin ,(car rvals)) ,@(cdr rvals)) ) ) )
+	    (cond ((c %<> (car xs))
+		   (let ([v (r (gensym))])
+		     (loop (cdr xs) (cons v vars) (cons v vals) #f) ) )
+		  ((c %<...> (car xs))
+		   (if (null? (cdr xs))
+		       (loop '() vars vals #t)
+		       (##sys#syntax-error
+			'cut
+			"tail patterns after <...> are not supported"
+			form)))
+		  (else (loop (cdr xs) vars (cons (car xs) vals) #f)) ) ) ) ) )))
+
+(##sys#extend-macro-environment
+ 'cute 
+ `((apply . scheme#apply))
+ (##sys#er-transformer
+  (lambda (form r c)
+    (let ((%apply (r 'apply))
+	  (%<> (r '<>))
+	  (%<...> (r '<...>)))
+      (when (null? (cdr form))
+        (##sys#syntax-error 'cute "you need to supply at least a procedure" form))
+      (let loop ([xs (cdr form)] [vars '()] [bs '()] [vals '()] [rest #f])
+	(if (null? xs)
+	    (let ([rvars (reverse vars)]
+		  [rvals (reverse vals)] )
+	      (if rest
+		  (let ([rv (r (gensym))])
+		    `(##core#let 
+		      ,bs
+		      (##core#lambda (,@rvars . ,rv)
+				(,%apply ,(car rvals) ,@(cdr rvals) ,rv) ) ) )
+		  `(##core#let ,bs
+			  (##core#lambda ,rvars (,(car rvals) ,@(cdr rvals)) ) ) ) )
+	    (cond ((c %<> (car xs))
+		   (let ([v (r (gensym))])
+		     (loop (cdr xs) (cons v vars) bs (cons v vals) #f) ) )
+		  ((c %<...> (car xs))
+		   (if (null? (cdr xs))
+		       (loop '() vars bs vals #t)
+		       (##sys#syntax-error
+			'cute
+			"tail patterns after <...> are not supported"
+			form)))
+		  (else 
+		   (let ([v (r (gensym))])
+		     (loop (cdr xs) 
+			   vars
+			   (cons (list v (car xs)) bs)
+			   (cons v vals) #f) ) ))))))))
+
+
+;;; SRFI-31
+
+(##sys#extend-macro-environment
+ 'rec '()
+ (##sys#er-transformer
+  (lambda (form r c)
+    (##sys#check-syntax 'rec form '(_ _ . _))
+    (let ((head (cadr form)))
+      (if (pair? head)
+	  `(##core#letrec* ((,(car head) 
+			     (##core#lambda ,(cdr head)
+					    ,@(cddr form))))
+			   ,(car head))
+	  `(##core#letrec* ((,head ,@(cddr form))) ,head))))))
+
+
+;;; SRFI-55
+
+(##sys#extend-macro-environment
+ 'require-extension
+ '()
+ (##sys#er-transformer
+  (lambda (x r c)
+    `(,(r 'import) ,@(cdr x)))))
+
+
+;;; Assertions
+
+(##sys#extend-macro-environment
+ 'assert '()
+ (##sys#er-transformer
+  (let ((string-append string-append))
+    (lambda (form r c)
+      (##sys#check-syntax 'assert form '#(_ 1))
+      (let* ((exp (cadr form))
+	     (msg-and-args (cddr form))
+	     (msg (optional msg-and-args "assertion failed"))
+	     (tmp (r 'tmp)))
+	(when (string? msg)
+	  (and-let* ((ln (get-line-number form)))
+	    (set! msg (string-append "(" ln ") " msg))))
+	`(##core#let ((,tmp ,exp))
+	   (##core#if (##core#check ,tmp)
+		      ,tmp
+		      (##sys#error
+		       ,msg
+		       ,@(if (pair? msg-and-args)
+			     (cdr msg-and-args)
+			     `((##core#quote ,(strip-syntax exp))))))))))))
+
+;; R7RS guard & guard-aux copied verbatim from the draft.
+(##sys#extend-macro-environment
+  'guard '()
+  (##sys#er-transformer
+    (lambda (form r c)
+      (let ((%=> (r '=>))
+            (%else (r 'else))
+            (%begin (r 'begin))
+            (%let (r 'let))
+            (%if (r 'if))
+            (%or (r 'or))
+            (%var (r 'var))
+            (%apply (r 'apply))
+            (%values (r 'values))
+            (%condition (r 'condition))
+            (%call-with-values (r 'call-with-values))
+            (%guard-k (r 'guard-k))
+            (%handler-k (r 'handler-k))
+            (%lambda (r 'lambda)))
+        (##sys#check-syntax 'guard form '(_ (variable . #(_ 1)) . #(_ 1)))
+        (let ((var (caadr form))
+              (clauses (cdadr form))
+              (es (cddr form)))
+          (define (guard-aux reraise body more)
+            (cond ((and (pair? body) (c %else (car body))
+                        (null? more))
+                   `(,%begin ,@(cdr body)))
+                  ((and (pair? body) (pair? (cdr body)) (pair? (cddr body))
+                        (c %=> (cadr body)))
+                   (let ((%temp (r 'temp)))
+                     `(,%let ((,%temp ,(car body)))
+                             (,%if ,%temp 
+                                   (,(caddr body) ,%temp)
+                                   ,(if (null? more)
+                                        reraise
+                                        (guard-aux reraise (car more) (cdr more)))))))
+                  ((and (pair? body) (null? (cdr body)))
+                   (if (null? more)
+                       `(,%or ,(car body) ,reraise)
+                       (let ((%temp (r 'temp)))
+                         `(,%let ((,%temp ,(car body)))
+                                 (,%if ,%temp
+                                       ,%temp
+                                       ,(guard-aux reraise (car more) (cdr more)))))))
+                  ((and (pair? body) (pair? (cdr body)))
+                   `(,%if ,(car body)
+                          (,%begin ,@(cdr body))
+                          ,(if (null? more)
+                               reraise
+                               (guard-aux reraise (car more) (cdr more)))))))
+          `((scheme#call-with-current-continuation
+              (,%lambda (,%guard-k)
+                (scheme#with-exception-handler
+                  (,%lambda (,%condition)
+                    ((scheme#call-with-current-continuation
+                       (,%lambda (,%handler-k)
+                         (,%guard-k
+                           (,%lambda ()
+                             (,%let ((,var ,%condition))
+                                ,(guard-aux
+                                  `(,%handler-k
+                                     (,%lambda ()
+                                       (scheme#raise-continuable ,%condition)))
+                                   (car clauses) (cdr clauses)))))))))
+                  (,%lambda ()
+                    (scheme#call-with-values
+                      (,%lambda () ,@es)
+                      (,%lambda args
+                        (,%guard-k
+                           (,%lambda ()
+                              (,%apply ,%values args)))))))))))))))
+
+(macro-subset me0 ##sys#default-macro-environment)))
+
+
+;;; "time"
+
+(set! ##sys#chicken.time-macro-environment
+  (let ((me0 (##sys#macro-environment)))
+
+(##sys#extend-macro-environment
+ 'time '()
+ (##sys#er-transformer
+  (lambda (form r c)
+    (let ((rvar (r 't)))
+      `(##core#begin
+	(##sys#start-timer)
+	(##sys#call-with-values
+	 (##core#lambda () ,@(cdr form))
+	 (##core#lambda
+	  ,rvar
+	  (##sys#display-times (##sys#stop-timer))
+	  (##sys#apply ##sys#values ,rvar))))))))
+
+(macro-subset me0 ##sys#default-macro-environment)))
 
 ;;; case-lambda (SRFI-16):
+
+(set! ##sys#scheme.case-lambda-macro-environment
+  (let ((me0 (##sys#macro-environment)))
 
 (##sys#extend-macro-environment
  'case-lambda 
@@ -1032,277 +1364,6 @@
 			    ,body) ) ) )
 	   '(##core#check (##sys#error (##core#immutable (##core#quote "no matching clause in call to 'case-lambda' form"))))
 	   (cdr form))))))))
-
-
-;;; Record printing:
-
-(##sys#extend-macro-environment
- 'define-record-printer '() ;; DEPRECATED
- (##sys#er-transformer
-  (lambda (form r c)
-    (##sys#check-syntax 'define-record-printer form '(_ _ . _))
-    (let ((head (cadr form))
-	  (body (cddr form))
-	  (%set-record-printer! (r 'chicken.base#set-record-printer!)))
-      (cond [(pair? head)
-	     (##sys#check-syntax 
-	      'define-record-printer (cons head body)
-	      '((variable variable variable) . #(_ 1)))
-	     (let* ((plain-name (strip-syntax (##sys#slot head 0)))
-		    (tag (if (##sys#current-module)
-			     (symbol-append
-			      (##sys#module-name (##sys#current-module))
-			      '|#| plain-name)
-			     plain-name)))
-	       `(,%set-record-printer!
-		 (##core#quote ,tag)
-		 (##core#lambda ,(##sys#slot head 1) ,@body)))]
-	    (else
-	     (##sys#check-syntax 'define-record-printer (cons head body) '(variable _))
-	     (let* ((plain-name (strip-syntax head))
-		    (tag (if (##sys#current-module)
-			     (symbol-append
-			      (##sys#module-name (##sys#current-module))
-			      '|#| plain-name)
-			     plain-name)))
-	       `(,%set-record-printer!
-		 (##core#quote ,tag) ,@body))))))))
-
-;;; SRFI-9:
-
-(##sys#extend-macro-environment
- 'define-record-type
- `()
- (##sys#er-transformer
-  (lambda (form r c)
-    (##sys#check-syntax 
-     'define-record-type 
-     form
-     '(_ variable #(variable 1) variable . _)) 
-    (let* ((type-name (cadr form))
-	   (plain-name (strip-syntax type-name))
-	   (tag (if (##sys#current-module)
-		    (symbol-append
-		     (##sys#module-name (##sys#current-module))
-		     '|#| plain-name)
-		    plain-name))
-	   (conser (caddr form))
-	   (pred (cadddr form))
-	   (slots (cddddr form))
-	   (%define (r 'define))
-	   (%getter-with-setter (r 'chicken.base#getter-with-setter))
-	   (vars (cdr conser))
-	   (x (r 'x))
-	   (y (r 'y))
-	   (slotnames (map car slots)))
-      ;; Check for inconsistencies in slot names vs constructor args
-      (for-each (lambda (vname)
-		  (unless (memq vname slotnames)
-		    (syntax-error
-		     'define-record-type
-		     "unknown slot name in constructor definition"
-		     vname)))
-		vars)
-      `(##core#begin
-	;; TODO: Maybe wrap this in an opaque object?
-	(,%define ,type-name (##core#quote ,tag))
-	(,%define ,conser
-		  (##sys#make-structure 
-		   (##core#quote ,tag)
-		   ,@(map (lambda (sname)
-			    (if (memq sname vars)
-				sname
-				'(##core#undefined) ) )
-			  slotnames) ) )
-	(,%define (,pred ,x) (##sys#structure? ,x (##core#quote ,tag)))
-	,@(let loop ([slots slots] [i 1])
-	    (if (null? slots)
-		'()
-		(let* ((slot (car slots))
-		       (settable (pair? (cddr slot))) 
-		       (setr (and settable (caddr slot)))
-		       (ssetter (and (pair? setr)
-				     (pair? (cdr setr))
-				     (c 'setter (car setr))
-				     (cadr setr)))
-		       (get `(##core#lambda 
-			      (,x)
-			      (##core#check
-			       (##sys#check-structure
-				,x
-				(##core#quote ,tag)
-				(##core#quote ,(cadr slot))))
-			      (##sys#block-ref ,x ,i) ) )
-		       (set (and settable
-				 `(##core#lambda
-				   (,x ,y)
-				   (##core#check
-				    (##sys#check-structure
-				     ,x
-				     (##core#quote ,tag)
-				     (##core#quote ,ssetter)))
-				   (##sys#block-set! ,x ,i ,y)) )))
-		  `((,%define
-		     ,(cadr slot) 
-		     ,(if (and ssetter (c ssetter (cadr slot)))
-			  `(,%getter-with-setter ,get ,set)
-			  get))
-		    ,@(if settable
-			  (if ssetter
-			      (if (not (c ssetter (cadr slot)))
-				  `(((##sys#setter ##sys#setter) ,ssetter ,set))
-				  '())
-			      `((,%define ,setr ,set)))
-			  '())
-		    ,@(loop (cdr slots) (add1 i)) ) ) ) ) ) ) ) ) )
-
-
-;;; SRFI-26:
-
-(##sys#extend-macro-environment
- 'cut 
- `((apply . scheme#apply))
- (##sys#er-transformer
-  (lambda (form r c)
-    (let ((%<> (r '<>))
-	  (%<...> (r '<...>))
-	  (%apply (r 'apply)))
-      (when (null? (cdr form))
-        (syntax-error 'cut "you need to supply at least a procedure" form))
-      (let loop ([xs (cdr form)] [vars '()] [vals '()] [rest #f])
-	(if (null? xs)
-	    (let ([rvars (reverse vars)]
-		  [rvals (reverse vals)] )
-	      (if rest
-		  (let ([rv (r (gensym))])
-		    `(##core#lambda
-		      (,@rvars . ,rv)
-		      (,%apply ,(car rvals) ,@(cdr rvals) ,rv) ) )
-		  ;;XXX should we drop the begin?
-		  `(##core#lambda ,rvars ((##core#begin ,(car rvals)) ,@(cdr rvals)) ) ) )
-	    (cond ((c %<> (car xs))
-		   (let ([v (r (gensym))])
-		     (loop (cdr xs) (cons v vars) (cons v vals) #f) ) )
-		  ((c %<...> (car xs))
-		   (if (null? (cdr xs))
-		       (loop '() vars vals #t)
-		       (syntax-error
-			'cut
-			"tail patterns after <...> are not supported"
-			form)))
-		  (else (loop (cdr xs) vars (cons (car xs) vals) #f)) ) ) ) ) )))
-
-(##sys#extend-macro-environment
- 'cute 
- `((apply . scheme#apply))
- (##sys#er-transformer
-  (lambda (form r c)
-    (let ((%apply (r 'apply))
-	  (%<> (r '<>))
-	  (%<...> (r '<...>)))
-      (when (null? (cdr form))
-        (syntax-error 'cute "you need to supply at least a procedure" form))
-      (let loop ([xs (cdr form)] [vars '()] [bs '()] [vals '()] [rest #f])
-	(if (null? xs)
-	    (let ([rvars (reverse vars)]
-		  [rvals (reverse vals)] )
-	      (if rest
-		  (let ([rv (r (gensym))])
-		    `(##core#let 
-		      ,bs
-		      (##core#lambda (,@rvars . ,rv)
-				(,%apply ,(car rvals) ,@(cdr rvals) ,rv) ) ) )
-		  `(##core#let ,bs
-			  (##core#lambda ,rvars (,(car rvals) ,@(cdr rvals)) ) ) ) )
-	    (cond ((c %<> (car xs))
-		   (let ([v (r (gensym))])
-		     (loop (cdr xs) (cons v vars) bs (cons v vals) #f) ) )
-		  ((c %<...> (car xs))
-		   (if (null? (cdr xs))
-		       (loop '() vars bs vals #t)
-		       (syntax-error
-			'cute
-			"tail patterns after <...> are not supported"
-			form)))
-		  (else 
-		   (let ([v (r (gensym))])
-		     (loop (cdr xs) 
-			   vars
-			   (cons (list v (car xs)) bs)
-			   (cons v vals) #f) ) ))))))))
-
-
-;;; SRFI-31
-
-(##sys#extend-macro-environment
- 'rec '()
- (##sys#er-transformer
-  (lambda (form r c)
-    (##sys#check-syntax 'rec form '(_ _ . _))
-    (let ((head (cadr form)))
-      (if (pair? head)
-	  `(##core#letrec* ((,(car head) 
-			     (##core#lambda ,(cdr head)
-					    ,@(cddr form))))
-			   ,(car head))
-	  `(##core#letrec* ((,head ,@(cddr form))) ,head))))))
-
-
-;;; SRFI-55
-
-(##sys#extend-macro-environment
- 'require-extension
- '()
- (##sys#er-transformer
-  (lambda (x r c)
-    `(,(r 'import) ,@(cdr x)))))
-
-
-;;; Assertions
-
-(##sys#extend-macro-environment
- 'assert '()
- (##sys#er-transformer
-  (let ((string-append string-append))
-    (lambda (form r c)
-      (##sys#check-syntax 'assert form '#(_ 1))
-      (let* ((exp (cadr form))
-	     (msg-and-args (cddr form))
-	     (msg (optional msg-and-args "assertion failed"))
-	     (tmp (r 'tmp)))
-	(when (string? msg)
-	  (and-let* ((ln (get-line-number form)))
-	    (set! msg (string-append "(" ln ") " msg))))
-	`(##core#let ((,tmp ,exp))
-	   (##core#if (##core#check ,tmp)
-		      ,tmp
-		      (##sys#error
-		       ,msg
-		       ,@(if (pair? msg-and-args)
-			     (cdr msg-and-args)
-			     `((##core#quote ,(strip-syntax exp))))))))))))
-
-(macro-subset me0 ##sys#default-macro-environment)))
-
-
-;;; "time"
-
-(set! ##sys#chicken.time-macro-environment
-  (let ((me0 (##sys#macro-environment)))
-
-(##sys#extend-macro-environment
- 'time '()
- (##sys#er-transformer
-  (lambda (form r c)
-    (let ((rvar (r 't)))
-      `(##core#begin
-	(##sys#start-timer)
-	(##sys#call-with-values
-	 (##core#lambda () ,@(cdr form))
-	 (##core#lambda
-	  ,rvar
-	  (##sys#display-times (##sys#stop-timer))
-	  (##sys#apply ##sys#values ,rvar))))))))
 
 (macro-subset me0 ##sys#default-macro-environment)))
 

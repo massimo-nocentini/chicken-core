@@ -71,7 +71,7 @@ Declares that at the start of execution of {{BODY ..}}, the variables will
 be of the given types. This is equivalent to
 
 <enscript hightlight=scheme>
-(let ((VARIABLE (the TYPE VARIABLE)) ...) 
+(let ((VARIABLE (the TYPE VARIABLE)) ...)
   BODY ...)
 </enscript>
 
@@ -97,7 +97,7 @@ or {{:}} should follow the syntax given below:
 <tr><td>VALUETYPE</td><td></td></tr>
 </table>
 
-<table>  
+<table>
 <tr><th>VALUETYPE</th><th>meaning</th></tr>
 <tr><td>{{(or VALUETYPE1 VALUETYPE2 ...)}}</td><td>"union" or "sum" type</td></tr>
 <tr><td>{{(not VALUETYPE)}}</td><td>non-matching type (*)</td></tr>
@@ -130,7 +130,7 @@ or {{:}} should follow the syntax given below:
 <tr><td>{{null}}</td><td>empty list</td></tr>
 <tr><td>{{number}}</td><td>either integer, float, ratnum or cplxnum</td></tr>
 <tr><td>{{pair}}</td><td>pair</td></tr>
-<tr><td>{{pointer-vector}}</td><td>vector or native pointers</td></tr>
+<tr><td>{{pointer-vector}}</td><td>vector of native pointers</td></tr>
 <tr><td>{{pointer}}</td><td>native pointer</td></tr>
 <tr><td>{{input-port}} {{output-port}}</td><td>input- or output-port</td></tr>
 <tr><td>{{procedure}}</td><td>unspecific procedure</td></tr>
@@ -151,13 +151,13 @@ or {{:}} should follow the syntax given below:
 <tr><td>{{(vector TYPE1 ...)}}</td><td>vector with given length and element types</td></tr>
 </table>
 
-<table>  
+<table>
 <tr><th>RESULTS</th><th>meaning</th></tr>
 <tr><td>{{*}}</td><td>any number of unspecific results</td></tr>
 <tr><td>{{(RESULTTYPE ...)}}</td><td>specific number of results with given types</td></tr>
 </table>
 
-<table>  
+<table>
 <tr><th>RESULTTYPE</th><th>meaning</th></tr>
 <tr><td>{{undefined}}</td><td>a single undefined result</td></tr>
 <tr><td>{{noreturn}}</td><td>procedure does not return normally</td></tr>
@@ -190,7 +190,7 @@ Some types are internally represented as structure types, but you can also use
 these names directly in type-specifications - {{TYPE}} corresponds to
 {{(struct TYPE)}} in this case:
 
-<table>  
+<table>
 <tr><th>Structure type</th><th>meaning</th></tr>
 <tr><td>{{u8vector}}</td><td>SRFI-4 byte vector</td></tr>
 <tr><td>{{s8vector}}</td><td>SRFI-4 byte vector</td></tr>
@@ -322,7 +322,7 @@ compilation.
 
 Evaluates {{EXP}} and executes the first clause which names a type that
 matches the type inferred during flow analysis as the result of {{EXP}}.
-The result of {{EXP}} is ignored and should be a single value. If a 
+The result of {{EXP}} is ignored and should be a single value. If a
 {{compiler-typecase}} form occurs in evaluated code, or if it occurs in
 compiled code but specialization is not enabled, then it must have
 an {{else}} clause which specifies the default code to be executed

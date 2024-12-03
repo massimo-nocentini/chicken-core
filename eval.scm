@@ -8,11 +8,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -49,27 +49,30 @@
 
 (import scheme
 	chicken.base
-	chicken.blob
+	chicken.bytevector
 	chicken.fixnum
 	chicken.internal
 	chicken.keyword
 	chicken.syntax
-	chicken.type)
+	chicken.type
+        chicken.foreign)
+(import (only (scheme base) make-parameter open-output-string get-output-string port?))
 
 (include "common-declarations.scm")
 
 (define-syntax d (syntax-rules () ((_ . _) (void))))
 
+
 ;;; Compile lambda to closure:
 
 (define (eval-decorator p ll h cntr)
   (##sys#decorate-lambda
-   p 
+   p
    (lambda (x) (and (not (##sys#immediate? x)) (##core#inline "C_lambdainfop" x)))
    (lambda (p i)
-     (##sys#setslot 
-      p i 
-      (##sys#make-lambda-info 
+     (##sys#setslot
+      p i
+      (##sys#make-lambda-info
        (let ((o (open-output-string)))
 	 (write ll o)
 	 (get-output-string o))))
@@ -111,22 +114,20 @@
 
       (define (emit-trace-info tf ln info cntr e v)
 	(when tf
-	  (##core#inline 
-	   "C_emit_trace_info"
+	  (##core#inline "C_emit_trace_info"
 	   ln
 	   info
 	   (##sys#make-structure 'frameinfo cntr e v)
 	   (thread-id ##sys#current-thread) ) ) )
-      
-      (define (emit-syntax-trace-info tf info cntr) 
+
+      (define (emit-syntax-trace-info tf info cntr)
 	(when tf
-	  (##core#inline
-	   "C_emit_trace_info"
+	  (##core#inline "C_emit_trace_info"
 	   (or (get-line-number info) "<syntax>")
 	   info
 	   cntr
            (thread-id ##sys#current-thread) ) ) )
-	
+
       (define (decorate p ll h cntr)
 	(eval-decorator p ll h cntr))
 
@@ -136,6 +137,16 @@
 		     (ln (or (get-line-number input) outer-ln)))
 	    (##sys#update-line-number-database! output ln))
 	  output))
+
+      (define (include-file x ci e tf cntr tl?)
+        (##sys#include-forms-from-file
+          (cadr x) (caddr x) ci
+	  (lambda (forms)
+            (compile (if (pair? (cdddr x)) ; body?
+                         (##sys#canonicalize-body (append forms (cadddr x))
+                                                  (##sys#current-environment))
+                         `(##core#begin ,@forms))
+                     e #f tf cntr tl?))))
 
       (define (compile x e h tf cntr tl?)
 	(cond ((keyword? x) (lambda v x))
@@ -162,16 +173,16 @@
 				 (lambda v (##core#inline "C_fast_retrieve" var))))))
                       (else
                        (case i
-                         ((0) (lambda (v) 
+                         ((0) (lambda (v)
                                 (##sys#slot (##sys#slot v 0) j)))
-                         ((1) (lambda (v) 
+                         ((1) (lambda (v)
                                 (##sys#slot (##sys#slot (##sys#slot v 1) 0) j)))
-                         ((2) (lambda (v) 
-                                (##sys#slot 
+                         ((2) (lambda (v)
+                                (##sys#slot
                                  (##sys#slot (##sys#slot (##sys#slot v 1) 1) 0)
                                  j)))
-                         ((3) (lambda (v) 
-                                (##sys#slot 
+                         ((3) (lambda (v)
+                                (##sys#slot
                                  (##sys#slot
                                   (##sys#slot (##sys#slot (##sys#slot v 1) 1) 1)
                                   0)
@@ -179,7 +190,7 @@
                          (else
                           (lambda (v)
                             (##sys#slot (##core#inline "C_u_i_list_ref" v i) j))))))))
-	      [(##sys#number? x)
+	      [(number? x)
 	       (case x
 		 [(-1) (lambda v -1)]
 		 [(0) (lambda v 0)]
@@ -192,14 +203,13 @@
 		   (lambda v #f) ) ]
 	      ((or (char? x)
 		   (eof-object? x)
-		   (##core#inline "C_bwpp" x) ; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
-		   ;;(bwp-object? x)
+		   (bwp-object? x)
 		   (string? x)
-		   (blob? x)
+		   (bytevector? x)
 		   (vector? x)
 		   (##sys#srfi-4-vector? x))
 	       (lambda v x) )
-	      [(not (pair? x)) 
+	      [(not (pair? x))
 	       (##sys#syntax-error/context "illegal non-atomic object" x)]
 	      [(symbol? (##sys#slot x 0))
 	       (emit-syntax-trace-info tf x cntr)
@@ -211,7 +221,7 @@
 		 (if (not (eq? x2 x))
 		     (compile x2 e h tf cntr tl?)
 		     (let ((head (rename (##sys#slot x 0))))
-		       ;; here we did't resolve ##core#primitive, but that is done in compile-call (via 
+		       ;; here we did't resolve ##core#primitive, but that is done in compile-call (via
 		       ;; a normal walking of the operator)
 		       (case head
 
@@ -236,7 +246,7 @@
 
 			 [(##core#immutable)
 			  (compile (cadr x) e #f tf cntr #f) ]
-		   
+
 			 [(##core#undefined) (lambda (v) (##core#undefined))]
 
 			 [(##core#if)
@@ -294,7 +304,7 @@
 
 			 [(##core#let)
 			  (let* ((bindings (cadr x))
-				 (n (length bindings)) 
+				 (n (length bindings))
 				 (vars (map (lambda (x) (car x)) bindings))
 				 (aliases (map gensym vars))
 				 (e2 (cons aliases e))
@@ -316,7 +326,7 @@
 					  (t (cddr bindings))
 					  (val3 (compile (cadar t) e (caddr vars) tf cntr #f)) )
 				     (lambda (v)
-				       (##core#app 
+				       (##core#app
 					body
 					(cons (vector (##core#app val1 v) (##core#app val2 v) (##core#app val3 v)) v)) ) ) )
 			      ((4) (let* ((val1 (compile (cadar bindings) e (car vars) tf cntr #f))
@@ -325,7 +335,7 @@
 					  (val3 (compile (cadar t) e (caddr vars) tf cntr #f))
 					  (val4 (compile (cadadr t) e (cadddr vars) tf cntr #f)) )
 				     (lambda (v)
-				       (##core#app 
+				       (##core#app
 					body
 					(cons (vector (##core#app val1 v)
 						      (##core#app val2 v)
@@ -348,10 +358,10 @@
 			    (compile
 			     `(##core#let
 			       ,(##sys#map (lambda (b)
-					     (list (car b) '(##core#undefined))) 
+					     (list (car b) '(##core#undefined)))
 					   bindings)
 			       ,@(##sys#map (lambda (b)
-					      `(##core#set! ,(car b) ,(cadr b))) 
+					      `(##core#set! ,(car b) ,(cadr b)))
 					    bindings)
 			       (##core#let () ,@body) )
 			     e h tf cntr #f)))
@@ -364,7 +374,7 @@
 			   (compile
 			    `(##core#let
 			      ,(map (lambda (b)
-				      (list (car b) '(##core#undefined))) 
+				      (list (car b) '(##core#undefined)))
 				    bindings)
 			      (##core#let ,(map (lambda (t b) (list t (cadr b))) tmps bindings)
 					  ,@(map (lambda (v t)
@@ -376,13 +386,13 @@
 			 [(##core#lambda)
 			  (##sys#check-syntax 'lambda x '(_ lambda-list . #(_ 1)) #f (##sys#current-environment))
 			  (let* ([llist (cadr x)]
-				 [body (cddr x)] 
+				 [body (cddr x)]
 				 [info (cons (or h '?) llist)] )
 			    (when (##sys#extended-lambda-list? llist)
-			      (set!-values 
-			       (llist body) 
-			       (##sys#expand-extended-lambda-list 
-				llist body ##sys#syntax-error-hook (##sys#current-environment)) ) ) 
+			      (set!-values
+			       (llist body)
+			       (##sys#expand-extended-lambda-list
+				llist body ##sys#syntax-error (##sys#current-environment)) ) )
 			    (##sys#decompose-lambda-list
 			     llist
 			     (lambda (vars argc rest)
@@ -410,14 +420,14 @@
 					      (decorate
 					       (lambda (a1 . r)
 						 (##core#app body (cons (vector a1 r) v)))
-					       info h cntr) ) 
+					       info h cntr) )
 					    (lambda (v)
-					      (decorate 
+					      (decorate
 					       (lambda (a1)
 						 (##core#app body (cons (vector a1) v)))
 					       info h cntr) ) ) ]
 				   [(2) (if rest
-					    (lambda (v) 
+					    (lambda (v)
 					      (decorate
 					       (lambda (a1 a2 . r)
 						 (##core#app body (cons (vector a1 a2 r) v)))
@@ -428,7 +438,7 @@
 						 (##core#app body (cons (vector a1 a2) v)))
 					       info h cntr) ) ) ]
 				   [(3) (if rest
-					    (lambda (v) 
+					    (lambda (v)
 					      (decorate
 					       (lambda (a1 a2 a3 . r)
 						 (##core#app body (cons (vector a1 a2 a3 r) v)))
@@ -449,7 +459,7 @@
 					       (lambda (a1 a2 a3 a4)
 						 (##core#app body (##sys#cons (##sys#vector a1 a2 a3 a4) v)))
 					       info h cntr) ) ) ]
-				   [else 
+				   [else
 				    (if rest
 					(lambda (v)
 					  (decorate
@@ -460,7 +470,7 @@
 					   info h cntr) )
 					(lambda (v)
 					  (decorate
-					   (lambda as 
+					   (lambda as
 					     (let ([len (length as)])
 					       (if (not (fx= len argc))
 						   (##sys#error "bad argument count" argc len)
@@ -483,7 +493,7 @@
 			    (compile
 			     (##sys#canonicalize-body (cddr x) (##sys#current-environment) #f)
 			     e #f tf cntr #f)))
-			       
+
 			 ((##core#letrec-syntax)
 			  (let* ((ms (map (lambda (b)
 					    (list
@@ -494,7 +504,7 @@
 					      (strip-syntax (car b)))))
 					  (cadr x) ) )
 				 (se2 (append ms (##sys#current-environment))) )
-			    (for-each 
+			    (for-each
 			     (lambda (sb)
 			       (set-car! (cdr sb) se2) )
 			     ms)
@@ -502,7 +512,7 @@
 			     (compile
 			      (##sys#canonicalize-body (cddr x) (##sys#current-environment) #f)
 			      e #f tf cntr #f))))
-			       
+
 			 ((##core#define-syntax)
 			  (let* ((var (cadr x))
 				 (body (caddr x))
@@ -510,7 +520,7 @@
 			    (when (and static (not (assq var (##sys#current-environment))))
 			      (##sys#error 'eval "environment is not mutable" evalenv var))
                             (##sys#put/restore! name '##sys#override 'syntax)
-			    (##sys#register-syntax-export 
+			    (##sys#register-syntax-export
 			     name (##sys#current-module)
 			     body)	; not really necessary, it only shouldn't be #f
 			    (##sys#extend-macro-environment
@@ -528,19 +538,12 @@
 			   e #f tf cntr #f))
 
 			 ((##core#include)
-			  (##sys#include-forms-from-file
-			   (cadr x)
-			   (caddr x)
-			   (lambda (forms path)
-			     (let ((code (if (pair? (cdddr x)) ; body?
-			 	     	     (##sys#canonicalize-body
-				               (append forms (cadddr x))
-				               (##sys#current-environment))
-				             `(##core#begin ,@forms))))
-			       (fluid-let ((##sys#current-source-filename path))
-			         (compile code e #f tf cntr tl?))))))
+			  (include-file x #f e tf cntr tl?))
 
-			 ((##core#let-module-alias)
+			 ((##core#include-ci)
+			  (include-file x #t e tf cntr tl?))
+
+                         ((##core#let-module-alias)
 			  (##sys#with-module-aliases
 			   (map (lambda (b)
 				  (##sys#check-syntax 'functor b '(symbol symbol))
@@ -552,27 +555,27 @@
 			 ((##core#module)
 			  (let* ((x (strip-syntax x))
 				 (name (cadr x))
-				 (exports 
+				 (exports
 				  (or (eq? #t (caddr x))
 				      (map (lambda (exp)
 					     (cond ((symbol? exp) exp)
-						   ((and (pair? exp) 
+						   ((and (pair? exp)
 							 (let loop ((exp exp))
 							   (or (null? exp)
 							       (and (symbol? (car exp))
 								    (loop (cdr exp))))))
 						    exp)
 						   (else
-						    (##sys#syntax-error-hook
+						    (##sys#syntax-error
 						     'module
 						     "invalid export syntax" exp name))))
 					   (caddr x)))))
 			    (when (##sys#current-module)
-			      (##sys#syntax-error-hook 'module "modules may not be nested" name))
+			      (##sys#syntax-error 'module "modules may not be nested" name))
 			    (parameterize ((##sys#current-module
 					    (##sys#register-module name #f exports))
 					   (##sys#current-environment '())
-					   (##sys#macro-environment 
+					   (##sys#macro-environment
 					    ##sys#initial-macro-environment)
 					   (##sys#module-alias-environment
 					    (##sys#module-alias-environment)))
@@ -593,11 +596,11 @@
 							  (loop2 n))
 							 (else
 							  ((car xs) v))))))))
-				       (loop 
+				       (loop
 					(cdr body)
-					(cons (compile 
-					       (car body) 
-					       '() #f tf cntr 
+					(cons (compile
+					       (car body)
+					       '() #f tf cntr
 					       #t) ; reset back to toplevel!
 					      xs))))) ) )))
 
@@ -632,27 +635,27 @@
 
 			 [(##core#define-inline ##core#define-constant)
 			  (compile `(,(rename 'define) ,@(cdr x)) e #f tf cntr tl?) ]
-                   
-			 [(##core#primitive ##core#inline ##core#inline_allocate ##core#foreign-lambda 
-					    ##core#define-foreign-variable 
+
+			 [(##core#primitive ##core#inline ##core#inline_allocate ##core#foreign-lambda
+					    ##core#define-foreign-variable
 					    ##core#define-external-variable ##core#let-location
 					    ##core#foreign-primitive ##core#location
 					    ##core#foreign-lambda* ##core#define-foreign-type)
-			  (##sys#syntax-error-hook "cannot evaluate compiler-special-form" x) ]
+			  (##sys#syntax-error "cannot evaluate compiler-special-form" x) ]
 
 			 [(##core#app)
 			  (compile-call (cdr x) e tf cntr (##sys#current-environment)) ]
 
 			 ((##core#the)
 			  (compile (cadddr x) e h tf cntr tl?))
-			 
+
 			 ((##core#typecase)
 			  ;; drops exp and requires "else" clause
 			  (cond ((assq 'else (strip-syntax (cdddr x))) =>
 				 (lambda (cl)
 				   (compile (cadr cl) e h tf cntr tl?)))
 				(else
-				 (##sys#syntax-error-hook
+				 (##sys#syntax-error
 				  'compiler-typecase
 				  "no `else-clause' in unresolved `compiler-typecase' form"
 				  x))))
@@ -660,17 +663,17 @@
 			 (else
 			  (fluid-let ((##sys#syntax-context (cons head ##sys#syntax-context)))
 			    (compile-call x e tf cntr (##sys#current-environment))))))))]
-	      
+
 	      [else
 	       (emit-syntax-trace-info tf x cntr)
 	       (compile-call x e tf cntr (##sys#current-environment))] ) )
 
       (define (fudge-argument-list n alst)
-	(if (null? alst) 
+	(if (null? alst)
 	    (list alst)
 	    (do ((n n (fx- n 1))
 		 (c 0 (fx+ c 1))
-		 (args alst 
+		 (args alst
 		       (if (eq? '() args)
 			   (##sys#error "bad argument count" n c)
 			   (##sys#slot args 1)))
@@ -687,7 +690,7 @@
 
       (define (compile-call x e tf cntr se)
 	(let* ((head (##sys#slot x 0))
-	       (fn (if (procedure? head) 
+	       (fn (if (procedure? head)
 		       (lambda _ head)
 		       (compile (##sys#slot x 0) e #f tf cntr #f)))
 	       (args (##sys#slot x 1))
@@ -739,16 +742,15 @@
 	(lambda ()
 	  ((compile-to-closure
 	    form
-	    '() 
-	    #f #f #f			;XXX evalenv? static?
+	    '()
+	    #f #f #f
 	    #t)				; toplevel.
 	   '()) )
 	(lambda ()
 	  ;; Just before restoring the parameters, update "meta"
 	  ;; environments to receive a copy of the current
 	  ;; environments one level "down".  We don't support more
-	  ;; than two evaluation phase levels currently.  XXX: Should
-	  ;; we change this to a "stack" of environments?
+	  ;; than two evaluation phase levels currently.
 	  (##sys#current-meta-environment (##sys#current-environment))
 	  (##sys#meta-macro-environment (##sys#macro-environment))))))
 
@@ -767,13 +769,14 @@
 	   '() #f #f #f #t) '()))
        (cond (env
 	      (##sys#check-structure env 'environment 'eval)
-	      (let ((se2 (##sys#slot env 2)))
-		((if se2		; not interaction-environment?
-		     (parameterize ((##sys#macro-environment '())
-				    (##sys#current-environment se2))
-		       (compile-to-closure x '() #f env (##sys#slot env 3) #t))
-		     (compile-to-closure x '() #f env #f #t))
-		 '() ) ) )
+	      (let ((ve2 (##sys#slot env 2))
+                    (se2 (##sys#slot env 3)))
+		((if ve2		; not interaction-environment?
+                     (parameterize ((##sys#macro-environment se2)
+                                    (##sys#current-environment ve2))
+                       (compile-to-closure x '() #f env (##sys#slot env 4) #t))
+                     (compile-to-closure x '() #f env #f #t))
+                 '())))
 	     (else
 	      ((compile-to-closure x '() #f #f #f #t) '())))))))
 
@@ -821,7 +824,7 @@
 
       (define (err)
 	(set! ##sys#syntax-error-culprit #f)
-	(##sys#syntax-error-hook "illegal lambda-list syntax" llist0) )
+	(##sys#syntax-error "illegal lambda-list syntax" llist0) )
 
       (let loop ([llist llist0] [vars '()] [argc 0])
 	(cond [(eq? llist '()) (k (reverse vars) argc #f)]
@@ -833,7 +836,7 @@
 			  (fx+ argc 1) ) ] ) ) ) ) )
 
 (set! scheme#interaction-environment
-  (let ((e (##sys#make-structure 'environment 'interaction-environment #f #f)))
+  (let ((e (##sys#make-structure 'environment 'interaction-environment #f #f #f)))
     (lambda () e)))
 
 (set-record-printer! 'environment
@@ -842,10 +845,10 @@
     (##sys#print (##sys#slot e 1) #f p)
     (##sys#write-char-0 #\> p)))
 
-(let* ((r4s (chicken.module#module-environment 'r4rs 'scheme-report-environment/4))
-       (r5s (chicken.module#module-environment 'scheme 'scheme-report-environment/5))
-       (r4n (chicken.module#module-environment 'r4rs-null 'null-environment/4))
-       (r5n (chicken.module#module-environment 'r5rs-null 'null-environment/5)))
+(let* ((r4s (chicken.module#module-environment 'scheme.r4rs 'scheme-report-environment/4))
+       (r5s (chicken.module#module-environment 'scheme.r5rs 'scheme-report-environment/5))
+       (r4n (chicken.module#module-environment 'scheme.r4rs-null 'null-environment/4))
+       (r5n (chicken.module#module-environment 'scheme.r5rs-null 'null-environment/5)))
   (define (strip se)
     (foldr
      (lambda (s r)
@@ -856,6 +859,7 @@
 		   export
                    export/rename
 		   functor
+                   define-library
 		   import
 		   import-for-syntax
 		   import-syntax
@@ -870,10 +874,10 @@
      '()
      se))
   ;; Strip non-std syntax from SEs
-  (##sys#setslot r4s 2 (strip (##sys#slot r4s 2)))
-  (##sys#setslot r4n 2 (strip (##sys#slot r4n 2)))
-  (##sys#setslot r5s 2 (strip (##sys#slot r5s 2)))
-  (##sys#setslot r5n 2 (strip (##sys#slot r5n 2)))
+  (##sys#setslot r4s 3 (strip (##sys#slot r4s 3)))
+  (##sys#setslot r4n 3 (strip (##sys#slot r4n 3)))
+  (##sys#setslot r5s 3 (strip (##sys#slot r5s 3)))
+  (##sys#setslot r5n 3 (strip (##sys#slot r5n 3)))
   (set! scheme#scheme-report-environment
     (lambda (n)
       (##sys#check-fixnum n 'scheme-report-environment)
@@ -912,6 +916,7 @@
 	chicken.platform
 	chicken.syntax
 	chicken.time)
+(import (only (scheme base) make-parameter port?))
 
 (include "mini-srfi-1.scm")
 
@@ -939,7 +944,7 @@
   '(chicken-syntax chicken-ffi-syntax continuation data-structures
     debugger-client eval eval-modules expand extras file internal
     irregex library lolevel pathname port posix profiler read-syntax
-    repl scheduler srfi-4 tcp))
+    repl scheduler srfi-4 tcp r7lib))
 
 (define-constant cygwin-default-dynamic-load-libraries '("cygchicken-0"))
 (define-constant macosx-load-library-extension ".dylib")
@@ -982,15 +987,15 @@
   (if ##sys#windows-platform '(#\\ #\/) '(#\/)))
 
 (define (path-separator-index/right s)
-  (let loop ((i (fx- (##sys#size s) 1)))
-    (if (memq (##core#inline "C_subchar" s i) path-separators)
+  (let loop ((i (fx- (string-length s) 1)))
+    (if (memq (string-ref s i) path-separators)
 	i
 	(and (fx< 0 i) (loop (fx- i 1))))))
 
 (define (make-relative-pathname from file)
   (let ((i (and (string? from)
-		(positive? (##sys#size file)) ; XXX probably an error?
-		(not (memq (##core#inline "C_subchar" file 0) path-separators))
+		(positive? (string-length file)) ; XXX probably an error?
+		(not (memq (string-ref file 0) path-separators))
 		(path-separator-index/right from))))
     (if (not i) file (string-append (##sys#substring from 0 i) "/" file))))
 
@@ -1023,7 +1028,7 @@
   (if (not name)
       "toplevel"
       (##sys#string-append
-       (string->c-identifier (##sys#slot name 1))
+       (string->c-identifier (##sys#symbol->string/shared name))
        "_toplevel")))
 
 (define (c-toplevel name loc)
@@ -1034,6 +1039,7 @@
 	(display display)
 	(newline newline)
 	(eval eval)
+        (case-sensitive case-sensitive)
 	(open-input-file open-input-file)
 	(close-input-port close-input-port))
     (lambda (input evaluator #!optional pf timer printer unit)
@@ -1083,9 +1089,10 @@
 			 (##sys#current-load-filename fname)
 			 (##sys#current-source-filename fname))
 	       (let ((in (if fname (open-input-file fname) input))
+                     (cs (case-sensitive))
 		     (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
 		 (##sys#dynamic-wind
-		  (lambda () #f)
+		  (lambda () (set! cs (case-sensitive)))
 		  (lambda ()
 		    (let ((c1 (peek-char in)))
 		      (when (eq? c1 (integer->char 127))
@@ -1112,26 +1119,34 @@
 				(newline))
 			      results)))))))
 		  (lambda ()
+                    (case-sensitive cs)
 		    (close-input-port in))))))))
       (##core#undefined))))
 
+(define evaluator
+  (let ((eval eval))
+    (lambda (x)
+      (cond ((procedure? x) x)
+            ((not x) #f)
+            (else (lambda (y) (eval y x)))))))
+
 (set! scheme#load
-  (lambda (filename #!optional evaluator)
-    (load/internal filename evaluator)))
+  (lambda (filename #!optional env)
+    (load/internal filename (evaluator env))))
 
-(define (load-relative filename #!optional evaluator)
+(define (load-relative filename #!optional env)
   (let ((fn (make-relative-pathname ##sys#current-load-filename filename)))
-    (load/internal fn evaluator)))
+    (load/internal fn (evaluator env))))
 
-(define (load-noisily filename #!key (evaluator #f) (time #f) (printer #f))
-  (load/internal filename evaluator #t time printer))
+(define (load-noisily filename #!key env (time #f) (printer #f))
+  (load/internal filename (evaluator env) #t time printer))
 
-(define dynamic-load-libraries 
+(define dynamic-load-libraries
   (let ((ext
 	 (if uses-soname?
 	     (string-append
 	      load-library-extension
-	      "." 
+	      "."
 	      (number->string binary-version))
 	     load-library-extension)))
     (define complete
@@ -1147,7 +1162,7 @@
     (let ((libs
 	   (if lib
 	       (##sys#list lib)
-	       (cons (##sys#string-append (##sys#slot unit-name 1) load-library-extension)
+	       (cons (##sys#string-append (##sys#symbol->string/shared unit-name) load-library-extension)
 		     (dynamic-load-libraries))))
 	  (top
 	   (c-toplevel unit-name loc)))
@@ -1170,22 +1185,22 @@
 
 (define ##sys#include-forms-from-file
   (let ((call-with-input-file call-with-input-file)
-        (reverse reverse))
-    (lambda (filename source k)
+	(reverse reverse))
+    (lambda (filename source ci k)
       (let ((path (##sys#resolve-include-filename filename #t #f source))
-            (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
-        (when (not path)
-          (##sys#signal-hook #:file-error 'include "cannot open file" filename))
-        (when (load-verbose)
-          (print "; including " path " ..."))
-        (call-with-input-file path
-          (lambda (in)
-            (k (fluid-let ((##sys#current-source-filename path))
-                 (do ((x (read-with-source-info in) (read-with-source-info in))
-                      (xs '() (cons x xs)))
-                     ((eof-object? x)
-                      (reverse xs))))
-               path)))))))
+	    (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
+	(when (not path)
+	  (##sys#signal-hook #:file-error 'include "cannot open file" filename))
+	(when (load-verbose)
+	  (print "; including " path " ..."))
+	(call-with-input-file path
+	  (lambda (in)
+            (##sys#setislot in 13 (not ci))
+	    (fluid-let ((##sys#current-source-filename path))
+               (do ((x (read-with-source-info in) (read-with-source-info in))
+                    (xs '() (cons x xs)))
+                   ((eof-object? x)
+                    (k (reverse xs)))))))))))
 
 
 ;;; Extensions:
@@ -1238,7 +1253,7 @@
 	   (load-unit lib #f loc))
 	  ((find-dynamic-extension lib #f) =>
 	   (lambda (ext)
-	     (load/internal ext #f #f #f #f lib)
+	     (load/internal ext #f #f #f #f #f lib)
 	     (##sys#provide lib)
 	     (##core#undefined)))
 	  (else
@@ -1305,7 +1320,7 @@
 		(list source-file-extension ##sys#load-dynamic-extension)))))
       (or (test (make-relative-pathname source fname))
 	  (let loop ((paths (if repo
-				(##sys#append 
+				(##sys#append
 				 ##sys#include-pathnames
 				 (or (repository-path) '()) )
 				##sys#include-pathnames) ) )
@@ -1321,6 +1336,7 @@
 ;;; Simple invocation API:
 
 (import scheme chicken.base chicken.condition chicken.eval chicken.fixnum chicken.load)
+(import (only (scheme base) open-output-string get-output-string open-input-string))
 
 (declare
   (hide last-error run-safe store-result store-string
@@ -1333,7 +1349,7 @@
 
 (define (run-safe thunk)
   (set! last-error #f)
-  (handle-exceptions ex 
+  (handle-exceptions ex
       (let ((o (open-output-string)))
 	(print-error-message ex o)
 	(set! last-error (get-output-string o))
@@ -1369,11 +1385,12 @@
 <#
 
 (define (store-string str bufsize buf)
-  (let ((len (##sys#size str)))
+  (let* ((bv (##sys#slot str 0))
+         (len (fx- (##sys#size bv) 1)))
     (cond ((fx>= len bufsize)
 	   (set! last-error "Error: not enough room for result string")
 	   #f)
-	  (else (##core#inline "C_copy_result_string" str buf len)) ) ) )
+	  (else (##core#inline "C_copy_result_string" bv buf len)) ) ) )
 
 (define-external (CHICKEN_eval_to_string (scheme-object exp) ((c-pointer "char") buf)
 					  (int bufsize))
@@ -1385,7 +1402,7 @@
        (store-string (get-output-string o) bufsize buf)) ) ) )
 
 (define-external (CHICKEN_eval_string_to_string (c-string str) ((c-pointer "char") buf)
-						 (int bufsize) ) 
+						 (int bufsize) )
   bool
   (run-safe
    (lambda ()
@@ -1393,18 +1410,18 @@
        (write (eval (read (open-input-string str))) o)
        (store-string (get-output-string o) bufsize buf)) ) ) )
 
-(define-external (CHICKEN_apply (scheme-object func) (scheme-object args) 
+(define-external (CHICKEN_apply (scheme-object func) (scheme-object args)
 				 ((c-pointer "C_word") result))
   bool
   (run-safe (lambda () (store-result (apply func args) result))) )
 
-(define-external (CHICKEN_apply_to_string (scheme-object func) (scheme-object args) 
+(define-external (CHICKEN_apply_to_string (scheme-object func) (scheme-object args)
 					   ((c-pointer "char") buf) (int bufsize))
   bool
   (run-safe
    (lambda ()
      (let ((o (open-output-string)))
-       (write (apply func args) o) 
+       (write (apply func args) o)
        (store-string (get-output-string o) bufsize buf)) ) ) )
 
 (define-external (CHICKEN_read (c-string str) ((c-pointer "C_word") result)) bool

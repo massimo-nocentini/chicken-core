@@ -86,9 +86,12 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;; Data Structures
 
-(define (vector-copy v)
+(define %vector-copy scheme#vector-copy)
+(define (%vector-copy! from to) (scheme#vector-copy! to 0 from))
+           
+(define (%vector-copy v)
   (let ((v2 (make-vector (vector-length v))))
-    (vector-copy! v v2)
+    (%vector-copy! v v2)
     v2))
 
 (cond-expand
@@ -129,7 +132,7 @@
        (and (##sys#structure? m 'regexp-match)
 	    (##sys#make-structure
 	     'regexp-match
-	     (vector-copy (##sys#slot m 1))
+	     (%vector-copy (##sys#slot m 1))
 	     (##sys#slot m 2)
 	     (##sys#slot m 3)
 	     (##sys#slot m 4))))
@@ -193,7 +196,7 @@
 	   ((<= i 3) m)
 	 (vector-set! m i #f)))
      (define (irregex-copy-matches m)
-       (and (vector? m) (vector-copy m)))
+       (and (vector? m) (%vector-copy m)))
      (define irregex-match-tag '*irregex-match-tag*)
      (define (irregex-match-data? obj)
        (and (vector? obj)
@@ -2689,7 +2692,7 @@
 ;;                       (cset-contains? (car t) (car ls))
 ;;                       (lp (+ pos 1) (cdr ls) (cdr t) '())))
 ;;                (any (lambda (e)
-;;                       (let ((old-matches (vector-copy matches)))
+;;                       (let ((old-matches (%vector-copy matches)))
 ;;                         (cond ((cdr e)
 ;;                                (vector-set! matches (cdr e) pos)))
 ;;                         (or (and (not (memv (car e) epsilons))
@@ -2749,8 +2752,8 @@
 
 ;; NOTE: This doesn't do a deep copy of the mappings.  Don't mutate them!
 (define (mst-copy mst)
-  (let ((v (vector-copy mst)))
-    (vector-set! v 0 (vector-copy (vector-ref mst 0)))
+  (let ((v (%vector-copy mst)))
+    (vector-set! v 0 (%vector-copy (vector-ref mst 0)))
     v))
 
 (define (nfa-state->mst nfa state mappings)

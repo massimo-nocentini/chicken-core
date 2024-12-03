@@ -1,3 +1,110 @@
+6.0.0
+
+- Core libraries
+  - All modules specified by the R7RS small language are now available in
+    the core system.
+  - The internal string representation has been converted to UTF-8,
+    making strings fully UNICODE capable.
+  - The (chicken blob) module has been replaced with (chicken bytevector),
+    containing R7RS compatible bytevector operations. Bytevectors are
+    now fully equivalent to SRFI-4 u8vectors.
+  - The read-syntax for blobs (`#${...}') has been removed. Bytevectors
+    can be read using `#u8(...)' or `#u8"..."'.
+  - `open-input-file' and `open-output-file' accept a file encoding,
+    supported are currently UTF-8 (the default) and Latin-1 (ISO-8859-1).
+  - `file-read', `file-write', 'set-pseudo-random-seed!' and `random-bytes'
+    require a bytevector argument and do not accept strings.
+  - File-locking operations in the (chicken file posix) module now use the
+    flock(2) system call, operator over whole files, are thread-safe and
+    use a simpler interface. `file-test-lock' has been removed.
+  - `read-u8vector', `read-u8vector!' and `write-u8vector' have been
+    removed, use the equivalent operations from the (chicken io)
+    module instead.
+  - Added `read-bytevector', `read-bytevector!' and `write-bytevector'
+    to the (chicken io) module.
+  - Removed `set-port-name!', use the SRFI-17 setter for `port-name'
+    instead.
+  - Added `port-encoding' to the (chicken port) module.
+  - Locatives on strings are now indexed by code-point, not byte.
+  - `symbol-escape' now also controls whether symbols are printed in
+    escaped ("|...|") mode or not.
+  - Symbol printing is stricter in deciding when symbols should be escaped
+    or not.
+  - The following primitives have been moved from (chicken base)
+    to R7RS modules:
+    - `exact-integer-sqrt?', `vector-copy!', `make-parameter', `call/cc',
+      `open-input-string', `open-output-string', `get-output-string',
+      `input-port-open?', `output-port-open?', `parameterize' and `port?'
+      moved from the (chicken base) to the (scheme base).
+    - `case-lambda' moved from (chicken base) to (scheme case-lambda).
+    - `features' moved from (chicken platform) to (scheme base).
+    - `write-string' moved from (chicken io) to (scheme base) and its
+      signature changed to the R7RS one.
+    - `define-record-type' moved to (scheme base) and is generative,
+      to be compliant with R7RS.
+  - `syntax-error' has been removed from (chicken syntax) and is now a macro
+    and part of (scheme base).
+  - `record-instance?' and `make-record-instance' accept non-symbolic
+    type specifiers to support generative record types.
+  - The new (chicken number-vector) module now provides a superset of
+    SRFI-4, including 64 and 128-bit complex number vectors, the `srfi-4'
+    module is still available but exports only those procedures as are
+    specified in SRFI-4.
+  - The second (optional) parameter for `load' and `load-relative' may be
+    either an environment or an evaluation procedure.
+  - The module aliases `srfi-0', `srfi-6', `srfi-9', `srfi-11', `srfi-23',
+    `srfi-39' and `srfi-98' have been removed (all of these are covered by
+    R7RS).
+  - The modules `r4rs', `r5rs', `r4rs-null' and `r5rs-null' have been
+    renamed to `(scheme XXX)'.
+  - Hexadecimal escape sequences in strings and extended symbols must be
+    terminated by the `;' character, following R7RS.
+  - The `#ci'/`#cs' read syntaxes have been removed, use `#![no-]fold-case'
+    markers instead.
+  - `include' and `include-relative' accept multiple filenames, `include-ci'
+    has been added.
+  - Added `include-path' to (chicken platform) module.
+  - The platform-identifier "mingw32" has been renamed to "mingw".
+
+- Syntax expander:
+  - `syntax-rules' attempts to better support tail patterns with ellipses (#1736).
+
+- FFI changes:
+  - Strings and symbols passed to foreign code are not copied, they are
+    passed directly, any mutations done by external code will be visible on the
+    Scheme side.
+  - Complex numbers, C structs and unions can now be passed directly as
+    arguments and returned as results when interfacing to C code.
+
+- Tools
+  - The compiler and interpreter option `-r5rs-syntax' has been renamed to
+    `-r7rs-syntax' and does not disable extended symbol syntax ("|...|") anymore.
+  - The "feathers" debugger has been removed from the core and is now available
+    as an egg.
+  - The `set-describer!' procedure has been removed from the `csi' module.
+  - The "csc" program now accepts tool flags (e.g. -compiler, -cc etc) which
+    have paths with spaces in them without requiring the user to double-quote
+    them.  As a consequence, it no longer accepts programs with space separated
+    flags for tool arguments (e.g. "csc -cc 'gcc -debug'" etc).  If this is
+    desired, write a short shell script which calls the tool with your flags.
+  - `chicken-install' now locks the cache directory during egg-installation.
+  - Added component type `installed-c-object' to egg format.
+  - The `csc-options' and `link-options' configuration clauses in egg
+    specifications now allow `custom-config' forms to produce arbitrary
+    computed compiler and linker options.
+
+- Build system
+  - A "configure" script is now used to prepare the sources for building
+    everything. This simplifies the use of "make", allows more elaborate
+    platform sanity checks and follows conventions.
+  - On Windows the minimal "mingw" build is not supported anymore, a POSIX
+    shell and the basic sete of command-line utilities is now required
+    (formerly the "mingw-msys" build). Chris Wellons "w64devkit" is now
+    the recommended toolchain. The platform identifier "mingw-msys" has been
+    renamed to "mingw".
+  - The system can now be built with "zig cc" as a C compiler/linker
+    replacement.
+
 5.4.0
 
 - Security fixes
@@ -14,7 +121,7 @@
   - Fix type declarations for `file-select` (reported by Anton Idukov).
   - Change `create-temporary-{file,directory}` fallback code on Windows to
     use %USERPROFILE%/AppData/Local/Temp if that environment variable is set.
-  - Added new thread-safe API for POSIX signals ("make-signal-handler", 
+  - Added new thread-safe API for POSIX signals ("make-signal-handler",
     "signal-ignore" and "signal-default") and deprecated the existing one.
   - Added "make-finalizer" to execute finalizers in a thread-safe
     manner.
@@ -525,7 +632,7 @@
     `-prefix`.
   - Added new "-from-list" option to chicken-install.
   - Eggs can now be installed and located in multiple directories,
-    using the `CHICKEN_REPOSITORY_PATH` + 
+    using the `CHICKEN_REPOSITORY_PATH` +
     `CHICKEN_INSTALL_REPOSITORY`
     environment variables.
   - Static compilation of eggs is now fully supported and static
@@ -1054,7 +1161,7 @@
     into the core libraries and shown in the "csi" and "chicken"
     version headers
   - The default target library name for an installation configured for cross-
-    compilation is now "libchicken" and independent on any particular 
+    compilation is now "libchicken" and independent on any particular
     setting of PROGRAM_PREFIX/PROGRAM_SUFFIX (thanks to Otavio Salvador)
 
 - Compiler
@@ -1090,14 +1197,14 @@
     with the compiler option of the same name)
   - the optimizations done by the compiler are now listed as a comment
     in the generated C file
-  - the type-information obtained during flow-analysis ("scrutiny") is 
+  - the type-information obtained during flow-analysis ("scrutiny") is
     now used for performing type-sensitive optimizations of calls to
     most of the core-library procedures
   - deprecated the "constant" declaration specifier
   - "unboxing" optimization has been completely removed - the implementation
     was unreliable and unmaintainable; the "-unboxing" compiler option will
     still be accepted but will produce a warning
-  - Peter Bex contributed an optimization to the analysis pass that 
+  - Peter Bex contributed an optimization to the analysis pass that
     greatly reduces compile time for source code containing deeply nested
     lexical bindings
   - procedures that are known to have the value of a core library procedure
@@ -1119,7 +1226,7 @@
 - Core libraries
   - Cleaned up the set of available internal SRFI-feature-identifiers
   - Fixed bugs in "make-pathname" and "normalize-pathname" (thanks to Jim Ursetto)
-  - The reader is now more consistent when parsing symbol- and keyword names 
+  - The reader is now more consistent when parsing symbol- and keyword names
     that are fully or partially escaped (thanks to Kon Lovett)
   - The printer now does a better job at escaping certain single-character
     symbol names
@@ -1145,14 +1252,14 @@
   - invoking a parameter-procedure with an argument will return the new
     value
   - added new procedure "quit"
-  - port-procedures now check correctly for argument-ports being open 
+  - port-procedures now check correctly for argument-ports being open
     (thanks to Peter Bex)
-  - "repl" accepts an optional evaluator procedure (suggested by John 
+  - "repl" accepts an optional evaluator procedure (suggested by John
     Cowan)
   - added a setter procedure to "signal-handler" ("posix" unit)
   - EINTR is properly handled for input routines that may block
     waiting for input
-  - the implementation of R5RS evaluation environments is now fully 
+  - the implementation of R5RS evaluation environments is now fully
     standards compliant
   - "file-exists?" and "directory-exists?" work now properly for files
     > 2GB (EOVERFLOW handling in stat(3) system call)
@@ -1179,7 +1286,7 @@
   - a number of bugs in the irregex regular expression engine have been
     fixed; it has been updated to upstream release 0.8.3
   - "with-input-from-file", "with-output-to-file", "with-input-from-pipe" and
-    "with-output-to-pipe" now properly restore the standard input/output 
+    "with-output-to-pipe" now properly restore the standard input/output
     ports in case the body thunk escapes
   - symbols with a single-char print-name where not always properly escaped
     when printed readably
@@ -1199,7 +1306,7 @@
     - Fixed handling of "-output-file" (it was being ignored)
   - "chicken-install"
     - Added option "-override", which allows retrieving extension-
-      versions from a file - this may be useful to ensure specific 
+      versions from a file - this may be useful to ensure specific
       versions of a complete set of eggs are installed
     - Added option "-keep-installed"/"-x" that only installs explicitly
       named extensions given on the command line, if they are not
@@ -1241,7 +1348,7 @@
     call rewrites in compiled code
 
 - Syntax expander
-  - Fixed a bug that caused imported identifiers to leak into the 
+  - Fixed a bug that caused imported identifiers to leak into the
     macroexpansion/compile-time environment (reported by Christian Kellermann)
   - Fixed a bug in the processing of extended lambda-lists (thanks to Peter Bex)
   - Peter Bex fixed a bug that caused bound variables to be incorrectly
@@ -1255,7 +1362,7 @@
 - Runtime system
   - fixed handling of "inf" and nan" floating-point predicates for Solaris
     (thanks to Claude Marinier)
-  - support for re-loading of compiled files has now been completely 
+  - support for re-loading of compiled files has now been completely
     removed
   - the maximum length of strings is no longer limited to a 24-bit
     number on 64-bit architectures but can be 56 bits.
@@ -1277,9 +1384,9 @@
     was broken for Sparc64 systems and has been disabled for this platform
   - signal masks were accidentally reset upon GC for some platforms; use
     sigsetjmp/siglongjmp on BSD, Linux, MacOS X and Haiku
- 
+
 - Type system
-  - added new type-specifiers "input-port", "output-port", "(list-of T)" 
+  - added new type-specifiers "input-port", "output-port", "(list-of T)"
     and "(vector-of T)"
   - the type-specifiers "(vector T ...)" and "(list T ...)" represent
     fixed size lists and vectors now
@@ -1325,7 +1432,7 @@
     are applied to generated files and directories which allows
     perform differently named installations into the same PREFIX
   - increaded binary-compatibility version from 5 to 6, which
-    means installed extensions in an existing installations will 
+    means installed extensions in an existing installations will
     have to be re-installed
   - bugfixes in mingw/msys makefiles
   - Sven Hartrumpf contributed a bugfix to the internal helper
@@ -1349,7 +1456,7 @@
       sequences inside strings (thanks to Mario Domenech Goulart,
       thanks to Kon Lovett for pointing out a missing test-file)
     - The pretty printer did not escape some control characters correctly
-      (reported by Alan Post) 
+      (reported by Alan Post)
     - control-characters in symbol-names are now properly escaped if
      the symbol is printed readably (thanks to Alaric Snell-Pym
      for pointing this out)
@@ -1364,7 +1471,7 @@
       enhancements
   - "library" unit
     - Added "condition->list" (thanks to Christian Kellermann)
-    - The reader accepts now escaped octal character codes in string 
+    - The reader accepts now escaped octal character codes in string
       literals
     - Read-syntax can return zero values to indicate ignored objects
     - R5RS output output routines now always return a "void" result
@@ -1397,14 +1504,14 @@
     - "close-input-pipe" did not return the status code of a
       terminated process on Windows (reported by Mario Domenech Goulart)
     - added `file-creation-mode' (suggested by Mario Domenech Goulart)
-  - "setup-api" unit 
+  - "setup-api" unit
     - `required-extension-version' and `required-chicken-version' have
        been deprecated
   - "srfi-18" unit
     - removed deprecated `milliseconds->time' and `time->milliseconds'
       procedures
     - `make-mutex' incorrectly created mutexes as initially owned by
-      the current threads (thanks to Joerg Wittenberger) 
+      the current threads (thanks to Joerg Wittenberger)
     - the file-descriptor handling in the scheduler has been simplified
       and performs some sanity checks
     - deadlock in the scheduler now terminates the process instead of
@@ -1469,7 +1576,7 @@
 
 - Documentation
   - Added list of installed files to README
-  - Documented remaining "c...r" standard procedures (thanks to 
+  - Documented remaining "c...r" standard procedures (thanks to
     Juergen Lorenz)
   - The manual is now installed in HTML format in
     PREFIX/share/chicken/doc, many thanks to Jim Ursetto for
@@ -1485,7 +1592,7 @@
   - added missing result-type handling for `unsigned-integer64'
     (thanks to Moritz Heidkamp)
   - added `foreign-type-size' macro
-  - added the new foreign type `size_t' (suggested by Moritz 
+  - added the new foreign type `size_t' (suggested by Moritz
     Heidkamp)
   - added the missing `unsigned-integer64' foreign type (thanks
     to Moritz for catching this)
@@ -1614,13 +1721,13 @@
 - the evaluation-result history in `csi' can be inspected and
   cleared (to reduce memory load) with the toplevel commands
   `,h' and `,ch'
-- unit `data-structures': deprecated `left-section' and 
+- unit `data-structures': deprecated `left-section' and
   `right-section'
-- fixed bug that caused the static syntax-environment of 
+- fixed bug that caused the static syntax-environment of
   syntax exported by a module to be incomplete
 - module `setup-api': Documented the `version>=?' and
   `extension-name-and-version' proceedures
-- unit `posix': `utc-time->seconds' is considerably 
+- unit `posix': `utc-time->seconds' is considerably
   faster on Mac OS X (thanks to Jim Ursetto);
   added new procedure `file-type'
 - the `time' macro now shows the correct number of minor
@@ -1665,11 +1772,11 @@
 - added compiler and interpreter option `-no-feature FEATURENAME' that
   disables predefined feature identifiers
 - code compiled with interrupts disabled will not emit inline files
-  for global inlining since they may execute in a context where 
+  for global inlining since they may execute in a context where
   interrupts are enabled
-- the `setup.defaults' file that holds download sources for 
+- the `setup.defaults' file that holds download sources for
   `chicken-install' now allows aliases for locations
-- CHICKEN systems build from cross-compilation now by default 
+- CHICKEN systems build from cross-compilation now by default
   transparently build and install extensions for both the host
   and target parts of the cross-compilation setup; the options
   `-host' and `-target' can now be used to selectively build
@@ -1704,7 +1811,7 @@
 - fixed some build-system bugs related to installation
 - fixed a problem in the C runtime code that prevented it to be compileable
   without a configuration header-file
-- the makefile-target to build a bootstrapping `chicken' executable 
+- the makefile-target to build a bootstrapping `chicken' executable
   performs multi-stage build now
 - changed error message when required extension is out of date (thanks to
   Mario Goulart)
@@ -1732,10 +1839,10 @@
 - strings passed to C runtime functions and which are converted to
   0-terminated C strings are now checked for not containing embedded
   `\0' characters (thanks to Peter Bex)
-- errors in user-defined record printers are caught and shown in the 
+- errors in user-defined record printers are caught and shown in the
   output instead of throwing an error to avoid endless recursion when
   an error message is printed
-- a feature identifier named `chicken-MAJOR.MINOR' is now defined 
+- a feature identifier named `chicken-MAJOR.MINOR' is now defined
   to simplify conditionalization of code on the CHICKEN version
 - `getter-with-setter' copies the lambda-information (if available) from
   the getter to the generated procedure
@@ -1746,7 +1853,7 @@
 - split up manual chapter `Modules and macros' into two chapters
   (named `Modules' and `Macros', respectively - suggested by
   Mario Goulart)
-- the last 5 non-precompiled regular expressions are now internally 
+- the last 5 non-precompiled regular expressions are now internally
   cached in compiled form, which speeds up repeated matching of
   the same uncompiled regular expression dramatically
 - added the new procedure `yes-or-no?' to the `utils' library unit
@@ -1758,7 +1865,7 @@
 - added `[-]no-procedure-checks-for-toplevel-bindings' compiler
   option and declaration
 - usage of unimported syntax in modules gives more usable
-  error messages; in particular, used but unimported FFI forms are 
+  error messages; in particular, used but unimported FFI forms are
   now detected
 - invalid syntactic forms (mostly `()') encountered by the compiler
   or interpreter show the contextual form containing the expression,
@@ -1768,10 +1875,10 @@
 - added new option `-feature FEATURE' to `chicken-install' tool
   to pass feature-identifiers to invocations of `csc'
 - removed deprecated `-host-extension' option from `chicken-install'
-- `chicken-status' in a system built for cross-compilation now 
+- `chicken-status' in a system built for cross-compilation now
   lists extensions installed in the target prefix, unless the
   new `-host' option is given on the command line
-- `chicken-uninstall' in a system built for cross-compilation now 
+- `chicken-uninstall' in a system built for cross-compilation now
   removes extensions installed in the target prefix, unless the
   new `-host' option is given on the command line
 - added missing entry for `finite?' to the `chicken' module
@@ -1821,12 +1928,12 @@
 - fixed handling of VARDIR in `chicken-install' (thanks to
   Davide Puricelli)
 - `chicken-install -test' doesn't runs tests for dependencies
-- when a non-else clause follows an else-clause in `cond', 
+- when a non-else clause follows an else-clause in `cond',
   `case' or `select' a warning (note) is shown in verbose
   mode
 - removed the deprecated `define-extension' and
   `define-compiled-syntax'
-- `chicken-uninstall' now always asks before removing 
+- `chicken-uninstall' now always asks before removing
   extensions, unless `-force' is given
 - improved performance of keyword-argument processing slightly
 - `export' outside of a module definition has no effect
@@ -1900,7 +2007,7 @@
   `chicken-status' that prevented collapsed command-line
   options to be handled correctly.
 - disabled runpath-fix for deployed applications for netbsd
-  (but resurrected providing a runpath at all, thanks to 
+  (but resurrected providing a runpath at all, thanks to
   Peter Bex)
 - Peter Bex provided documentation for the `C_closure' C API
   function
@@ -1954,7 +2061,7 @@
   building/installing dependencies
 - `chicken-uninstall' takes a glob instead of a regular expression as
   argument
-- the rename and compare functions for low-level macro-definitions 
+- the rename and compare functions for low-level macro-definitions
   accept now arbitrary s-expressions and renames/compares them recursively
 - `number->string' handles negative-numbers with bases different from 10
   correctly (thanks to Peter Danenberg)
@@ -1998,7 +2105,7 @@
 - added `fpinteger?' and `fpabs'
 - deprecated `define-compiled-syntax'
 - added new floating-point primitives `fpsin', `fpcos', `fptan',
-  `fpasin', `fpacos', `fpatan', `fpatan2', `fpexp', `fplog', 
+  `fpasin', `fpacos', `fpatan', `fpatan2', `fpexp', `fplog',
   `fpexpt' and `fpsqrt'
 - heavy cleanup of floating math functions which gives much better performance,
   especially for code compiled in unsafe mode
@@ -2036,7 +2143,7 @@
   to each matched item (contributed by Tony Sidaway)
 - added extension-property `import-only', which makes it possible to
   create extensions that have no runtime part
-- the argument to `seconds->string', `seconds->utc-time' and 
+- the argument to `seconds->string', `seconds->utc-time' and
   `seconds->local-time' is now optional and defaults to the value
   of `(current-seconds)' (suggested by Mario Goulart)
 - removed read-syntax for `syntax' form
@@ -2045,7 +2152,7 @@
 - TCP timeouts throw exception of kind `timeout' to allow
   distinguishing between timeouts and other errors
 - removed some internal functions that manipulate environments
-- fixed bugs in `standard-extension' (`setup-api' module) and added keyword 
+- fixed bugs in `standard-extension' (`setup-api' module) and added keyword
   arguments for building static extensions and adding custom properties
 - when cross-compiling, `chicken-install(1)' doesn't pass `-setup-mode'
   (the host tools should not attempt to load target binaries)
@@ -2120,14 +2227,14 @@
   redundant "stat-..." procedures
 - Added "directory-exists?"
 - "(for-each (lambda ...) X)" is compiled as a loop
-- The argument-count check for format-strings for "[sf]printf" with a constant 
+- The argument-count check for format-strings for "[sf]printf" with a constant
   string argument is done at compile-time
 
 4.0.0
 
 - removed `apropos' and `apropos-list' from the "utils" library unit;
   available as an extension
-- removed texinfo and PDF documentation - this will possible be added back 
+- removed texinfo and PDF documentation - this will possible be added back
   later
 - replaced PCRE regex engine with Alex Shinn's "irregex" regular expression
   package
@@ -2148,7 +2255,7 @@
 - expander handles syntax-reexports and makes unexported syntax available
   for exported expanders in import libraries
 - added checks in some procedures in the "tcp" library unit
-- the macro system has been completely overhauled and converted 
+- the macro system has been completely overhauled and converted
   to hygienic macros
 - a macro-aware module system has been added
 - added "-sx" option to csi
@@ -2157,7 +2264,7 @@
    andmap ormap
    byte-vector? byte-vector-fill!
    make-byte-vector byte-vector
-   byte-vector-set! byte-vector-ref 
+   byte-vector-set! byte-vector-ref
    byte-vector->list list->byte-vector
    string->byte-vector byte-vector->string
    byte-vector-length

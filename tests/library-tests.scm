@@ -1,7 +1,8 @@
 ;;;; library-tests.scm
 
-(import chicken.blob chicken.bitwise chicken.fixnum chicken.flonum
+(import chicken.bytevector chicken.bitwise chicken.fixnum chicken.flonum
 	chicken.keyword chicken.port chicken.condition)
+(import (only (scheme base) make-parameter call/cc get-output-string))
 
 (define-syntax assert-fail
   (syntax-rules ()
@@ -389,18 +390,13 @@
   (assert (string=? "aBc" (symbol->string (with-input-from-string "|aBc|" read))))
   (assert (string=? "aBc" (symbol->string (with-input-from-string "a\\Bc" read)))))
 
-(parameterize ((symbol-escape #f))
-  (assert (string=? "aBc" (symbol->string (with-input-from-string "aBc" read))))
-  (assert-fail (with-input-from-string "|aBc|" read))
-  (assert-fail (with-input-from-string "a|Bc" read)))
-(parameterize ((symbol-escape #t))
   (assert (string=? "aBc" (symbol->string (with-input-from-string "aBc" read))))
   (assert (string=? "aBc" (symbol->string (with-input-from-string "|aBc|" read))))
   (assert (string=? "aB c" (symbol->string (with-input-from-string "|aB c|" read))))
   ;; The following is an extension/generalisation of r7RS
   (assert (string=? "aBc" (symbol->string (with-input-from-string "a|Bc|" read))))
   ;; "Unterminated string" (unterminated identifier?)
-  (assert-fail (with-input-from-string "a|Bc" read)))
+  (assert-fail (with-input-from-string "a|Bc" read))
 
 ;;; Old style qualified low byte, see #1077
 
@@ -408,9 +404,9 @@
 (assert (string=? "##foo#bar" (symbol->string '##foo#bar)))
 (assert (eq? '##foo#bar '|##foo#bar|))
 
-(assert (string=? "|\\x0a|" (with-output-to-string (lambda () (write '|\n|)))))
+(assert (string=? "|\\xa;|" (with-output-to-string (lambda () (write '|\n|)))))
 ;; #1576
-(assert (string=? "|\\x00foo|" (with-output-to-string (lambda () (write '|\000foo|)))))
+(assert (string=? "|\\x0;foo|" (with-output-to-string (lambda () (write '|\000foo|)))))
 (assert (not (keyword? '|\000foo|)))
 (assert (string=? "|###foo#bar|" (with-output-to-string (lambda () (write '|###foo#bar|)))))
 
@@ -597,9 +593,9 @@
   (assert (string=? "" (keyword->string empty-kw))))
 
 ;; TODO: It should eventually be possible to distinguish these (#1077)
-#;(let ((nul-sym (with-input-from-string "|\\x00|" read)))
+#;(let ((nul-sym (with-input-from-string "|\\x00;|" read)))
   (assert (not (keyword? nul-sym)))
-  (assert (string=? "\x00" (symbol->string nul-sym))))
+  (assert (string=? "\x00;" (symbol->string nul-sym))))
 
 (assert (keyword? (with-input-from-string "42:" read)))
 (assert (keyword? (with-input-from-string ".:" read)))
@@ -663,37 +659,23 @@ A
 (assert (= 1000 (p)))
 
 
-;;; blob-literal syntax
-
-(assert (equal? '#${a} '#${0a}))
-(assert (equal? '#${ab cd} '#${abcd}))
-(assert (equal? '#${ab c} '#${ab0c}))
-(assert (equal? '#${abc} '#${ab0c}))
-(assert (equal? '#${a b c} '#${0a0b0c}))
-
-;; self-evaluating
-(assert (equal? '#${a} #${a}))
-(assert (equal? '#${abcd} #${abcd}))
-(assert (equal? '#${abc} #${abc}))
-
-
-;; #808: blobs and strings with embedded nul bytes should not be compared
+;; #808: bytevectors and strings with embedded nul bytes should not be compared
 ;; with ASCIIZ string comparison functions
-(assert (equal? '#${a b 0 c} '#${a b 0 c}))
-(assert (blob=? '#${a b 0 c} '#${a b 0 c}))
-(assert (equal=? "foo\x00a" "foo\x00a"))
-(assert (string=? "foo\x00a" "foo\x00a"))
-(assert (string-ci=? "foo\x00a" "foo\x00a"))
-(assert (string-ci=? "foo\x00a" "foo\x00A"))
-(assert (not (equal? '#${a b 0 c} '#${a b 0 d})))
-(assert (not (blob=? '#${a b 0 c} '#${a b 0 d})))
-(assert (not (equal=? "foo\x00a" "foo\x00b")))
-(assert (not (string=? "foo\x00a" "foo\x00b")))
-(assert (not (string-ci=? "foo\x00a" "foo\x00b")))
-(assert (string<? "foo\x00a" "foo\x00b"))
-(assert (string>? "foo\x00b" "foo\x00a"))
-(assert (string-ci<? "foo\x00a" "foo\x00B"))
-(assert (string-ci>? "foo\x00b" "foo\x00A"))
+(assert (equal? '#u8(#xa #xb 0 #xc) '#u8(#xa #xb 0 #xc)))
+(assert (bytevector=? '#u8(#xa #xb 0 #xc) '#u8(#xa #xb 0 #xc)))
+(assert (equal=? "foo\x00;a" "foo\x00;a"))
+(assert (string=? "foo\x00;a" "foo\x00;a"))
+(assert (string-ci=? "foo\x00;a" "foo\x00;a"))
+(assert (string-ci=? "foo\x00;a" "foo\x00;A"))
+(assert (not (equal? '#u8(#xa #xb 0 #xc) '#u8(#xa #xb 0 #xd))))
+(assert (not (bytevector=? '#u8(#xa #xb 0 #xc) '#u8(#xa #xb 0 #xd))))
+(assert (not (equal=? "foo\x00;a" "foo\x00;b")))
+(assert (not (string=? "foo\x00;a" "foo\x00;b")))
+(assert (not (string-ci=? "foo\x00;a" "foo\x00;b")))
+(assert (string<? "foo\x00;a" "foo\x00;b"))
+(assert (string>? "foo\x00;b" "foo\x00;a"))
+(assert (string-ci<? "foo\x00;a" "foo\x00;B"))
+(assert (string-ci>? "foo\x00;b" "foo\x00;A"))
 
 ;; reported by Nils Holm (#1534)
 ;; https://groups.google.com/group/comp.lang.scheme/t/6b8be06b84b39a7
@@ -844,9 +826,9 @@ A
 	(c 'e)
 	(assert (equal? '(a b c d c e d e e d) (reverse path))))))
 
-;;; vector and blob limits
+;;; vector and bytevector limits
 
-(assert-fail (make-blob -1))
+(assert-fail (make-bytevector -1))
 (assert-fail (make-vector -1))
 
 ;;; Resizing of vectors works to both sides
@@ -870,7 +852,7 @@ A
 
 ;;; message checks for invalid strings
 
-(assert-fail (##sys#message "123\x00456"))
+(assert-fail (##sys#message "123\x00;456"))
 
 ;;; vector procedures
 

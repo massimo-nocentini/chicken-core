@@ -62,7 +62,7 @@ arguments. A non-flonum argument in unsafe mode can crash the
 application. {{fp*+}} implements fused multiply-add {{(X * Y) + Z}}.
 
 Note: {{fpround}} uses the rounding mode that your C library
-implements, which is usually different from R5RS.
+implements, which is usually different from R7RS.
 
 == Flonum limits
 

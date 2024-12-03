@@ -142,8 +142,8 @@ Is {{x}} a closure?  Accepts only non-immediate objects.
 
 Is {{x}} any kind of vector?  Accepts only non-immediate objects.
 
-This returns true for both regular heterogenous R5RS vectors and
-bytevectors ("blobs").  However, it does ''not'' return true for
+This returns true for both regular heterogenous R7RS vectors and
+bytevectors.  However, it does ''not'' return true for
 SRFI-4 vectors, as those are actually bytevectors wrapped in a
 structure with a type tag.
 
@@ -151,7 +151,7 @@ structure with a type tag.
 
  [C macro] C_word C_bytevectorp(C_word x)
 
-Is {{x}} a bytevector ("blob")? Accepts only non-immediate objects.
+Is {{x}} a bytevector? Accepts only non-immediate objects.
 
 ===== C_portp
 

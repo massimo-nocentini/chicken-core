@@ -14,7 +14,7 @@ context to register a procedure that can transform s-expressions into
 other s-expressions.  Only use these when you need to break hygiene in
 a controlled way; for many use cases {{syntax-rules}} is more
 appropriate, as it offers stronger guarantees of hygiene, is more
-high-level and is standard R5RS Scheme.
+high-level and is standard R7RS Scheme.
 
 For those situations where you need more control, however, CHICKEN
 supports two kinds of low-level macros: so-called explicit renaming
@@ -185,7 +185,7 @@ This procedure will be called on expansion with the complete
 s-expression of the macro invocation, a rename procedure that
 hygienically renames identifiers and a comparison procedure that
 compares (possibly renamed) identifiers (see the section "Explicit
-renaming macros" below for a detailed explanation on non-R5RS macros).
+renaming macros" below for a detailed explanation on non-R7RS macros).
 
 Implementation note: this procedure currently just returns its
 argument unchanged and is available for writing low-level macros in a
@@ -377,14 +377,6 @@ If {{EXPR}} is a pair with the car being a symbol, and line-number
 information is available for this expression, then this procedure
 returns the associated source file and line number as a string. If
 line-number information is not available, then {{#f}} is returned.
-
-==== syntax-error
-
-<procedure>(syntax-error [LOCATION] MESSAGE ARGUMENT ...)</procedure>
-
-Signals an exception of the kind {{(exn syntax)}}. Otherwise identical
-to {{error}}.
-
 
 === Compiler macros
 

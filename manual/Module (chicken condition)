@@ -322,9 +322,7 @@ indicates a continuable exception.
 
 <procedure>(condition? obj)</procedure><br>
 
-Returns #t if ''obj'' is a condition, otherwise returns #f. If any of
-the predicates listed in Section 3.2 of the R5RS is true of ''obj'', then
-{{condition?}} is false of ''obj''.
+Returns #t if ''obj'' is a condition, otherwise returns #f.
 
 Rationale: Any Scheme object may be passed to an exception handler. This
 would cause ambiguity if conditions were not disjoint from all of Scheme's
@@ -451,6 +449,6 @@ extracts the error message from ''exn''. Example:
 </enscript>
 
 ----
-Previous: [[Module (chicken blob)]]
+Previous: [[Module (chicken bytevector)]]
 
 Next: [[Module (chicken continuation)]]

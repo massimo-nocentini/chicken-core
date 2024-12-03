@@ -1,4 +1,5 @@
-(import chicken.irregex chicken.platform chicken.keyword chicken.string)
+(import chicken.irregex chicken.platform chicken.string)
+(import (only (scheme base) features))
 
 (let* ((version-tokens (string-split (chicken-version) "."))
        (major (string->number (car version-tokens)))
@@ -13,7 +14,7 @@
   (let loop ((features (features)))
     (if (null? features)
         (error "Could not find feature chicken-<major>.<minor>")
-        (let ((feature (keyword->string (car features))))
+        (let ((feature (symbol->string (car features))))
           (cond ((irregex-match "chicken-(\\d+)\\.(\\d+)" feature)
                  => (lambda (match)
                       (assert (= (string->number
@@ -28,7 +29,7 @@
   (let loop ((features (features)))
     (if (null? features)
         (error "Could not find feature chicken-<major>")
-        (let ((feature (keyword->string (car features))))
+        (let ((feature (symbol->string (car features))))
           (cond ((irregex-match "chicken-(\\d+)" feature)
                  => (lambda (match)
                       (assert (= (string->number

@@ -1,6 +1,10 @@
 Deprecated functions and variables
 ==================================
 
+6.0.0
+- The foreign type "blob" is obsolete and equivalent to the 
+  foreign type "bytevector".
+
 5.3.1
 - read/source-info from the internal, undocumented module
   (chicken compiler support) is deprecated.  Instead, use

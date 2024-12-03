@@ -1,0 +1,278 @@
+#!/bin/sh
+#
+# configuration script for the CHICKEN build process
+#
+# Copyright (c) 2024, The CHICKEN Team
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
+# conditions are met:
+#
+#   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
+#     disclaimer.
+#   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+#     disclaimer in the documentation and/or other materials provided with the distribution.
+#   Neither the name of the author nor the names of its contributors may be used to endorse or promote
+#     products derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
+# OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+# OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+prefix=/usr/local
+debug=
+static=
+host=
+target=
+tprefix=
+pprefix=
+psuffix=
+srcdir=
+vardir=
+linker=
+platform=
+chicken=
+pobjs=
+mkcmd="make"
+
+usage () {
+    echo "usage: configure [--help] [--prefix DIRECTORY] [--platform PLATFORM | list] [--chicken PROGRAMNAME] [--debugbuild] [--staticbuild] [--disable-shared] [--host HOSTSYSTEM] [--target TARGETSYSTEM] [--program-prefix PREFIX] [--program-suffix SUFFIX] [--target-prefix DIRECTORY] [--srcdir DIRECTORY] [--vardir DIRECTORY] [--c-compiler PROGRAMNAME] [--linker PROGRAMNAME] [--profile-objects OBJECTLIST]"
+    echo
+    echo "consult the README file for more information."
+    exit "$1"
+}
+
+while [ -n "$1" ]; do
+    arg="$1"
+    shift
+    case "$arg" in
+        -h|-help|--help)
+            usage 0;;
+        --chicken=*)
+            chicken=${arg#--chicken=};;
+        --chicken)
+            test -z "$1" && usage 1 >&2
+            chicken="$1"
+            shift;;
+        --prefix=*)
+            prefix=${arg#--prefix=};;
+        --prefix)
+            test -z "$1" && usage 1 >&2
+            prefix="$1"
+            shift;;
+        --platform=*)
+            platform=${arg#--platform=};;
+        --platform)
+            test -z "$1" && usage 1 >&2
+            platform="$1"
+            shift;;
+        --debugbuild)
+            debug=1;;
+        --staticbuild|--disable-shared)
+            static=1;;
+        --host=*)
+            host=${arg#--host=};;
+        --host)
+            test -z "$1" && usage 1 >&2
+            host="$1"
+            shift;;
+        --target=*)
+            target=${arg#--target=};;
+        --target)
+            test -z "$1" && usage 1 >&2
+            target="$1"
+            shift;;
+        --program-prefix=*)
+            pprefix=${arg#--program-prefix=};;
+        --program-prefix)
+            test -z "$1" && usage 1 >&2
+            pprefix="$1"
+            shift;;
+        --program-suffix=*)
+            psuffix=${arg#--program-suffix=};;
+        --program-suffix)
+            test -z "$1" && usage 1
+            psuffix="$1"
+            shift;;
+        --target-prefix=*)
+            tprefix=${arg#--target-prefix=};;
+        --target-prefix)
+            test -z "$1" && usage 1
+            tprefix="$1"
+            shift;;
+        --srcdir=*)
+            srcdir=${arg#--srcdir=};;
+        --srcdir)
+            test -z "$1" && usage 1 >&2
+            srcdir="$1"
+            shift;;
+        --vardir=*)
+            vardir=${arg#--vardir=};;
+        --vardir)
+            test -z "$1" && usage 1 >&2
+            vardir="$1"
+            shift;;
+        --profile-objects=*)
+            pobjs=${arg#--profile-objects=};;
+        --profile-objects)
+            test -z "$1" && usage 1 >&2
+            pobjs="$1"
+            shift;;
+        --c-compiler=*)
+            CC=${arg#--c-compiler=};;
+        --c-compiler)
+            test -z "$1" && usage 1 >&2
+            CC="$1"
+            shift;;
+        --linker=*)
+            linker=${arg#--linker=};;
+        --linker)
+            test -z "$1" && usage 1 >&2
+            linker="$1"
+            shift;;
+        *)
+            usage 1 >&2;;
+    esac
+done
+
+if [ "$platform" = list ]; then
+    echo "available platforms:"
+    echo
+    for mf in Makefile.*; do
+        echo "     ${mf#Makefile.}"
+    done
+    echo
+    exit
+fi
+
+if [ -z "$platform" ]; then
+    printf 'detecting platform ... '
+
+    # Detect the PLATFORM with uname.
+    # Based on Chibi Scheme auto-detector
+    # Heavily revamped by John Cowan
+    # Moved into configure script by Felix Winkelmann
+    # Copyright (c) 2009-2018 Alex Shinn, John Cowan
+    # BSD license at <https://github.com/ashinn/chibi-scheme/blob/master/COPYING>
+
+    # Now we can use uname tests
+    uname_s=$(uname)
+    uname_o=$(uname -o 2>/dev/null)
+
+    case "$uname_s" in
+        Darwin)
+            platform=macosx;;
+        *BSD)
+            platform=bsd;;
+        DragonFly)
+            platform=bsd;;
+        Windows_NT)
+            platform=mingw
+            case "$prefix" in
+                [a-zA-Z]:*)
+                ;;
+                *)
+                    echo "on Windows, the prefix must contain a drive letter" >&2
+                    exit 1;;
+            esac;;
+        SunOS)
+            platform=solaris;;
+        BeOS)
+            platform=haiku;;
+        Haiku)
+            platform=haiku;;
+        GNU)
+            platform=hurd;;
+        AIX)
+            platform=aix;;
+        *)
+            case "$uname_o" in
+                Cygwin)
+                    platform=cygwin;;
+                Android)
+                    platform=android;;
+                GNU/Linux)
+                    platform=linux;;
+                Linux)
+                    platform=linux;;
+                *)
+                    echo
+                    echo "unable to figure out platform" >&2
+                    exit 1;;
+            esac;;
+    esac
+    echo "$platform"
+fi
+
+cccmd="gcc"
+if [ "$platform" = "bsd" ]; then
+    cccmd="cc"
+    if command -v gmake >/dev/null; then
+        mkcmd="gmake"
+    else
+        echo "GNU make is required but does not seem to be available" >&2
+        exit 1
+    fi
+fi
+
+echo "installation prefix: $prefix"
+test -n "$chicken" && echo "bootstrap chicken: $chicken"
+
+test -n "$CC" && cccmd="$CC"
+
+printf "testing C compiler (%s) ... " "$cccmd"
+tmpc="$(mktemp).c"
+cat > "$tmpc" <<EOF
+int main() {return 0;}
+EOF
+if command -v $cccmd >/dev/null; then
+    if $cccmd "$tmpc" $CFLAGS -o "${tmpc}.out"; then
+        rm -f "$tmpc"
+        if "${tmpc}.out"; then
+            echo works
+            rm -f "${tmpc}.out"
+        else
+            rm -f "${tmpc}.out"
+            echo
+            echo "$cccmd does not seem to produce working executables" >&2
+            exit 1
+        fi
+    else
+        rm -f "$tmpc" "${tmpc}.out"
+        echo
+        echo "$cccmd does not seem to work" >&2
+        exit 1
+    fi
+else
+    echo
+    echo "cannot find $cccmd" >&2
+    exit 1
+fi
+
+echo "# GENERATED BY configure" > config.make
+echo "PLATFORM ?= $platform" >> config.make
+echo "PREFIX ?= $prefix" >> config.make
+test -n "$debug" && echo "DEBUGBUILD ?= 1" >> config.make
+test -n "$static" && echo "STATICBUILD ?= 1" >> config.make
+test -n "$CC" && echo "C_COMPILER ?= $cccmd" >> config.make
+test -n "$linker" && echo "LINKER ?= $linker" >> config.make
+test -n "$CFLAGS" && echo "C_COMPILER_OPTIMIZATION_OPTIONS ?= $CFLAGS" >> config.make
+test -n "$host" && echo "HOSTSYSTEM ?= $host" >> config.make
+test -n "$target" && echo "TARGETSYSTEM ?= $target" >> config.make
+test -n "$pprefix" && echo "PROGRAM_PREFIX ?= $pprefix" >> config.make
+test -n "$psuffix" && echo "PROGRAM_SUFFIX ?= $psuffix" >> config.make
+test -n "$tprefix" && echo "TARGET_PREFIX ?= $tprefix" >> config.make
+test -n "$srcdir" && echo "SRCDIR ?= $srcdir" >> config.make
+test -n "$vardir" && echo "VARDIR ?= $vardir" >> config.make
+test -n "$chicken" && echo "CHICKEN ?= $chicken" >> config.make
+test -n "$pobjs" && echo "PROFILE_OBJECTS ?= $pobjs" >> config.make
+
+echo
+echo "now run ${mkcmd} to build the system"
+echo

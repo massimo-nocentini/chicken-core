@@ -662,7 +662,7 @@ The current patterns provided are:
   integer                        ; an integer
   real                           ; a real number (including scientific)
   string                         ; a "quoted" string
-  symbol                         ; an R5RS Scheme symbol
+  symbol                         ; an R7RS Scheme symbol
   ipv4-address                   ; a numeric decimal ipv4 address
   ipv6-address                   ; a numeric hexadecimal ipv6 address
   domain                         ; a domain name

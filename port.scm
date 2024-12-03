@@ -42,6 +42,7 @@
    copy-port
    make-input-port
    make-output-port
+   port-encoding
    port-fold
    port-for-each
    port-map
@@ -51,7 +52,6 @@
    make-broadcast-port
    make-concatenated-port
    set-buffering-mode!
-   set-port-name!
    terminal-name
    terminal-port?
    terminal-size
@@ -67,6 +67,7 @@
 	chicken.fixnum
 	chicken.foreign
 	chicken.io)
+(import (only (scheme base) open-output-string get-output-string open-input-string))
 
 (include "common-declarations.scm")
 
@@ -116,14 +117,27 @@ char *ttyname(int fd) {
 (define-foreign-variable _ionbf int "_IONBF")
 (define-foreign-variable _bufsiz int "BUFSIZ")
 
-(define (port-name #!optional (port ##sys#standard-input))
-  (##sys#check-port port 'port-name)
-  (##sys#slot port 3))
+(define port-encoding
+  (getter-with-setter
+    (lambda (port)
+      (##sys#check-port port 'port-encoding)
+      (##sys#slot port 15))
+    (lambda (port enc)
+      (##sys#check-port port 'port-encoding)
+      (##sys#check-symbol enc 'port-encoding)
+      (##sys#setslot port 15 enc))
+    "(chicken.port#port-encoding port)"))
 
-(define (set-port-name! port name)
-  (##sys#check-port port 'set-port-name!)
-  (##sys#check-string name 'set-port-name!)
-  (##sys#setslot port 3 name))
+(define port-name
+  (getter-with-setter
+    (lambda (#!optional (port ##sys#standard-input))
+      (##sys#check-port port 'port-name)
+      (##sys#slot port 3))
+    (lambda (port name)
+      (##sys#check-port port 'set-port-name!)
+      (##sys#check-string name 'set-port-name!)
+      (##sys#setslot port 3 name))
+    "(chicken.port#port-name port)"))
 
 (define (port-position #!optional (port ##sys#standard-input))
   (##sys#check-port port 'port-position)
@@ -174,7 +188,7 @@ char *ttyname(int fd) {
 
 (define-constant +buf-size+ 1024)
 
-(define copy-port 
+(define copy-port
   (let ((read-char read-char)
 	(write-char write-char))
     (define (read-buf port writer)
@@ -187,7 +201,7 @@ char *ttyname(int fd) {
     (define (write-buf buf n port writer)
       (do ((i 0 (fx+ i 1)))
 	  ((fx>= i n))
-	(writer (integer->char (##sys#byte buf i)) port)))
+	(writer (string-ref buf i) port)))
     (define (read-and-write reader writer)
       (let loop ()
 	(let ((x (reader)))
@@ -198,14 +212,14 @@ char *ttyname(int fd) {
       (let ((buf (make-string +buf-size+)))
 	(let loop ((n 0))
 	  (when (fx>= n +buf-size+)
-	    (write-string buf +buf-size+ dest)
+	    (scheme#write-string buf dest 0 +buf-size+)
 	    (set! n 0))
 	  (let ((c (reader src)))
 	    (cond ((eof-object? c)
 		   (when (fx>= n 0)
-		     (write-string buf n dest)))
+		     (scheme#write-string buf dest 0 n)))
 		  (else
-		   (##sys#setbyte buf n (char->integer c))
+		   (string-set! buf n c)
 		   (loop (fx+ n 1))))))))
     (lambda (src dest #!optional (read read-char) (write write-char))
       ;; does not check port args intentionally
@@ -213,12 +227,12 @@ char *ttyname(int fd) {
 	     (read-buf
 	      src
 	      (if (eq? write write-char)
-		  (lambda (buf n) (write-string buf n dest))
+		  (lambda (buf n) (scheme#write-string buf dest 0 n))
 		  (lambda (buf n) (write-buf buf n dest write)))))
 	    ((eq? write write-char)
 	     (read-and-write-buf src dest read))
 	    (else
-	     (read-and-write 
+	     (read-and-write
 	      (lambda () (read src))
 	      (lambda (x) (write x dest))))))))
 
@@ -227,7 +241,7 @@ char *ttyname(int fd) {
 
 (define (make-broadcast-port . ports)
   (make-output-port
-   (lambda (s) (for-each (cut write-string s #f <>) ports))
+   (lambda (s) (for-each (cut scheme#write-string s <>) ports))
    void
    (lambda () (for-each flush-output ports)) ) )
 
@@ -248,6 +262,7 @@ char *ttyname(int fd) {
        (and (not (null? ports))
 	    (char-ready? (car ports))))
      void
+     peek-char:
      (lambda ()
        (let loop ()
 	 (if (null? ports)
@@ -257,15 +272,16 @@ char *ttyname(int fd) {
 		      (set! ports (cdr ports))
 		      (loop) )
 		     (else c))))))
+     read-bytevector:
      (lambda (p n dest start)
-       (let loop ((n n) (c 0))
+       (let loop ((n n) (c 0) (p start))
 	 (cond ((null? ports) c)
 	       ((fx<= n 0) c)
 	       (else
-		(let ((m (read-string! n dest (car ports) (fx+ start c))))
+		(let ((m (read-bytevector! dest (car ports) p (+ p n))))
 		  (when (fx< m n)
 		    (set! ports (cdr ports)) )
-		  (loop (fx- n m) (fx+ c m))))))))))
+		  (loop (fx- n m) (fx+ c m) (fx+ p m))))))))))
 
 
 ;;; Redirect standard ports:
@@ -286,8 +302,8 @@ char *ttyname(int fd) {
     (thunk) ) )
 
 ;;; Extended string-port operations:
-  
-(define call-with-input-string 
+
+(define call-with-input-string
   (lambda (str proc)
     (let ((in (open-input-string str)))
       (proc in) ) ) )
@@ -306,7 +322,7 @@ char *ttyname(int fd) {
 (define with-output-to-string
   (lambda (thunk)
     (fluid-let ((##sys#standard-output (open-output-string)))
-      (thunk) 
+      (thunk)
       (get-output-string ##sys#standard-output) ) ) )
 
 (define with-error-output-to-string
@@ -319,62 +335,74 @@ char *ttyname(int fd) {
 ;
 ; - Port-slots:
 ;
-;   10: last
+;   10: last/peeked
 
 (define make-input-port
-  (lambda (read ready? close #!optional peek read-string read-line read-buffered)
+  (lambda (read ready? close #!rest r
+                #!key peek-char read-bytevector read-line read-buffered)
+    ;XXX this is for ensuring old-style calls fail and can be removed at some stage
+    (when (and (pair? r) (not (##core#inline "C_i_keywordp" (car r))))
+      (error 'make-input-port "invalid invocation - use keyword parameters" r))
     (let* ((class
-	    (vector 
+	    (vector
 	     (lambda (p)		; read-char
-	       (let ([last (##sys#slot p 10)])
-		 (cond [peek (read)]
-		       [last
+	       (let ((last (##sys#slot p 10)))
+		 (cond (peek-char (read))
+		       (last
 			(##sys#setislot p 10 #f)
-			last]
-		       [else (read)] ) ) )
+			last)
+		       (else (read)) ) ) )
 	     (lambda (p)		; peek-char
-	       (let ([last (##sys#slot p 10)])
-		 (cond [peek (peek)]
-		       [last last]
-		       [else
-			(let ([last (read)])
+	       (let ((last (##sys#slot p 10)))
+		 (cond (peek-char (peek-char))
+		       (last last)
+		       (else
+			(let ((last (read)))
 			  (##sys#setslot p 10 last)
-			  last) ] ) ) )
+			  last) ) ) ) )
 	     #f				; write-char
-	     #f				; write-string
+	     #f				; write-bytevector
 	     (lambda (p d)		; close
 	       (close))
 	     #f				; flush-output
 	     (lambda (p)		; char-ready?
 	       (ready?) )
-	     read-string		; read-string!
+	     (or read-bytevector	; read-bytevector!
+	         (lambda (p n dest start)
+	           (error "binary I/O not supported for custom text input port without bytevector-read method" p)))
 	     read-line			; read-line
 	     read-buffered))
 	   (data (vector #f))
 	   (port (##sys#make-port 1 class "(custom)" 'custom)))
-      (##sys#set-port-data! port data) 
+      (##sys#setslot port 10 #f)
+      (##sys#set-port-data! port data)
       port) ) )
 
 (define make-output-port
-  (lambda (write close #!optional flush)
+  (lambda (write close #!rest r #!key force-output)
+    ;XXX this is for ensuring old-style calls fail and can be removed at some stage
+    (when (and (pair? r) (not (##core#inline "C_i_keywordp" (car r))))
+      (error 'make-output-port "invalid invocation - use keyword parameters" r))
     (let* ((class
 	    (vector
 	     #f				; read-char
 	     #f				; peek-char
 	     (lambda (p c)		; write-char
 	       (write (string c)) )
-	     (lambda (p s)		; write-string
-	       (write s) )
+	     (lambda (p bv from to)   	; write-bytevector
+               (let ((len (fx- to from)))
+                 (write (##sys#buffer->string bv from len))))
 	     (lambda (p d)		; close
 	       (close))
 	     (lambda (p)		; flush-output
-	       (when flush (flush)) )
+	       (when force-output (force-output)) )
 	     #f				; char-ready?
-	     #f				; read-string!
-	     #f) )			; read-line
+	     #f				; read-bytevector!
+             #f                         ; read-line
+             #f))                         ; read-buffered
 	   (data (vector #f))
 	   (port (##sys#make-port 2 class "(custom)" 'custom)))
-      (##sys#set-port-data! port data) 
+      (##sys#set-port-data! port data)
       port) ) )
 
 (define (make-bidirectional-port i o)
@@ -385,8 +413,8 @@ char *ttyname(int fd) {
 		   (peek-char i))
 		 (lambda (_ c)           ; write-char
 		   (write-char c o))
-		 (lambda (_ s)           ; write-string
-		   (write-string s #f o))
+                 (lambda (_ bv from to)  ; write-bytevector
+                   (chicken.io#write-bytevector bv o from to))
 		 (lambda (_ d)           ; close
 		   (case d
 		     ((1) (close-input-port i))
@@ -395,8 +423,8 @@ char *ttyname(int fd) {
 		   (flush-output o))
 		 (lambda (_)             ; char-ready?
 		   (char-ready? i))
-		 (lambda (_ n d s)       ; read-string!
-		   (read-string! n d i s))
+		 (lambda (_ n d s)       ; read-bytevector!
+		   (chicken.io#read-bytevector! d i s (fx+ s n)))
 		 (lambda (_ l)           ; read-line
 		   (read-line i l))
 		 (lambda ()              ; read-buffered

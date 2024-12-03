@@ -15,6 +15,17 @@ of kind {{exn}}.
 
 === Port attributes
 
+==== port-encoding
+
+<procedure>(port-encoding PORT)</procedure>
+
+Returns the encoding used for reading and writing data from and to
+the given port. Encoding is currently one of the symbols {{utf-8}},
+{{latin-1}} or {{binary}}. Note that the encoding can be changed by using
+the (SRFI-17) setter procedure for this operation:
+
+{{(set! (port-encoding PORT) ENCODING)}}
+
 ==== port-name
 
 <procedure>(port-name [PORT])</procedure>
@@ -23,22 +34,20 @@ Fetch filename from {{PORT}}. This returns the filename that was used to open
 this file. Returns a special tag string, enclosed into parentheses for
 non-file ports. {{PORT}} defaults to the value of {{(current-input-port)}}.
 
+Note that the encoding can be changed by using
+the (SRFI-17) setter procedure for this operation:
+
+{{(set! (port-name PORT) STRING)}}
+
 
 ==== port-position
 
 <procedure>(port-position [PORT])</procedure>
 
-Returns the current position of {{PORT}} as two values: row and column number. 
+Returns the current position of {{PORT}} as two values: row and column number.
 If the port does not support such an operation an error is signaled. This
 procedure is currently only available for input ports. {{PORT}} defaults to the
 value of {{(current-input-port)}}.
-
-
-==== set-port-name!
-
-<procedure>(set-port-name! PORT STRING)</procedure>
-
-Sets the name of {{PORT}} to {{STRING}}.
 
 
 === Setting the file buffering mode
@@ -94,7 +103,7 @@ bound to {{PORT}}.
 
 ==== make-input-port
 
-<procedure>(make-input-port READ-CHAR CHAR-READY? CLOSE [PEEK-CHAR [READ-STRING! [READ-LINE]]])</procedure>
+<procedure>(make-input-port READ-CHAR CHAR-READY? CLOSE #!key peek-char read-bytevector read-line)</procedure>
 
 Returns a custom input port. Common operations on this port are
 handled by the given parameters, which should be procedures of no
@@ -107,15 +116,15 @@ to be read and it should return a character or {{#!eof}}.
 * {{CHAR-READY?}} is a thunk which is called when {{char-ready?}}
 is called on this port and should return {{#t}} or {{#f}}.
 * {{CLOSE}} is a thunk which is called when the port is closed.
-* {{PEEK-CHAR}} is a thunk which is called when {{peek-char}} is
+* {{peek-char}} is a thunk which is called when {{peek-char}} is
 called on this port and should return a character or {{#!eof}}. If it
 is not provided or {{#f}}, {{READ-CHAR}} will be used instead and the
 created port object handles peeking automatically (by calling {{READ}}
 and buffering the character).
-* {{READ-STRING!}} is called when {{read-string!}} is called (or the
-higher-level non-mutating {{read-string}}).  It will be invoked with 4
+* {{read-bytevector}} is called when {{read-bytevector}} or {{read-string!}} is called (or the
+higher-level non-mutating {{read-string}} and {{read-bytevector}}).  It will be invoked with 4
 arguments: the port created by {{make-input-port}}, the number of
-bytes to read, a string (or sometimes a blob) to read into (which may be
+bytes to read, a bytevector to read into (which may be
 assumed to be big enough to hold the data) and the offset into the
 buffer at which to put the data to read.  It should return the number
 of bytes that have successfully been read, which should always be
@@ -135,16 +144,20 @@ number (ie, the line) and slot 5 is the column number (ie, the
 character on the line).  If the port's positions are not updated,
 {{port-position}} won't work.
 
+Note that reading binary input from a custom input is only possible
+when the {{read-bytevector}} operation is given, as byte-input can
+currently not ben synthesized from character-input operations.
+
 
 ==== make-output-port
 
-<procedure>(make-output-port WRITE CLOSE [FLUSH])</procedure>
+<procedure>(make-output-port WRITE CLOSE #!key force-output)</procedure>
 
 Returns a custom output port. Common operations on this port are handled
 by the given parameters, which should be procedures.  {{WRITE}} is
 called when output is sent to the port and receives a single argument,
 a string.  {{CLOSE}} is called when the port is closed and should
-be a procedure of no arguments. {{FLUSH}} (if provided) is called
+be a procedure of no arguments. {{force-output}} (if provided) is called
 for flushing the output port.
 
 

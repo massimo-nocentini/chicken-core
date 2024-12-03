@@ -57,6 +57,7 @@
     default-imports default-syntax-imports)
 
 (import scheme chicken.base chicken.fixnum)
+(import (only (scheme base) open-output-string get-output-string))
 
 (include "common-declarations.scm")
 (include "mini-srfi-1.scm")
@@ -96,7 +97,7 @@
 	 (eq? 'srfi (car x))
 	 (fixnum? (cadr x))))
   (define (library-part->string x)
-    (cond ((symbol? x) (##sys#symbol->string x))
+    (cond ((symbol? x) (##sys#symbol->string/shared x))
 	  ((fixnum? x) (##sys#number->string x))
 	  (else (fail))))
   (cond
@@ -104,21 +105,21 @@
     ((null? lib) (fail))
     ((not (list? lib)) (fail))
     ((srfi? lib)
-     (##sys#intern-symbol
+     (##sys#string->symbol
       (##sys#string-append "srfi-" (##sys#number->string (cadr lib)))))
     (else
      (do ((lst (cdr lib) (cdr lst))
 	  (str (library-part->string (car lib))
 	       (string-append str "." (library-part->string (car lst)))))
 	 ((null? lst)
-	  (##sys#intern-symbol str))))))
+	  (##sys#string->symbol str))))))
 
 
 ;;; Requirement identifier for modules:
 
 (define (module-requirement id)
   (##sys#string->symbol
-   (##sys#string-append (##sys#slot id 1) "#")))
+   (##sys#string-append (##sys#symbol->string/shared id) "#")))
 
 
 ;;; Check for multiple bindings in "let"-style constructs:
@@ -145,6 +146,7 @@
 		  (cons (car me) (loop (cdr me)))))))
     (fixup-macro-environment se parent-env)))
 
+;;XXX clarify what this does!
 (define (fixup-macro-environment se #!optional parent-env)
   (let ((se2 (if parent-env (##sys#append se parent-env) se)))
     (for-each				; fixup se
@@ -169,23 +171,23 @@
     (lambda (s n)
       (if (eq? s cache-s)
 	  (##core#inline "C_fixnum_modulo" cache-h n)
-	  (begin
+	  (let ((bv (##sys#slot s 1)))
 	    (set! cache-s s)
-	    (set! cache-h (##core#inline "C_u_i_string_hash" (##sys#slot s 1) rand))
+	    (set! cache-h (##core#inline "C_u_i_bytevector_hash" bv 0 (fx- (##sys#size bv) 1) rand))
 	    (##core#inline "C_fixnum_modulo" cache-h n))))))
 
 (define (make-hash-table #!optional (size 301))
   (make-vector size '()))
 
 (define (hash-table-ref ht key)
-  (let loop ((bucket (##sys#slot ht (hash-symbol key (##core#inline "C_block_size" ht)))))
+  (let loop ((bucket (##sys#slot ht (hash-symbol key (##sys#size ht)))))
     (and (not (eq? '() bucket))
 	 (if (eq? key (##sys#slot (##sys#slot bucket 0) 0))
 	     (##sys#slot (##sys#slot bucket 0) 1)
 	     (loop (##sys#slot bucket 1))))))
 
 (define (hash-table-set! ht key val)
-  (let* ((k (hash-symbol key (##core#inline "C_block_size" ht)))
+  (let* ((k (hash-symbol key (##sys#size ht)))
 	 (ib (##sys#slot ht k)))
       (let loop ((bucket ib))
 	(if (eq? '() bucket)

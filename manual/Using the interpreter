@@ -10,7 +10,7 @@ and expressions interactively.
 
 Since UNIX shells use the {{#!}} notation for starting scripts,
 anything following the characters {{#!}} is ignored, with the exception of the special
-symbols {{#!optional, #!key, #!rest}} and {{#!eof}}.
+symbols {{#!optional, #!key, #!rest, #!fold-case, #!no-fold-case}} and {{#!eof}}.
 
 The easiest way is to use the {{-script}} option like this:
 
@@ -29,24 +29,6 @@ The easiest way is to use the {{-script}} option like this:
 The parameter {{command-line-arguments}} is set to a list of the
 parameters that were passed to the Scheme script.  Scripts can be compiled
 to standalone executables.
-
-CHICKEN supports writing shell scripts in Scheme for other platforms as well,
-using a slightly different approach. The first example would look like
-this on Windows:
-
- C:>type foo.bat
- @;csibatch %0 %1 %2 %3 %4 %5 %6 %7 %8 %9
- (import (chicken port)
-         (chicken process-context))
- (print (eval (with-input-from-string
-                 (car (command-line-arguments))
-                 read)))
-
- C:>foo "(+ 3 4)"
- 7
-
-Like UNIX scripts, batch files can be compiled. Windows batch scripts do not
-accept more than 8 arguments.
 
 Since it is sometimes useful to run a script in the interpreter without actually executing it
 (for example to test specific parts of it), the option {{-ss}} can be used as an alternative to {{-script}}.
@@ -238,7 +220,7 @@ The options recognized by the interpreter are:
 
 ; -- : Ignore everything on the command-line following this marker. Runtime options ({{-:...}}) are still recognized.
 
-; -i  -case-insensitive : Enables the reader to read symbols case insensitive. The default is to read case sensitive (in violation of R5RS).  This option registers the {{case-insensitive}} feature identifier.
+; -i  -case-insensitive : Enables the reader to read symbols case insensitive. The ddefault is to read case sensitive (as defined by R7RS).  This option registers the {{case-insensitive}} feature identifier.
 
 ; -b  -batch : Quit the interpreter after processing all command line options.
 
@@ -260,13 +242,11 @@ The options recognized by the interpreter are:
 
 ;     -no-parentheses-synonyms : Disables list delimiter synonyms, [..] and {...} for (...).
 
-;     -no-symbol-escape : Disables support for escaped symbols, the |...| form.
-
 ; -w  -no-warnings : Disables any warnings that might be issued by the reader or evaluated code.
 
 ; -q  -quiet : Do not print a startup message. Also disables generation of call-trace information for interpreted code.
 
-;     -r5rs-syntax : Disables the CHICKEN extensions to R5RS syntax. Does not disable non-standard read syntax.
+;     -r7rs-syntax : Disables the CHICKEN extensions to R7RS syntax. Does not disable non-standard read syntax.
 
 ; -s  -script PATHNAME : This is equivalent to {{-batch -quiet -no-init PATHNAME}}. Arguments following {{PATHNAME}} are available by using  {{command-line-arguments}} and are not processed as interpreter options. Extra options in the environment variable {{CSI_OPTIONS}} are ignored.
 

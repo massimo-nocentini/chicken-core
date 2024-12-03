@@ -31,15 +31,15 @@
       (close-output-port port)
       (delete-file* tnpfilpn) ) ) )
 
-(assert-error (get-environment-variable "with\x00embedded-NUL"))
-(assert-error (set-environment-variable! "with\x00embedded-NUL" "blabla"))
-(assert-error (set-environment-variable! "blabla" "with\x00embedded-NUL"))
-(assert-error (system "echo this is \x00 not okay"))
+(assert-error (get-environment-variable "with\x00;embedded-NUL"))
+(assert-error (set-environment-variable! "with\x00;embedded-NUL" "blabla"))
+(assert-error (set-environment-variable! "blabla" "with\x00;embedded-NUL"))
+(assert-error (system "echo this is \x00; not okay"))
 ;; Use "false" to signal to the calling script that there was an error,
 ;; even if the process will get called
-(assert-error (process-execute "false\x00123"))
-(assert-error (process-execute "false" '("1" "123\x00456")))
-(assert-error (process-execute "false" '("123\x00456") '("foo\x00bar" "blabla") '("lalala" "qux\x00mooh")))
+(assert-error (process-execute "false\x00;123"))
+(assert-error (process-execute "false" '("1" "123\x00;456")))
+(assert-error (process-execute "false" '("123\x00;456") '(("foo\x00;bar" . "blabla") '("lalala" . "qux\x00;mooh"))))
 
 (receive (in out pid)
     (process csi-path '("-n" "-I" ".." "-e"

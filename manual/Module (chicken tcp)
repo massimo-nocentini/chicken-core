@@ -36,7 +36,7 @@ Reclaims any resources associated with {{LISTENER}}.
 
 === tcp-accept
 
-<procedure>(tcp-accept LISTENER)</procedure>
+<procedure>(tcp-accept LISTENER [ENCODING])</procedure>
 
 Waits until a connection is established on the port on which
 {{LISTENER}} is listening and returns two values: an input- and
@@ -49,6 +49,11 @@ current values (at the time of the connection) of {{tcp-read-timeout}}
 and {{tcp-write-timeout}}, respectively, to determine the maximal
 number of milliseconds to wait for input/output before a timeout
 error is signalled.
+
+{{ENCODING}} should be a symbol specifying the encoding to be
+used for I/O operations, the default is {{utf-8}}. The encodings for
+the returned in and output ports can be subsequently changed by
+using the {{port-encoding}} setter.
 
 Note: this operation and any I/O on the ports returned will not block
 other running threads.
@@ -78,7 +83,7 @@ Returns the file-descriptor associated with {{LISTENER}}.
 
 === tcp-connect
 
-<procedure>(tcp-connect HOSTNAME [TCPPORT])</procedure>
+<procedure>(tcp-connect HOSTNAME [TCPPORT ENCODING])</procedure>
 
 Establishes a client-side TCP connection to the machine with the name
 {{HOSTNAME}} (a string) at {{TCPPORT}} (an exact integer) and returns
@@ -93,6 +98,11 @@ of milliseconds to wait for input/output before a timeout error is
 signalled.
 
 If the {{TCPPORT}} is omitted, the port is parsed from the {{HOSTNAME}} string.  The format expected is {{HOSTNAME:PORT}}.  The {{PORT}} can either be a string representation of an integer or a service name which is translated to an integer using the POSIX function [[http://www.opengroup.org/onlinepubs/009695399/functions/getservbyname.html|{{getservbyname}}]].
+
+{{ENCODING}} should be a symbol specifying the encoding to be
+used for I/O operations, the default is {{utf-8}}. The encodings for
+the returned in and output ports can be subsequently changed by
+using the {{port-encoding}} setter.
 
 Note: any I/O on the ports returned will not block other running threads.
 

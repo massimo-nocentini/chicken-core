@@ -55,7 +55,7 @@
                                               ".import.scm"))))))))
 
 (defmod chicken.bitwise)
-(defmod chicken.blob)
+(defmod chicken.bytevector)
 (defmod chicken.foreign)
 (defmod chicken.fixnum)
 (defmod chicken.keyword)
@@ -92,7 +92,12 @@
 (defmod chicken.read-syntax)
 (defmod chicken.repl)
 (defmod chicken.tcp)
+(defmod chicken.number-vector)
 (defmod srfi-4)
+(defmod scheme.write)
+(defmod scheme.time)
+(defmod scheme.file)
+(defmod scheme.process-context)
 
 (set! ##sys#import-library-hook
   (let ((hook ##sys#import-library-hook))

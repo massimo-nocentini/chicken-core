@@ -68,7 +68,9 @@ built and installed if they do not already exist in the repository.
 {{EGG}} should be whether a symbol or a list of the form
 {{EGGNAME VERSION}}, where the former means to install the
 newest available egg with this name and the latter specifies
-a specific version or higher.
+a specific version or higher. {{EGGNAME}} may also be the string or
+symbol {{chicken}}, in case you want your extension to depend
+on a minimum required CHICKEN of {{VERSION}} or newer.
 
 This property can also be used to specify a minimum version of CHICKEN
 required by the egg.  For example, to require at least CHICKEN 5.3.0:
@@ -159,9 +161,9 @@ Specifies global options for all programs and extensions compiled for this egg.
 
  [egg property] (cond-expand CLAUSE ...)
 
-Conditionally expand egg specification forms, depending on system 
-features. Each {{CLAUSE}} should be of the form 
-{{(TEST PROPERTY)}} where {{TEST}} is a feature identifier or a 
+Conditionally expand egg specification forms, depending on system
+features. Each {{CLAUSE}} should be of the form
+{{(TEST PROPERTY)}} where {{TEST}} is a feature identifier or a
 conditional form, in the same syntax as used in the {{cond-expand}}
 syntactic form.
 
@@ -231,6 +233,14 @@ to C. If you want to pass compiler-specific options to the build
 of the C object, use the {{csc-options}} property and precede
 C compiler options with {{-C}}.
 
+Components of this type are never installed, they just exist at build time.
+
+==== installed-c-object
+
+  [egg property] (installed-c-object NAME PROP ...)
+
+Similar to {{c-object}}, but the compiled object file will be installed in the
+extension repository.
 
 === Component properties
 
@@ -268,7 +278,7 @@ extension libraries. The name is optional and defaults to the
 name of the extensions (with the proper extension).
 
 If {{NAME}} is a list of the form {{(predefined [NAME])}}, then
-no types file is created during compilation and an existing types file 
+no types file is created during compilation and an existing types file
 for this extension is assumed and installed.
 
 ==== inline-file
@@ -284,17 +294,14 @@ name of the extensions (with the proper extension).
 
  [egg property] (custom-build STRING)
 
-Specifies a custom build operation that should be executed instead of
+Specifies a custom build script that should be executed instead of
 the default build operations. This property is mandatory for
 components of type {{generated-source-file}}. {{STRING}} should be the
-name of a shell command (e.g., a script) and thus may be platform
+name of a {{sh(1)}} shell command (e.g., a script) and thus may be platform
 sensitive.  The path to the file is prepended implicitly, so you
-should '''not''' prefix it with {{./}}.  On Windows, a file with the
-{{.bat}} extension will be picked before a plain file with no
-extension.
+should '''not''' prefix it with {{./}}.
 
-The script will be made executable on UNIX systems, if necessary,
-and will be invoked like the {{csc}} program and
+The script will be invoked like the {{csc}} program and
 is executed with the location of the CHICKEN
 binaries in the {{PATH}}. Also, the following environment variables
 are set in the execution environment of the script:
@@ -320,6 +327,15 @@ compilation of the extension, so multiple options should be specified
 as {{(csc-options "OPT1" "OPT2" ...)}} instead of {{(csc-options "OPT1 OPT2")}}
 (the latter would be a single option containing a whitespace character).
 
+OPTION may optionally be a list of the form {{(custom-config FILENAME ARG ...)}},
+which allows to dynamically determine options to be passed to the {{csc}}
+program. FILENAME should be the name of a Scheme source file in the
+current build directory. The file is invoked as {{csc -s FILENAME ARG ...}}
+and should write s-expressions to stdout that are taken as additional
+options to be passed to {{csc}} when compiling a component. The expressions
+are read in, any list structure is flattened and all items are converted to
+strings and added to the list of compilation options.
+
 ==== link-options
 
  [egg property] (link-options OPTION ...)
@@ -334,6 +350,8 @@ as {{(link-options "OPT1" "OPT2" ...)}} instead of {{(link-options "OPT1 OPT2")}
 
 Note that in order to pass linker options to the underlying C-compiler, these must
 be prefixed with {{-L}}, eg. {{(link-options "-L" "-lpng")}}.
+
+This property supports {{custom-config}} specifications, described above.
 
 ==== source
 
@@ -387,7 +405,7 @@ Specifies an alternative installation destination for the
 built component and only applies
 to components of type {{data}}, {{c-include}} and {{scheme-include}}.
 This property should only be used in extreme
-cases, as it is recommended to use the default installation 
+cases, as it is recommended to use the default installation
 locations, which are:
 
 * for C include files: {{<PREFIX>/include/chicken/}}

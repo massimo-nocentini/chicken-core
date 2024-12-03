@@ -135,9 +135,9 @@
 
   (define (gather-components-rec info mode)
     (case (car info)
-      ((host) 
+      ((host)
        (if host-extensions (gather-components (cdr info) 'host) '()))
-      ((target) 
+      ((target)
        (if target-extensions (gather-components (cdr info) 'target) '()))
       ((extension) (list (list 'extension mode (cadr info))))
       ((data) (list (list 'data mode (cadr info))))
@@ -146,6 +146,7 @@
       ((scheme-include) (list (list 'scheme-include mode (cadr info))))
       ((program) (list (list 'program mode (cadr info))))
       ((c-object) (list (list 'c-object mode (cadr info))))
+      ((installed-c-object) (list (list 'installed-c-object mode (cadr info))))
       (else '())))
 
   (define (list-installed-components eggs)

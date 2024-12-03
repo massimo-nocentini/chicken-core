@@ -8,11 +8,11 @@
 # conditions are met:
 #
 #   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-#     disclaimer. 
+#     disclaimer.
 #   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-#     disclaimer in the documentation and/or other materials provided with the distribution. 
+#     disclaimer in the documentation and/or other materials provided with the distribution.
 #   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-#     products derived from this software without specific prior written permission. 
+#     products derived from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 # OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -39,7 +39,7 @@ EXE = .exe
 
 # commands
 
-HOSTSYSTEM ?= mingw32
+HOSTSYSTEM ?= mingw
 
 # options
 
@@ -57,8 +57,8 @@ C_COMPILER_SHARED_OPTIONS = -DPIC
 LINKER_LINK_SHARED_LIBRARY_OPTIONS = -shared
 LIBRARIES = -lm -lws2_32
 LIBCHICKEN_SO_LINKER_OPTIONS = -Wl,--out-implib,lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX).dll.a
-LIBCHICKEN_SO_LIBRARIES = -lws2_32 
-LIBUCHICKEN_SO_LIBRARIES = -lws2_32 
+LIBCHICKEN_SO_LIBRARIES = -lws2_32
+LIBUCHICKEN_SO_LIBRARIES = -lws2_32
 LIBCHICKEN_IMPORT_LIBRARY = lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX).dll.a
 TARGET_C_COMPILER = gcc
 TARGET_CXX_COMPILER = g++

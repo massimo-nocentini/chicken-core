@@ -8,11 +8,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -33,7 +33,7 @@
     (compiler-cleanup-hook bomb collected-debugging-output debugging
      debugging-chicken with-debugging-output quit-compiling
      emit-syntax-trace-info check-signature build-lambda-list
-     c-ify-string valid-c-identifier? read-expressions
+     valid-c-identifier? read-expressions
      bytes->words words->bytes replace-rest-op-with-list-ops
      check-and-open-input-file close-checked-input-file fold-inner
      constant? collapsable-literal? immediate? basic-literal?
@@ -77,7 +77,7 @@
 (import scheme
 	chicken.base
 	chicken.bitwise
-	chicken.blob
+	chicken.bytevector
 	chicken.condition
 	chicken.file
 	chicken.fixnum
@@ -95,6 +95,7 @@
 	chicken.string
 	chicken.syntax
 	chicken.time)
+(import (only (scheme base) open-output-string get-output-string))
 
 (include "tweaks")
 (include "mini-srfi-1.scm")
@@ -133,7 +134,7 @@
 	(when (pair? args)
 	  (display ": ")
 	  (for-each
-	   (lambda (x) (printf "~s " (force x))) 
+	   (lambda (x) (printf "~s " (force x)))
 	   args) )
 	(newline))))
   (define (dump txt)
@@ -176,21 +177,19 @@
 (set! ##sys#syntax-error-hook
   (lambda (msg . args)
     (let ((out (current-error-port))
-	  (loc (and (symbol? msg) 
+	  (loc (and (symbol? msg)
 		    (let ((loc msg))
 		      (set! msg (car args))
 		      (set! args (cdr args))
 		      loc))))
       (if loc
-	  (fprintf out "\nSyntax error (~a): ~a~%~%" loc msg) 
+	  (fprintf out "\nSyntax error (~a): ~a~%~%" loc msg)
 	  (fprintf out "\nSyntax error: ~a~%~%" msg) )
       (for-each (cut fprintf out "\t~s~%" <>) args)
       (print-call-chain out 0 ##sys#current-thread "\n\tExpansion history:\n")
       (exit 70) ) ) )
 
-(set! syntax-error ##sys#syntax-error-hook)
-
-(define (emit-syntax-trace-info info cntr) 
+(define (emit-syntax-trace-info info cntr)
   (define (thread-id t) (##sys#slot t 14))
   (##core#inline "C_emit_syntax_trace_info" info cntr
                  (thread-id ##sys#current-thread)))
@@ -216,25 +215,6 @@
     (cond ((or (zero? n) (null? vars)) (or rest '()))
           (else (cons (car vars) (loop (cdr vars) (sub1 n)))) ) ) )
 
-;; XXX: Put this too in c-platform or c-backend?
-(define (c-ify-string str)
-  (list->string
-   (cons 
-    #\"
-    (let loop ((chars (string->list str)))
-      (if (null? chars)
-	  '(#\")
-	  (let* ((c (car chars))
-		 (code (char->integer c)) )
-	    (if (or (< code 32) (>= code 127) (memq c '(#\" #\' #\\ #\? #\*)))
-		(append '(#\\)
-			(cond ((< code 8) '(#\0 #\0))
-			      ((< code 64) '(#\0))
-			      (else '()) )
-			(string->list (number->string code 8))
-			(loop (cdr chars)) )
-		(cons c (loop (cdr chars))) ) ) ) ) ) ) )
-
 ;; XXX: This too, but it's used only in core.scm, WTF?
 (define (valid-c-identifier? name)
   (let ([str (string->list (->string name))])
@@ -243,6 +223,11 @@
 	   (and (or (char-alphabetic? c0) (char=? #\_ c0))
 		(every (lambda (c) (or (char-alphabetic? c) (char-numeric? c) (char=? #\_ c)))
 		       (cdr str)))))))
+
+(define (struct/union-wrapper-type-name x)
+  (cond ((list? (cadr x)) (string->symbol (->string (caadr x))))
+        (else (string->symbol (string-append (symbol->string (car x)) " "
+                                             (->string (cadr x)))))))
 
 ;; TODO: Move these to (chicken memory)?
 (define bytes->words (foreign-lambda int "C_bytestowords" int))
@@ -260,11 +245,11 @@
   (unless (string=? fname "-") (close-input-port port)) )
 
 (define (fold-inner proc lst)
-  (if (null? (cdr lst)) 
+  (if (null? (cdr lst))
       lst
       (let fold ((xs (reverse lst)))
 	(apply
-	 proc 
+	 proc
 	 (if (null? (cddr xs))
 	     (list (cadr xs) (car xs))
 	     (list (fold (cdr xs)) (car xs)) ) ) ) ) )
@@ -287,17 +272,14 @@
 
 ;;; Predicates on expressions and literals:
 
-;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
-(define (bwp-object? x) (##core#inline "C_bwpp" x))
-
 (define (constant? x)
   (or (number? x)
       (char? x)
       (string? x)
       (boolean? x)
       (eof-object? x)
+      (bytevector? x)
       (bwp-object? x)
-      (blob? x)
       (vector? x)
       (##sys#srfi-4-vector? x)
       (and (pair? x) (eq? 'quote (car x))) ) )
@@ -324,7 +306,7 @@
       (symbol? x)
       (constant? x)
       (and (vector? x) (every basic-literal? (vector->list x)))
-      (and (pair? x) 
+      (and (pair? x)
 	   (basic-literal? (car x))
 	   (basic-literal? (cdr x)) ) ) )
 
@@ -337,7 +319,7 @@
 	  ((null? (cdr xs)) (car xs))
 	  ((let ([h (car xs)])
 	     (or (equal? h '(##core#undefined))
-		 (constant? h) 
+		 (constant? h)
 		 (equal? h '(##sys#void)) ) )
 	   (loop (cdr xs)) )
 	  (else `(let ((,(gensym 't) ,(car xs)))
@@ -349,11 +331,11 @@
 	[exn-msg (condition-property-accessor 'exn 'message)] )
     (lambda (str)
       (handle-exceptions ex
-	  (quit-compiling "cannot parse expression: ~s [~a]~%" 
+	  (quit-compiling "cannot parse expression: ~s [~a]~%"
 			  str
-			  (if (exn? ex) 
+			  (if (exn? ex)
 			      (exn-msg ex)
-			      (->string ex) ) ) 
+			      (->string ex) ) )
 	(let ((xs (with-input-from-string
 		      str
 		    (lambda ()
@@ -388,7 +370,7 @@
 (define profile-lambda-index 0)
 
 (define (expand-profile-lambda name llist body)
-  (let ([index profile-lambda-index] 
+  (let ([index profile-lambda-index]
 	[args (gensym)] )
     (set! profile-lambda-list (alist-cons index name profile-lambda-list))
     (set! profile-lambda-index (add1 index))
@@ -400,7 +382,7 @@
 
 ;; Get expressions which initialize and populate the profiling vector
 (define (profiling-prelude-exps profile-name)
-  `((set! ,profile-info-vector-name 
+  `((set! ,profile-info-vector-name
       (##sys#register-profile-info
        ',(length profile-lambda-list)
        ',profile-name))
@@ -450,12 +432,10 @@
 
 ;; Note: much of this stuff will be overridden by the inline-definitions in "tweaks.scm".
 
-(define-record-type node
-  (make-node class parameters subexpressions)
-  node?
-  (class node-class node-class-set!)	; symbol
-  (parameters node-parameters node-parameters-set!) ; (value...)
-  (subexpressions node-subexpressions node-subexpressions-set!)) ; (node...)
+(define-record node
+  class 	; symbol
+  parameters ; (value...)
+  subexpressions ) ; (node...)
 
 (set-record-printer! node
   (lambda (n out)
@@ -495,7 +475,7 @@
 		       'let (unzip1 bs)
 		       (append (map (lambda (b) (walk (cadr b))) (cadr x))
 			       (list (walk body)) ) ) ) ) )
-	       ((lambda ##core#lambda) 
+	       ((lambda ##core#lambda)
 		(make-node 'lambda (list (cadr x)) (list (walk (caddr x)))))
 	       ((##core#the)
 		(make-node '##core#the
@@ -506,7 +486,7 @@
 		(let loop ((cls (cdddr x)) (types '()) (exps (list (walk (caddr x)))))
 		  (cond ((null? cls) 	; no "else" clause given
 			 (make-node
-			  '##core#typecase 
+			  '##core#typecase
 			  (cons (cadr x) (reverse types))
 			  (reverse
 			   (cons (make-node '##core#undefined '() '()) exps))))
@@ -568,7 +548,7 @@
 (define (build-expression-tree node)
   (let walk ((n node))
     (let ((subs (node-subexpressions n))
-	  (params (node-parameters n)) 
+	  (params (node-parameters n))
 	  (class (node-class n)) )
       (case class
 	((if ##core#box ##core#cond) (cons class (map walk subs)))
@@ -583,7 +563,7 @@
 	((let)
 	 `(let ,(map list params (map walk (butlast subs)))
 	    ,(walk (last subs)) ) )
-	((##core#lambda) 
+	((##core#lambda)
 	 (list (if (second params)
 		   'lambda
 		   '##core#lambda)
@@ -603,17 +583,17 @@
 		       `((else ,(walk (car bodies)))))
 		   (cons (list (car types) (walk (car bodies)))
 			 (loop (cdr types) (cdr bodies)))))))
-	((##core#call) 
+	((##core#call)
 	 (map walk subs))
 	((##core#callunit) (cons* '##core#callunit (car params) (map walk subs)))
 	((##core#undefined) (list class))
-	((##core#bind) 
+	((##core#bind)
 	 (let loop ((n (car params)) (vals subs) (bindings '()))
 	   (if (zero? n)
 	       `(##core#bind ,(reverse bindings) ,(walk (car vals)))
 	       (loop (- n 1) (cdr vals) (cons (walk (car vals)) bindings)) ) ) )
 	((##core#unbox ##core#ref ##core#update ##core#update_i)
-	 (cons* class (walk (car subs)) params (map walk (cdr subs))) ) 
+	 (cons* class (walk (car subs)) params (map walk (cdr subs))) )
 	((##core#inline_allocate)
 	 (cons* class params (map walk subs)))
 	(else (cons class (append params (map walk subs)))) ) ) ) )
@@ -622,8 +602,8 @@
   (let fold ([vars lst])
     (if (null? (cddr vars))
 	(apply proc vars)
-	(make-node 
-	 '##core#inline '("C_and") 
+	(make-node
+	 '##core#inline '("C_and")
 	 (list (proc (first vars) (second vars))
 	       (fold (cdr vars)) ) ) ) ) )
 
@@ -634,7 +614,7 @@
    (lambda (vars argc rest)
      (receive (largs rargs) (split-at args argc)
        (let* ((rlist (if copy? (map gensym vars) vars))
-	      (body (if copy? 
+	      (body (if copy?
 			(copy-node-tree-and-rename body vars rlist db cfk)
 			body) )
 	      (rarg-aliases (map (lambda (r) (gensym 'rarg)) rargs)) )
@@ -667,7 +647,7 @@
 					(qnode '())
 					(make-node
 					 '##core#inline_allocate
-					 (list "C_a_i_list" (* 3 (length rargs))) 
+					 (list "C_a_i_list" (* 3 (length rargs)))
 					 rargs) )
 				    body) ))
 			 (make-node 'let (list (car rarg-aliases))
@@ -689,22 +669,22 @@
 	(case class
 	  ((quote)
 	   (make-node class params '()))
-	  ((##core#variable) 
+	  ((##core#variable)
 	   (let ((var (first params)))
 	     (when (db-get db var 'contractable)
 	       (cfk var))
 	     (varnode (rename var rl))) )
-	  ((set!) 
+	  ((set!)
 	   (make-node
 	    'set! (list (rename (first params) rl))
 	    (list (walk (first subs) rl)) ) )
-	  ((let) 
+	  ((let)
 	   (let* ((v (first params))
 		  (val1 (walk (first subs) rl))
 		  (a (gensym v))
 		  (rl2 (alist-cons v a rl)) )
 	     (db-put! db a 'inline-transient #t)
-	     (make-node 
+	     (make-node
 	      'let (list a)
 	      (list val1 (walk (second subs) rl2)))) )
 	  ((##core#lambda)
@@ -717,7 +697,7 @@
 				  a))
 			      vars) )
 		     (rl2 (append (map cons vars as) rl)) )
-		(make-node 
+		(make-node
 		 '##core#lambda
 		 (list (gensym 'f) (second params) ; new function-id
 		       (build-lambda-list as argc (and rest (rename rest rl2)))
@@ -803,7 +783,7 @@
 (define (copy-node! from to)
   (node-class-set! to (node-class from))
   (node-parameters-set! to (node-parameters from))
-  (node-subexpressions-set! to (node-subexpressions from)) 
+  (node-subexpressions-set! to (node-subexpressions from))
   to)
 
 (define (node->sexpr n)
@@ -871,9 +851,9 @@
       (let loop ()
 	(let ((x (read)))
 	  (unless (eof-object? x)
-	    (mark-variable 
+	    (mark-variable
 	     (car x)
-	     '##compiler#inline-global 
+	     '##compiler#inline-global
 	     (sexpr->node (cadr x)))
 	    (loop)))))))
 
@@ -895,7 +875,7 @@
 	    ((not (pair? x)) #f)
 	    ((match1 (car x) (car p)) (match1 (cdr x) (cdr p)))
 	    (else #f) ) )
-    
+
     (define (matchn n p)
       (if (not (pair? p))
 	  (resolve p n)
@@ -923,7 +903,7 @@
     (let ([subs (node-subexpressions n)])
       (case (node-class n)
 	[(##core#variable quote ##core#undefined ##core#proc) #f]
-	[(##core#lambda) 
+	[(##core#lambda)
 	 (let ([id (first (node-parameters n))])
 	   (find (lambda (fs)
 		   (eq? id (foreign-callback-stub-id fs)))
@@ -935,14 +915,14 @@
   (let* ([params (node-parameters node)]
 	 [llist (third params)]
 	 [k (and (pair? llist) (first llist))] ) ; leaf-routine has no continuation argument
-    (and k 
+    (and k
 	 (second params)
 	 (let rec ([n node])
 	   (case (node-class n)
 	     [(##core#call)
 	      (let* ([subs (node-subexpressions n)]
 		     [f (first subs)] )
-		(and (eq? '##core#variable (node-class f)) 
+		(and (eq? '##core#variable (node-class f))
 		     (eq? k (first (node-parameters f)))
 		     (every rec (cdr subs)) ) ) ]
 	     [(##core#callunit) #f]
@@ -996,14 +976,12 @@
 
 (define foreign-callback-stubs '())
 
-(define-record-type foreign-callback-stub
-  (make-foreign-callback-stub id name qualifiers return-type argument-types)
-  foreign-callback-stub?
-  (id foreign-callback-stub-id)		; symbol
-  (name foreign-callback-stub-name)	; string
-  (qualifiers foreign-callback-stub-qualifiers)	; string
-  (return-type foreign-callback-stub-return-type) ; type-specifier
-  (argument-types foreign-callback-stub-argument-types)) ; (type-specifier ...)
+(define-record foreign-callback-stub
+  id 		; symbol
+  name 	; string
+  qualifiers ; string
+  return-type ; type-specifier
+  argument-types ) ; (type-specifier ...)
 
 (define (register-foreign-callback-stub! id params)
   (set! foreign-callback-stubs
@@ -1060,8 +1038,10 @@
 	     ;; TODO: Should "[unsigned-]byte" be range checked?
 	     ((int unsigned-int byte unsigned-byte int32 unsigned-int32)
 	      (if unsafe param `(##sys#foreign-fixnum-argument ,param)))
-	     ((float double number) (if unsafe param `(##sys#foreign-flonum-argument ,param)))
-	     ((blob scheme-pointer)
+	     ((float double number)
+	      (if unsafe param `(##sys#foreign-flonum-argument ,param)))
+	     ((u8vector bytevector scheme-pointer
+                 blob) ; DEPRECATED
 	      (let ((tmp (gensym)))
 		`(##core#let ((,tmp ,param))
 		   (##core#if ,tmp
@@ -1069,7 +1049,8 @@
 				   tmp
 				   `(##sys#foreign-block-argument ,tmp) )
 		       (##core#quote #f)) ) ) )
-	     ((nonnull-scheme-pointer nonnull-blob)
+	     ((nonnull-scheme-pointer nonnull-bytevector nonnull-u8vector
+                               nonnull-blob) ; DEPRECATED
 	      (if unsafe
 		  param
 		  `(##sys#foreign-block-argument ,param) ) )
@@ -1085,7 +1066,7 @@
 	      (if unsafe
 		  param
 		  `(##sys#foreign-struct-wrapper-argument (##core#quote pointer-vector) ,param) ) )
-	     ((u8vector u16vector s8vector s16vector u32vector s32vector
+	     ((u16vector s8vector s16vector u32vector s32vector
 			u64vector s64vector f32vector f64vector)
 	      (let ((tmp (gensym)))
 		`(##core#let ((,tmp ,param))
@@ -1094,16 +1075,19 @@
 				   tmp
 				   `(##sys#foreign-struct-wrapper-argument (##core#quote ,t) ,tmp) )
 		       (##core#quote #f)) ) ) )
-	     ((nonnull-u8vector nonnull-u16vector
+	     ((nonnull-u16vector
 				nonnull-s8vector nonnull-s16vector
 				nonnull-u32vector nonnull-s32vector
 				nonnull-u64vector nonnull-s64vector
 				nonnull-f32vector nonnull-f64vector)
 	      (if unsafe
 		  param
-		  `(##sys#foreign-struct-wrapper-argument 
+		  `(##sys#foreign-struct-wrapper-argument
 		    (##core#quote ,(##sys#slot (assq t tmap) 1))
 		    ,param) ) )
+             ((complex cplxnum)
+               ;; always converts to inexact
+               `(##sys#foreign-cplxnum-argument ,param))
 	     ((integer32 integer64 integer short long ssize_t)
 	      (let* ((foreign-type (##sys#slot (assq t ftmap) 1))
 		     (size-expr (sprintf "sizeof(~A) * CHAR_BIT" foreign-type)))
@@ -1131,18 +1115,18 @@
 	      (let ((tmp (gensym)))
 		`(##core#let ((,tmp ,param))
 		   (##core#if ,tmp
-			      ,(if unsafe 
-				   `(##sys#make-c-string ,tmp)
+			      ,(if unsafe
+				   `(##sys#slot ,tmp 0)
 				   `(##sys#make-c-string (##sys#foreign-string-argument ,tmp)) )
 		       (##core#quote #f)) ) ) )
 	     ((nonnull-c-string nonnull-c-string* nonnull-unsigned-c-string*)
-	      (if unsafe 
-		  `(##sys#make-c-string ,param)
+	      (if unsafe
+		  `(##sys#slot ,param 0)
 		  `(##sys#make-c-string (##sys#foreign-string-argument ,param)) ) )
 	     ((symbol)
-	      (if unsafe 
-		  `(##sys#make-c-string (##sys#symbol->string ,param))
-		  `(##sys#make-c-string (##sys#foreign-string-argument (##sys#symbol->string ,param))) ) )
+	      (if unsafe
+		  `(##sys#slot ,param 1)
+		  `(##sys#slot (##sys#foreign-symbol-argument ,param) 1)) )
 	     (else
 	      (cond ((and (symbol? t) (lookup-foreign-type t))
 		     => (lambda (t) (next (vector-ref t 0)) ) )
@@ -1160,6 +1144,9 @@
 			     (##core#if ,tmp
 					(slot-ref ,param (##core#quote this))
 					(##core#quote #f)) ) ) )
+                       ((struct union)
+                        `(##sys#slot (##sys#foreign-struct-wrapper-argument (##core#quote ,(struct/union-wrapper-type-name t))
+                                                                ,param) 1))
 		       ((scheme-pointer)
 			(let ((tmp (gensym)))
 			  `(##core#let ((,tmp ,param))
@@ -1233,7 +1220,7 @@
    (lambda (t next)
      (case t
        ((char int short bool void unsigned-short scheme-object unsigned-char unsigned-int byte unsigned-byte
-	      int32 unsigned-int32) 
+	      int32 unsigned-int32)
 	0)
        ((c-string nonnull-c-string c-pointer nonnull-c-pointer symbol c-string* nonnull-c-string*
                   unsigned-c-string unsigned-c-string* nonnull-unsigned-c-string*
@@ -1241,8 +1228,10 @@
 	(words->bytes 3) )
        ((unsigned-integer long integer unsigned-long integer32 unsigned-integer32)
 	(words->bytes 6) )    ; 1 bignum digit on 32-bit (overallocs on 64-bit)
-       ((float double number) 
+       ((float double number)
 	(words->bytes 4) )		; possibly 8-byte aligned 64-bit double
+       ((complex cplxnum)
+	(words->bytes 8))     ; 2 double numbers, possibly 8-byte aligned (overallocs on 64-bit)
        ((integer64 unsigned-integer64 size_t ssize_t)
 	(words->bytes 7))     ; 2 bignum digits on 32-bit (overallocs on 64-bit)
        (else
@@ -1250,16 +1239,17 @@
 	       => (lambda (t2) (next (vector-ref t2 0)) ) )
 	      ((pair? t)
 	       (case (car t)
-		 ((ref nonnull-pointer pointer c-pointer nonnull-c-pointer function instance instance-ref nonnull-instance) 
+		 ((ref nonnull-pointer pointer c-pointer nonnull-c-pointer function instance instance-ref nonnull-instance)
 		  (words->bytes 3) )
 		 ((const) (next (cadr t)))
+                 ((struct union) (words->bytes 3)) ;; struct wrapper
 		 ((enum) (words->bytes 6)) ; 1 bignum digit on 32-bit (overallocs on 64-bit)
 		 (else (err t))))
 	      (else (err t))))))
    (lambda () (quit-compiling "foreign type `~S' refers to itself" type)) ) )
 
 (define (estimate-foreign-result-location-size type) ; Used only in compiler.scm
-  (define (err t) 
+  (define (err t)
     (quit-compiling "cannot compute size of location for foreign type `~S'" t) )
   (follow-without-loop
    type
@@ -1273,6 +1263,8 @@
 	(words->bytes 1) )
        ((double integer64 unsigned-integer64 size_t ssize_t)
 	(words->bytes 2) )
+       ((complex cplxnum)
+        (words->bytes 4))
        (else
 	(cond ((and (symbol? t) (lookup-foreign-type t))
 	       => (lambda (t2) (next (vector-ref t2 0)) ) )
@@ -1281,6 +1273,7 @@
 		 ((ref nonnull-pointer pointer c-pointer nonnull-c-pointer function
 		       scheme-pointer nonnull-scheme-pointer enum)
 		  (words->bytes 1))
+                 ((struct union) (words->bytes 3)) ;; struct wrapper
 		 ((const) (next (cadr t)))
 		 (else (err t)) ) )
 	      (else (err t)) ) ) ) )
@@ -1296,32 +1289,34 @@
       ((nonnull-c-string) `(##sys#peek-nonnull-c-string ,body (##core#quote 0)))
       ((c-string* unsigned-c-string*) `(##sys#peek-and-free-c-string ,body (##core#quote 0)))
       ((nonnull-c-string* nonnull-unsigned-c-string*) `(##sys#peek-and-free-nonnull-c-string ,body (##core#quote 0)))
-      ((symbol) `(##sys#intern-symbol (##sys#peek-c-string ,body (##core#quote 0))))
+      ((symbol) `(##sys#string->symbol (##sys#peek-c-string ,body (##core#quote 0))))
       ((c-string-list) `(##sys#peek-c-string-list ,body (##core#quote #f)))
       ((c-string-list*) `(##sys#peek-and-free-c-string-list ,body (##core#quote #f)))
       (else
-       (if (list? type)
-	   (if (and (eq? (car type) 'const)
-		    (= 2 (length type))
-		    (memq (cadr type) '(c-string c-string* unsigned-c-string
-						 unsigned-c-string* nonnull-c-string
-						 nonnull-c-string*
-						 nonnull-unsigned-string*)))
-	       (finish-foreign-result (cadr type) body)
-	       (if (= 3 (length type))
-		   (case (car type)
-		     ((instance instance-ref)
-		      (let ((tmp (gensym)))
-			`(let ((,tmp ,body))
-			   (and ,tmp
-				(not (##sys#null-pointer? ,tmp))
-				(make ,(caddr type)
-				  (##core#quote this) ,tmp) ) ) ) )
-		     ((nonnull-instance)
-		      `(make ,(caddr type) (##core#quote this) ,body) )
-		     (else body))
-		   body))
-	   body)))))
+       (cond ((not (list? type)) body)
+             ((and (memq (car type) '(struct union))
+                   (= 2 (length type)))
+              `(##sys#wrap-struct (##core#quote ,(struct/union-wrapper-type-name type)) ,body))
+             ((and (eq? (car type) 'const)
+                   (= 2 (length type))
+                   (memq (cadr type) '(c-string c-string* unsigned-c-string
+                                                unsigned-c-string* nonnull-c-string
+                                                nonnull-c-string*
+                                                nonnull-unsigned-string*)))
+              (finish-foreign-result (cadr type) body))
+             ((= 3 (length type))
+              (case (car type)
+                ((instance instance-ref)
+                 (let ((tmp (gensym)))
+                   `(let ((,tmp ,body))
+                      (and ,tmp
+                           (not (##sys#null-pointer? ,tmp))
+                           (make ,(caddr type)
+                                 (##core#quote this) ,tmp) ) ) ) )
+                ((nonnull-instance)
+                 `(make ,(caddr type) (##core#quote this) ,body) )
+                (else body)))
+             (else body))))))
 
 
 ;;; Translate foreign-type into scrutinizer type:
@@ -1345,22 +1340,25 @@
 	   (case mode
 	     ((arg) 'number)
 	     (else 'float)))
+	  ((complex cplxnum) 'complex)
 	  ((scheme-pointer nonnull-scheme-pointer) '*)
-	  ((blob)
+	  ((bytevector u8vector
+                blob) ; DEPRECATED
 	   (case mode
-	     ((arg) '(or false blob))
-	     (else 'blob)))
-	  ((nonnull-blob) 'blob)
+	     ((arg) '(or false bytevector))
+	     (else 'bytevector)))
+	  ((nonnull-bytevector) 'bytevector)
+	  ((nonnull-blob) 'bytevector) ; DEPRECATED
 	  ((pointer-vector)
 	   (case mode
 	     ((arg) '(or false pointer-vector))
 	     (else 'pointer-vector)))
 	  ((nonnull-pointer-vector) 'pointer-vector)
-	  ((u8vector u16vector s8vector s16vector u32vector s32vector u64vector s64vector f32vector f64vector)
+	  ((u16vector s8vector s16vector u32vector s32vector u64vector s64vector f32vector f64vector)
 	   (case mode
 	     ((arg) `(or false (struct ,ft)))
 	     (else `(struct ,ft))))
-	  ((nonnull-u8vector) '(struct u8vector))
+	  ((nonnull-u8vector) 'bytevector)
 	  ((nonnull-s8vector) '(struct s8vector))
 	  ((nonnull-u16vector) '(struct u16vector))
 	  ((nonnull-s16vector) '(struct s16vector))
@@ -1395,6 +1393,8 @@
 			 '(or false pointer locative)
 			 '(or false pointer)))
 		    ((const) (foreign-type->scrutiny-type (cadr t) mode))
+                    ((struct union)
+                     `(struct ,(struct/union-wrapper-type-name t)))
 		    ((enum) 'integer)
 		    ((nonnull-pointer nonnull-c-pointer)
 		     (if (eq? 'arg mode)
@@ -1411,10 +1411,10 @@
     (let walk ([n node])
       (let ([subs (node-subexpressions n)])
 	(case (node-class n)
-	  [(##core#variable set!) 
+	  [(##core#variable set!)
 	   (let ([var (first (node-parameters n))])
 	     (when (and (memq var vars) (not (memq var used)))
-	       (set! used (cons var used)) ) 
+	       (set! used (cons var used)) )
 	     (for-each walk subs) ) ]
 	  [(quote ##core#undefined ##core#primitive) #f]
 	  [else (for-each walk subs)] ) ) )
@@ -1432,17 +1432,17 @@
 	    [params (node-parameters n)] )
 	(case (node-class n)
 	  ((quote ##core#undefined ##core#primitive ##core#proc ##core#inline_ref) #f)
-	  ((##core#variable) 
+	  ((##core#variable)
 	   (let ((var (first params)))
 	     (unless (memq var e)
 	       (set! vars (lset-adjoin/eq? vars var))
-	       (unless (variable-visible? var block-compilation) 
+	       (unless (variable-visible? var block-compilation)
 		 (set! hvars (lset-adjoin/eq? hvars var))))))
 	  ((set!)
 	   (let ((var (first params)))
 	     (unless (memq var e) (set! vars (lset-adjoin/eq? vars var)))
 	     (walk (car subs) e) ) )
-	  ((let) 
+	  ((let)
 	   (walk (first subs) e)
 	   (walk (second subs) (append params e)) )
 	  ((##core#lambda)
@@ -1459,12 +1459,19 @@
     (values vars hvars) ) )		; => freevars hiddenvars
 
 
+;;; Some pathname operations:
+
+(define (chop-separator str)		; Used only in batch-driver.scm
+  (let ([len (sub1 (string-length str))])
+    (if (and (> len 0)
+	     (memq (string-ref str len) '(#\\ #\/)))
+	(substring str 0 len)
+	str) ) )
+
 ;;; Special block-variable literal type:
 
-(define-record-type block-variable-literal
-  (make-block-variable-literal name)
-  block-variable-literal?
-  (name block-variable-literal-name))	; symbol
+(define-record block-variable-literal
+  name)	; symbol
 
 
 ;;; Generation of random names:
@@ -1508,7 +1515,7 @@
     (let ((n2 (hash-table-ref real-name-table n)))
       (if n2
 	  (or (hash-table-ref real-name-table n2)
-	      n2) 
+	      n2)
 	  n) ) )
   (let ((rn (resolve var)))
     (cond ((not rn) (##sys#symbol->string var))
@@ -1611,8 +1618,10 @@
 	   (and str (fits? (string-length str)))))
 	((flonum? lit))
 	((symbol? lit)
-	 (let ((str (##sys#slot lit 1)))
+	 (let ((str (##sys#symbol->string/shared lit)))
 	   (fits? (string-length str))))
+        ((string? lit)
+         (fits? (getsize (##sys#slot lit 0))))
 	((##core#inline "C_byteblockp" lit)
 	 (fits? (getsize lit)))
 	(else
@@ -1630,8 +1639,8 @@
   (let loop ([i 0] [n n])
     (let ([class (node-class n)]
 	  [params (node-parameters n)]
-	  [subs (node-subexpressions n)] 
-	  [ind (make-string i #\space)] 
+	  [subs (node-subexpressions n)]
+	  [ind (make-string i #\space)]
 	  [i2 (+ i 2)] )
       (printf "~%~A<~A ~S" ind class params)
       (for-each (cut loop i2 <>) subs)
@@ -1655,7 +1664,7 @@
 (set! ##sys#user-read-hook
   (let ([old-hook ##sys#user-read-hook])
     (lambda (char port)
-      (if (char=? #\> char)	       
+      (if (char=? #\> char)
 	  (let* ((_ (read-char port))		; swallow #\>
 		 (text (scan-sharp-greater-string port)))
 	    `(declare (foreign-declare ,text)) )
@@ -1676,7 +1685,7 @@
 		     (get-output-string out)
 		     (begin
 		       (write-char #\< out)
-		       (write-char c out) 
+		       (write-char c out)
 		       (loop) ) ) ) )
 	      (else
 	       (write-char c out)
@@ -1741,7 +1750,7 @@
     (for-each
      (lambda (e)
        (let ((id (car e)))
-	 (##sys#put! 
+	 (##sys#put!
 	  id '##core#db
 	  (append (or (##sys#get id '##core#db) '()) (list (cdr e))) )))
      (call-with-input-file dbfile read-expressions))))
@@ -1762,7 +1771,7 @@
 Usage: chicken FILENAME [OPTION ...]
 
   `chicken' is the CHICKEN compiler.
-  
+
   FILENAME should be a complete source file name with extension, or "-" for
   standard input. OPTION may be one of the following:
 
@@ -1790,9 +1799,8 @@ Usage: chicken FILENAME [OPTION ...]
     -keyword-style STYLE         allow alternative keyword syntax
                                   (prefix, suffix or none)
     -no-parentheses-synonyms     disables list delimiter synonyms
-    -no-symbol-escape            disables support for escaped symbols
-    -r5rs-syntax                 disables the CHICKEN extensions to
-                                  R5RS syntax
+    -r7rs-syntax                 disables the CHICKEN extensions to
+                                  R7RS syntax
     -compile-syntax              macros are made available at run-time
     -emit-import-library MODULE  write compile-time module information into
                                   separate file
@@ -1817,7 +1825,7 @@ Usage: chicken FILENAME [OPTION ...]
     -no-trace                    disable tracing information
     -debug-info                  enable debug-information in compiled code for use
                                   with an external debugger
-    -profile                     executable emits profiling information 
+    -profile                     executable emits profiling information
     -profile-name FILENAME       name of the generated profile information file
     -accumulate-profile          executable emits profiling information in
                                   append mode
@@ -1877,7 +1885,7 @@ Usage: chicken FILENAME [OPTION ...]
   Obscure options:
 
     -debug MODES                 display debugging output for the given modes
-    -raw                         do not generate implicit init- and exit code                           
+    -raw                         do not generate implicit init- and exit code
     -emit-external-prototypes-first
                                  emit prototypes for callbacks before foreign
                                   declarations
@@ -1902,7 +1910,7 @@ Available debugging options:
      h          you already figured that out
      i          show information about inlining
      m          show GC statistics during compilation
-     n          print the line-number database 
+     n          print the line-number database
      o          show performed optimizations
      p          display information about what the compiler is currently doing
      r          show invocation parameters
@@ -1930,3 +1938,4 @@ Available debugging options:
 EOF
 ))
 )
+

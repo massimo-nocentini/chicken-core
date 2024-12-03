@@ -209,7 +209,7 @@
                    (print "BUG! We got, without error, length = "
                           ((foreign-lambda* int ((c-string str))
                                             "C_return(strlen(str));")
-                           "foo\x00bar")))
+                           "foo\x00;bar")))
 
 
 ;; failed compile-time argument count check (reported by Alan Post)
@@ -403,7 +403,6 @@
         "  result += v[i];"
         "}"
         "C_return(result);") arg (srfi-4-vector-length type arg)))))
-(assert (= 10 (s4v-sum "integer" u8vector '#u8(1 2 3 4))))
 (assert (= 10 (s4v-sum "integer" u16vector '#u16(1 2 3 4))))
 (assert (= 10 (s4v-sum "integer" u32vector '#u32(1 2 3 4))))
 (assert (= 10 (s4v-sum "integer" s64vector '#s64(1 2 3 4))))

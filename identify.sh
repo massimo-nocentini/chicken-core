@@ -1,4 +1,4 @@
-#!/bin/sh -e
+#!/bin/sh
 #
 # identify.sh - check for .git directory and obtain checked out revision and branch
 #

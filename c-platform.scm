@@ -46,6 +46,7 @@
 	chicken.compiler.core
 	chicken.fixnum
 	chicken.internal)
+(import (only (scheme base) port?))
 
 (include "tweaks")
 (include "mini-srfi-1.scm")
@@ -62,11 +63,12 @@
      ##sys#for-each ##sys#map ##sys#print ##sys#setter
      ##sys#setslot ##sys#dynamic-wind ##sys#call-with-values
      ##sys#start-timer ##sys#stop-timer ##sys#gcd ##sys#lcm ##sys#structure? ##sys#slot
-     ##sys#allocate-vector ##sys#list->vector ##sys#block-ref ##sys#block-set!
+     ##sys#allocate-vector ##sys#allocate-bytevector ##sys#list->vector ##sys#block-ref ##sys#block-set!
      ##sys#list ##sys#cons ##sys#append ##sys#vector ##sys#foreign-char-argument ##sys#foreign-fixnum-argument
      ##sys#foreign-flonum-argument ##sys#error ##sys#peek-c-string ##sys#peek-nonnull-c-string 
      ##sys#peek-and-free-c-string ##sys#peek-and-free-nonnull-c-string
      ##sys#foreign-block-argument ##sys#foreign-string-argument
+     ##sys#foreign-symbol-argument
      ##sys#foreign-pointer-argument ##sys#call-with-current-continuation)))
 
 (define default-profiling-declarations
@@ -103,7 +105,7 @@
     no-argc-checks no-procedure-checks no-parentheses-synonyms
     no-procedure-checks-for-toplevel-bindings
     no-bound-checks no-procedure-checks-for-usual-bindings no-compiler-syntax
-    no-parentheses-synonyms no-symbol-escape r5rs-syntax emit-all-import-libraries
+    no-parentheses-synonyms r7rs-syntax emit-all-import-libraries
     strict-types clustering lfa2 debug-info
     regenerate-import-libraries setup-mode
     module-registration no-module-registration))
@@ -142,7 +144,7 @@
 	     open-output-file call-with-input-file call-with-output-file close-input-port close-output-port
 	     values call-with-values vector procedure? memq memv member assq assv assoc list-tail
 	     list-ref abs char-ready? peek-char list->string string->list
-	     current-input-port current-output-port
+	     current-input-port current-output-port call/cc
 	     make-polar make-rectangular real-part imag-part
 	     load eval interaction-environment null-environment
 	     scheme-report-environment)))
@@ -166,7 +168,7 @@
     chicken.base#nan? chicken.base#finite? chicken.base#infinite?
     chicken.base#gensym
     chicken.base#void chicken.base#print chicken.base#print*
-    chicken.base#error chicken.base#call/cc chicken.base#char-name
+    chicken.base#error chicken.base#char-name
     chicken.base#current-error-port
     chicken.base#symbol-append chicken.base#foldl chicken.base#foldr
     chicken.base#setter chicken.base#getter-with-setter
@@ -183,55 +185,47 @@
     chicken.bitwise#bitwise-ior chicken.bitwise#bitwise-xor
     chicken.bitwise#arithmetic-shift chicken.bitwise#bit->boolean
 
-    chicken.blob#blob-size chicken.blob#blob=?
+    chicken.bytevector#bytevector-length chicken.bytevector#bytevector=?
 
     chicken.keyword#get-keyword
 
-    srfi-4#u8vector? srfi-4#s8vector?
-    srfi-4#u16vector? srfi-4#s16vector?
-    srfi-4#u32vector? srfi-4#u64vector?
-    srfi-4#s32vector? srfi-4#s64vector?
-    srfi-4#f32vector? srfi-4#f64vector?
+    chicken.number-vectoru8vector? chicken.number-vectors8vector?
+    chicken.number-vectoru16vector? chicken.number-vectors16vector?
+    chicken.number-vectoru32vector? chicken.number-vectoru64vector?
+    chicken.number-vectors32vector? chicken.number-vectors64vector?
+    chicken.number-vectorf32vector? chicken.number-vectorf64vector?
+    chicken.number-vectorc64vector? chicken.number-vectorf128vector?
 
-    srfi-4#u8vector-length srfi-4#s8vector-length
-    srfi-4#u16vector-length srfi-4#s16vector-length
-    srfi-4#u32vector-length srfi-4#u64vector-length
-    srfi-4#s32vector-length srfi-4#s64vector-length
-    srfi-4#f32vector-length srfi-4#f64vector-length
+    chicken.number-vectoru8vector-length chicken.number-vectors8vector-length
+    chicken.number-vectoru16vector-length chicken.number-vectors16vector-length
+    chicken.number-vectoru32vector-length chicken.number-vectoru64vector-length
+    chicken.number-vectors32vector-length chicken.number-vectors64vector-length
+    chicken.number-vectorf32vector-length chicken.number-vectorf64vector-length
+    chicken.number-vectorc64vector-length chicken.number-vectorc128vector-length
     
-    srfi-4#u8vector-ref srfi-4#s8vector-ref
-    srfi-4#u16vector-ref srfi-4#s16vector-ref
-    srfi-4#u32vector-ref srfi-4#u64vector-ref
-    srfi-4#s32vector-ref srfi-4#s64vector-ref
-    srfi-4#f32vector-ref srfi-4#f64vector-ref
+    chicken.number-vectoru8vector-ref chicken.number-vectors8vector-ref
+    chicken.number-vectoru16vector-ref chicken.number-vectors16vector-ref
+    chicken.number-vectoru32vector-ref chicken.number-vectoru64vector-ref
+    chicken.number-vectors32vector-ref chicken.number-vectors64vector-ref
+    chicken.number-vectorf32vector-ref chicken.number-vectorf64vector-ref
+    chicken.number-vectorc64vector-ref chicken.number-vectorc128vector-ref
 
-    srfi-4#u8vector-set! srfi-4#s8vector-set!
-    srfi-4#u16vector-set! srfi-4#s16vector-set!
-    srfi-4#u32vector-set! srfi-4#u64vector-set!
-    srfi-4#s32vector-set! srfi-4#s64vector-set!
-    srfi-4#f32vector-set! srfi-4#f64vector-set!
+    chicken.number-vectoru8vector-set! chicken.number-vectors8vector-set!
+    chicken.number-vectoru16vector-set! chicken.number-vectors16vector-set!
+    chicken.number-vectoru32vector-set! chicken.number-vectoru64vector-set!
+    chicken.number-vectors32vector-set! chicken.number-vectors64vector-set!
+    chicken.number-vectorf32vector-set! chicken.number-vectorf64vector-set!
+    chicken.number-vectorc64vector-set! chicken.number-vectorc128vector-set!
 
-    srfi-4#u8vector->blob/shared srfi-4#s8vector->blob/shared
-    srfi-4#u16vector->blob/shared srfi-4#s16vector->blob/shared
-    srfi-4#u32vector->blob/shared srfi-4#s32vector->blob/shared
-    srfi-4#u64vector->blob/shared srfi-4#s64vector->blob/shared
-    srfi-4#f32vector->blob/shared srfi-4#f64vector->blob/shared
-    srfi-4#blob->u8vector/shared srfi-4#blob->s8vector/shared
-    srfi-4#blob->u16vector/shared srfi-4#blob->s16vector/shared
-    srfi-4#blob->u32vector/shared srfi-4#blob->s32vector/shared
-    srfi-4#blob->u64vector/shared srfi-4#blob->s64vector/shared
-    srfi-4#blob->f32vector/shared srfi-4#blob->f64vector/shared
-
-    chicken.memory#u8vector-ref chicken.memory#s8vector-ref
-    chicken.memory#u16vector-ref chicken.memory#s16vector-ref
-    chicken.memory#u32vector-ref chicken.memory#s32vector-ref
-    chicken.memory#u64vector-ref chicken.memory#s64vector-ref
-    chicken.memory#f32vector-ref chicken.memory#f64vector-ref
-    chicken.memory#f32vector-set! chicken.memory#f64vector-set!
-    chicken.memory#u8vector-set! chicken.memory#s8vector-set!
-    chicken.memory#u16vector-set! chicken.memory#s16vector-set!
-    chicken.memory#u32vector-set! chicken.memory#s32vector-set!
-    chicken.memory#u64vector-set! chicken.memory#s64vector-set!
+    chicken.number-vectoru16vector->bytevector/shared chicken.number-vectors16vector->bytevector/shared
+    chicken.number-vectoru32vector->bytevector/shared chicken.number-vectors32vector->bytevector/shared
+    chicken.number-vectoru64vector->bytevector/shared chicken.number-vectors64vector->bytevector/shared
+    chicken.number-vectorf32vector->bytevector/shared chicken.number-vectorf64vector->bytevector/shared
+    chicken.number-vectorbytevector->u16vector/shared chicken.number-vectorbytevector->s16vector/shared
+    chicken.number-vectorbytevector->u32vector/shared chicken.number-vectorbytevector->s32vector/shared
+    chicken.number-vectorbytevector->u64vector/shared chicken.number-vectorbytevector->s64vector/shared
+    chicken.number-vectorbytevector->f32vector/shared chicken.number-vectorbytevector->f64vector/shared
+    chicken.number-vectorbytevector->c64vector/shared chicken.number-vectorbytevector->c128vector/shared
 
     chicken.memory.representation#number-of-slots
     chicken.memory.representation#make-record-instance
@@ -267,13 +261,14 @@
 
 (set! internal-bindings
   '(##sys#slot ##sys#setslot ##sys#block-ref ##sys#block-set! ##sys#/-2
-    ##sys#call-with-current-continuation ##sys#size ##sys#byte ##sys#setbyte
+    ##sys#call-with-current-continuation ##sys#size ##sys#byte
     ##sys#pointer? ##sys#generic-structure? ##sys#structure? ##sys#check-structure
     ##sys#check-number ##sys#check-list ##sys#check-pair ##sys#check-string
     ##sys#check-symbol ##sys#check-boolean ##sys#check-locative
+    ##sys#check-fixnum ##sys#check-range ##sys#check-range/internal
     ##sys#check-port ##sys#check-input-port ##sys#check-output-port
-    ##sys#check-open-port
-    ##sys#check-char ##sys#check-vector ##sys#check-byte-vector ##sys#list ##sys#cons
+    ##sys#check-open-port ##sys#check-bytevector ##sys#signal-hook
+    ##sys#check-char ##sys#check-vector ##sys#check-bytevector ##sys#list ##sys#cons
     ##sys#call-with-values ##sys#flonum-in-fixnum-range? 
     ##sys#immediate? ##sys#context-switch
     ##sys#make-structure ##sys#apply ##sys#apply-values
@@ -285,7 +280,10 @@
     ##sys#foreign-string-argument ##sys#foreign-pointer-argument ##sys#void
     ##sys#foreign-ranged-integer-argument ##sys#foreign-unsigned-ranged-integer-argument
     ##sys#peek-fixnum ##sys#setislot ##sys#poke-integer ##sys#permanent? ##sys#values ##sys#poke-double
-    ##sys#intern-symbol ##sys#null-pointer? ##sys#peek-byte
+    ##sys#intern-symbol ##sys#intern-keyword ##sys#null-pointer? ##sys#peek-byte
+    ##sys#foreign-symbol-argument
+    ##sys#symbol->string/shared ##sys#buffer->string ##sys#string->symbol-name
+    ##sys#bytevector->list ##sys#list->bytevector ##sys#make-bytevector
     ##sys#file-exists? ##sys#substring-index ##sys#substring-index-ci ##sys#lcm ##sys#gcd))
 
 (for-each
@@ -528,22 +526,21 @@
 (rewrite 'scheme#symbol? 2 1 "C_i_symbolp" #t)
 (rewrite 'scheme#vector? 2 1 "C_i_vectorp" #t)
 (rewrite '##sys#vector? 2 1 "C_i_vectorp" #t)
-(rewrite '##sys#srfi-4-vector? 2 1 "C_i_srfi_4_vectorp" #t)
-(rewrite 'srfi-4#u8vector? 2 1 "C_i_u8vectorp" #t)
-(rewrite 'srfi-4#s8vector? 2 1 "C_i_s8vectorp" #t)
-(rewrite 'srfi-4#u16vector? 2 1 "C_i_u16vectorp" #t)
-(rewrite 'srfi-4#s16vector? 2 1 "C_i_s16vectorp" #t)
-(rewrite 'srfi-4#u32vector? 2 1 "C_i_u32vectorp" #t)
-(rewrite 'srfi-4#s32vector? 2 1 "C_i_s32vectorp" #t)
-(rewrite 'srfi-4#u64vector? 2 1 "C_i_u64vectorp" #t)
-(rewrite 'srfi-4#s64vector? 2 1 "C_i_s64vectorp" #t)
-(rewrite 'srfi-4#f32vector? 2 1 "C_i_f32vectorp" #t)
-(rewrite 'srfi-4#f64vector? 2 1 "C_i_f64vectorp" #t)
+(rewrite 'chicken.number-vectoru8vector? 2 1 "C_bytevectorp" #t)
+(rewrite 'chicken.number-vectors8vector? 2 1 "C_i_s8vectorp" #t)
+(rewrite 'chicken.number-vectoru16vector? 2 1 "C_i_u16vectorp" #t)
+(rewrite 'chicken.number-vectors16vector? 2 1 "C_i_s16vectorp" #t)
+(rewrite 'chicken.number-vectoru32vector? 2 1 "C_i_u32vectorp" #t)
+(rewrite 'chicken.number-vectors32vector? 2 1 "C_i_s32vectorp" #t)
+(rewrite 'chicken.number-vectoru64vector? 2 1 "C_i_u64vectorp" #t)
+(rewrite 'chicken.number-vectors64vector? 2 1 "C_i_s64vectorp" #t)
+(rewrite 'chicken.number-vectorf32vector? 2 1 "C_i_f32vectorp" #t)
+(rewrite 'chicken.number-vectorf64vector? 2 1 "C_i_f64vectorp" #t)
 (rewrite 'scheme#pair? 2 1 "C_i_pairp" #t)
 (rewrite '##sys#pair? 2 1 "C_i_pairp" #t)
 (rewrite 'chicken.base#weak-pair? 2 1 "C_i_weak_pairp" #t)
 (rewrite 'scheme#procedure? 2 1 "C_i_closurep" #t)
-(rewrite 'chicken.base#port? 2 1 "C_i_portp" #t)
+(rewrite 'scheme#port? 2 1 "C_i_portp" #t)
 (rewrite 'scheme#boolean? 2 1 "C_booleanp" #t)
 (rewrite 'scheme#number? 2 1 "C_i_numberp" #t)
 (rewrite 'scheme#complex? 2 1 "C_i_numberp" #t)
@@ -569,10 +566,10 @@
 (rewrite 'scheme#inexact? 2 1 "C_u_i_inexactp" #f)
 (rewrite 'scheme#list? 2 1 "C_i_listp" #t)
 (rewrite 'scheme#eof-object? 2 1 "C_eofp" #t)
+(rewrite 'scheme#string-ref 2 2 "C_utf_subchar" #f)
 (rewrite 'chicken.base#bwp-object? 2 1 "C_bwpp" #t)
-(rewrite 'scheme#string-ref 2 2 "C_subchar" #f)
 (rewrite 'scheme#string-ref 2 2 "C_i_string_ref" #t)
-(rewrite 'scheme#string-set! 2 3 "C_setsubchar" #f)
+(rewrite 'scheme#string-set! 2 3 "C_utf_setsubchar" #f)
 (rewrite 'scheme#string-set! 2 3 "C_i_string_set" #t)
 (rewrite 'scheme#vector-ref 2 2 "C_slot" #f)
 (rewrite 'scheme#vector-ref 2 2 "C_i_vector_ref" #t)
@@ -670,7 +667,6 @@
 (rewrite 'scheme#negative? 2 1 "C_i_negativep" #t)
 
 (rewrite 'scheme#vector-length 6 "C_fix" "C_header_size" #f)
-(rewrite 'scheme#string-length 6 "C_fix" "C_header_size" #f)
 (rewrite 'scheme#char->integer 6 "C_fix" "C_character_code" #t)
 (rewrite 'scheme#integer->char 6 "C_make_character" "C_unfix" #t)
 
@@ -686,7 +682,7 @@
 (rewrite '##sys#check-locative 2 1 "C_i_check_locative" #t)
 (rewrite '##sys#check-symbol 2 1 "C_i_check_symbol" #t)
 (rewrite '##sys#check-string 2 1 "C_i_check_string" #t)
-(rewrite '##sys#check-byte-vector 2 1 "C_i_check_bytevector" #t)
+(rewrite '##sys#check-bytevector 2 1 "C_i_check_bytevector" #t)
 (rewrite '##sys#check-vector 2 1 "C_i_check_vector" #t)
 (rewrite '##sys#check-structure 2 2 "C_i_check_structure" #t)
 (rewrite '##sys#check-char 2 1 "C_i_check_char" #t)
@@ -698,10 +694,14 @@
 (rewrite '##sys#check-locative 2 2 "C_i_check_locative_2" #t)
 (rewrite '##sys#check-symbol 2 2 "C_i_check_symbol_2" #t)
 (rewrite '##sys#check-string 2 2 "C_i_check_string_2" #t)
-(rewrite '##sys#check-byte-vector 2 2 "C_i_check_bytevector_2" #t)
+(rewrite '##sys#check-bytevector 2 2 "C_i_check_bytevector_2" #t)
 (rewrite '##sys#check-vector 2 2 "C_i_check_vector_2" #t)
 (rewrite '##sys#check-structure 2 3 "C_i_check_structure_2" #t)
 (rewrite '##sys#check-char 2 2 "C_i_check_char_2" #t)
+(rewrite '##sys#check-range 2 3 "C_i_check_range" #t)
+(rewrite '##sys#check-range 2 4 "C_i_check_range_2" #t)
+(rewrite '##sys#check-range/including 2 3 "C_i_check_range_including" #t)
+(rewrite '##sys#check-range/including 2 4 "C_i_check_range_including_2" #t)
 
 (rewrite 'scheme#= 9 "C_eqp" "C_i_equalp" #t #t)
 (rewrite 'scheme#> 9 "C_fixnum_greaterp" "C_flonum_greaterp" #t #f)
@@ -914,11 +914,10 @@
 (rewrite 'scheme#number->string 13 '(1 . 2) "C_number_to_string" #t)
 (rewrite '##sys#call-with-current-continuation 13 1 "C_call_cc" #t)
 (rewrite '##sys#allocate-vector 13 4 "C_allocate_vector" #t)
+(rewrite '##sys#allocate-bytevector 13 4 "C_allocate_bytevector" #t)
 (rewrite '##sys#ensure-heap-reserve 13 1 "C_ensure_heap_reserve" #t)
 (rewrite 'chicken.platform#return-to-host 13 0 "C_return_to_host" #t)
 (rewrite '##sys#context-switch 13 1 "C_context_switch" #t)
-(rewrite '##sys#intern-symbol 13 1 "C_string_to_symbol" #t)
-(rewrite '##sys#make-symbol 13 1 "C_make_symbol" #t)
 
 (rewrite 'scheme#even? 14 'fixnum 1 "C_i_fixnumevenp" "C_i_fixnumevenp")
 (rewrite 'scheme#odd? 14 'fixnum 1 "C_i_fixnumoddp" "C_i_fixnumoddp")
@@ -959,7 +958,7 @@
 (rewrite 'scheme#vector 16 #f "C_a_i_vector" #t #t #t)
 (rewrite '##sys#vector 16 #f "C_a_i_vector" #t #t)
 (rewrite '##sys#make-structure 16 #f "C_a_i_record" #t #t #t)
-(rewrite 'scheme#string 16 #f "C_a_i_string" #t #t) ; the last #t is actually too much, but we don't care
+(rewrite 'scheme#string 16 #f "C_a_i_string" #t '(7 1))
 (rewrite 'chicken.memory#address->pointer 16 1 "C_a_i_address_to_pointer" #f 2)
 (rewrite 'chicken.memory#pointer->address 16 1 "C_a_i_pointer_to_address" #f words-per-flonum)
 (rewrite 'chicken.memory#pointer+ 16 2 "C_a_u_i_pointer_inc" #f 2)
@@ -1051,7 +1050,6 @@
 				    callargs) ) ) ) ) ) ) ) )
 
 (rewrite '##sys#byte 17 2 "C_subbyte")
-(rewrite '##sys#setbyte 17 3 "C_setbyte")
 (rewrite '##sys#peek-fixnum 17 2 "C_peek_fixnum")
 (rewrite '##sys#peek-byte 17 2 "C_peek_byte")
 (rewrite 'chicken.memory#pointer->object 17 2 "C_pointer_to_object")
@@ -1071,86 +1069,86 @@
 (rewrite '##sys#foreign-char-argument 17 1 "C_i_foreign_char_argumentp")
 (rewrite '##sys#foreign-flonum-argument 17 1 "C_i_foreign_flonum_argumentp")
 (rewrite '##sys#foreign-block-argument 17 1 "C_i_foreign_block_argumentp")
+(rewrite '##sys#foreign-symbol-argument 17 1 "C_i_foreign_symbol_argumentp")
 (rewrite '##sys#foreign-struct-wrapper-argument 17 2 "C_i_foreign_struct_wrapper_argumentp")
 (rewrite '##sys#foreign-string-argument 17 1 "C_i_foreign_string_argumentp")
 (rewrite '##sys#foreign-pointer-argument 17 1 "C_i_foreign_pointer_argumentp")
 (rewrite '##sys#foreign-ranged-integer-argument 17 2 "C_i_foreign_ranged_integer_argumentp")
 (rewrite '##sys#foreign-unsigned-ranged-integer-argument 17 2 "C_i_foreign_unsigned_ranged_integer_argumentp")
 
-(rewrite 'chicken.blob#blob-size 2 1 "C_block_size" #f)
+(rewrite 'chicken.bytevector#bytevector-length 2 1 "C_block_size" #f)
 
 ;; TODO: Move this stuff to types.db
-(rewrite 'srfi-4#u8vector-ref 2 2 "C_u_i_u8vector_ref" #f)
-(rewrite 'srfi-4#u8vector-ref 2 2 "C_i_u8vector_ref" #t)
-(rewrite 'srfi-4#s8vector-ref 2 2 "C_u_i_s8vector_ref" #f)
-(rewrite 'srfi-4#s8vector-ref 2 2 "C_i_s8vector_ref" #t)
-(rewrite 'srfi-4#u16vector-ref 2 2 "C_u_i_u16vector_ref" #f)
-(rewrite 'srfi-4#u16vector-ref 2 2 "C_i_u16vector_ref" #t)
-(rewrite 'srfi-4#s16vector-ref 2 2 "C_u_i_s16vector_ref" #f)
-(rewrite 'srfi-4#s16vector-ref 2 2 "C_i_s16vector_ref" #t)
+(rewrite 'chicken.number-vectors8vector-ref 2 2 "C_u_i_s8vector_ref" #f)
+(rewrite 'chicken.number-vectors8vector-ref 2 2 "C_i_s8vector_ref" #t)
+(rewrite 'chicken.number-vectoru16vector-ref 2 2 "C_u_i_u16vector_ref" #f)
+(rewrite 'chicken.number-vectoru16vector-ref 2 2 "C_i_u16vector_ref" #t)
+(rewrite 'chicken.number-vectors16vector-ref 2 2 "C_u_i_s16vector_ref" #f)
+(rewrite 'chicken.number-vectors16vector-ref 2 2 "C_i_s16vector_ref" #t)
 
-(rewrite 'srfi-4#u32vector-ref 16 2 "C_a_i_u32vector_ref" #t min-words-per-bignum)
-(rewrite 'srfi-4#s32vector-ref 16 2 "C_a_i_s32vector_ref" #t min-words-per-bignum)
+(rewrite 'chicken.number-vectoru32vector-ref 16 2 "C_a_i_u32vector_ref" #t min-words-per-bignum)
+(rewrite 'chicken.number-vectors32vector-ref 16 2 "C_a_i_s32vector_ref" #t min-words-per-bignum)
 
-(rewrite 'srfi-4#f32vector-ref 16 2 "C_a_u_i_f32vector_ref" #f words-per-flonum)
-(rewrite 'srfi-4#f32vector-ref 16 2 "C_a_i_f32vector_ref" #t words-per-flonum)
-(rewrite 'srfi-4#f64vector-ref 16 2 "C_a_u_i_f64vector_ref" #f words-per-flonum)
-(rewrite 'srfi-4#f64vector-ref 16 2 "C_a_i_f64vector_ref" #t words-per-flonum)
+(rewrite 'chicken.number-vectorf32vector-ref 16 2 "C_a_u_i_f32vector_ref" #f words-per-flonum)
+(rewrite 'chicken.number-vectorf32vector-ref 16 2 "C_a_i_f32vector_ref" #t words-per-flonum)
+(rewrite 'chicken.number-vectorf64vector-ref 16 2 "C_a_u_i_f64vector_ref" #f words-per-flonum)
+(rewrite 'chicken.number-vectorf64vector-ref 16 2 "C_a_i_f64vector_ref" #t words-per-flonum)
 
-(rewrite 'srfi-4#u8vector-set! 2 3 "C_u_i_u8vector_set" #f)
-(rewrite 'srfi-4#u8vector-set! 2 3 "C_i_u8vector_set" #t)
-(rewrite 'srfi-4#s8vector-set! 2 3 "C_u_i_s8vector_set" #f)
-(rewrite 'srfi-4#s8vector-set! 2 3 "C_i_s8vector_set" #t)
-(rewrite 'srfi-4#u16vector-set! 2 3 "C_u_i_u16vector_set" #f)
-(rewrite 'srfi-4#u16vector-set! 2 3 "C_i_u16vector_set" #t)
-(rewrite 'srfi-4#s16vector-set! 2 3 "C_u_i_s16vector_set" #f)
-(rewrite 'srfi-4#s16vector-set! 2 3 "C_i_s16vector_set" #t)
-(rewrite 'srfi-4#u32vector-set! 2 3 "C_u_i_u32vector_set" #f)
-(rewrite 'srfi-4#u32vector-set! 2 3 "C_i_u32vector_set" #t)
-(rewrite 'srfi-4#s32vector-set! 2 3 "C_u_i_s32vector_set" #f)
-(rewrite 'srfi-4#s32vector-set! 2 3 "C_i_s32vector_set" #t)
-(rewrite 'srfi-4#u64vector-set! 2 3 "C_u_i_u64vector_set" #f)
-(rewrite 'srfi-4#u64vector-set! 2 3 "C_i_u64vector_set" #t)
-(rewrite 'srfi-4#s64vector-set! 2 3 "C_u_i_s64vector_set" #f)
-(rewrite 'srfi-4#s64vector-set! 2 3 "C_i_s64vector_set" #t)
-(rewrite 'srfi-4#f32vector-set! 2 3 "C_u_i_f32vector_set" #f)
-(rewrite 'srfi-4#f32vector-set! 2 3 "C_i_f32vector_set" #t)
-(rewrite 'srfi-4#f64vector-set! 2 3 "C_u_i_f64vector_set" #f)
-(rewrite 'srfi-4#f64vector-set! 2 3 "C_i_f64vector_set" #t)
+(rewrite 'chicken.number-vectoru8vector-set! 2 3 "C_u_i_u8vector_set" #f)
+(rewrite 'chicken.number-vectoru8vector-set! 2 3 "C_i_u8vector_set" #t)
+(rewrite 'chicken.number-vectors8vector-set! 2 3 "C_u_i_s8vector_set" #f)
+(rewrite 'chicken.number-vectors8vector-set! 2 3 "C_i_s8vector_set" #t)
+(rewrite 'chicken.number-vectoru16vector-set! 2 3 "C_u_i_u16vector_set" #f)
+(rewrite 'chicken.number-vectoru16vector-set! 2 3 "C_i_u16vector_set" #t)
+(rewrite 'chicken.number-vectors16vector-set! 2 3 "C_u_i_s16vector_set" #f)
+(rewrite 'chicken.number-vectors16vector-set! 2 3 "C_i_s16vector_set" #t)
+(rewrite 'chicken.number-vectoru32vector-set! 2 3 "C_u_i_u32vector_set" #f)
+(rewrite 'chicken.number-vectoru32vector-set! 2 3 "C_i_u32vector_set" #t)
+(rewrite 'chicken.number-vectors32vector-set! 2 3 "C_u_i_s32vector_set" #f)
+(rewrite 'chicken.number-vectors32vector-set! 2 3 "C_i_s32vector_set" #t)
+(rewrite 'chicken.number-vectoru64vector-set! 2 3 "C_u_i_u64vector_set" #f)
+(rewrite 'chicken.number-vectoru64vector-set! 2 3 "C_i_u64vector_set" #t)
+(rewrite 'chicken.number-vectors64vector-set! 2 3 "C_u_i_s64vector_set" #f)
+(rewrite 'chicken.number-vectors64vector-set! 2 3 "C_i_s64vector_set" #t)
+(rewrite 'chicken.number-vectorf32vector-set! 2 3 "C_u_i_f32vector_set" #f)
+(rewrite 'chicken.number-vectorf32vector-set! 2 3 "C_i_f32vector_set" #t)
+(rewrite 'chicken.number-vectorf64vector-set! 2 3 "C_u_i_f64vector_set" #f)
+(rewrite 'chicken.number-vectorf64vector-set! 2 3 "C_i_f64vector_set" #t)
 
-(rewrite 'srfi-4#u8vector-length 2 1 "C_u_i_u8vector_length" #f)
-(rewrite 'srfi-4#u8vector-length 2 1 "C_i_u8vector_length" #t)
-(rewrite 'srfi-4#s8vector-length 2 1 "C_u_i_s8vector_length" #f)
-(rewrite 'srfi-4#s8vector-length 2 1 "C_i_s8vector_length" #t)
-(rewrite 'srfi-4#u16vector-length 2 1 "C_u_i_u16vector_length" #f)
-(rewrite 'srfi-4#u16vector-length 2 1 "C_i_u16vector_length" #t)
-(rewrite 'srfi-4#s16vector-length 2 1 "C_u_i_s16vector_length" #f)
-(rewrite 'srfi-4#s16vector-length 2 1 "C_i_s16vector_length" #t)
-(rewrite 'srfi-4#u32vector-length 2 1 "C_u_i_u32vector_length" #f)
-(rewrite 'srfi-4#u32vector-length 2 1 "C_i_u32vector_length" #t)
-(rewrite 'srfi-4#s32vector-length 2 1 "C_u_i_s32vector_length" #f)
-(rewrite 'srfi-4#s32vector-length 2 1 "C_i_s32vector_length" #t)
-(rewrite 'srfi-4#u64vector-length 2 1 "C_u_i_u64vector_length" #f)
-(rewrite 'srfi-4#u64vector-length 2 1 "C_i_u64vector_length" #t)
-(rewrite 'srfi-4#s64vector-length 2 1 "C_u_i_s64vector_length" #f)
-(rewrite 'srfi-4#s64vector-length 2 1 "C_i_s64vector_length" #t)
-(rewrite 'srfi-4#f32vector-length 2 1 "C_u_i_f32vector_length" #f)
-(rewrite 'srfi-4#f32vector-length 2 1 "C_i_f32vector_length" #t)
-(rewrite 'srfi-4#f64vector-length 2 1 "C_u_i_f64vector_length" #f)
-(rewrite 'srfi-4#f64vector-length 2 1 "C_i_f64vector_length" #t)
+(rewrite 'chicken.number-vectoru8vector-length 2 1 "C_u_i_bytevector_length" #f)
+(rewrite 'chicken.number-vectoru8vector-length 2 1 "C_i_bytevector_length" #t)
+(rewrite 'chicken.number-vectors8vector-length 2 1 "C_u_i_s8vector_length" #f)
+(rewrite 'chicken.number-vectors8vector-length 2 1 "C_i_s8vector_length" #t)
+(rewrite 'chicken.number-vectoru16vector-length 2 1 "C_u_i_u16vector_length" #f)
+(rewrite 'chicken.number-vectoru16vector-length 2 1 "C_i_u16vector_length" #t)
+(rewrite 'chicken.number-vectors16vector-length 2 1 "C_u_i_s16vector_length" #f)
+(rewrite 'chicken.number-vectors16vector-length 2 1 "C_i_s16vector_length" #t)
+(rewrite 'chicken.number-vectoru32vector-length 2 1 "C_u_i_u32vector_length" #f)
+(rewrite 'chicken.number-vectoru32vector-length 2 1 "C_i_u32vector_length" #t)
+(rewrite 'chicken.number-vectors32vector-length 2 1 "C_u_i_s32vector_length" #f)
+(rewrite 'chicken.number-vectors32vector-length 2 1 "C_i_s32vector_length" #t)
+(rewrite 'chicken.number-vectoru64vector-length 2 1 "C_u_i_u64vector_length" #f)
+(rewrite 'chicken.number-vectoru64vector-length 2 1 "C_i_u64vector_length" #t)
+(rewrite 'chicken.number-vectors64vector-length 2 1 "C_u_i_s64vector_length" #f)
+(rewrite 'chicken.number-vectors64vector-length 2 1 "C_i_s64vector_length" #t)
+(rewrite 'chicken.number-vectorf32vector-length 2 1 "C_u_i_f32vector_length" #f)
+(rewrite 'chicken.number-vectorf32vector-length 2 1 "C_i_f32vector_length" #t)
+(rewrite 'chicken.number-vectorf64vector-length 2 1 "C_u_i_f64vector_length" #f)
+(rewrite 'chicken.number-vectorf64vector-length 2 1 "C_i_f64vector_length" #t)
 
 (rewrite 'chicken.base#atom? 17 1 "C_i_not_pair_p")
 
-(rewrite 'srfi-4#u8vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#s8vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#u16vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#s16vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#u32vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#s32vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#u64vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#s64vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#f32vector->blob/shared 7 1 "C_slot" 1 #f)
-(rewrite 'srfi-4#f64vector->blob/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectors8vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectoru16vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectors16vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectoru32vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectors32vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectoru64vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectors64vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectorf32vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectorf64vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectorc64vector->bytevector/shared 7 1 "C_slot" 1 #f)
+(rewrite 'chicken.number-vectorc128vector->bytevector/shared 7 1 "C_slot" 1 #f)
 
 (let ()
   (define (rewrite-make-vector db classargs cont callargs)
@@ -1202,23 +1200,25 @@
 				    '##core#call (list #t)
 				    (list val cont (qnode #f)) ) ) ) ) ) ) ) ) ) ) ) )
   (rewrite 'scheme#call-with-current-continuation 8 rewrite-call/cc)
-  (rewrite 'chicken.base#call/cc 8 rewrite-call/cc))
+  (rewrite 'scheme#call/cc 8 rewrite-call/cc))
 
 (define setter-map
   '((scheme#car . scheme#set-car!)
     (scheme#cdr . scheme#set-cdr!)
     (scheme#string-ref . scheme#string-set!)
     (scheme#vector-ref . scheme#vector-set!)
-    (srfi-4#u8vector-ref . srfi-4#u8vector-set!)
-    (srfi-4#s8vector-ref . srfi-4#s8vector-set!)
-    (srfi-4#u16vector-ref . srfi-4#u16vector-set!)
-    (srfi-4#s16vector-ref . srfi-4#s16vector-set!)
-    (srfi-4#u32vector-ref . srfi-4#u32vector-set!)
-    (srfi-4#s32vector-ref . srfi-4#s32vector-set!)
-    (srfi-4#u64vector-ref . srfi-4#u64vector-set!)
-    (srfi-4#s64vector-ref . srfi-4#s64vector-set!)
-    (srfi-4#f32vector-ref . srfi-4#f32vector-set!)
-    (srfi-4#f64vector-ref . srfi-4#f64vector-set!)
+    (chicken.number-vectoru8vector-ref . chicken.number-vectoru8vector-set!)
+    (chicken.number-vectors8vector-ref . chicken.number-vectors8vector-set!)
+    (chicken.number-vectoru16vector-ref . chicken.number-vectoru16vector-set!)
+    (chicken.number-vectors16vector-ref . chicken.number-vectors16vector-set!)
+    (chicken.number-vectoru32vector-ref . chicken.number-vectoru32vector-set!)
+    (chicken.number-vectors32vector-ref . chicken.number-vectors32vector-set!)
+    (chicken.number-vectoru64vector-ref . chicken.number-vectoru64vector-set!)
+    (chicken.number-vectors64vector-ref . chicken.number-vectors64vector-set!)
+    (chicken.number-vectorf32vector-ref . chicken.number-vectorf32vector-set!)
+    (chicken.number-vectorf64vector-ref . chicken.number-vectorf64vector-set!)
+    (chicken.number-vectorc64vector-ref . chicken.number-vectorc64vector-set!)
+    (chicken.number-vectorc128vector-ref . chicken.number-vectorc128vector-set!)
     (chicken.locative#locative-ref . chicken.locative#locative-set!)
     (chicken.memory#pointer-u8-ref . chicken.memory#pointer-u8-set!)
     (chicken.memory#pointer-s8-ref . chicken.memory#pointer-s8-set!)

@@ -1,0 +1,71 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (scheme inexact)
+
+The R7RS (scheme inexact) library exports procedures which
+are typically only useful with inexact values.
+
+<procedure>(exp z)</procedure><br>
+<procedure>(log z [z2])</procedure><br>
+<procedure>(sin z)</procedure><br>
+<procedure>(cos z)</procedure><br>
+<procedure>(tan z)</procedure><br>
+<procedure>(asin z)</procedure><br>
+<procedure>(acos z)</procedure><br>
+<procedure>(atan x [y])</procedure>
+
+These procedures compute the usual transcendental functions. The log procedure
+computes the natural logarithm of z (not the base ten logarithm) if a single argument is given, or the base-z2 logarithm of
+z if two arguments are given. The asin, acos, and atan procedures compute
+arcsine (sin^−1), arc-cosine (cos^−1), and arctangent (tan^−1),
+respectively. The two-argument variant of atan computes {{(angle (make-rectangular x y))}}
+ (see below), even in implementations that don’t support complex numbers.
+
+In general, the mathematical functions log, arcsine, arc-cosine, and arctangent
+are multiply defined. The value of log z is defined to be the one whose
+imaginary part lies in the range from −π (inclusive if -0.0 is distinguished,
+exclusive otherwise) to π (inclusive). The value of log 0 is mathematically
+undefined. With log defined this way, the values of sin^−1 z, cos^−1 z, and
+tan^−1 z are according to the following formulæ:
+
+ sin^−1 z = −i * log (i * z + (1 − z^2)^1/2)
+
+ cos^−1 z = π/2 − sin^−1 z
+
+ tan^−1 z = (log (1 + i * z) − log (1 − i * z)) / (2 * i)
+
+However, (log 0.0) returns -inf.0 (and (log -0.0) returns -inf.0+π*i) if the
+implementation supports infinities (and -0.0).
+
+The range of (atan x y) is as in the following table. The asterisk (*) indicates that the entry
+applies to implementations that distinguish minus zero.
+
+   y condition x condition range of result r
+   y = 0.0     x > 0.0     0.0
+ ∗ y = + 0.0   x > 0.0     + 0.0
+ ∗ y = −0.0    x > 0.0     −0.0
+   y > 0.0     x > 0.0     0.0 < r < π/2
+   y > 0.0     x = 0.0     π/2
+   y > 0.0     x < 0.0     π/2 < r < π
+   y = 0.0     x < 0       π
+ ∗ y = + 0.0   x < 0.0     π
+ ∗ y = −0.0    x < 0.0     −π
+   y < 0.0     x < 0.0     −π< r< −π/2
+   y < 0.0     x = 0.0     −π/2
+   y < 0.0     x > 0.0     −π/2 < r< 0.0
+   y = 0.0     x = 0.0     undefined
+ ∗ y = + 0.0   x = + 0.0   + 0.0
+ ∗ y = −0.0    x = + 0.0   −0.0
+ ∗ y = + 0.0   x = −0.0    π
+ ∗ y = −0.0    x = −0.0    −π
+ ∗ y = + 0.0   x = 0       π/2
+ ∗ y = −0.0    x = 0       −π/2
+
+When it is possible, these procedures
+produce a real result from a real argument.
+
+---
+Previous: [[Module (scheme eval)]]
+
+Next: [[Module (scheme lazy)]]

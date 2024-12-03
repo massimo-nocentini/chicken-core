@@ -1,7 +1,7 @@
 ;;;; Unit lolevel testing
 
 (import chicken.format chicken.locative chicken.platform
-        chicken.memory chicken.memory.representation srfi-4)
+        chicken.memory chicken.memory.representation chicken.number-vector)
 
 (define-syntax assert-error
   (syntax-rules ()
@@ -178,7 +178,7 @@
 					   (,ref new ,(- size i 1))))
 			    res)))))))))
 
-(check-type-locative string #\nul #\y #\o #\xff)
+(check-type-locative string #\a #\b #\c #\d)
 (check-type-locative vector 'yo 1 2 #f #t '(1 2 3) #(1 2 3))
 (check-type-locative u8vector 0 1 2 #xfe #xff)
 (check-type-locative s8vector #x-80 #x-7f -2 -1 0 1 2 #x7e #x7f)
@@ -207,7 +207,6 @@
 (assert (= 0 (locative-index (make-locative '(0 . 1)))))
 (assert (= 0 (locative-index (make-locative #(a b c d e)))))
 (assert (= 0 (locative-index (make-locative "abcde"))))
-(assert (= 0 (locative-index (make-locative #${012345}))))
 (assert (= 0 (locative-index (make-locative #u8(0 1 2 3 4)))))
 (assert (= 0 (locative-index (make-locative #s8(0 1 2 3 4)))))
 (assert (= 0 (locative-index (make-locative #u16(0 1 2 3 4)))))
@@ -223,7 +222,6 @@
 (assert (= 1 (locative-index (make-locative '(0 . 1) 1))))
 (assert (= 2 (locative-index (make-locative #(a b c d e) 2))))
 (assert (= 3 (locative-index (make-locative "abcde" 3))))
-(assert (= 2 (locative-index (make-locative #${01234} 2))))
 (assert (= 1 (locative-index (make-locative #u8(0 1 2 3 4) 1))))
 (assert (= 2 (locative-index (make-locative #s8(0 1 2 3 4) 2))))
 (assert (= 3 (locative-index (make-locative #u16(0 1 2 3 4) 3))))

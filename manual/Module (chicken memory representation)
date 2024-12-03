@@ -68,7 +68,7 @@ These procedures operate with what are known as ''vector-like
 objects''. A ''vector-like object'' is a vector, record structure,
 pair, symbol or keyword: it is an aggregation of other Scheme objects.
 
-Note that strings and blobs are not considered vector-like (they are
+Note that strings and bytevectors are not considered vector-like (they are
 considered to be ''byte vectors'', which are objects of mostly
 unstructured binary data).
 
@@ -110,7 +110,8 @@ contains.
 <procedure>(number-of-bytes BLOCK)</procedure>
 
 Returns the number of bytes that the object {{BLOCK}}
-contains. {{BLOCK}} may be any non-immediate value.
+holds. {{BLOCK}} may be any non-immediate value. For strings and symbols, the size
+of the buffer holding the encoded characters is returned.
 
 
 ==== object-copy

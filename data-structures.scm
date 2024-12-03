@@ -8,11 +8,11 @@
 ; are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -42,6 +42,7 @@
 (import chicken.condition)
 (import chicken.fixnum)
 (import chicken.foreign)
+(import (only (scheme base) open-output-string get-output-string))
 
 ; (reverse-string-append l) = (apply string-append (reverse l))
 
@@ -65,13 +66,13 @@
 
 ;;; Anything->string conversion:
 
-(define ->string 
+(define ->string
   (lambda (x)
     (cond [(string? x) x]
 	  [(symbol? x) (symbol->string x)]
 	  [(char? x) (string x)]
 	  [(number? x) (##sys#number->string x)]
-	  [else 
+	  [else
 	   (let ([o (open-output-string)])
 	     (display x o)
 	     (get-output-string o) ) ] ) ) )
@@ -87,35 +88,36 @@
   (define (traverse which where start test loc)
     (##sys#check-string which loc)
     (##sys#check-string where loc)
-    (let* ((wherelen (##sys#size where))
-	   (whichlen (##sys#size which))
-	   (end (fx- wherelen whichlen)))
+    (let* ((wherelen (string-length where))
+           (whichlen (string-length which))
+           (end (fx- wherelen whichlen)))
       (##sys#check-fixnum start loc)
       (if (and (fx>= start 0)
-	       (fx>= wherelen start))
-	  (if (fx= whichlen 0)
-	      start
-	      (and (fx>= end 0)
-		   (let loop ((istart start))
-		     (cond ((fx> istart end) #f)
-			   ((test istart whichlen) istart)
-			   (else (loop (fx+ istart 1)))))))
-	  (##sys#error-hook (foreign-value "C_OUT_OF_RANGE_ERROR" int)
-			    loc
-			    start
-			    wherelen))))
+               (fx>= wherelen start))
+          (if (fx= whichlen 0)
+              start
+              (and (fx>= end 0)
+                   (let loop ((istart start))
+                     (cond ((fx> istart end) #f)
+                           ((test istart whichlen) istart)
+                           (else (loop (fx+ istart 1)))))))
+          (##sys#error-hook (foreign-value "C_OUT_OF_BOUNDS_ERROR" int)
+                            loc
+                            where
+                            start))))
 
-  (set! ##sys#substring-index 
-    (lambda (which where start)
-      (traverse 
-       which where start
-       (lambda (i l) (##core#inline "C_substring_compare" which where 0 i l))
-       'substring-index) ) )
-  (set! ##sys#substring-index-ci 
+  (set! ##sys#substring-index
     (lambda (which where start)
       (traverse
        which where start
-       (lambda (i l) (##core#inline "C_substring_compare_case_insensitive" which where 0 i l)) 
+       (lambda (i l)
+         (##core#inline "C_u_i_substring_equal_p" which where 0 i l))
+       'substring-index) ) )
+  (set! ##sys#substring-index-ci
+    (lambda (which where start)
+      (traverse
+       which where start
+       (lambda (i l) (##core#inline "C_u_i_substring_ci_equal_p" which where 0 i l))
        'substring-index-ci) ) ) )
 
 (define (substring-index which where #!optional (start 0))
@@ -130,23 +132,26 @@
 (define (string-compare3 s1 s2)
   (##sys#check-string s1 'string-compare3)
   (##sys#check-string s2 'string-compare3)
-  (let ((len1 (##sys#size s1))
-	(len2 (##sys#size s2)) )
-    (let* ((len-diff (fx- len1 len2)) 
-	   (cmp (##core#inline "C_string_compare" s1 s2 (if (fx< len-diff 0) len1 len2))))
-      (if (fx= cmp 0) 
-	  len-diff 
+  (let ((len1 (string-length s1))
+	(len2 (string-length s2)) )
+    (let* ((len-diff (fx- len1 len2))
+	   (cmp (##core#inline "C_utf_compare" s1 s2 0 0
+                        (if (fx< len-diff 0) len1 len2))))
+      (if (fx= cmp 0)
+	  len-diff
 	  cmp))))
 
 (define (string-compare3-ci s1 s2)
   (##sys#check-string s1 'string-compare3-ci)
   (##sys#check-string s2 'string-compare3-ci)
-  (let ((len1 (##sys#size s1))
-	(len2 (##sys#size s2)) )
-    (let* ((len-diff (fx- len1 len2)) 
-	   (cmp (##core#inline "C_string_compare_case_insensitive" s1 s2 (if (fx< len-diff 0) len1 len2))))
-      (if (fx= cmp 0) 
-	  len-diff 
+  (let ((len1 (string-length s1))
+	(len2 (string-length s2)) )
+    (let* ((len-diff (fx- len1 len2))
+	   (cmp (##core#inline "C_utf_compare_ci"
+                        s1 s2 0 0
+                        (if (fx< len-diff 0) len1 len2))))
+      (if (fx= cmp 0)
+	  len-diff
 	  cmp))))
 
 
@@ -155,14 +160,18 @@
 (define (##sys#substring=? s1 s2 start1 start2 n)
   (##sys#check-string s1 'substring=?)
   (##sys#check-string s2 'substring=?)
-  (##sys#check-range start1 0 (fx+ (##sys#size s1) 1) 'substring=?)
-  (##sys#check-range start2 0 (fx+ (##sys#size s2) 1) 'substring=?)
-  (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
-                        (fx- (##sys#size s2) start2)))
+  (##sys#check-fixnum start1 'substring=?)
+  (##sys#check-fixnum start2 'substring=?)
+  (let* ((l1 (string-length s1))
+         (l2 (string-length s2))
+         (maxlen (fxmin (fx- l1 start1)
+	                (fx- l2 start2) ) )
          (len (if n
                   (begin (##sys#check-range n 0 (fx+ maxlen 1) 'substring=?) n)
                   maxlen)))
-    (##core#inline "C_substring_compare" s1 s2 start1 start2 len) ) )
+    (##sys#check-range start1 0 (fx+ l1 1) 'substring=?)
+    (##sys#check-range start2 0 (fx+ l2 1) 'substring=?)
+    (##core#inline "C_u_i_substring_equal_p" s1 s2 start1 start2 len) ) )
 
 (define (substring=? s1 s2 #!optional (start1 0) (start2 0) len)
   (##sys#substring=? s1 s2 start1 start2 len) )
@@ -170,15 +179,18 @@
 (define (##sys#substring-ci=? s1 s2 start1 start2 n)
   (##sys#check-string s1 'substring-ci=?)
   (##sys#check-string s2 'substring-ci=?)
-  (##sys#check-range start1 0 (fx+ (##sys#size s1) 1) 'substring-ci=?)
-  (##sys#check-range start2 0 (fx+ (##sys#size s2) 1) 'substring-ci=?)
-  (let* ((maxlen (fxmin (fx- (##sys#size s1) start1)
-                        (fx- (##sys#size s2) start2)))
+  (##sys#check-fixnum start1 'substring-ci=?)
+  (##sys#check-fixnum start2 'substring-ci=?)
+  (let* ((l1 (string-length s1))
+         (l2 (string-length s2))
+         (maxlen (fxmin (fx- l1 start1)
+		        (fx- l2 start2) ) )
          (len (if n
                   (begin (##sys#check-range n 0 (fx+ maxlen 1) 'substring-ci=?) n)
                   maxlen)))
-    (##core#inline "C_substring_compare_case_insensitive"
-		   s1 s2 start1 start2 len) ) )
+    (##sys#check-range start1 0 (fx+ l1 1) 'substring=?)
+    (##sys#check-range start2 0 (fx+ l2 1) 'substring=?)
+    (##core#inline "C_u_i_substring_ci_equal_p" s1 s2 start1 start2 len) ) )
 
 (define (substring-ci=? s1 s2 #!optional (start1 0) (start2 0) len)
   (##sys#substring-ci=? s1 s2 start1 start2 len) )
@@ -191,25 +203,25 @@
     (##sys#check-string str 'string-split)
     (let* ([del (if (null? delstr-and-flag) "\t\n " (car delstr-and-flag))]
 	   [flag (if (fx= (length delstr-and-flag) 2) (cadr delstr-and-flag) #f)]
-	   [strlen (##sys#size str)] )
+	   [strlen (string-length str)] )
       (##sys#check-string del 'string-split)
-      (let ([dellen (##sys#size del)] 
+      (let ([dellen (string-length del)]
 	    [first #f] )
 	(define (add from to last)
 	  (let ([node (cons (##sys#substring str from to) '())])
 	    (if first
 		(##sys#setslot last 1 node)
-		(set! first node) ) 
+		(set! first node) )
 	    node) )
 	(let loop ([i 0] [last #f] [from 0])
 	  (cond [(fx>= i strlen)
 		 (when (or (fx> i from) flag) (add from i last))
 		 (or first '()) ]
 		[else
-		 (let ([c (##core#inline "C_subchar" str i)])
+		 (let ([c (string-ref str i)])
 		   (let scan ([j 0])
 		     (cond [(fx>= j dellen) (loop (fx+ i 1) last from)]
-			   [(eq? c (##core#inline "C_subchar" del j))
+			   [(eq? c (string-ref del j))
 			    (let ([i2 (fx+ i 1)])
 			      (if (or (fx> i from) flag)
 				  (loop i2 (add from i last) i2)
@@ -222,44 +234,50 @@
 (define (string-intersperse strs #!optional (ds " "))
   (##sys#check-list strs 'string-intersperse)
   (##sys#check-string ds 'string-intersperse)
-  (let ((dslen (##sys#size ds)))
+  (let* ((dsbv (##sys#slot ds 0))
+         (dslen (fx- (##sys#size dsbv) 1)))
     (let loop1 ((ss strs) (n 0))
       (cond ((##core#inline "C_eqp" ss '())
 	     (if (##core#inline "C_eqp" strs '())
 		 ""
-		 (let ((str2 (##sys#allocate-vector (fx- n dslen) #t #\space #f)))
+		 (let* ((bytes (fx- n dslen))
+                        (bv (##sys#allocate-bytevector (fx+ bytes 1) 0)))
 		   (let loop2 ((ss2 strs) (n2 0))
 		     (let* ((stri (##sys#slot ss2 0))
-			    (next (##sys#slot ss2 1)) 
-			    (strilen (##sys#size stri)) )
-		       (##core#inline "C_substring_copy" stri str2 0 strilen n2)
-		       (let ((n3 (fx+ n2 strilen)))
+			    (next (##sys#slot ss2 1))
+                            (bvi (##sys#slot stri 0))
+			    (count (fx- (##sys#size bvi) 1)))
+		       (##core#inline "C_copy_memory_with_offset" bv bvi n2 0 count)
+		       (let ((n3 (fx+ n2 count)))
 			 (if (##core#inline "C_eqp" next '())
-			     str2
-			     (begin
-			       (##core#inline "C_substring_copy" ds str2 0 dslen n3)
+                             (##core#inline_allocate ("C_a_ustring" 5) bv
+                                                     (##core#inline "C_utf_range_length"
+                                                                    bv 0 n3))
+
+                     			     (begin
+			       (##core#inline "C_copy_memory_with_offset"
+                                              bv dsbv n3 0 dslen)
 			       (loop2 next (fx+ n3 dslen)) ) ) ) ) ) ) ) )
 	    ((and (##core#inline "C_blockp" ss) (##core#inline "C_pairp" ss))
 	     (let ((stri (##sys#slot ss 0)))
 	       (##sys#check-string stri 'string-intersperse)
 	       (loop1 (##sys#slot ss 1)
-		      (fx+ (##sys#size stri) (fx+ dslen n)) ) ) )
+		      (fx+ (fx- (##sys#size (##sys#slot stri 0)) 1)
+                           (fx+ dslen n)) ) ) )
 	    (else (##sys#error-not-a-proper-list strs)) ) ) ) )
 
 
 ;;; Translate elements of a string:
 
-(define string-translate 
+(define string-translate
   (lambda (str from . to)
-
     (define (instring s)
-      (let ([len (##sys#size s)])
+      (let ([len (string-length s)])
 	(lambda (c)
 	  (let loop ([i 0])
 	    (cond [(fx>= i len) #f]
-		  [(eq? c (##core#inline "C_subchar" s i)) i]
+		  [(eq? c (string-ref s i)) i]
 		  [else (loop (fx+ i 1))] ) ) ) ) )
-
     (let* ([from
 	    (cond [(char? from) (lambda (c) (eq? c from))]
 		  [(pair? from) (instring (list->string from))]
@@ -273,59 +291,73 @@
 			 [(pair? tx) (list->string tx)]
 			 [else
 			  (##sys#check-string tx 'string-translate)
-			  tx] ) ) ) ] 
-	   [tlen (and (string? to) (##sys#size to))] )
+			  tx] ) ) ) ]
+	   [tlen (and (string? to) (string-length to))] )
       (##sys#check-string str 'string-translate)
-      (let* ([slen (##sys#size str)]
+      (let* ([slen (string-length str)]
 	     [str2 (make-string slen)] )
 	(let loop ([i 0] [j 0])
 	  (if (fx>= i slen)
 	      (if (fx< j i)
 		  (##sys#substring str2 0 j)
 		  str2)
-	      (let* ([ci (##core#inline "C_subchar" str i)]
+	      (let* ([ci (string-ref str i)]
 		     [found (from ci)] )
 		(cond [(not found)
-		       (##core#inline "C_setsubchar" str2 j ci)
+		       (string-set! str2 j ci)
 		       (loop (fx+ i 1) (fx+ j 1)) ]
 		      [(not to) (loop (fx+ i 1) j)]
 		      [(char? to)
-		       (##core#inline "C_setsubchar" str2 j to)
+		       (string-set! str2 j to)
 		       (loop (fx+ i 1) (fx+ j 1)) ]
 		      [(fx>= found tlen)
 		       (##sys#error 'string-translate "invalid translation destination" i to) ]
-		      [else 
-		       (##core#inline "C_setsubchar" str2 j (##core#inline "C_subchar" to found))
+		      [else
+		       (string-set! str2 j (string-ref to found))
 		       (loop (fx+ i 1) (fx+ j 1)) ] ) ) ) ) ) ) ) )
+
+(define (fragments->string total fs)
+  (let ((dest (##sys#make-bytevector (fx+ total 1))))
+    (let loop ((fs fs) (pos 0))
+      (if (null? fs)
+	  (##core#inline_allocate ("C_a_ustring" 5) dest
+                           (##core#inline "C_utf_length" dest))
+	  (let* ((f (##sys#slot fs 0))
+		 (flen (fx- (##sys#size f) 1)))
+	    (##core#inline "C_copy_memory_with_offset" dest f pos 0 flen)
+	    (loop (##sys#slot fs 1) (fx+ pos flen)) ) ) ) ) )
 
 (define (string-translate* str smap)
   (##sys#check-string str 'string-translate*)
   (##sys#check-list smap 'string-translate*)
-  (let ((len (##sys#size str)))
+  (let ((len (string-length str)))
     (define (collect i from total fs)
       (if (fx>= i len)
-	  (##sys#fragments->string
-	   total
-	   (##sys#fast-reverse 
-	    (if (fx> i from) 
-		(cons (##sys#substring str from i) fs)
-		fs) ) )
+	  (begin
+            (when (fx> i from)
+              (let ((bv (##sys#slot (##sys#substring str from i) 0)))
+                (set! fs (cons bv fs))
+                (set! total (fx+ total (fx- (##sys#size bv) 1)))))
+  	    (fragments->string total (##sys#fast-reverse fs)))
 	  (let loop ((smap smap))
-	    (if (null? smap) 
-		(collect (fx+ i 1) from (fx+ total 1) fs)
+	    (if (null? smap)
+		(collect (fx+ i 1) from total fs)
 		(let* ((p (car smap))
 		       (sm (car p))
 		       (smlen (string-length sm))
 		       (st (cdr p)) )
 		  (if (and (fx<= (fx+ i smlen) len)
-			   (##core#inline "C_substring_compare" str sm i 0 smlen))
-		      (let ((i2 (fx+ i smlen)))
+			   (##core#inline "C_u_i_substring_equal_p" str sm i 0 smlen))
+		      (let ((i2 (fx+ i smlen))
+                            (stbv (##sys#slot st 0)))
 			(when (fx> i from)
-			  (set! fs (cons (##sys#substring str from i) fs)) )
-			(collect 
+                          (let ((bv (##sys#slot (##sys#substring str from i) 0)))
+                            (set! fs (cons bv fs))
+                            (set! total (fx+ total (fx- (##sys#size bv) 1)))))
+			(collect
 			 i2 i2
-			 (fx+ total (string-length st))
-			 (cons st fs) ) ) 
+			 (fx+ total (fx- (##sys#size stbv) 1))
+			 (cons stbv fs) ) )
 		      (loop (cdr smap)) ) ) ) ) ) )
     (collect 0 0 0 '()) ) )
 
@@ -335,23 +367,23 @@
 (define (string-chop str len)
   (##sys#check-string str 'string-chop)
   (##sys#check-fixnum len 'string-chop)
-  (let ([total (##sys#size str)])
+  (let ([total (string-length str)])
     (let loop ([total total] [pos 0])
       (cond [(fx<= total 0) '()]
 	    [(fx<= total len) (list (##sys#substring str pos (fx+ pos total)))]
 	    [else (cons (##sys#substring str pos (fx+ pos len)) (loop (fx- total len) (fx+ pos len)))] ) ) ) )
-	   
+
 
 ;;; Remove suffix
 
 (define (string-chomp str #!optional (suffix "\n"))
   (##sys#check-string str 'string-chomp)
   (##sys#check-string suffix 'string-chomp)
-  (let* ((len (##sys#size str))
-	 (slen (##sys#size suffix)) 
+  (let* ((len (string-length str))
+	 (slen (string-length suffix))
 	 (diff (fx- len slen)) )
     (if (and (fx>= len slen)
-	     (##core#inline "C_substring_compare" str suffix diff 0 slen) )
+	     (##core#inline "C_u_i_substring_equal_p" str suffix diff 0 slen) )
 	(##sys#substring str 0 diff)
 	str) ) )
 

@@ -7,11 +7,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -45,6 +45,7 @@
 	chicken.syntax
 	(only chicken.string string-split)
 	(only chicken.format fprintf format))
+(import (only (scheme base) make-parameter open-output-string get-output-string))
 
 (include "common-declarations.scm")
 (include "mini-srfi-1.scm")
@@ -57,7 +58,7 @@
 
 #+debugbuild
 (define (map-se se)
-  (map (lambda (a) 
+  (map (lambda (a)
 	 (cons (car a) (if (symbol? (cdr a)) (cdr a) '<macro>)))
        se))
 
@@ -77,12 +78,12 @@
 (define ##sys#current-module (make-parameter #f))
 (define ##sys#module-alias-environment (make-parameter '()))
 
-(declare 
+(declare
   (hide make-module module? %make-module
 	module-name module-library
 	module-vexports module-sexports
 	set-module-vexports! set-module-sexports!
-	module-export-list set-module-export-list! 
+	module-export-list set-module-export-list!
 	module-defined-list set-module-defined-list!
 	module-import-forms set-module-import-forms!
 	module-meta-import-forms set-module-meta-import-forms!
@@ -95,8 +96,8 @@
 
 (define-record-type module
   (%make-module name library export-list defined-list exist-list defined-syntax-list
-		undefined-list import-forms meta-import-forms meta-expressions 
-		vexports sexports iexports saved-environments rename-list) 
+		undefined-list import-forms meta-import-forms meta-expressions
+		vexports sexports iexports saved-environments rename-list)
   module?
   (name module-name)			; SYMBOL
   (library module-library)		; SYMBOL
@@ -118,7 +119,7 @@
 (define ##sys#module-name module-name)
 
 (define (##sys#module-exports m)
-  (values 
+  (values
    (module-export-list m)
    (module-vexports m)
    (module-sexports m)))
@@ -160,7 +161,7 @@
 	(cond ((##sys#current-module) =>
 	       (lambda (m)
 		 (set-module-saved-environments! m now)))
-	      (else 
+	      (else
 	       (set! saved-default-envs now)))
 	(let ((saved (if mod (module-saved-environments mod) saved-default-envs)))
 	  (when saved
@@ -197,9 +198,9 @@
 
 (define (check-for-redef sym env senv)
   (and-let* ((a (assq sym env)))
-    (##sys#warn "redefinition of imported value binding" sym) )
+    (##sys#warn "redefinition of value binding" sym) )
   (and-let* ((a (assq sym senv)))
-    (##sys#warn "redefinition of imported syntax binding" sym)))
+    (##sys#warn "redefinition of syntax binding" sym)))
 
 (define (##sys#register-export sym mod)
   (when mod
@@ -214,7 +215,7 @@
       (set-module-exist-list! mod (cons sym (module-exist-list mod)))
       (when exp
 	(dm "defined: " sym)
-	(set-module-defined-list! 
+	(set-module-defined-list!
 	 mod
 	 (cons (cons sym #f)
 	       (module-defined-list mod)))))) )
@@ -225,16 +226,16 @@
 		   (find-export sym mod #t)))
 	  (ulist (module-undefined-list mod))
 	  (mname (module-name mod)))
-      (when (assq sym ulist)	    
+      (when (assq sym ulist)
 	(##sys#warn "use of syntax precedes definition" sym)) ;XXX could report locations
       (check-for-redef sym (##sys#current-environment) (##sys#macro-environment))
       (dm "defined syntax: " sym)
       (when exp
-	(set-module-defined-list! 
+	(set-module-defined-list!
 	 mod
 	 (cons (cons sym val)
 	       (module-defined-list mod))) )
-      (set-module-defined-syntax-list! 
+      (set-module-defined-syntax-list!
        mod
        (cons (cons sym val) (module-defined-syntax-list mod))))))
 
@@ -287,9 +288,9 @@
 			  (warn "indirect export of syntax binding" (car iexports))
 			  (loop2 (cdr iexports)))
 			 ((assq (car iexports) dlist) => ; defined in current module?
-			  (lambda (a) 
-			    (cons 
-			     (cons 
+			  (lambda (a)
+			    (cons
+			     (cons
 			      (car iexports)
 			      (or (cdr a) (module-rename (car iexports) mname)))
 			     (loop2 (cdr iexports)))))
@@ -300,7 +301,7 @@
 				  (else
 				   (warn "indirect reexport of syntax" (car iexports))
 				   (loop2 (cdr iexports))))))
-			 (else 
+			 (else
 			  (warn "indirect export of unknown binding" (car iexports))
 			  (loop2 (cdr iexports)))))))))))
 
@@ -361,7 +362,7 @@
 	    ,@(map (lambda (sexport)
 	  	     (let* ((name (car sexport))
                             (a (assq name dlist)))
-                       (cond ((pair? a) 
+                       (cond ((pair? a)
                               `(scheme#cons ',(car sexport) ,(strip-syntax (cdr a))))
                              (else
                                (dm "re-exported syntax" name mname)
@@ -428,7 +429,7 @@
      mod
      (cons (merge-se (##sys#current-environment) vexports sexps)
 	   (##sys#macro-environment)))
-    (set! ##sys#module-table (cons (cons name mod) ##sys#module-table)) 
+    (set! ##sys#module-table (cons (cons name mod) ##sys#module-table))
     mod))
 
 (define (##sys#register-core-module name lib vexports #!optional (sexports '()))
@@ -440,7 +441,7 @@
 		      (if (symbol? se)
 			  (or (assq se me)
 			      (##sys#error
-			       "unknown syntax referenced while registering module" 
+			       "unknown syntax referenced while registering module"
 			       se name))
 			  se))
 		    sexports)
@@ -451,7 +452,7 @@
 		     (module-vexports mod)
 		     (module-sexports mod))
 	   (##sys#macro-environment)))
-    (set! ##sys#module-table (cons (cons name mod) ##sys#module-table)) 
+    (set! ##sys#module-table (cons (cons name mod) ##sys#module-table))
     mod))
 
 ;; same as register-core-module (above) but does not load any code,
@@ -470,7 +471,7 @@
 		 (loop (cdr xl))))
 	    (else (loop (cdr xl)))))))
 
-(define ##sys#finalize-module 
+(define ##sys#finalize-module
   (let ((display display)
 	(write-char write-char))
     (lambda (mod #!optional (invalid-export (lambda _ #f)))
@@ -567,12 +568,12 @@
 		      (cond ((eq? (##sys#get id '##sys#override) 'syntax)
                               (loop (cdr xl)))
                             ((assq id sexports) (loop (cdr xl)))
-                            (else 
-                              (cons 
-                                (cons 
+                            (else
+                              (cons
+                                (cons
 			          id
                                   (let ((def (assq id dlist)))
-                                    (if (and def (symbol? (cdr def))) 
+                                    (if (and def (symbol? (cdr def)))
                                         (cdr def)
                                         (let ((a (assq id (##sys#current-environment))))
 					  (define (fail msg)
@@ -608,15 +609,15 @@
 
 	(when missing
 	  (##sys#error "module unresolved" name))
-	(let* ((iexports 
+	(let* ((iexports
 		(map (lambda (exp)
 		       (cond ((symbol? (cdr exp)) exp)
 			     ((assq (car exp) (##sys#macro-environment)))
 			     (else (##sys#error "(internal) indirect export not found" (car exp)))) )
 		     (module-indirect-exports mod)))
-	       (new-se (merge-se 
-			(##sys#macro-environment) 
-			(##sys#current-environment) 
+	       (new-se (merge-se
+			(##sys#macro-environment)
+			(##sys#current-environment)
 			iexports vexports sexports sdlist)))
 	  (for-each
 	   (lambda (m)
@@ -624,8 +625,8 @@
 	       (dm `(FIXUP: ,(car m) ,@(map-se se)))
 	       (set-car! (cdr m) se)))
 	   sdlist)
-	  (dm `(EXPORTS: 
-		,(module-name mod) 
+	  (dm `(EXPORTS:
+		,(module-name mod)
 		(DLIST: ,@dlist)
 		(SDLIST: ,@(map-se sdlist))
 		(IEXPORTS: ,@(map-se iexports))
@@ -633,7 +634,7 @@
 		(SEXPORTS: ,@(map-se sexports))))
 	  (set-module-vexports! mod vexports)
 	  (set-module-sexports! mod sexports)
-	  (set-module-iexports! 
+	  (set-module-iexports!
 	   mod
 	   (merge-se (module-iexports mod) iexports)) ; "reexport" may already have added some
 	  (set-module-saved-environments!
@@ -679,17 +680,17 @@
       (##sys#warn (string-append msg " in module `" (symbol->string mod) "'") id))
     (define (tostr x)
       (cond ((string? x) x)
-	    ((keyword? x) (##sys#string-append (##sys#symbol->string x) ":")) ; hack
-	    ((symbol? x) (##sys#symbol->string x))
+	    ((keyword? x) (##sys#string-append (##sys#symbol->string/shared x) ":")) ; hack
+	    ((symbol? x) (##sys#symbol->string/shared x))
 	    ((number? x) (number->string x))
-	    (else (##sys#syntax-error-hook loc "invalid prefix" ))))
+	    (else (##sys#syntax-error loc "invalid prefix" ))))
     (define (export-rename mod lst)
       (let ((ren (module-rename-list mod)))
         (if (null? ren)
             lst
             (map (lambda (a)
                    (cond ((assq (car a) ren) =>
-                          (lambda (b) 
+                          (lambda (b)
                             (cons (cdr b) (cdr a))))
                          (else a)))
               lst))))
@@ -710,7 +711,7 @@
 	 (cond ((symbol? x)
 		(module-imports (strip-syntax x)))
 	       ((not (pair? x))
-		(##sys#syntax-error-hook loc "invalid import specification" x))
+		(##sys#syntax-error loc "invalid import specification" x))
 	       (else
 		(let ((head (car x)))
 		  (cond ((c %only head)
@@ -789,7 +790,7 @@
 			   (define (rename imp)
 			     (cons
 			      (##sys#string->symbol
-			       (##sys#string-append (tostr prefix) (##sys#symbol->string (car imp))))
+			       (##sys#string-append (tostr prefix) (##sys#symbol->string/shared (car imp))))
 			      (cdr imp)))
 			   (values name lib `(,head ,spec ,prefix) (map rename impv) (map rename imps) impi)))
 			(else
@@ -801,7 +802,7 @@
    (lambda (x)
      (let-values (((name _ spec v s i) (##sys#decompose-import x r c loc)))
        (if (not spec)
-	   (##sys#syntax-error-hook loc "cannot import from undefined module" name x)
+	   (##sys#syntax-error loc "cannot import from undefined module" name x)
 	   (##sys#import spec v s i import-env macro-env meta? reexp? loc))))
    (cdr x))
   '(##core#undefined))
@@ -838,7 +839,7 @@
      vss)
     (when reexp?
       (unless cm
-        (##sys#syntax-error-hook loc "`reexport' only valid inside a module"))
+        (##sys#syntax-error loc "`reexport' only valid inside a module"))
       (let ((el (module-export-list cm)))
         (cond ((eq? #t el)
                (set-module-sexports! cm (append vss (module-sexports cm)))
@@ -865,16 +866,16 @@
 (define (module-rename sym prefix)
   (##sys#string->symbol
    (string-append
-    (##sys#slot prefix 1)
+    (##sys#symbol->string/shared prefix)
     "#"
-    (##sys#slot sym 1) ) ) )
+    (##sys#symbol->string/shared sym) ) ) )
 
 (define (##sys#alias-global-hook sym assign where)
   (define (mrename sym)
-    (cond ((##sys#current-module) => 
+    (cond ((##sys#current-module) =>
 	   (lambda (mod)
 	     (dm "(ALIAS) global alias " sym " in " (module-name mod))
-	     (unless assign 
+	     (unless assign
 	       (register-undefined sym mod where))
 	     (module-rename sym (module-name mod))))
 	  (else sym)))
@@ -890,7 +891,7 @@
 (define (##sys#validate-exports exps loc)
   ;; expects "exps" to be stripped
   (define (err . args)
-    (apply ##sys#syntax-error-hook loc args))
+    (apply ##sys#syntax-error loc args))
   (define (iface name)
     (or (getp name '##core#interface)
 	(err "unknown interface" name exps)))
@@ -926,13 +927,13 @@
 (define (##sys#instantiate-functor name fname args)
   (let ((funcdef (getp fname '##core#functor)))
     (define (err . args)
-      (apply ##sys#syntax-error-hook name args))
+      (apply ##sys#syntax-error name args))
     (unless funcdef (err "instantation of undefined functor" fname))
     (let ((fargs (car funcdef))
 	  (exports (cadr funcdef))
 	  (body (cddr funcdef)))
       (define (merr)
-	(err "argument list mismatch in functor instantiation" 
+	(err "argument list mismatch in functor instantiation"
 	     (cons name args) (cons fname (map car fargs))))
       `(##core#let-module-alias
 	,(let loop ((as args) (fas fargs))
@@ -980,10 +981,10 @@
 	       (set! missing (cons sym missing)))))
 	 exps)
 	(when (pair? missing)
-	  (##sys#syntax-error-hook
-	   'module 
+	  (##sys#syntax-error
+	   'module
 	   (apply
-	    string-append 
+	    string-append
 	    "argument module `" (symbol->string mname) "' does not match required signature\n"
 	    "in instantiation `" (symbol->string name) "' of functor `"
 	    (symbol->string fname) "', because the following required exports are missing:\n"
@@ -1119,21 +1120,181 @@
 	 (null-environment . scheme#null-environment)
 	 (interaction-environment . scheme#interaction-environment)))
       (r4rs-syntax ##sys#scheme-macro-environment))
-  (##sys#register-core-module 'r4rs 'library r4rs-values r4rs-syntax)
+  (##sys#register-core-module 'scheme.r4rs 'library r4rs-values r4rs-syntax)
   (##sys#register-core-module
-   'scheme 'library
+   'scheme.r5rs 'library
    (append '((dynamic-wind . scheme#dynamic-wind)
 	     (eval . scheme#eval)
 	     (values . scheme#values)
 	     (call-with-values . scheme#call-with-values))
 	   r4rs-values)
    r4rs-syntax)
-  (##sys#register-core-module 'r4rs-null #f '() r4rs-syntax)
-  (##sys#register-core-module 'r5rs-null #f '() r4rs-syntax))
+  (##sys#register-core-module 'scheme.r4rs-null #f '() r4rs-syntax)
+  (##sys#register-core-module 'scheme.r5rs-null #f '() r4rs-syntax))
 
-(##sys#register-module-alias 'r5rs 'scheme)
+(##sys#register-module-alias 'scheme 'scheme.r5rs)
 
-(define-inline (se-subset names env) (map (cut assq <> env) names))
+(define (se-subset names env)
+  (map (lambda (n) (assq n env)) names))
+
+(##sys#register-core-module 'scheme.base
+  'library
+  '((not . scheme#not) (boolean? . scheme#boolean?)
+    (eq? . scheme#eq?) (eqv? . scheme#eqv?) (equal? . scheme#equal?)
+    (pair? . scheme#pair?) (cons . scheme#cons)
+    (car . scheme#car) (cdr . scheme#cdr)
+    (caar . scheme#caar) (cadr . scheme#cadr) (cdar . scheme#cdar)
+    (cddr . scheme#cddr)
+    (set-car! . scheme#set-car!) (set-cdr! . scheme#set-cdr!)
+    (null? . scheme#null?) (list? . scheme#list?)
+    (list . scheme#list) (length . scheme#length)
+    (list-tail . scheme#list-tail) (list-ref . scheme#list-ref)
+    (list-set! . scheme#list-set!) (list-copy . scheme#list-copy)
+    (boolean=? . scheme#boolean=?) (symbol=? . scheme#symbol=?)
+    (append . scheme#append) (reverse . scheme#reverse)
+    (memq . scheme#memq) (memv . scheme#memv)
+    (member . scheme#member) (assq . scheme#assq)
+    (assv . scheme#assv) (assoc . scheme#assoc)
+    (symbol? . scheme#symbol?)
+    (port? . scheme#port?)
+    (input-port-open? . scheme#input-port-open?)
+    (output-port-open? . scheme#output-port-open?)
+    (call-with-port . scheme#call-with-port)
+    (symbol->string . scheme#symbol->string)
+    (string->symbol . scheme#string->symbol)
+    (string->vector . scheme#string->vector)
+    (vector->string . scheme#vector->string)
+    (vector-append . scheme#vector-append)
+    (vector-map . scheme#vector-map)
+    (vector-for-each . scheme#vector-for-each)
+    (string-map . scheme#string-map)
+    (string-for-each . scheme#string-for-each)
+    (number? . scheme#number?) (integer? . scheme#integer?)
+    (exact? . scheme#exact?) (real? . scheme#real?)
+    (complex? . scheme#complex?) (inexact? . scheme#inexact?)
+    (rational? . scheme#rational?) (zero? . scheme#zero?)
+    (odd? . scheme#odd?) (even? . scheme#even?)
+    (positive? . scheme#positive?) (negative? . scheme#negative?)
+    (max . scheme#max) (min . scheme#min)
+    (+ . scheme#+) (- . scheme#-) (* . scheme#*) (/ . scheme#/)
+    (= . scheme#=) (> . scheme#>) (< . scheme#<)
+    (>= . scheme#>=) (<= . scheme#<=)
+    (quotient . scheme#quotient) (remainder . scheme#remainder)
+    (floor-quotient . scheme#floor-quotient) (floor-remainder . scheme#floor-remainder)
+    (truncate-quotient . scheme#quotient) (truncate-remainder . scheme#remainder)
+    (floor/ . scheme#floor/) (truncate/ . scheme#truncate/)
+    (modulo . scheme#modulo)
+    (gcd . scheme#gcd) (lcm . scheme#lcm) (abs . scheme#abs)
+    (floor . scheme#floor) (ceiling . scheme#ceiling)
+    (truncate . scheme#truncate) (round . scheme#round)
+    (rationalize . scheme#rationalize)
+    (inexact . scheme#exact->inexact)
+    (exact . scheme#inexact->exact)
+    (sqrt . scheme#sqrt)
+    (square . scheme#square)
+    (exact-integer-sqrt . scheme#exact-integer-sqrt)
+    (number->string . scheme#number->string)
+    (string->number . scheme#string->number)
+    (char? . scheme#char?) (char=? . scheme#char=?)
+    (char>? . scheme#char>?) (char<? . scheme#char<?)
+    (char>=? . scheme#char>=?) (char<=? . scheme#char<=?)
+    (char->integer . scheme#char->integer)
+    (integer->char . scheme#integer->char)
+    (string? . scheme#string?) (string=? . scheme#string=?)
+    (string>? . scheme#string>?) (string<? . scheme#string<?)
+    (string>=? . scheme#string>=?) (string<=? . scheme#string<=?)
+    (make-string . scheme#make-string)
+    (make-list . scheme#make-list)
+    (string-length . scheme#string-length)
+    (string-ref . scheme#string-ref)
+    (string-set! . scheme#string-set!)
+    (string-append . scheme#string-append)
+    (string-copy . scheme#string-copy)
+    (string-copy! . scheme#string-copy!)
+    (string->list . scheme#string->list)
+    (list->string . scheme#list->string)
+    (substring . scheme#substring)
+    (string-fill! . scheme#string-fill!)
+    (vector? . scheme#vector?) (make-vector . scheme#make-vector)
+    (vector-ref . scheme#vector-ref)
+    (vector-set! . scheme#vector-set!)
+    (string . scheme#string) (vector . scheme#vector)
+    (vector-length . scheme#vector-length)
+    (vector->list . scheme#vector->list)
+    (list->vector . scheme#list->vector)
+    (vector-copy . scheme#vector-copy)
+    (vector-copy! . scheme#vector-copy!)
+    (vector-fill! . scheme#vector-fill!)
+    (call-with-values . scheme#call-with-values)
+    (values . scheme#values)
+    (procedure? . scheme#procedure?)
+    (make-parameter . scheme#make-parameter)
+    (map . scheme#map) (for-each . scheme#for-each)
+    (apply . scheme#apply) (dynamic-wind . scheme#dynamic-wind)
+    (call-with-current-continuation . scheme#call-with-current-continuation)
+    (call/cc . scheme#call-with-current-continuation)
+    (input-port? . scheme#input-port?)
+    (output-port? . scheme#output-port?)
+    (current-input-port . scheme#current-input-port)
+    (current-output-port . scheme#current-output-port)
+    (current-error-port . chicken.base#current-error-port)
+    (open-input-file . scheme#open-input-file)
+    (open-output-file . scheme#open-output-file)
+    (close-input-port . scheme#close-input-port)
+    (close-output-port . scheme#close-output-port)
+    (read-char . scheme#read-char) (peek-char . scheme#peek-char)
+    (read-string . chicken.io#read-string)
+    (peek-u8 . scheme#peek-u8) (features . scheme#features)
+    (read-u8 . chicken.io#read-byte) (write-u8 . chicken.io#write-byte)
+    (write-char . scheme#write-char) (newline . scheme#newline)
+    (eof-object? . scheme#eof-object?)
+    (eof-object . scheme#eof-object)
+    (flush-output-port . chicken.base#flush-output)
+    (with-input-from-file . scheme#with-input-from-file)
+    (with-output-to-file . scheme#with-output-to-file)
+    (close-port . scheme#close-port)
+    (char-ready? . scheme#char-ready?)
+    (u8-ready? . scheme#u8-ready?)
+    (numerator . scheme#numerator)
+    (denominator . scheme#denominator)
+    (scheme-report-environment . scheme#scheme-report-environment)
+    (null-environment . scheme#null-environment)
+    (open-input-string . scheme#open-input-string)
+    (open-output-string . scheme#open-output-string)
+    (open-output-bytevector . scheme#open-output-bytevector)
+    (open-input-bytevector . scheme#open-input-bytevector)
+    (get-output-string . scheme#get-output-string)
+    (get-output-bytevector . scheme#get-output-bytevector)
+    (with-exception-handler . scheme#with-exception-handler)
+    (raise . scheme#raise) (raise-continuable . scheme#raise-continuable)
+    (error . chicken.base#error)
+    (file-error? . scheme#file-error?)
+    (read-error? . scheme#read-error?)
+    (error-object? . scheme#error-object?)
+    (error-object-message . scheme#error-object-message)
+    (error-object-irritants . scheme#error-object-irritants)
+    (string->utf8 . chicken.bytevector#string->utf8)
+    (utf8->string . chicken.bytevector#utf8->string)
+    (write-bytevector . scheme#write-bytevector)
+    (bytevector . chicken.bytevector#bytevector)
+    (bytevector-length . chicken.bytevector#bytevector-length)
+    (bytevector? . chicken.bytevector#bytevector?)
+    (make-bytevector . chicken.bytevector#make-bytevector)
+    (bytevector-append . chicken.bytevector#bytevector-append)
+    (bytevector-copy . chicken.bytevector#bytevector-copy)
+    (bytevector-copy! . chicken.bytevector#bytevector-copy!)
+    (bytevector-u8-ref . chicken.bytevector#bytevector-u8-ref)
+    (bytevector-u8-set! . chicken.bytevector#bytevector-u8-set!)
+    (read-bytevector . chicken.io#read-bytevector)
+    (read-bytevector! . chicken.io#read-bytevector!)
+    (read-line . chicken.io#read-line)
+    (write-string . scheme#write-string) )
+  (se-subset '(define let let* letrec letrec* let-values define-values let*-values
+                parameterize when unless do define define-syntax case cond guard
+                define-record-type include include-ci set! syntax-rules cond-expand
+                import export begin import-for-syntax and or lambda if quote
+                case-lambda quasiquote syntax-error)
+             (##sys#macro-environment)))
 
 ;; Hack for library.scm to use macros from modules it defines itself.
 (##sys#register-primitive-module
@@ -1146,16 +1307,7 @@
  'chicken.type '() ##sys#chicken.type-macro-environment)
 
 (##sys#register-primitive-module
- 'srfi-0 '() (se-subset '(cond-expand) ##sys#default-macro-environment))
-
-(##sys#register-primitive-module
  'srfi-2 '() (se-subset '(and-let*) ##sys#chicken.base-macro-environment))
-
-(##sys#register-core-module
- 'srfi-6 'library
- '((get-output-string . chicken.base#get-output-string)
-   (open-input-string . chicken.base#open-input-string)
-   (open-output-string . chicken.base#open-output-string)))
 
 (##sys#register-primitive-module
  'srfi-8 '() (se-subset '(receive) ##sys#chicken.base-macro-environment))
@@ -1165,9 +1317,6 @@
 
 (##sys#register-core-module
  'srfi-10 'read-syntax '((define-reader-ctor . chicken.read-syntax#define-reader-ctor)))
-
-(##sys#register-primitive-module
- 'srfi-11 '() (se-subset '(let-values let*-values) ##sys#chicken.base-macro-environment))
 
 (##sys#register-core-module
  'srfi-12 'library
@@ -1185,17 +1334,67 @@
 (##sys#register-primitive-module
  'srfi-15 '() (se-subset '(fluid-let) ##sys#chicken.base-macro-environment))
 
-(##sys#register-primitive-module
- 'srfi-16 '() (se-subset '(case-lambda) ##sys#chicken.base-macro-environment))
+(##sys#register-core-module
+  'scheme.case-lambda
+  'library '()
+  ##sys#scheme.case-lambda-macro-environment)
+
+(##sys#register-core-module
+  'scheme.lazy 'library
+  '((force . scheme#force)
+    (promise? . chicken.base#promise?)
+    (make-promise . chicken.base#make-promise))
+  (cons (assq 'delay ##sys#scheme-macro-environment)
+        (se-subset '(delay-force) ##sys#chicken.base-macro-environment)))
+
+(##sys#register-core-module
+  'scheme.complex 'library
+  '((imag-part . scheme#imag-part) (real-part . scheme#real-part)
+    (make-rectangular . scheme#make-rectangular)
+    (make-polar . scheme#make-polar)
+    (angle . scheme#angle) (magnitude . scheme#magnitude)))
+
+(##sys#register-core-module
+  'scheme.cxr 'library
+  '((caaar . scheme#caaar)
+    (caadr . scheme#caadr)
+    (cadar . scheme#cadar)
+    (caddr . scheme#caddr)
+    (cdaar . scheme#cdaar)
+    (cdadr . scheme#cdadr)
+    (cddar . scheme#cddar)
+    (cdddr . scheme#cdddr)
+    (caaaar . scheme#caaaar)
+    (caaadr . scheme#caaadr)
+    (caadar . scheme#caadar)
+    (caaddr . scheme#caaddr)
+    (cadaar . scheme#cadaar)
+    (cadadr . scheme#cadadr)
+    (caddar . scheme#caddar)
+    (cadddr . scheme#cadddr)
+    (cdaaar . scheme#cdaaar)
+    (cdaadr . scheme#cdaadr)
+    (cdadar . scheme#cdadar)
+    (cdaddr . scheme#cdaddr)
+    (cddaar . scheme#cddaar)
+    (cddadr . scheme#cddadr)
+    (cdddar . scheme#cdddar)
+    (cddddr . scheme#cddddr)))
+
+(##sys#register-core-module
+ 'scheme.inexact 'library
+ '((exp . scheme#exp) (log . scheme#log) (expt . scheme#expt)
+   (sqrt . scheme#sqrt) (nan? . chicken.base#nan?)
+   (sin . scheme#sin) (cos . scheme#cos) (tan . scheme#tan)
+   (asin . scheme#asin) (acos . scheme#acos) (atan . scheme#atan)
+   (finite? . chicken.base#finite?)
+   (infinite? . chicken.base#infinite?)))
 
 (##sys#register-core-module
  'srfi-17 'library
  '((getter-with-setter . chicken.base#getter-with-setter)
    (setter . chicken.base#setter))
  (se-subset '(set!) ##sys#default-macro-environment))
-
-(##sys#register-core-module
- 'srfi-23 'library '((error . chicken.base#error)))
 
 (##sys#register-primitive-module
  'srfi-26 '() (se-subset '(cut cute) ##sys#chicken.base-macro-environment))
@@ -1206,10 +1405,6 @@
 (##sys#register-primitive-module
  'srfi-31 '() (se-subset '(rec) ##sys#chicken.base-macro-environment))
 
-(##sys#register-core-module
- 'srfi-39 'library '((make-parameter . chicken.base#make-parameter))
- (se-subset '(parameterize) ##sys#chicken.base-macro-environment))
-
 (##sys#register-primitive-module
  'srfi-55 '() (se-subset '(require-extension) ##sys#chicken.base-macro-environment))
 
@@ -1219,18 +1414,85 @@
    (keyword->string . chicken.keyword#keyword->string)
    (string->keyword . chicken.keyword#string->keyword)))
 
-(##sys#register-core-module
- 'srfi-98 'posix
- '((get-environment-variable . chicken.process-context#get-environment-variable)
-   (get-environment-variables . chicken.process-context#get-environment-variables)))
-
 (define (chicken.module#module-environment mname #!optional (ename mname))
   (let ((mod (find-module/import-library mname 'module-environment)))
     (if (not mod)
-	(##sys#syntax-error-hook
+	(##sys#syntax-error
 	 'module-environment "undefined module" mname)
-	(##sys#make-structure
-	 'environment ename (car (module-saved-environments mod)) #t))))
+        (let ((senv (module-saved-environments mod)))
+          (##sys#make-structure 'environment
+                                ename
+                                (car senv)
+                                (cdr senv)
+                                #t)))))
+
+(define (scheme.eval#environment . specs)
+  (let ((name (gensym "environment-module-")))
+      (define (delmod)
+	(and-let* ((modp (assq name ##sys#module-table)))
+	  (set! ##sys#module-table (delq modp ##sys#module-table))))
+      (define (delq x lst)
+        (let loop ([lst lst])
+          (cond ((null? lst) lst)
+	        ((eq? x (##sys#slot lst 0)) (##sys#slot lst 1))
+	        (else (cons (##sys#slot lst 0) (loop (##sys#slot lst 1)))) ) ) )
+      (dynamic-wind
+       void
+       (lambda ()
+	 ;; create module...
+	 (scheme#eval `(module ,name ()
+                        ,@(map (lambda (spec) `(import ,spec)) specs)))
+	 (let* ((mod (##sys#find-module name))
+                (env (module-saved-environments mod)))
+            (##sys#make-structure 'environment
+                                  (cons 'import specs)
+                                  (car env)
+                                  (cdr env)
+                                  #t)))
+        ;; ...and remove it right away
+        delmod)))
+
+(##sys#register-core-module
+ 'scheme.eval 'eval
+ '((eval . scheme#eval)
+   (environment . scheme.eval#environment)))
+
+(##sys#register-core-module
+ 'scheme.load 'eval
+ '((load . scheme#load)))
+
+(##sys#register-core-module
+ 'scheme.read 'library
+ '((read . scheme#read)))
+
+(##sys#register-core-module
+ 'scheme.repl 'eval
+ '((interaction-environment . scheme#interaction-environment)))
+
+(##sys#register-core-module
+ 'scheme.char 'library
+  '((char-alphabetic? . scheme#char-alphabetic?)
+    (char-ci<=? . scheme#char-ci<=?)
+    (char-ci<? . scheme#char-ci<?)
+    (char-ci=? . scheme#char-ci=?)
+    (char-ci>=? . scheme#char-ci>=?)
+    (char-ci>? . scheme#char-ci>?)
+    (char-downcase . scheme#char-downcase)
+    (char-foldcase . scheme#char-foldcase)
+    (char-lower-case? . scheme#char-lower-case?)
+    (char-numeric? . scheme#char-numeric?)
+    (char-upcase . scheme#char-upcase)
+    (char-upper-case? . scheme#char-upper-case?)
+    (char-whitespace? . scheme#char-whitespace?)
+    (digit-value . scheme.char#digit-value)
+    (string-ci<=? . scheme#string-ci<=?)
+    (string-ci<? . scheme#string-ci<?)
+    (string-ci=? . scheme#string-ci=?)
+    (string-ci>=? . scheme#string-ci>=?)
+    (string-ci>? . scheme#string-ci>?)
+    (string-downcase . scheme#string-downcase)
+    (string-foldcase . scheme#string-foldcase)
+    (string-upcase . scheme#string-upcase)))
 
 ;; Ensure default modules are available in "eval", too
 ;; TODO: Figure out a better way to make this work for static programs.

@@ -1,7 +1,7 @@
 ;;;; srfi-4-tests.scm
 
 
-(import (srfi 4) (chicken port))
+(import (chicken number-vector) (chicken port))
 (import-for-syntax (chicken base))
 
 (define-syntax test1
@@ -92,62 +92,6 @@
 (assert (equal? #s64(-1 2 3) '#s64(-1 2 3)))
 (assert (equal? #f32(1 2 3) '#f32(1 2 3)))
 (assert (equal? #f64(-1 2 3) '#f64(-1 2 3)))
-
-;; Ticket #1124: read-u8vector! w/o length, dest smaller than source.
-(let ((input (open-input-string "abcdefghijklmnopqrstuvwxyz"))
-      (u8vec (make-u8vector 10)))
-  (assert (= 10 (read-u8vector! #f u8vec input)))
-  (assert (equal? u8vec #u8(97 98 99 100 101 102 103 104 105 106)))
-  (assert (= 5  (read-u8vector! #f u8vec input 5)))
-  (assert (equal? u8vec #u8(97 98 99 100 101 107 108 109 110 111)))
-  (assert (= 5  (read-u8vector! 5  u8vec input)))
-  (assert (equal? u8vec #u8(112 113 114 115 116 107 108 109 110 111)))
-  (assert (= 6  (read-u8vector! 10 u8vec input)))
-  (assert (equal? u8vec #u8(117 118 119 120 121 122 108 109 110 111))))
-
-(let ((input (open-input-string "abcdefghijklmnopqrs")))
-  (assert (equal? (read-u8vector 5 input)
-		  #u8(97 98 99 100 101)))
-  (assert (equal? (read-u8vector 5 input) #u8(102 103 104 105 106)))
-  (assert (equal? (read-u8vector #f input)
-		  #u8(107 108 109 110 111 112 113 114 115)))
-  (with-input-from-string "abcdefghijklmnopqrs"
-   (lambda ()
-     (assert (equal? (read-u8vector 5)
-		     #u8(97 98 99 100 101)))
-     (assert (equal? (read-u8vector 5) #u8(102 103 104 105 106)))
-     (assert (equal? (read-u8vector)
-		     #u8(107 108 109 110 111 112 113 114 115))))))
-
-(assert (string=?
-	 "abc"
-	 (with-output-to-string
-	   (lambda ()
-	     (write-u8vector #u8(97 98 99))))))
-
-(assert (string=?
-	 "bc"
-	 (with-output-to-string
-	   (lambda ()
-	     (write-u8vector #u8(97 98 99) (current-output-port) 1)))))
-
-(assert (string=?
-	 "a"
-	 (with-output-to-string
-	   (lambda ()
-	     (write-u8vector #u8(97 98 99) (current-output-port) 0 1)))))
-
-(assert (string=?
-	 "b"
-	 (with-output-to-string
-	   (lambda ()
-	     (write-u8vector #u8(97 98 99) (current-output-port) 1 2)))))
-
-(assert (string=?
-	 ""
-	 (with-output-to-string
-	   (lambda ()
-	     (write-u8vector #u8())))))
 
 ; make sure the N parameter is a fixnum
 (assert

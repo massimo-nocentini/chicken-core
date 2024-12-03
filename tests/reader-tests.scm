@@ -22,4 +22,4 @@
 !! bye
 
 (assert (string=? output "hi\nfoo\nbaz\nbye\n"))
-(assert (string=? "   ." (with-input-from-string "\x20\u0020\U00000020\056" read-string)))
+(assert (string=? "   ." (with-input-from-string "\x20;\u0020\U00000020\056" read-string)))

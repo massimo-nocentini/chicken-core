@@ -152,8 +152,8 @@
     (write . scheme#write)
     (number->string . scheme#number->string)
     (write-char . scheme#write-char)
-    (open-output-string . chicken.base#open-output-string)
-    (get-output-string . chicken.base#get-output-string))
+    (open-output-string . scheme#open-output-string)
+    (get-output-string . scheme#get-output-string))
   (let* ((out (gensym 'out))
 	 (code (compile-format-string
 		(if (eq? (car x) 'chicken.format#sprintf) 'sprintf 'format)
@@ -169,8 +169,8 @@
     (write . scheme#write)
     (number->string . scheme#number->string)
     (write-char . scheme#write-char)
-    (open-output-string . chicken.base#open-output-string)
-    (get-output-string . chicken.base#get-output-string))
+    (open-output-string . scheme#open-output-string)
+    (get-output-string . scheme#get-output-string))
   (if (>= (length x) 3)
       (let ((code (compile-format-string 'fprintf (cadr x) x (cddr x) r c)))
 	(or code x))
@@ -181,13 +181,13 @@
     (write . scheme#write)
     (number->string . scheme#number->string)
     (write-char . scheme#write-char)
-    (open-output-string . chicken.base#open-output-string)
-    (get-output-string . chicken.base#get-output-string))
+    (open-output-string . scheme#open-output-string)
+    (get-output-string . scheme#get-output-string))
   (let ((code (compile-format-string 'printf '##sys#standard-output x (cdr x) r c)))
     (or code x)))
 
 (define (compile-format-string func out x args r c)
-  (call/cc
+  (call-with-current-continuation
    (lambda (return)
      (and (>= (length args) 1)
 	  (memq (symbol-append 'chicken.format# func) extended-bindings) ; s.a.
@@ -308,18 +308,20 @@
 	    (%let (r 'let))
 	    (%if (r 'if))
 	    (%pair? (r 'pair?))
+	    (fvar (gensym))
 	    (zvar (gensym))
 	    (loopvar (gensym "foldl"))
 	    (lstvar (gensym)))
 	`(,%let* ((,zvar ,z)
+	  	  (,fvar ,f)
 		  (,lstvar ,lst))
 		 (##core#check (##sys#check-list ,lstvar (##core#quote foldl)))
 		 (,%let ,loopvar ((,lstvar ,lstvar) (,zvar ,zvar))
 			(,%if (,%pair? ,lstvar)
-			      (##core#app 
+			      (##core#app
 			       ,loopvar
-			       (##sys#slot ,lstvar 1) 
-			       (,f ,zvar (##sys#slot ,lstvar 0)))
+			       (##sys#slot ,lstvar 1)
+			       (,fvar ,zvar (##sys#slot ,lstvar 0)))
 			      ,zvar))))
       x))
 )

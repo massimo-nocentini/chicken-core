@@ -8,13 +8,32 @@ of the manual provides a reference guide to all the modules that are
 part of a standard installation.  On top of these, you can install
 additional modules through the [[Extensions|eggs]] system.
 
-* [[Module scheme]] : Standard Scheme procedures and syntax
-* [[Module r5rs]] : Standard Scheme procedures and syntax (alias for scheme)
-* [[Module r4rs]] : Standard procedures and syntax of an old Scheme report
-* [[Module srfi-4]] : Homogeneous numeric vector datatypes
+Note that toplevel code that is not contained in a module has by
+default all exports of the [[Module scheme|scheme]], 
+[[Module (chicken base)|(chicken base)]] and 
+[[Module (chicken syntax)|(chicken syntax)]]  available.
+
+* [[Module scheme]] : Compatibility module for CHICKEN 5 code
+* [[Module (scheme r4rs)]] : Standard procedures and syntax of R4RS Scheme
+* [[Module (scheme r5rs)]] : Standard procedures and syntax of R5RS Scheme
+* [[Module (scheme base)]] : R7RS evaluation of forms
+* [[Module (scheme case-lambda)]] : R7RS {{case-lambda}} form
+* [[Module (scheme char)]] : R7RS operations on characters
+* [[Module (scheme complex)]] : R7RS operations on complex number
+* [[Module (scheme cxr)]] : R7RS extended {{c..r}} procedures
+* [[Module (scheme file)]] : R7RS file procedures
+* [[Module (scheme eval)]] : R7RS evaluation of forms
+* [[Module (scheme inexact)]] : R7RS operations on inexact numbers
+* [[Module (scheme lazy)]] : R7RS promises and delayed evaluation of forms
+* [[Module (scheme load)]] : R7RS {{load}} procedure
+* [[Module (scheme process-context)]] : R7RS procedures for interacting with the environment
+* [[Module (scheme read)]] : R7RS {{read}} procedure
+* [[Module (scheme repl)]] : R7RS {{interaction-environment}} procedure
+* [[Module (scheme time)]] : R7RS time procedures
+* [[Module (scheme write)]] : R7RS expression printing
 * [[Module (chicken base)]] : Core procedures and macros
 * [[Module (chicken bitwise)]] : Bitwise manipulation on integers
-* [[Module (chicken blob)]] : Unstructured byte data
+* [[Module (chicken bytevector)]] : Unstructured byte data
 * [[Module (chicken condition)]] : Raising and handling of exceptions, manipulation of condition objects
 * [[Module (chicken continuation)]] : Feeley's "a better API for continuations"
 * [[Module (chicken csi)]] : Features specific to {{csi}}
@@ -35,6 +54,7 @@ additional modules through the [[Extensions|eggs]] system.
 * [[Module (chicken memory)]] : Low-level memory operations
 * [[Module (chicken memory representation)]] : Low-level operations on the memory representation of Scheme objects
 * [[Module (chicken module)]] : Defining modules
+* [[Module (chicken number-vector)]] : Homogenous numeric vectors
 * [[Module (chicken pathname)]] : Manipulating path names
 * [[Module (chicken platform)]] : Information about the platform your code is running on
 * [[Module (chicken plist)]] : Symbol property lists
@@ -54,30 +74,24 @@ additional modules through the [[Extensions|eggs]] system.
 * [[Module (chicken time)]] : Fetching information about the current time
 * [[Module (chicken time posix)]] : Manipulating POSIX time
 * [[Module (chicken type)]] : Defining and using static typing information
+* [[Module srfi-4]] : The subset of [[Module (chicken number-vector)]] specified by SRFI-4
 
 In addition to the core modules listed above, the following SRFI modules can be
 imported. These provide access to identifiers described by the SRFI, but which
 may already be defined by other parts of CHICKEN's standard library.
 
-* Module srfi-0 : Feature-based conditional expansion construct
 * Module srfi-2 : AND-LET*: an AND with local bindings, a guarded LET* special form
-* Module srfi-6 : Basic String Ports
 * Module srfi-8 : receive: Binding to multiple values
-* Module srfi-9 : Defining Record Types
 * Module srfi-10 : #, external form
-* Module srfi-11 : Syntax for receiving multiple values
 * Module srfi-12 : Exception Handling
 * Module srfi-15 : Syntax for dynamic scoping
 * Module srfi-16 : Syntax for procedures of variable arity
 * Module srfi-17 : Generalized set!
-* Module srfi-23 : Error reporting mechanism
 * Module srfi-26 : Notation for Specializing Parameters without Currying
 * Module srfi-28 : Basic Format Strings
 * Module srfi-31 : A special form `rec' for recursive evaluation
-* Module srfi-39 : Parameter objects
 * Module srfi-55 : require-extension
 * Module srfi-88 : Keyword objects
-* Module srfi-98 : An interface to access environment variables
 
 Other SRFI features may be supported but do not correspond to any importable module.
 Refer to {{cond-expand}} for a list of non-module SRFI feature identifiers.

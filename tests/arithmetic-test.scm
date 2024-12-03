@@ -39,7 +39,7 @@
 
 (cond-expand
   (fully-random)
-  (else (set-pseudo-random-seed! "abcdefgh")))
+  (else (set-pseudo-random-seed! #u8(1 2 3 4 5 6))))
 
 (define (push c total opname args res)
   (let ((x (list (cons c total) (cons opname args) '-> res)))

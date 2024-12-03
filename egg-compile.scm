@@ -77,43 +77,27 @@
      ((windows) +windows-executable-extension+)))
 
 (define (copy-directory-command platform)
-  (case platform
-    ((unix) "cp -r")
-    ((windows) "xcopy /y /i /e")))
+  "cp -r")
 
 (define (copy-file-command platform)
-  (case platform
-    ((unix) "cp")
-    ((windows) "copy /y")))
+  "cp")
 
 (define (mkdir-command platform)
-  (case platform
-    ((unix) "mkdir -p")
-    ((windows) "mkdir")))
+  "mkdir -p")
 
 (define (install-executable-command platform)
-  (case platform
-    ((windows) (copy-file-command 'windows))
-    (else
-     (string-append default-install-program " "
-                    default-install-program-executable-flags))))
+  (string-append default-install-program " "
+                 default-install-program-executable-flags))
 
 (define (install-file-command platform)
-  (case platform
-    ((windows) (copy-file-command 'windows))
-    (else
-     (string-append default-install-program " "
-                    default-install-program-data-flags))))
+  (string-append default-install-program " "
+                 default-install-program-data-flags))
 
 (define (remove-file-command platform)
-  (case platform
-    ((unix) "rm -f")
-    ((windows) "del /f /q")))
+  "rm -f")
 
 (define (cd-command platform)
-  (case platform
-    ((unix) "cd")
-    ((windows) "cd /d")))
+  "cd")
 
 (define (uses-compiled-import-library? mode)
   (not (and (eq? mode 'host) staticbuild)))
@@ -180,6 +164,27 @@
           (else (fail x)))))
 
 
+;;; parse custom configuration information from script
+
+(define (parse-custom-config arg)
+  (define (read-all)
+    (let loop ((lst '()))
+      (let ((x (read)))
+        (if (eof-object? x)
+            (reverse lst)
+            (loop (append (reverse (flatten x)) lst))))))
+  (if (and (list? arg) (eq? 'custom-config (car arg)))
+      (let* ((arg (cdr arg))
+             (in (with-input-from-pipe
+                  (conc default-csi " -s "
+                        (if (list? arg)
+                            (string-intersperse (map ->string arg) " ")
+                            (->string arg)))
+                  read-all)))
+        (map ->string in))
+      (list arg)))
+
+
 ;;; compile an egg-information tree into abstract build/install operations
 
 (define (compile-egg-info eggfile info version platform mode)
@@ -207,6 +212,7 @@
         (tfile #f)
         (ptfile #f)
         (ifile #f)
+        (install #t)
         (eggfile (locate-egg-file eggfile))
         (objext (object-extension platform))
         (arcext (archive-extension platform))
@@ -218,6 +224,9 @@
     (define (addfiles . filess)
       (set! ifiles (concatenate (cons ifiles filess)))
       files)
+    (define (checkfiles files target)
+      (when (null? files)
+        (warning "target has no files" target)))
     (define (compile-component info)
       (case (car info)
         ((extension)
@@ -241,7 +250,7 @@
                   (rtarget (or oname target)))
               (when (eq? #t tfile) (set! tfile rtarget))
               (when (eq? #t ifile) (set! ifile rtarget))
-              (addfiles 
+              (addfiles
                 (if (memq 'static link)
                     (list (conc dest "/" rtarget
                                 (if (null? lobjs)
@@ -250,10 +259,10 @@
                           (conc dest "/" rtarget +link-file-extension+))
                     '())
                 (if (memq 'dynamic link) (list (conc dest "/" rtarget ".so")) '())
-                (if tfile 
+                (if tfile
                     (list (conc dest "/" tfile ".types"))
                     '())
-                (if ifile 
+                (if ifile
                     (list (conc dest "/" ifile ".inline"))
                     '())
                 (import-libraries mods dest rtarget mode))
@@ -269,7 +278,7 @@
                             link-objects: lobjs
                             output-file: rtarget)
                     exts)))))
-        ((c-object)
+        ((installed-c-object c-object)
           (fluid-let ((target (check-target (cadr info) exts))
                       (cdeps '())
                       (sdeps '())
@@ -278,11 +287,14 @@
                       (link (if (null? link) default-extension-linkage link))
                       (oname #f)
                       (mods #f)
+                      (install (eq? 'installed-c-object (car info)))
                       (opts opts))
             (for-each compile-extension/program (cddr info))
             (let ((dest (effective-destination-repository mode #t))
                   ;; Respect install-name if specified
                   (rtarget (or oname target)))
+              (when install
+                (addfiles (list (conc dest "/" rtarget objext))))
               (set! objs
                 (cons (list target dependencies: cdeps source: src
                             options: opts
@@ -297,6 +309,7 @@
                       (dest #f)
                       (files '()))
             (for-each compile-data/include (cddr info))
+            (checkfiles files target)
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
                                  default-sharedir
@@ -304,9 +317,9 @@
                    (dest (normalize-pathname (conc dest "/"))))
               (addfiles (map (cut conc dest <>) files)))
             (set! data
-              (cons (list target dependencies: '() files: files 
-                          destination: dest mode: mode) 
-                    data))))                      
+              (cons (list target dependencies: '() files: files
+                          destination: dest mode: mode)
+                    data))))
         ((generated-source-file)
           (fluid-let ((target (check-target (cadr info) data))
                       (src #f)
@@ -317,7 +330,7 @@
             (unless cbuild
               (error "generated source files need a custom build step" target))
             (set! genfiles
-              (cons (list target dependencies: cdeps source: src 
+              (cons (list target dependencies: cdeps source: src
                           custom: cbuild source-dependencies: sdeps
                           eggfile: eggfile)
                     genfiles))))
@@ -326,6 +339,7 @@
                       (dest #f)
                       (files '()))
             (for-each compile-data/include (cddr info))
+            (checkfiles files target)
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
                                  default-incdir
@@ -333,13 +347,14 @@
                    (dest (normalize-pathname (conc dest "/"))))
               (addfiles (map (cut conc dest <>) files)))
             (set! cinc
-              (cons (list target dependencies: '() files: files 
-                          destination: dest mode: mode) 
-                    cinc))))            
+              (cons (list target dependencies: '() files: files
+                          destination: dest mode: mode)
+                    cinc))))
         ((scheme-include)
           (fluid-let ((target (check-target (cadr info) scminc))
                       (dest #f)
                       (files '()))
+            (checkfiles files target)
             (for-each compile-data/include (cddr info))
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
@@ -347,10 +362,10 @@
                                  (override-prefix "/share" host-sharedir))))
                    (dest (normalize-pathname (conc dest "/"))))
               (addfiles (map (cut conc dest <>) files)))
-            (set! scminc 
-              (cons (list target dependencies: '() files: files 
-                          destination: dest mode: mode) 
-                    scminc))))     
+            (set! scminc
+              (cons (list target dependencies: '() files: files
+                          destination: dest mode: mode)
+                    scminc))))
         ((program)
           (fluid-let ((target (check-target (cadr info) prgs))
                       (cdeps '())
@@ -363,18 +378,18 @@
                       (oname #f)
                       (opts opts))
             (for-each compile-extension/program (cddr info))
-            (let ((dest (if (eq? mode 'target) 
+            (let ((dest (if (eq? mode 'target)
                             default-bindir
                             (override-prefix "/bin" host-bindir)))
                   ;; Respect install-name if specified
                   (rtarget (or oname target)))
               (addfiles (list (conc dest "/" rtarget exeext)))
 	      (set! prgs
-		(cons (list target dependencies: cdeps 
+		(cons (list target dependencies: cdeps
                             source: src options: opts
-			    link-options: lopts linkage: link 
+			    link-options: lopts linkage: link
                             custom: cbuild
-			    mode: mode output-file: rtarget 
+			    mode: mode output-file: rtarget
                             source-dependencies: sdeps
                             link-objects: lobjs
                             eggfile: eggfile)
@@ -382,7 +397,7 @@
         (else (compile-common info compile-component 'component))))
     (define (compile-extension/program info)
       (case (car info)
-        ((linkage) 
+        ((linkage)
          (set! link (cdr info)))
         ((types-file)
          (set! tfile
@@ -402,10 +417,16 @@
          (set! ifile (or (null? (cdr info)) (arg info 1 name?))))
         ((custom-build)
          (set! cbuild (->string (arg info 1 name?))))
-        ((csc-options) 
-         (set! opts (append opts (cdr info))))
+        ((csc-options)
+         (set! opts
+           (apply append
+             opts
+             (map parse-custom-config (cdr info)))))
         ((link-options)
-         (set! lopts (append lopts (cdr info))))
+         (set! lopts
+           (apply append
+             lopts
+             (map parse-custom-config (cdr info)))))
         ((source)
          (set! src (->string (arg info 1 name?))))
         ((install-name)
@@ -435,19 +456,21 @@
       (case (car info)
         ((destination)
          (set! dest (->string (arg info 1 name?))))
-        ((files) 
+        ((files)
          (set! files (append files (map ->string (cdr info)))))
         (else (compile-common info compile-data/include 'data/include))))
     (define (compile-options info)
+      (define (custom info)
+        (map parse-custom-config info))
       (case (car info)
-        ((csc-options) (set! opts (append opts (cdr info))))
-        ((link-options) (set! lopts (append lopts (cdr info))))
-        ((linkage) (set! link (append link (cdr info))))
+        ((csc-options) (set! opts (apply append opts (custom (cdr info)))))
+        ((link-options) (set! lopts (apply append lopts (custom (cdr info)))))
+        ((linkage) (set! link (apply append link (custom (cdr info)))))
         (else (error "invalid component-options specification" info))))
     (define (compile-cond-expand info walk)
       (let loop ((clauses (cdr info)))
         (cond ((null? clauses)
-               (error "no matching clause in `cond-expand' form" 
+               (error "no matching clause in `cond-expand' form"
                       info))
               ((or (eq? 'else (caar clauses))
                    (check-condition (caar clauses) mode link))
@@ -495,9 +518,9 @@
     (for-each compile info)
     ;; sort topologically, by dependencies
     (let* ((all (append prgs exts objs genfiles))
-           (order (reverse (sort-dependencies      
+           (order (reverse (sort-dependencies
                             (map (lambda (dep)
-                                   (cons (car dep) 
+                                   (cons (car dep)
                                          (filter-deps (car dep)
                                                       (get-keyword dependencies: (cdr dep)))))
                               all)
@@ -505,16 +528,16 @@
       ;; generate + return build/install commands
       (values
         ;; build commands
-        (append-map 
+        (append-map
           (lambda (id)
             (cond ((assq id exts) =>
                    (lambda (data)
                      (let ((link (get-keyword linkage: (cdr data)))
                            (mods (get-keyword modules: (cdr data))))
-                       (append (if (memq 'dynamic link) 
+                       (append (if (memq 'dynamic link)
                                    (list (apply compile-dynamic-extension data))
                                    '())
-                               (if (memq 'static link) 
+                               (if (memq 'static link)
                                    ;; if compiling both static + dynamic, override
                                    ;; modules/types-file/inline-file properties to
                                    ;; avoid generating things twice:
@@ -536,10 +559,10 @@
                   ((assq id prgs) =>
                    (lambda (data)
                      (let ((link (get-keyword linkage: (cdr data))))
-                       (append (if (memq 'dynamic link) 
+                       (append (if (memq 'dynamic link)
                                    (list (apply compile-dynamic-program data))
                                    '())
-                               (if (memq 'static link) 
+                               (if (memq 'static link)
                                    (list (apply compile-static-program data))
                                    '())))))
                   ((assq id objs) =>
@@ -563,7 +586,7 @@
         ;; installation commands
         (append
           (append-map
-            (lambda (ext)          
+            (lambda (ext)
               (let ((link (get-keyword linkage: (cdr ext)))
                     (mods (get-keyword modules: (cdr ext))))
                 (append
@@ -590,6 +613,7 @@
                       (list (apply install-inline-file ext))
                       '()))))
              exts)
+          (map (lambda (obj) (apply install-object obj)) objs)
           (map (lambda (prg) (apply install-program prg)) prgs)
           (map (lambda (data) (apply install-data data)) data)
           (map (lambda (cinc) (apply install-c-include cinc)) cinc)
@@ -648,10 +672,11 @@
 			 `(,@(filelist srcdir source-dependencies) ,src ,eggfile
 			   ,@(if custom (list cmd) '())
                            ,@(get-dependency-targets dependencies))
-			 `(,cmd ,@(if keep-generated-files '("-k") '())
+			 `(,@(if custom '("sh") '())
+			    ,cmd ,@(if keep-generated-files '("-k") '())
 				"-regenerate-import-libraries"
 				,@(if modules '("-J") '()) "-M"
-				"-setup-mode" "-static" "-I" ,srcdir 
+				"-setup-mode" "-static" "-I" ,srcdir
 				"-emit-link-file" ,lfile
 				,@(if (eq? mode 'host) '("-host") '())
 				"-D" "compiling-extension"
@@ -666,7 +691,7 @@
                                link-objects))))
 	(print-build-command (list out3)
 			     `(,out2 ,@lobjs)
-			     `(,target-librarian ,(raw-arg target-librarian-options) ,out3 ,out2 ,@lobjs)
+			     `(,target-librarian ,target-librarian-options ,out3 ,out2 ,@lobjs)
 			     platform)))
     (print-end-command platform)))
 
@@ -716,7 +741,8 @@
 			   ,@(filelist srcdir lobjs)
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
-			 `(,cmd ,@(if keep-generated-files '("-k") '())
+			 `(,@(if custom '("sh") '())
+			    ,cmd ,@(if keep-generated-files '("-k") '())
 				,@(if (eq? mode 'host) '("-host") '())
 				"-D" "compiling-extension"
 				"-J" "-s" "-regenerate-import-libraries"
@@ -736,7 +762,7 @@
          srcdir platform)
   (let* ((cmd default-csc)
          (sname (prefix srcdir name))
-         (opts (if (null? options) 
+         (opts (if (null? options)
                    default-import-library-compilation-options
                    options))
          (out (target-file (conc sname ".import.so") mode))
@@ -777,7 +803,8 @@
 			 `(,@(filelist srcdir source-dependencies) ,src ,eggfile
 			   ,@(if custom (list cmd) '())
                            ,@(get-dependency-targets dependencies))
-			 `(,cmd "-setup-mode" "-static" "-I" ,srcdir
+			 `(,@(if custom '("sh") '())
+			    ,cmd "-setup-mode" "-static" "-I" ,srcdir
 				,@(if (eq? mode 'host) '("-host") '())
 				"-c" "-C" ,(conc "-I" srcdir)
 				,@opts ,src "-o" ,out)
@@ -808,7 +835,8 @@
 			 `(,src ,eggfile ,@(if custom (list cmd) '())
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
-			 `(,cmd ,@(if (eq? mode 'host) '("-host") '())
+			 `(,@(if custom '("sh") '())
+			   ,cmd ,@(if (eq? mode 'host) '("-host") '())
 			   "-s" "-c" "-C" ,(conc "-I" srcdir)
 			   ,@opts ,src "-o" ,out)
 			 platform)
@@ -822,11 +850,11 @@
   (let* ((cmd (or (custom-cmd custom srcdir platform)
 		  default-csc))
          (sname (prefix srcdir name))
-         (opts (if (null? options) 
+         (opts (if (null? options)
                    default-dynamic-compilation-options
                    options))
          (out (target-file (conc sname
-				 (executable-extension platform)) 
+				 (executable-extension platform))
 			   mode))
          (lobjs (map (lambda (lo)
                        (target-file (conc lo
@@ -841,7 +869,8 @@
 			   ,@(filelist srcdir source-dependencies)
 			   ,@(filelist srcdir lobjs)
                            ,@(get-dependency-targets dependencies))
-			 `(,cmd ,@(if keep-generated-files '("-k") '())
+			 `(,@(if custom '("sh") '())
+			    ,cmd ,@(if keep-generated-files '("-k") '())
 				"-setup-mode"
 				,@(if (eq? mode 'host) '("-host") '())
 				"-I" ,srcdir
@@ -860,11 +889,11 @@
   (let* ((cmd (or (custom-cmd custom srcdir platform)
 		  default-csc))
          (sname (prefix srcdir name))
-         (opts (if (null? options) 
+         (opts (if (null? options)
                    default-static-compilation-options
                    options))
          (out (target-file (conc sname
-				 (executable-extension platform)) 
+				 (executable-extension platform))
 			   mode))
          (lobjs (map (lambda (lo)
                        (target-file (conc lo
@@ -879,7 +908,8 @@
 			   ,@(filelist srcdir lobjs)
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
-			 `(,cmd ,@(if keep-generated-files '("-k") '())
+			 `(,@(if custom '("sh") '())
+			    ,cmd ,@(if keep-generated-files '("-k") '())
 				,@(if (eq? mode 'host) '("-host") '())
 				"-static" "-setup-mode" "-I" ,srcdir
 				"-C" ,(conc "-I" srcdir)
@@ -890,17 +920,17 @@
     (print-end-command platform)))
 
 (define ((compile-generated-file name #!key source custom dependencies
-                                 source-dependencies eggfile) 
+                                 source-dependencies eggfile)
          srcdir platform)
   (let ((cmd (custom-cmd custom srcdir platform))
         (out (or source name)))
     (add-dependency-target name out)
     (prepare-custom-command cmd platform)
     (print-build-command (list out)
-			 `(,cmd ,eggfile
-			   ,@(filelist srcdir source-dependencies)
-                           ,@(get-dependency-targets dependencies))
-			 (list cmd)
+			 (append
+			   (filelist srcdir source-dependencies)
+                           (get-dependency-targets dependencies))
+			 `("sh" ,cmd ,eggfile)
 			 platform)
     (print-end-command platform)))
 
@@ -980,7 +1010,7 @@
           (qs* (conc dest "/" types-file ".types") platform #t))
     (print-end-command platform)))
 
-(define ((install-inline-file name #!key mode inline-file) 
+(define ((install-inline-file name #!key mode inline-file)
          srcdir platform)
   (let* ((cmd (install-file-command platform))
          (mkdir (mkdir-command platform))
@@ -1008,6 +1038,21 @@
          (destf (qs* (conc dest "/" output-file ext) platform #t)))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir destf)
+    (print-end-command platform)))
+
+(define ((install-object name #!key mode output-file) srcdir platform)
+  (let* ((cmd (install-file-command platform))
+         (mkdir (mkdir-command platform))
+         (ext (object-extension platform))
+         (sname (prefix srcdir name))
+         (out (qs* (target-file (conc sname ext) mode)
+		   platform #t))
+         (dest (effective-destination-repository mode))
+         (dfile (qs* dest platform #t))
+         (ddir (shell-variable "DESTDIR" platform)))
+    (print "\n" mkdir " " ddir dfile)
+    (print cmd " " out " " ddir
+           (qs* (conc dest "/" output-file ext) platform #t))
     (print-end-command platform)))
 
 (define (install-random-files dest files mode srcdir platform)
@@ -1059,7 +1104,7 @@
                                                  host-sharedir)))
                         files mode srcdir platform))
 
-(define ((install-c-include name #!key deps files destination mode) 
+(define ((install-c-include name #!key deps files destination mode)
          srcdir platform)
   (install-random-files (or destination
                             (if (eq? mode 'target)
@@ -1116,28 +1161,11 @@ export CHICKEN_CSI=~a
 EOF
              (qs* default-bindir platform) (qs* default-cc platform)
 	     (qs* default-cxx platform) (qs* default-csc platform)
-	     (qs* default-csi platform)))
-    ((windows)
-     (printf #<<EOF
-@echo off~%
-set "PATH=~a;%PATH%"
-set "CHICKEN_CC=~a"
-set "CHICKEN_CXX=~a"
-set "CHICKEN_CSC=~a"
-set "CHICKEN_CSI=~a"
-
-EOF
-             default-bindir default-cc
-	     default-cxx default-csc
-	     default-csi))))
+	     (qs* default-csi platform)))))
 
 (define ((build-suffix mode name info) platform)
   (case platform
     ((unix)
-     (printf #<<EOF
-EOF
-             ))
-    ((windows)
      (printf #<<EOF
 EOF
              ))))
@@ -1149,11 +1177,6 @@ EOF
 #!/bin/sh~%
 set -e
 
-EOF
-             ))
-    ((windows)
-     (printf #<<EOF
-@echo off~%
 EOF
              ))))
 
@@ -1177,29 +1200,11 @@ cat >~a~a <<'ENDINFO'
 EOF
                mkdir ddir qdir
                dcmd ddir dest
-               ddir dest infostr))
-      ((windows)
-       (printf #<<EOF
-
-~a ~a~a
-copy /y nul ~a~a~%
-~a
-EOF
-               mkdir ddir qdir
-               ddir dest
-               (string-intersperse (map (lambda (line)
-                                          (ensure-line-limit
-                                            (format "echo ~a >>~a~a"
-                                                    (caretize line)
-                                                    (caretize ddir)
-                                                    (caretize dest))
-                                            8191))
-                                        (string-split infostr "\n"))
-                                   "\n"))))))
+               ddir dest infostr)))))
 
 ;;; some utilities for mangling + quoting
 
-;; The qs procedure quotes for mingw32 or other platforms.  We
+;; The qs procedure quotes for mingw or other platforms.  We
 ;; "normalised" the platform to "windows" in chicken-install, so we
 ;; have to undo that here again.  It can also convert slashes to
 ;; backslashes on Windows, which is necessary in many cases when
@@ -1207,22 +1212,9 @@ EOF
 ;;
 ;; It also supports already-quoted arguments which can be taken as-is.
 (define (qs* arg platform #!optional slashify?)
-  (if (raw-arg? arg)
-      (raw-arg-value arg)
-      (let* ((arg (->string arg))
-	     (path (if slashify? (slashify arg platform) arg)))
-	(qs path (if (eq? platform 'windows) 'mingw32 platform)))))
-
-(define-record-type raw-arg
-  (raw-arg value)
-  raw-arg?
-  (value raw-arg-value))
-
-(define (slashify str platform)
-  (if (eq? platform 'windows)
-      (list->string 
-        (map (lambda (c) (if (char=? #\/ c) #\\ c)) (string->list str)))
-      str))
+  (let* ((arg (->string arg))
+         (path arg))
+    (qs path (if (eq? platform 'windows) 'mingw platform))))
 
 (define (prefix dir name)
   (make-pathname dir (->string name)))
@@ -1232,7 +1224,7 @@ EOF
 ;; in an extra set of quotes to avoid the outer quotes being stripped.
 ;; Don't ask.
 (define (system+ str platform)
-  (system (if (and (eq? platform 'windows) 
+  (system (if (and (eq? platform 'windows)
 		   (positive? (string-length str))
 		   (char=? #\" (string-ref str 0)))
 	      (string-append "\"" str "\"")
@@ -1241,36 +1233,27 @@ EOF
 (define (target-file fname mode)
   (if (eq? mode 'target) (string-append fname ".target") fname))
 
-(define (joins strs platform) 
+(define (joins strs platform)
   (string-intersperse (map (cut qs* <> platform) strs) " "))
 
 (define (filelist dir lst)
   (map (cut prefix dir <>) lst))
 
 (define (shell-variable var platform)
-  (case platform
-    ((unix) (string-append "\"${" var "}\""))
-    ((windows) (string-append "%" var "%"))))
+  (string-append "\"${" var "}\""))
 
-(define (prepare-custom-command cmd platform)
-  (unless (eq? 'windows platform)
-    (print "chmod +x " (qs* cmd platform))))
+(define prepare-custom-command void)
 
 (define (custom-cmd custom srcdir platform)
-  (and custom (prefix srcdir 
-                      (case platform
-                        ((windows) (conc custom ".bat"))
-                        (else custom)))))
+  (and custom (prefix srcdir custom)))
 
 (define (print-build-command targets sources command-and-args platform)
   (print "\n" (qs* default-builder platform) " "
          (joins targets platform)
-	 " : " (joins sources platform) " "
+         " : " (joins sources platform) " "
          " : " (joins command-and-args platform)))
 
-(define (print-end-command platform)
-  (case platform
-    ((windows) (print "if errorlevel 1 exit /b 1"))))
+(define print-end-command void)
 
 (define (strip-dir-prefix prefix fname)
   (let* ((plen (string-length prefix))
@@ -1282,7 +1265,7 @@ EOF
 
 (define (caretize str)
   (string-translate* str '(("&" . "^&") ("^" . "^^") ("|" . "^|")
-			   ("<" . "^<") (">" . "^>"))))
+                           ("<" . "^<") (">" . "^>"))))
 
 (define (ensure-line-limit str lim)
   (when (>= (string-length str) lim)

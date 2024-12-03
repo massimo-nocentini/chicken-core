@@ -42,6 +42,7 @@
 	chicken.internal
 	chicken.sort
 	chicken.string)
+(import (only (scheme base) make-parameter))
 
 (include "tweaks")
 (include "mini-srfi-1.scm")
@@ -442,7 +443,7 @@
                                                (for-each (cut db-put! db <> 'inline-target #t) 
                                                  fids)
 				               (debugging 'o "inlining procedure" info)
-				               (call/cc
+				               (call-with-current-continuation
                                                  (lambda (return)
                                                    (define (cfk cvar)
                                                      (debugging 
@@ -1128,7 +1129,7 @@
 
     ;; (<op> ...) -> (##core#inline <iop> ...)
     ((2) ; classargs = (<argc> <iop> <safe>)
-     ;; - <safe> by be 'specialized (see rule #16 below)
+     ;; - <safe> may be 'specialized (see rule #16 below)
      (and may-rewrite
 	  (= (length callargs) (first classargs))
 	  (intrinsic? name)

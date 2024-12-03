@@ -24,7 +24,7 @@
 ; POSSIBILITY OF SUCH DAMAGE.
 
 
-(declare 
+(declare
   (foreign-declare #<<EOF
 
 #include <signal.h>
@@ -32,13 +32,19 @@
 static int C_not_implemented(void);
 int C_not_implemented() { return -1; }
 
-static C_TLS struct stat C_statbuf;
+#if defined(_WIN32) && !defined(__CYGWIN__)
+static struct _stat64i32 C_statbuf;
+#define C_fstat   _fstat64i32
+#else
+static struct stat C_statbuf;
+#define C_fstat   fstat
+#endif
 
 #define C_stat_type         (C_statbuf.st_mode & S_IFMT)
 #define C_stat_perm         (C_statbuf.st_mode & ~S_IFMT)
 
-#define C_u_i_stat(fn)      C_fix(C_stat(C_c_string(fn), &C_statbuf))
-#define C_u_i_fstat(fd)     C_fix(fstat(C_unfix(fd), &C_statbuf))
+#define C_u_i_stat(fn)      C_fix(C_stat(C_OS_FILENAME(fn, 0), &C_statbuf))
+#define C_u_i_fstat(fd)     C_fix(C_fstat(C_unfix(fd), &C_statbuf))
 
 #ifndef S_IFSOCK
 # define S_IFSOCK           0140000
@@ -125,6 +131,8 @@ EOF
 ))
 
 (include "common-declarations.scm")
+
+(import (only (scheme base) port?))
 
 (define-syntax define-unimplemented
   (syntax-rules ()
@@ -244,7 +252,7 @@ EOF
 		   #:type-error loc "bad argument type - not a fixnum, port or string" file)) ) ) )
     (if (fx< r 0)
 	(if err
-	    (posix-error #:file-error loc "cannot access file" file) 
+	    (posix-error #:file-error loc "cannot access file" file)
 	    #f)
 	#t)))
 
@@ -291,7 +299,7 @@ EOF
       (when atime (##sys#check-exact-integer atime 'set-file-times!))
       (when mtime (##sys#check-exact-integer mtime 'set-file-times!))
       (let ((r ((foreign-lambda int "set_file_mtime"
-		  c-string scheme-object scheme-object)
+		  scheme-object scheme-object scheme-object)
 		f atime mtime)))
 	(when (fx< r 0)
 	  (apply posix-error
@@ -481,28 +489,27 @@ EOF
 (let ()
   (define (mode inp m loc)
     (##sys#make-c-string
-     (cond ((pair? m)
-            (let ([m (car m)])
-              (case m
+     (cond (m (case m
                 ((#:append) (if (not inp) "a" (##sys#error "invalid mode for input file" m)))
-                (else (##sys#error "invalid mode argument" m)) ) ) )
-           [inp "r"]
-           [else "w"] )
+                (else (##sys#error "invalid mode argument" m)) ) )
+           (inp "r")
+           (else "w") )
      loc) )
-  (define (check loc fd inp r)
+  (define (check loc fd inp r enc)
     (if (##sys#null-pointer? r)
         (posix-error #:file-error loc "cannot open file" fd)
         (let ((port (##sys#make-port (if inp 1 2) ##sys#stream-port-class "(fdport)" 'stream)))
           (##core#inline "C_set_file_ptr" port r)
+          (##sys#setslot port 15 enc)
           port) ) )
   (set! chicken.file.posix#open-input-file*
-    (lambda (fd . m)
+    (lambda (fd #!optional m (enc 'utf-8))
       (##sys#check-fixnum fd 'open-input-file*)
-      (check 'open-input-file* fd #t (##core#inline_allocate ("C_fdopen" 2) fd (mode #t m 'open-input-file*))) ) )
+      (check 'open-input-file* fd #t (##core#inline_allocate ("C_fdopen" 2) fd (mode #t m 'open-input-file*)) enc)) )
   (set! chicken.file.posix#open-output-file*
-    (lambda (fd . m)
+    (lambda (fd #!optional m (enc 'utf-8))
       (##sys#check-fixnum fd 'open-output-file*)
-      (check 'open-output-file* fd #f (##core#inline_allocate ("C_fdopen" 2) fd (mode #f m 'open-output-file*)) ) ) ) )
+      (check 'open-output-file* fd #f (##core#inline_allocate ("C_fdopen" 2) fd (mode #f m 'open-output-file*)) enc) ) ) )
 
 (set! chicken.file.posix#port->fileno
   (lambda (port)
@@ -595,7 +602,7 @@ EOF
       (##sys#check-exact-integer secs 'seconds->string)
       (let ([str (ctime secs)])
         (if str
-            (##sys#substring str 0 (fx- (##sys#size str) 1))
+            (##sys#substring str 0 (fx- (string-length str) 1))
             (##sys#error 'seconds->string "cannot convert seconds to string" secs) ) ) ) ) )
 
 (set! chicken.time.posix#local-time->seconds
@@ -620,7 +627,7 @@ EOF
                 (##sys#error 'time->string "time formatting overflows buffer" tm)) )
           (let ([str (asctime tm (##sys#make-string tm-size #\nul))])
             (if str
-                (##sys#substring str 0 (fx- (##sys#size str) 1))
+                (##sys#substring str 0 (fx- (string-length str) 1))
                 (##sys#error 'time->string "cannot convert time vector to string" tm) ) ) ) ) ) )
 
 
@@ -639,7 +646,7 @@ EOF
      (##sys#slot ##sys#signal-vector sig) )
    chicken.process.signal#set-signal-handler!
    "(chicken.process.signal#signal-handler sig)"))
-                        
+
 (set! chicken.process.signal#make-signal-handler
   (lambda sigs
     (let ((q (##sys#make-event-queue)))
@@ -647,14 +654,14 @@ EOF
         (lambda (sig)
           (##sys#check-fixnum sig 'make-signal-handler)
           (##core#inline "C_establish_signal_handler" sig sig)
-          (vector-set! ##sys#signal-vector sig 
+          (vector-set! ##sys#signal-vector sig
                        (lambda (sig) (##sys#add-event-to-queue! q sig))))
         sigs)
-      (lambda (#!optional wait) 
+      (lambda (#!optional wait)
         (if wait
             (##sys#wait-for-next-event q)
             (##sys#get-next-event q))))))
-                        
+
 (set! chicken.process.signal#signal-ignore
   (lambda (sig)
     (##sys#check-fixnum sig 'signal-ignore)

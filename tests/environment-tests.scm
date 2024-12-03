@@ -39,7 +39,7 @@
 (define baz 100)
 
 (module foo (bar)
-  (import r5rs)
+  (import (scheme r5rs))
   (define (bar) 99))
 
 (define foo-env (module-environment 'foo))

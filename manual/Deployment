@@ -121,6 +121,7 @@ the library that is linked into plain CHICKEN-compiled applications:
   % cp $CHICKEN_BUILD/library.c .
   % cp $CHICKEN_BUILD/modules.c .
   % cp $CHICKEN_BUILD/runtime.c .
+  % cp $CHICKEN_BUILD/utf.c .
   % cp $CHICKEN_BUILD/chicken.h .
   % cp $CHICKEN_BUILD/chicken-config.h .
   % cp $CHICKEN_BUILD/buildtag.h .
@@ -132,7 +133,7 @@ the library that is linked into plain CHICKEN-compiled applications:
 Once we have all the files together, we can create a tarball:
 
  % tar czf hello.tar.gz hello.c build-version.c chicken-syntax.c eval.c \
-   expand.c internal.c library.c modules.c runtime.c chicken.h \
+   expand.c internal.c library.c modules.c runtime.c utf.c chicken.h \
    chicken-config.h buildtag.h
 
 This is naturally rather simplistic. Things like enabling dynamic

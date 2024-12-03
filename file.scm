@@ -73,7 +73,7 @@
 #define C_closedir(h)       (closedir((DIR *)C_block_item(h, 0)), C_SCHEME_UNDEFINED)
 #define C_foundfile(e,b,l)  (C_strlcpy(C_c_string(b), ((struct dirent *) C_block_item(e, 0))->d_name, l), C_fix(strlen(((struct dirent *) C_block_item(e, 0))->d_name)))
 
-static C_word C_fcall C_u_i_symbolic_linkp(C_word path)
+static C_word C_u_i_symbolic_linkp(C_word path)
 {
 #if !defined(_WIN32) || defined(__CYGWIN__)
   struct stat buf;
@@ -154,7 +154,7 @@ EOF
 
 (define (directory #!optional (spec (current-directory)) show-dotfiles?)
   (##sys#check-string spec 'directory)
-  (let ((buffer (make-string 256))
+  (let ((buffer (##sys#make-bytevector 256))
 	(handle (##sys#make-pointer))
 	(entry (##sys#make-pointer)))
     (##core#inline
@@ -166,8 +166,8 @@ EOF
 	  (##core#inline "C_readdir" handle entry)
 	  (if (##sys#null-pointer? entry)
 	      (begin (##core#inline "C_closedir" handle) '())
-	      (let* ((flen (##core#inline "C_foundfile" entry buffer (string-length buffer)))
-		     (file (##sys#substring buffer 0 flen))
+	      (let* ((flen (##core#inline "C_foundfile" entry buffer (##sys#size buffer)))
+		     (file (##sys#buffer->string buffer 0 flen))
 		     (char1 (string-ref file 0))
 		     (char2 (and (fx> flen 1) (string-ref file 1))))
 		(if (and (eq? #\. char1)
@@ -187,7 +187,7 @@ EOF
 (define create-directory
   (lambda (name #!optional recursive)
     (##sys#check-string name 'create-directory)
-    (unless (or (fx= 0 (##sys#size name))
+    (unless (or (fx= 0 (string-length name))
                 (file-exists? name))
       (if recursive
 	  (let loop ((dir (let-values (((dir file ext) (decompose-pathname name)))
@@ -260,8 +260,8 @@ EOF
     (##sys#error 'copy-file "newfile exists but clobber is false" newfile))
   (let* ((i (open-input-file oldfile #:binary))
 	 (o (open-output-file newfile #:binary))
-	 (s (make-string blocksize)))
-    (let loop ((d (read-string! blocksize s i))
+	 (s (##sys#make-bytevector blocksize)))
+    (let loop ((d (read-bytevector! s i))
 	       (l 0))
       (if (fx= 0 d)
 	  (begin
@@ -269,8 +269,8 @@ EOF
 	    (close-output-port o)
 	    l)
 	  (begin
-	    (write-string s d o)
-	    (loop (read-string! blocksize s i) (fx+ d l)))))))
+	    (write-bytevector s o 0 d)
+	    (loop (read-bytevector! s i) (fx+ d l)))))))
 
 (define (move-file oldfile newfile #!optional (clobber #f) (blocksize 1024))
   (##sys#check-string oldfile 'move-file)
@@ -284,8 +284,8 @@ EOF
     (##sys#error 'move-file "newfile exists but clobber is false" newfile))
   (let* ((i (open-input-file oldfile #:binary))
 	 (o (open-output-file newfile #:binary))
-	 (s (make-string blocksize)))
-    (let loop ((d (read-string! blocksize s i))
+	 (s (##sys#make-bytevector blocksize)))
+    (let loop ((d (read-bytevector! s i))
 	       (l 0))
       (if (fx= 0 d)
 	  (begin
@@ -294,8 +294,8 @@ EOF
 	    (delete-file oldfile)
 	    l)
 	  (begin
-	    (write-string s d o)
-	    (loop (read-string! blocksize s i) (fx+ d l)))))))
+	    (write-bytevector s o 0 d)
+	    (loop (read-bytevector! s i) (fx+ d l)))))))
 
 
 ;;; Temporary file creation:

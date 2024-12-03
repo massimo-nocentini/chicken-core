@@ -16,7 +16,9 @@ numeric value (63 bits on 64-bit architectures).
 
 '''characters''', where the four lowest-order bits are equal to
 {{C_CHARACTER_BITS}}, currently 1010. The Unicode code point
-of the character is encoded in the next 24 bits.
+of the character is encoded in the next 24 bits, from 0x00 to 0x1FFFFF.
+Code points from 0xDC80 to 0xDCFF are not allowed and used to
+mark invalid UTF-8 bytes in strings (see below).
 
 '''booleans''', where the four lowest-order bits are equal to {{C_BOOLEAN_BITS}},
 currently 0110. The next bit is one for #t and zero for #f.
@@ -56,7 +58,7 @@ collection or internal data type dispatching.
 
 ; C_GC_FORWARDING_BIT : Flag used for forwarding garbage collected object pointers.
 
-; C_BYTEBLOCK_BIT : Flag that specifies whether this data object contains raw bytes (a string or blob) or pointers to other data objects.
+; C_BYTEBLOCK_BIT : Flag that specifies whether this data object contains raw bytes (a bytevector) or pointers to other data objects.
 
 ; C_SPECIALBLOCK_BIT : Flag that specifies whether this object contains a ''special'' non-object pointer value in its first slot. An example for this kind of objects are closures, which are a vector-type object with the code-pointer as the first item.  This is also used to turn a pair's car into a weak reference in the symbol table, to allow its symbol to be collected.
 
@@ -75,7 +77,11 @@ the symbol is undefined and has no property list, the symbol table's
 container should be a weak reference ({{C_WEAK_PAIR_TYPE}}), otherwise
 it should be a strong reference ({{C_PAIR_TYPE}}).
 
-'''strings''': byte-vector objects with type bits {{C_STRING_TYPE}}, currently 0010.
+'''strings''': objects with type bits {{C_STRING_TYPE}}, currently 0010,
+holding a bytevector with the string contents represented as an UTF-8 encoded 
+byte sequence. Note that invalid UTF-8 sequences are allowed inside strings,
+extracted characters at positions that contain invalid UTF-8
+sequences are represented as the trailing surrogate pair half (U+DC00|xx).
 
 '''pairs''': vector-like object with type bits {{C_PAIR_TYPE}}, currently 0011.
 The car and the cdr are contained in the first and second slots,
@@ -110,10 +116,10 @@ contain housekeeping data used for this port.
 specifies the kind of structure this record is an instance of. The other
 slots contain the actual record items.
 
-'''blob''': a raw sequence of bytes with type bits {{C_BYTEVECTOR_TYPE}}.
+'''bytevector''': a raw sequence of bytes with type bits {{C_BYTEVECTOR_TYPE}}.
 
 '''pointer-vectors''': vector objects of native pointers - these are
-actually structures where the first slot holds a blob containing the 32- or 64-bit
+actually structures where the first slot holds a bytevector containing the 32- or 64-bit
 pointer values.
 
 '''locatives''': special vector objects with type bits

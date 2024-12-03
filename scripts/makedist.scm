@@ -19,18 +19,13 @@
 
 (define BUILDVERSION (with-input-from-file "buildversion" read))
 
-(define *platform* 
+(define *platform*
   (let ((sv (symbol->string (software-version))))
     (cond ((irregex-match ".*bsd" sv) "bsd")
-	  ((string=? sv "mingw32")
-	   (if (equal? (get-environment-variable "MSYSTEM") "MINGW32")
-	       "mingw-msys"
-	       "mingw32"))
 	  (else sv))))
 
-(define *make* 
+(define *make*
   (cond ((string=? "bsd" *platform*) "gmake")
-	((string=? "mingw32" *platform*) "mingw32-make")
 	(else "make")))
 
 (define (prefix dir . files)
@@ -57,8 +52,8 @@
 
 (define (release full?)
   (let* ((files (with-input-from-file "distribution/manifest" read-lines))
-	 (distname (conc "chicken-" BUILDVERSION)) 
-	 (distfiles (map (cut prefix distname <>) files)) 
+	 (distname (conc "chicken-" BUILDVERSION))
+	 (distfiles (map (cut prefix distname <>) files))
 	 (tgz (conc distname ".tar.gz")))
     (run "rm -fr ~a ~a" distname tgz)
     (create-directory distname)
@@ -91,7 +86,7 @@
     (if (null? args)
 	'()
 	(let ((arg (car args)))
-	  (cond ((string=? "-release" arg) 
+	  (cond ((string=? "-release" arg)
 		 (set! *release* #t)
 		 (loop (cdr args)))
 		((string=? "-make" arg)

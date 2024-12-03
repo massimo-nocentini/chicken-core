@@ -52,7 +52,7 @@ static C_word make_socket_nonblocking (C_word sock) {
 }
 
 /* This is a bit of a hack, but it keeps things simple */
-static C_TLS char *last_wsa_errorstring = NULL;
+static C_char *last_wsa_errorstring = NULL;
 
 static char *errormsg_from_code(int code) {
   int bufsize;
@@ -149,6 +149,7 @@ EOF
 	chicken.foreign
 	chicken.port
 	chicken.time)
+(import (only (scheme base) make-parameter))
 
 (include "common-declarations.scm")
 
@@ -276,11 +277,11 @@ EOF
 (define parse-host
   (let ((substring substring))
     (lambda (host proto)
-      (let ((len (##sys#size host)))
+      (let ((len (string-length host)))
 	(let loop ((i 0))
 	  (if (fx>= i len)
 	      (values host #f)
-	      (let ((c (##core#inline "C_subchar" host i)))
+	      (let ((c (string-ref host i)))
 		(if (char=? c #\:)		    
 		    (values
 		     (substring host (fx+ i 1) len)
@@ -360,17 +361,19 @@ EOF
 
 (define io-ports
   (let ((tbs tcp-buffer-size))
-    (lambda (loc fd)
+    (lambda (loc fd enc)
       (unless (##core#inline "make_socket_nonblocking" fd)
 	(network-error/close loc "cannot create TCP ports" fd) )
-      (let* ((buf (make-string +input-buffer-size+))
+      (let* ((buf (##sys#make-bytevector +input-buffer-size+))
 	     (data (vector fd #f #f buf 0))
 	     (buflen 0)
-	     (bufindex 0)
+	     (bufindex 0) ; also used as outbuf-position
 	     (iclosed #f) 
 	     (oclosed #f)
 	     (outbufsize (tbs))
-	     (outbuf (and outbufsize (fx> outbufsize 0) ""))
+	     (outbuf (and outbufsize
+                          (fx> outbufsize 0) 
+                          (##sys#make-bytevector outbufsize)))
 	     (read-input
 	      (lambda ()
 		(let* ((tmr (tcp-read-timeout))
@@ -397,17 +400,19 @@ EOF
 			     (set! buflen n)
 			     (##sys#setislot data 4 n)
 			     (set! bufindex 0) ) ) ) )) ) )
+             (inport #f)
 	     (in
 	      (make-input-port
-	       (lambda ()
+	       (lambda () ; read
 		 (when (fx>= bufindex buflen)
 		   (read-input))
 		 (if (fx>= bufindex buflen)
 		     #!eof
-		     (let ((c (##core#inline "C_subchar" buf bufindex)))
-		       (set! bufindex (fx+ bufindex 1))
-		       c) ) )
-	       (lambda ()
+		     (##sys#decode-buffer buf bufindex 1 (##sys#slot inport 15)
+                       (lambda (buf start n)
+                         (set! bufindex (fx+ bufindex n))
+                         (##core#inline "C_utf_decode" buf start)))))
+	       (lambda () ; char-ready?
 		 (or (fx< bufindex buflen)
 		     ;; XXX: This "knows" that check_fd_ready is
 		     ;; implemented using a winsock2 call on Windows
@@ -415,25 +420,30 @@ EOF
 		       (when (eq? _socket_error f)
 			 (network-error #f "cannot check socket for input" fd) )
 		       (eq? f 1) ) ) )
-	       (lambda ()
+	       (lambda () ; close
 		 (unless iclosed
 		   (set! iclosed #t)
 		   (unless (##sys#slot data 1) (shutdown fd _shut_rd))
 		   (when (and oclosed (eq? _socket_error (close fd)))
 		     (network-error #f "cannot close socket input port" fd) ) ) )
-	       (lambda ()
+               peek-char:
+	       (lambda () ; peek-char
 		 (when (fx>= bufindex buflen)
 		   (read-input))
-		 (if (fx< bufindex buflen)
-		     (##core#inline "C_subchar" buf bufindex)
-		     #!eof))
-	       (lambda (p n dest start)	; read-string!
+		 (if (fx>= bufindex buflen)
+                     #!eof
+		     (##sys#decode-buffer buf bufindex 1 (##sys#slot inport 15)
+                       (lambda (buf start n)
+                         (##core#inline "C_utf_decode" buf start)))))
+               read-bytevector:
+	       (lambda (p n dest start)	; read-bytevector!
 		 (let loop ((n n) (m 0) (start start))
 		   (cond ((eq? n 0) m)
 			 ((fx< bufindex buflen)
 			  (let* ((rest (fx- buflen bufindex))
 				 (n2 (if (fx< n rest) n rest)))
-			    (##core#inline "C_substring_copy" buf dest bufindex (fx+ bufindex n2) start)
+			    (##core#inline "C_copy_memory_with_offset" dest buf start 
+                              bufindex n2)
 			    (set! bufindex (fx+ bufindex n2))
 			    (loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) )
 			 (else
@@ -441,7 +451,8 @@ EOF
 			  (if (eq? buflen 0) 
 			      m
 			      (loop n m start) ) ) ) ) )
-	       (lambda (p limit)	; read-line
+               read-line:
+               (lambda (p limit)	; read-line
 		 (when (fx>= bufindex buflen)
 		   (read-input))
 		 (if (fx>= bufindex buflen)
@@ -462,88 +473,119 @@ EOF
 						(values buf bufindex
 							(fxmin buflen
 							       (fx+ bufindex limit)))
-						(values #f bufindex #f))))) ) )
+						(values #f bufindex #f))))))
+                            (##sys#slot inport 15))
 			 ;; Update row & column position
 			 (if full-line?
 			     (begin
 			       (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
 			       (##sys#setislot p 5 0))
 			     (##sys#setislot p 5 (fx+ (##sys#slot p 5)
-						      (##sys#size line))))
+						      (string-length line))))
 			 (set! bufindex next)
 			 line) )) )
+               read-buffered:
 	       (lambda (p)		; read-buffered
 		 (if (fx>= bufindex buflen)
 		     ""
-		     (let ((str (##sys#substring buf bufindex buflen)))
+		     (let ((str (##sys#buffer->string/encoding buf bufindex buflen (##sys#slot inport 15))))
 		       (set! bufindex buflen)
 		       str)))
 	       ) )
-	     (output
-	      (lambda (s)
+             (outport #f)
+	     (output-to-socket
+	      (lambda (bv n)
 		(let ((tmw (tcp-write-timeout)))
-		  (let loop ((len (##sys#size s))
-			     (offset 0)
-			     (dlw (and tmw (+ (current-process-milliseconds) tmw))))
-		    (let* ((count (fxmin +output-chunk-size+ len))
-			   (n (send fd s offset count 0)))
-		      (cond ((eq? _socket_error n)
-			     (cond ((retry?)
-				    (when dlw
-				      (##sys#thread-block-for-timeout!
-				       ##sys#current-thread dlw) )
-				    (##sys#thread-block-for-i/o! ##sys#current-thread fd #:output)
-				    (##sys#thread-yield!)
-				    (when (##sys#slot ##sys#current-thread 13)
-				      (##sys#signal-hook
-				       #:network-timeout-error
-				       "write operation timed out" tmw fd) )
-				    (loop len offset dlw) )
-				   ((interrupted?)
-				    (##sys#dispatch-interrupt
-				     (cut loop len offset dlw)))
-				   (else
-				    (network-error #f "cannot write to socket" fd) ) ) )
-			    ((fx< n len)
-			     (loop (fx- len n) (fx+ offset n)
-				   (if (fx= n 0)
-				       tmw
-				       ;; If we wrote *something*, reset timeout
-				       (and tmw (+ (current-process-milliseconds) tmw)) )) ) ) ) )) ) )
-	     (out
-	      (make-output-port
-	       (if outbuf
-		   (lambda (s)
-		     (set! outbuf (##sys#string-append outbuf s))
-		     (when (fx>= (##sys#size outbuf) outbufsize)
-		       (output outbuf)
-		       (set! outbuf "") ) )
-		   (lambda (s) 
-		     (when (fx> (##sys#size s) 0)
-		       (output s)) ) )
-	       (lambda ()
+                  (##sys#encode-buffer 
+                     bv 0 n (##sys#slot outport 15)
+                     (lambda (buf start len)
+                       (let loop ((len len)
+                                  (offset start)
+                                  (dlw (and tmw (+ (current-process-milliseconds) tmw))))
+                         (let* ((count (fxmin +output-chunk-size+ len))
+                                (n (send fd buf offset count 0)))
+                           (cond ((eq? _socket_error n)
+                                  (cond ((retry?)
+                                         (when dlw
+                                           (##sys#thread-block-for-timeout! ##sys#current-thread dlw) )
+                                         (##sys#thread-block-for-i/o! ##sys#current-thread fd #:output)
+                                         (##sys#thread-yield!)
+                                         (when (##sys#slot ##sys#current-thread 13)
+                                           (##sys#signal-hook #:network-timeout-error
+                                                              "write operation timed out" tmw fd) )
+                                         (loop len offset dlw) )
+                                        ((interrupted?)
+                                         (##sys#dispatch-interrupt
+                                                                   (cut loop len offset dlw)))
+                                        (else
+                                          (network-error #f "cannot write to socket" fd) ) ) )
+                                 ((fx< n len)
+                                  (loop (fx- len n) (fx+ offset n)
+                                        (if (fx= n 0)
+                                            tmw
+                                            ;; If we wrote *something*, reset timeout
+                                            (and tmw (+ (current-process-milliseconds) tmw)) )) ) ) ) )) ) )))
+             (add-to-buf
+              (lambda (bv n)
+                (let loop ((n n) (p 0))
+                  (unless (eq? n 0)
+                    (let ((newindex (fx+ bufindex n)))
+                      (cond ((fx> newindex outbufsize)
+                             (let ((part (fx- outbufsize bufindex)))
+                               (##core#inline "C_copy_memory_with_offset" outbuf bv 
+                                              bufindex p part) 
+                               (output-to-socket outbuf outbufsize)
+                               (set! bufindex 0)
+                               (loop (fx- n part) (fx+ p part))))
+                            (else
+                              (##core#inline "C_copy_memory_with_offset" outbuf bv 
+                                             bufindex p n) 
+                              (set! bufindex (fx+ bufindex n)))))))))
+	     (outclass
+              (vector 
+                #f  ; read-char
+                #f  ; peek-char
+                (lambda (p c) ; write-char
+                  (let* ((bv (##sys#make-bytevector 4))
+                         (n (##core#inline "C_utf_insert" bv 0 c)))
+                    (if outbuf
+                        (add-to-buf bv n)
+                        (output-to-socket bv n))))
+                (lambda (p bv from to) ; write-bytevector
+                  (let ((n (fx- to from)))
+                    (when (fx> n 0)
+                      (if outbuf
+                          (add-to-buf bv n)
+                          (output-to-socket bv n)))))
+  	        (lambda (p d) ; close
 		 (unless oclosed
 		   (set! oclosed #t)
-		   (when (and outbuf (fx> (##sys#size outbuf) 0))
-		     (output outbuf)
-		     (set! outbuf "") )
+		   (when (and outbuf (fx> bufindex 0))
+		     (output-to-socket outbuf bufindex)
+		     (set! bufindex 0))
 		   (unless (##sys#slot data 2) (shutdown fd _shut_wr))
 		   (when (and iclosed (eq? _socket_error (close fd)))
 		     (network-error #f "cannot close socket output port" fd) ) ) )
-	       (and outbuf
-		    (lambda ()
-		      (when (fx> (##sys#size outbuf) 0)
-			(output outbuf)
-			(set! outbuf "") ) ) ) ) ) )
-	(##sys#setslot in 3 "(tcp)")
-	(##sys#setslot out 3 "(tcp)")
+                (lambda (p) ; flush
+                  (when (and outbuf (fx> bufindex 0))
+                    (output-to-socket outbuf bufindex)
+                    (set! bufindex 0) ) )
+                #f ; char-ready?
+                #f ; read-bytevector?
+                #f ; read-line
+                #f)) ; read-buffered
+              (out (##sys#make-port 2 outclass "(tcp)" 'socket)))
+        (##sys#setslot in 3 "(tcp)")
 	(##sys#setslot in 7 'socket)
-	(##sys#setslot out 7 'socket)
 	(##sys#set-port-data! in data)
 	(##sys#set-port-data! out data)
+        (set! inport in)
+        (set! outport out)
+        (##sys#setslot in 15 enc)
+        (##sys#setslot out 15 enc)
 	(values in out) ) ) ) )
 
-(define (tcp-accept tcpl)
+(define (tcp-accept tcpl #!optional (enc 'utf-8))
   (##sys#check-structure tcpl 'tcp-listener)
   (let* ((fd (##sys#slot tcpl 1))
 	 (tma (tcp-accept-timeout))
@@ -560,7 +602,7 @@ EOF
 	   "accept operation timed out" tma fd) )
       (let ((fd (accept fd #f #f)))
 	(cond ((not (eq? _invalid_socket fd))
-	       (io-ports 'tcp-accept fd))
+	       (io-ports 'tcp-accept fd enc))
 	      ((interrupted?)
 	       (##sys#dispatch-interrupt loop))
 	      (else
@@ -582,9 +624,8 @@ EOF
     "  C_return(SOCKET_ERROR);"
     "C_return(err);"))
 
-(define (tcp-connect host . more)
-  (let* ((port (optional more #f))
-	 (tmc (tcp-connect-timeout))
+(define (tcp-connect host #!optional port (enc 'utf-8))
+  (let* ((tmc (tcp-connect-timeout))
 	 (dlc (and tmc (+ (current-process-milliseconds) tmc)))
 	 (addr (make-string _sockaddr_in_size)))
     (##sys#check-string host)
@@ -619,7 +660,7 @@ EOF
 	      ((fx> err 0)
 	       (close s)
 	       (network-error/code 'tcp-connect err "cannot create socket"))))
-      (io-ports 'tcp-connect s))) )
+      (io-ports 'tcp-connect s enc))) )
 
 (define (tcp-port->fileno p loc)
   (let ((data (##sys#port-data p)))

@@ -61,11 +61,9 @@ character(s).
 
 === read-string
 === read-string!
-=== write-string
 
 <procedure>(read-string [NUM [PORT]])</procedure><br>
 <procedure>(read-string! NUM STRING [PORT [START]])</procedure><br>
-<procedure>(write-string STRING [NUM [PORT]])</procedure>
 
 Read or write {{NUM}} characters from/to {{PORT}}, which defaults to the
 value of {{(current-input-port)}} or {{(current-output-port)}}, respectively. 
@@ -78,6 +76,41 @@ more input is available, {{read-string}} returns {{#!eof}}.
 never more characters than would fit into {{STRING}}. If {{START}} is given,
 then the read characters are stored starting at that position.
 {{read-string!}} returns the actual number of characters read.
+
+
+=== read-bytevector
+
+<procedure>(read-bytevector [NUM [PORT]])</procedure>
+
+Read {{NUM}} bytes from {{PORT}}, which defaults to the
+value of {{(current-input-port)}}. {{read-bytevector}} allocates
+a new buffer and returns it (or the end-of-file object, if at the end
+of the input file).
+
+If {{NUM}} is optional and not given, then all remaining input is read
+or the whole bytevector is read/written.
+
+=== read-bytevector!
+
+<procedure>(read-bytevector! BYTEVECTOR [PORT START END])</procedure>
+
+Read bytes from {{PORT}} into {{BYTEVECTOR}}. {{PORT}} defaults to the
+value of {{(current-input-port)}} and returns the actual number of bytes read.
+
+{{START}} and {{END}} designate the range of bytes that should be filled
+with input from {{PORT}}. If {{END}} exceeeds the length of {{BYTEVECTOR}}
+only as much data is read as fits into the destination buffer.
+
+=== write-bytevector
+
+<procedure>(write-bytevector BYTEVECTOR [PORT START END])</procedure>
+
+Write bytes from {{BYTEVECTOR}} to {{PORT}}. {{PORT}} defaults to the
+value of {{(current-output-port)}}.
+
+{{START}} and {{END}} designate the range of bytes that should be written.
+If {{END}} exceeeds the length of {{BYTEVECTOR}}
+only as much data is written as is available.
 
 
 === read-token

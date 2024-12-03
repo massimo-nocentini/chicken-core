@@ -439,7 +439,7 @@ send_event(int event, C_char *loc, C_char *val, C_char *cloc)
       str = name_and_length(rw_buffer, &n);
       ptr = malloc(sizeof(C_header) + n + 1);
       memcpy(((C_SCHEME_BLOCK*)ptr)->data, str, n + 1);
-      ((C_SCHEME_BLOCK *)ptr)->header = C_make_header(C_STRING_TYPE, n);
+      ((C_SCHEME_BLOCK *)ptr)->header = C_make_header(C_BYTEVECTOR_TYPE, n);
       x = C_find_symbol((C_word)ptr, NULL);
 
       if(x == C_SCHEME_FALSE)

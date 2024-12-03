@@ -17,19 +17,19 @@ are supported.  Loading source files works everywhere.
 
 === load-relative
 
-<procedure>(load-relative FILE [EVALPROC])</procedure>
+<procedure>(load-relative FILE [ENVIRONMENT])</procedure>
 
 Similar to {{load}}, but loads {{FILE}} relative to the path
 of the currently loaded file.
 
 === load-noisily
 
-<procedure>(load-noisily FILE #!key EVALUATOR TIME PRINTER)</procedure>
+<procedure>(load-noisily FILE #!key ENVIRONMENT TIME PRINTER)</procedure>
 
 As {{load}} but the result(s) of each evaluated toplevel-expression
-is written to standard output. If {{EVALUATOR}} is given and not {{#f}},
-then each expression is evaluated by calling this argument with the read
-expression as argument. If {{TIME}} is given and not false, then
+is written to standard output. If {{ENVIRONMENT}} is given and not {{#f}},
+then each expression is evaluated using this environment. {{ENVIRONMENT}} may also be
+a procedure used to evaluate each toplevel form. If {{TIME}} is given and not false, then
 the execution time of each expression is shown (as with the {{time}} macro).
 If {{PRINTER}} is given and not false, then each expression is
 printed before evaluation by applying the expression to the value of this

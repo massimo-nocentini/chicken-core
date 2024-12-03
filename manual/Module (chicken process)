@@ -147,7 +147,7 @@ if a signal occurred.
 ==== process
 
 <procedure>(process COMMANDLINE)</procedure><br>
-<procedure>(process COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST])</procedure>
+<procedure>(process COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST ENCODING])</procedure>
 
 Creates a subprocess and returns three values: an input port from
 which data written by the sub-process can be read, an output port from
@@ -165,6 +165,11 @@ is invoked as a subprocess.
 * The multiple parameter version directly invokes the {{COMMAND}} as a subprocess. The {{ARGUMENT-LIST}}
 is directly passed, as is {{ENVIRONMENT-ALIST}}. These arguments have the same form as the ones of {{process-execute}}.
 
+{{ENCODING}} should be a symbol specifying the encoding to be
+used for I/O operations, the default is {{utf-8}}. The encodings for
+the returned in and output ports can be subsequently changed by
+using the {{port-encoding}} setter.
+
 Not using the shell may be preferrable for security reasons.
 
 Once both the input- and output ports are closed, an implicit
@@ -175,7 +180,7 @@ waiting for it will necessarily block all executing threads.
 ==== process*
 
 <procedure>(process* COMMANDLINE)</procedure><br>
-<procedure>(process* COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST])</procedure>
+<procedure>(process* COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST ENCODING])</procedure>
 
 Like {{process}} but returns 4 values: an input port from
 which data written by the sub-process can be read, an output port from

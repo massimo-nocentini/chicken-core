@@ -1,0 +1,60 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (scheme write)
+
+If port is omitted from any output procedure, it defaults to the value returned by
+(current-output-port). It is an error to attempt an output operation on a
+closed port.
+
+<procedure>(write obj [port9])</procedure>
+
+Writes a representation of obj to the given textual output
+port. Strings that appear in the written representation are enclosed in
+quotation marks, and within those strings backslash and quotation mark
+characters are escaped by backslashes. Symbols that contain non-ASCII
+characters are escaped with vertical lines. Character objects are written using
+the #\ notation.
+
+If obj contains cycles which would cause an infinite loop using the normal written
+representation, then at least the objects that form part of the cycle must be
+represented using datum labels. Datum labels are
+not be used if there are no cycles.
+
+The write procedure returns an unspecified value.
+
+<procedure>(write-shared obj [port])</procedure>
+
+The write-shared procedure is the same as write, except that shared structure
+must be represented using datum labels for all pairs and vectors that appear
+more than once in the output.
+
+<procedure>(write-simple obj [port])</procedure> 
+
+The write-simple procedure is the same as write, except that shared structure
+is never represented using datum labels. This can cause write-simple not to
+terminate if
+obj contains circular structure.
+
+<procedure>(display obj [port])</procedure> 
+
+Writes a representation of
+obj to the given textual output
+port. Strings that appear in the written representation are output as if by 
+write-string instead of by write. Symbols are not escaped. Character objects
+appear in the representation as if written by write-char instead of by write.
+
+The display representation of other objects is unspecified. However, display
+must not loop forever on self-referencing pairs, vectors, or records. Thus if
+the normal write representation is used, datum labels are needed to represent
+cycles as in write.
+
+The display procedure returns an unspecified value.
+
+Rationale: The write procedure is intended for producing machine-readable
+output and display for producing human-readable output.
+
+---
+Previous: [[Module (scheme time)]]
+
+Next: [[Module (chicken base)]]

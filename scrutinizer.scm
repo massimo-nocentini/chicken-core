@@ -50,6 +50,7 @@
 	chicken.pretty-print
 	chicken.string
 	chicken.syntax)
+(import (only (scheme base) call/cc))
 
 (include "tweaks")
 (include "mini-srfi-1.scm")
@@ -88,7 +89,7 @@
 ;        | (deprecated NAME)
 ;   VALUE = string | symbol | keyword | char | number |
 ;           boolean | true | false |
-;           null | eof | bwp | blob |  pointer | port | locative | fixnum |
+;           null | eof | bwp | bytevector |  pointer | port | locative | fixnum |
 ;           float | bignum | ratnum | cplxnum | integer | pointer-vector
 ;   BASIC = * | list | pair | procedure | vector | undefined | noreturn | values
 ;   COMPLEX = (pair TYPE TYPE)
@@ -133,7 +134,7 @@
 (define-constant +maximal-complex-object-constructor-result-type-length+ 256)
 
 (define-constant value-types
-  '(string symbol keyword char null boolean true false blob eof bwp
+  '(string symbol keyword char null boolean true false bytevector eof bwp
     fixnum float number integer bignum ratnum cplxnum
     pointer-vector port pointer locative))
 
@@ -213,8 +214,7 @@
 	     (simplify-type
 	      `(pair ,(constant-result (car lit)) ,(constant-result (cdr lit)))))
 	    ((eof-object? lit) 'eof)
-	    ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
-	    ((##core#inline "C_bwpp" lit) #;(bwp-object? lit) 'bwp)
+	    ((bwp-object? lit) 'bwp)
 	    ((vector? lit) 
 	     (simplify-type
 	      `(vector ,@(map constant-result (vector->list lit)))))
@@ -1825,6 +1825,7 @@
   ;; - coalesces all "forall" forms into one (remove "forall" if typevar-set is empty)
   ;; - renames type-variables
   ;; - replaces type-abbreviations
+  ;; - replaces "blob" by "bytevector" for backwards compatibility
   (let ((ptype #f)			; (T . PT) | #f
 	(clean #f)
 	(typevars '())
@@ -1864,7 +1865,8 @@
 	    ((memq t struct-types) `(struct ,t))
 	    ((eq? t 'immediate) '(or eof null fixnum char boolean))
 	    ((eq? t 'any) '*)
-	    ((eq? t 'void) 'undefined)
+            ((eq? t 'blob) 'bytevector) ; DEPRECATED
+            ((eq? t 'void) 'undefined)
 	    ((eq? t 'input-port) '(refine (input) port))
 	    ((eq? t 'output-port) '(refine (output) port))
 	    ((and (symbol? t) (##sys#get t '##compiler#type-abbreviation)))
@@ -2083,8 +2085,8 @@
 	 (n (string-length s)))
     (let loop ((i 0))
       (cond ((eq? i n) sym)
-	    ((eq? (##core#inline "C_subchar" s i) #\#)
-	     (##sys#intern-symbol (##sys#substring s (fx+ i 1) n)))
+	    ((eq? (string-ref s i) #\#)
+	     (##sys#string->symbol (##sys#substring s (fx+ i 1) n)))
 	    (else (loop (fx+ i 1)))))))
 
 

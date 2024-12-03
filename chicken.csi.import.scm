@@ -27,5 +27,4 @@
 (##sys#register-primitive-module
  'chicken.csi
  '((editor-command . chicken.csi#editor-command)
-   (set-describer! . chicken.csi#set-describer!)
    (toplevel-command . chicken.csi#toplevel-command)))

@@ -2,93 +2,29 @@
 
 [[toc:]]
 
-== Extensions to the R5RS standard
-
-=== Identifiers
-
-Identifiers may contain special characters if delimited with
-{{| ... |}}.
+== Extensions to the R7RS standard
 
 === Brackets and braces
 
 The brackets {{[ ... ]}} and the braces {{ { ... } }} are
 provided as an alternative syntax for {{( ... )}}.  A number of reader
-extensions is provided. 
-
-=== Non-standard procedures and syntax
-
-CHICKEN provides numerous non-standard procedures. See the manual
-sections on the included library modules ([[Included modules]]) for
-more information.  Here we only document {{cond-expand}} because it is
-always present in a module, even without imports.
-
-==== cond-expand
-
-<macro>(cond-expand FEATURE-CLAUSE ...)</macro>
-
-Expands by selecting feature clauses. This form is allowed to appear in non-toplevel expressions.
-
-Predefined feature-identifiers are "situation" specific:
-
-; compile : {{chicken}}, {{chicken-5}}, {{compiling}}, {{library}}, {{eval}}, {{extras}}, {{regex}}, {{srfi-0}}, {{srfi-2}}, {{srfi-4}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}}, {{srfi-10}}, {{srfi-11}}, {{srfi-12}}, {{srfi-15}}, {{srfi-16}}, {{srfi-17}}, {{srfi-23}}, {{srfi-26}}, {{srfi-28}}, {{srfi-30}}, {{srfi-31}}, {{srfi-39}}, {{srfi-55}}, {{srfi-61}}, {{srfi-62}}
-
-; load : {{chicken}}, {{chicken-5}}, {{extras}}, {{srfi-0}}, {{srfi-2}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}}, {{srfi-10}}, {{srfi-12}}, {{srfi-17}}, {{srfi-23}}, {{srfi-28}}, {{srfi-30}}, {{srfi-39}}, {{srfi-55}}, {{srfi-61}}, {{srfi-62}}. {{library}} is implicit.
-
-; eval : {{csi}}, {{chicken}}, {{chicken-5}}, {{extras}}, {{srfi-0}}, {{srfi-2}}, {{srfi-6}}, {{srfi-8}}, {{srfi-9}}, {{srfi-10}}, {{srfi-11}}, {{srfi-12}}, {{srfi-15}}, {{srfi-16}}, {{srfi-17}}, {{srfi-23}}, {{srfi-26}}, {{srfi-28}}, {{srfi-30}}, {{srfi-31}}, {{srfi-39}}, {{srfi-55}}, {{srfi-61}}, {{srfi-62}}. {{library}} is implicit.
-
-Also, features of the form {{chicken-5.X}}, where {{X}} denotes the minor version, are available.
-
-The symbols returned by the following procedures from [[Module (chicken platform)|(chicken platform)]] are also available as feature-identifiers in all situations: {{(machine-byte-order)}}, {{(machine-type)}}, {{(software-type)}}, {{(software-version)}}. For example, the {{machine-type}} class of feature-identifiers include {{arm}},
-{{alpha}}, {{mips}}, etc.
-
-The [[Module (chicken platform)|(chicken platform)]] module also provides a function {{(features)}} that returns a list of all registered features.
-
-In addition the following feature-identifiers may exist: {{cross-chicken}}, {{dload}}, {{manyargs}}, {{ptables}}.
-
-For further information, see the documentation for
-[[http://srfi.schemers.org/srfi-0/srfi-0.html|SRFI-0]].
-
+extensions is provided.
 
 === User defined character names
 
 User defined character names are supported. See
-{{char-name}}. Characters can be given
-in hexadecimal notation using the ''#\xXX'' syntax where ''XX'' specifies the 
-character code. Character codes above 255 are supported and can be read (and are
-written) using the ''#\uXXXX'' and ''#\UXXXXXXXX'' notations.
+{{char-name}}. Numeric hexadecimal character codes above are supported and can be read
+using ''#\uXXXX'' and ''#\UXXXXXXXX'', in addition to the standard ''\x...;'' notation.
 
-Non-standard characters names supported are {{#\tab}}, {{#\linefeed}}, {{#\return}}, {{#\alarm}},
-{{#\vtab}}, {{#\nul}}, {{#\page}}, {{#\esc}}, {{#\delete}} and {{#\backspace}}.
-
-=== Special characters in strings
-
-CHICKEN supports special characters preceded with
-a backslash ''\'' in quoted string
-constants. ''\n'' denotes the newline-character,
-''\r'' carriage return, ''\b''
-backspace, ''\t'' TAB, ''\v'' vertical TAB, ''\a'' alarm, ''\f'' formfeed,
-''\xXX'' a character with the code {{XX}} in hex and 
-''\uXXXX'' (and ''\UXXXXXXXX'') a unicode character with the code {{XXXX}}.
-The latter is encoded in UTF-8 format.
+Non-standard characters names supported are {{#\linefeed}}, {{#\vtab}}, {{#\nul}}, {{#\page}} and {{#\esc}}.
 
 == Non-standard read syntax
-
-=== Escapes in symbols
-
-{{| ... |}} may be used to escape a sequence of characters when reading a symbol.
-{{\X}} escapes a single character in a symbols name:
-
-  (symbol->string '|abc def|)       =>   "abc def"
-  (symbol->string '|abc||def|)      =>   "abcdef"
-  (symbol->string '|abc|xyz|def|)   =>   "abcxyzdef"
-  (symbol->string '|abc\|def|)      =>   "abc|def"
-  (symbol->string 'abc\ def)        =>   "abc def"
 
 === Multiline Block Comment
 
 <read>#|</read>
 
- #| ... |# 
+ #| ... |#
 
 A multiline ''block'' comment. May be nested. Implements [[http://srfi.schemers.org/srfi-30/srfi-30.html|SRFI-30]].
 
@@ -115,18 +51,11 @@ Allows user-defined extension of external representations. (For more information
 
 An abbreviation for {{(location EXPRESSION)}}.
 
-=== Blob literals
+=== Bytevector strings
 
-<read>#${</read>
+<read>#u8"..."</read>
 
-  #${ HEX ... }
-
-Syntax for literal "blobs" (byte-sequences). Expects hexadecimal digits and ignores
-any whitespace characters:
-
-  #;1> ,d '#${deadbee f}
-  blob of size 4:
-     0: de ad be ef                                     ....
+String syntax for bytevectors, as an alternative to {{#u8(...)}}. The usual escape sequences for strings are recognized.
 
 === Keyword
 
@@ -198,7 +127,7 @@ String-literals may contain the following escape sequences:
 <tr><td>{{\a}}</td><td>bell</td></tr>
 <tr><td>{{\v}}</td><td>vertical tab</td></tr>
 <tr><td>{{\f}}</td><td>form feed</td></tr>
-<tr><td>{{\x}}''XX''</td><td>hexadecimal 8-bit character code</td></tr>
+<tr><td>{{\x}}''XX;''</td><td>hexadecimal 8-bit character code</td></tr>
 <tr><td>{{\u}}''XXXX''</td><td>hexadecimal 16-bit Unicode character code</td></tr>
 <tr><td>{{\U}}''XXXXXXXX''</td><td>hexadecimal 32-bit Unicode character code</td></tr>
 <tr><td>{{\}}''OOO''</td><td>octal 8-bit character code</td></tr>
@@ -210,7 +139,7 @@ String-literals may contain the following escape sequences:
 
 <read>#!</read>
 
- #!... 
+ #!...
 
 Interpretation depends on the directly following characters. Only the following are recognized. Any other case results in a read error.
 
@@ -221,22 +150,6 @@ Interpretation depends on the directly following characters. Only the following 
 ; DSSSL Formal Parameter List Annotation : If followed by any of the character sequences {{optional}}, {{rest}} or {{key}}, then a symbol with the same name (and prefixed with {{#!}}) is returned
 
 ; Read Mark Invocation : If a ''read mark'' with the same name as the token is registered, then its procedure is called and the result of the read-mark procedure will be returned
-
-=== Case Sensitive Expression
-
-<read>#cs</read>
-
- #cs...
-
-Read the next expression in case-sensitive mode (regardless of the current global setting).
-
-=== Case Insensitive Expression
-
-<read>#ci</read>
-
- #ci...
-
-Read the next expression in case-insensitive mode (regardless of the current global setting).
 
 === Conditional Expansion
 
@@ -254,4 +167,4 @@ work as expected when used within a macro form.
 ---
 Previous: [[Deviations from the standard]]
 
-Next: [[Debugging]]
+Next: [[Interface to external functions and variables]]

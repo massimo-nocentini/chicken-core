@@ -27,7 +27,7 @@
 
 # basic parameters
 
-BINARYVERSION = 11
+BINARYVERSION = 12
 STACKDIRECTION ?= 1
 CROSS_CHICKEN ?= 0
 
@@ -151,7 +151,7 @@ LINKER_OUTPUT ?= $(LINKER_OUTPUT_OPTION) $@
 LINKER_LIBRARY_OPTION ?= -l
 ifdef STATICBUILD
 LINKER_LIBRARY_PREFIX ?= lib
-LINKER_LIBRARY_SUFFIX ?= .a
+LINKER_LIBRARY_SUFFIX ?= -static.a
 else
 LINKER_LIBRARY_PREFIX ?= -l
 LINKER_LIBRARY_SUFFIX ?= 
@@ -185,7 +185,7 @@ ASSEMBLER_OUTPUT_OPTION ?= -o
 ASSEMBLER_OUTPUT ?= $(ASSEMBLER_OUTPUT_OPTION) $@
 ASSEMBLER_COMPILE_OPTION ?= -c
 ifdef STATICBUILD
-PRIMARY_LIBCHICKEN ?= lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A)
+PRIMARY_LIBCHICKEN ?= lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A)
 else
 ifeq ($(PLATFORM),cygwin)
 PRIMARY_LIBCHICKEN = cyg$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-0.dll
@@ -215,8 +215,6 @@ COPY_COMMAND = cp
 echo = echo '$(subst ','\'',$(3))'$(1)$(2)
 #' fix Emacs syntax highlighting
 endif
-WISH ?= "$$wish"
-GENERATE_DEBUGGER ?= cat $< >$@; echo 'exec $(WISH) "$(DATADIR)/feathers.tcl" -- "$$@"' >>$@
 
 
 # file extensions
@@ -267,13 +265,14 @@ CHICKEN_PROGRAM_OPTIONS += $(if $(PROFILE_OBJECTS),-profile)
 # import libraries
 
 PRIMITIVE_IMPORT_LIBRARIES = chicken.base chicken.condition \
-	chicken.csi chicken.foreign chicken.syntax chicken.time
+	chicken.csi chicken.foreign chicken.syntax chicken.time scheme.write \
+	scheme.time scheme.file scheme.process-context
 DYNAMIC_IMPORT_LIBRARIES = srfi-4
-DYNAMIC_CHICKEN_IMPORT_LIBRARIES = bitwise blob errno file.posix	\
+DYNAMIC_CHICKEN_IMPORT_LIBRARIES = bitwise bytevector errno file.posix	\
 	fixnum flonum format gc io keyword load locative memory		\
 	memory.representation platform plist pretty-print		\
 	process process.signal process-context process-context.posix	\
-	random sort string time.posix
+	random sort string time.posix number-vector
 DYNAMIC_CHICKEN_COMPILER_IMPORT_LIBRARIES = user-pass
 DYNAMIC_CHICKEN_UNIT_IMPORT_LIBRARIES = continuation eval file \
 	internal irregex pathname port read-syntax repl tcp
@@ -288,7 +287,6 @@ CHICKEN_INSTALL_PROGRAM = $(PROGRAM_PREFIX)chicken-install$(PROGRAM_SUFFIX)
 CHICKEN_UNINSTALL_PROGRAM = $(PROGRAM_PREFIX)chicken-uninstall$(PROGRAM_SUFFIX)
 CHICKEN_STATUS_PROGRAM = $(PROGRAM_PREFIX)chicken-status$(PROGRAM_SUFFIX)
 CHICKEN_DO_PROGRAM = $(PROGRAM_PREFIX)chicken-do$(PROGRAM_SUFFIX)
-CHICKEN_DEBUGGER_PROGRAM ?= $(PROGRAM_PREFIX)feathers$(PROGRAM_SUFFIX)$(SCRIPT_EXT)
 IMPORT_LIBRARIES = $(DYNAMIC_IMPORT_LIBRARIES) \
 		   $(PRIMITIVE_IMPORT_LIBRARIES) \
 		   $(foreach lib,$(DYNAMIC_CHICKEN_IMPORT_LIBRARIES),chicken.$(lib)) \
@@ -300,7 +298,7 @@ CHICKEN_STATIC_EXECUTABLE = $(CHICKEN_PROGRAM)$(EXE)
 CSI_STATIC_EXECUTABLE = $(CSI_PROGRAM)$(EXE)
 CHICKEN_SHARED_EXECUTABLE = $(CHICKEN_PROGRAM)-shared$(EXE)
 CSI_SHARED_EXECUTABLE = $(CSI_PROGRAM)-shared$(EXE)
-TARGETLIBS ?= lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A)
+TARGETLIBS ?= lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A)
 TARGETS += $(TARGETLIBS) $(CHICKEN_STATIC_EXECUTABLE) \
 	$(CSI_STATIC_EXECUTABLE)
 else
@@ -308,7 +306,7 @@ CHICKEN_STATIC_EXECUTABLE = $(CHICKEN_PROGRAM)-static$(EXE)
 CSI_STATIC_EXECUTABLE = $(CSI_PROGRAM)-static$(EXE)
 CHICKEN_SHARED_EXECUTABLE = $(CHICKEN_PROGRAM)$(EXE)
 CSI_SHARED_EXECUTABLE = $(CSI_PROGRAM)$(EXE)
-TARGETLIBS ?= lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)$(A) $(LIBCHICKEN_SO_FILE)
+TARGETLIBS ?= lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)-static$(A) $(LIBCHICKEN_SO_FILE)
 TARGETS += $(TARGETLIBS) $(CHICKEN_SHARED_EXECUTABLE) \
 	$(CSI_SHARED_EXECUTABLE) \
 	$(IMPORT_LIBRARIES:%=%.import.so)
@@ -335,7 +333,7 @@ all: $(TARGETS)
 
 # generic part of chicken-config.h
 
-chicken-defaults.h:
+chicken-defaults.h: config.make
 ifdef OPTIMIZE_FOR_SPEED
 	$(call echo, >,$@.tmp, /* (this build was optimized for speed) */)
 endif

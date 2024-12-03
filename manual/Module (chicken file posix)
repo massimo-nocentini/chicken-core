@@ -544,7 +544,7 @@ procedure is unimplemented and will raise an error.
 
 <procedure>(file-write FILENO BUFFER [SIZE])</procedure>
 
-Writes the contents of the string or bytevector {{BUFFER}} into
+Writes the contents of the bytevector {{BUFFER}} into
 the file with the file-descriptor {{FILENO}}. If the optional
 argument {{SIZE}} is given, then only the specified number of bytes
 are written.
@@ -563,14 +563,15 @@ procedure is unimplemented and will raise an error.
 ==== open-input-file*
 ==== open-output-file*
 
-<procedure>(open-input-file* FILENO [OPENMODE])</procedure><br>
-<procedure>(open-output-file* FILENO [OPENMODE])</procedure>
+<procedure>(open-input-file* FILENO [OPENMODE ENCODING])</procedure><br>
+<procedure>(open-output-file* FILENO [OPENMODE ENCODING])</procedure>
 
 Opens file for the file-descriptor {{FILENO}} for input or output
 and returns a port.  {{FILENO}} should be a positive exact integer.
 {{OPENMODE}} specifies an additional mode for opening the file
 (currently only the keyword {{#:append}} is supported, which opens
-an output-file for appending).
+an output-file for appending). {{ENCODING}} should be a symbol specifying a
+file encoding and defaults to {{utf-8}}.
 
 ==== port->fileno
 
@@ -580,28 +581,28 @@ If {{PORT}} is a file- or tcp-port, then a file-descriptor is returned for
 this port. Otherwise an error is signaled.
 
 
-=== Record locking
+=== File locking
 
 These procedures are all unsupported on native Windows builds (all
 except cygwin).
 
 ==== file-lock
 
-<procedure>(file-lock PORT [START [LEN]])</procedure>
+<procedure>(file-lock PORT [SHARED])</procedure>
 
-Locks the file associated with {{PORT}} for reading or
-writing (according to whether {{PORT}} is an input- or
-output-port). {{START}} specifies the starting position in the
-file to be locked and defaults to 0. {{LEN}} specifies the length
-of the portion to be locked and defaults to {{#t}}, which means
-the complete file. {{file-lock}} returns a ''lock''-object.
+Locks the file associated with {{PORT}} using an "exclusive" lock
+(see {{flock(2)}} for more information on shared vs exclusive locks).
+If {{SHARED}} is given and true, then a shared lock will be requested.
+Returns {{#t}} if requesting the lock succeeded or {{#f}} otherwise.
+
+{{PORT}} may be a file port or a file-descriptor.
 
 '''NOTE''': On native Windows builds (all except cygwin), this
 procedure is unimplemented and will raise an error.
 
 ==== file-lock/blocking
 
-<procedure>(file-lock/blocking PORT [START [LEN]])</procedure>
+<procedure>(file-lock/blocking PORT [SHARED])</procedure>
 
 Similar to {{file-lock}}, but if a lock is held on the file,
 the current process blocks (including all threads) until the lock is released.
@@ -609,22 +610,12 @@ the current process blocks (including all threads) until the lock is released.
 '''NOTE''': On native Windows builds (all except cygwin), this
 procedure is unimplemented and will raise an error.
 
-==== file-test-lock
-
-<procedure>(file-test-lock PORT [START [LEN]])</procedure>
-
-Tests whether the file associated with {{PORT}} is locked for reading
-or writing (according to whether {{PORT}} is an input- or output-port)
-and returns either {{#f}} or the process-id of the locking process.
-
-'''NOTE''': On native Windows builds (all except cygwin), this
-procedure is unimplemented and will raise an error.
-
 ==== file-unlock
 
-<procedure>(file-unlock LOCK)</procedure>
+<procedure>(file-unlock PORT)</procedure>
 
-Unlocks the previously locked portion of a file given in {{LOCK}}.
+Unlocks the previously locked  file given {{PORT}} which may
+be a file port or a file-scriptor.
 
 '''NOTE''': On native Windows builds (all except cygwin), this
 procedure is unimplemented and will raise an error.

@@ -34,7 +34,7 @@
 
 #>
 
-static C_TLS int C_wait_status;
+static int C_wait_status;
 
 #include <sys/time.h>
 #include <sys/wait.h>
@@ -47,6 +47,10 @@ static C_TLS int C_wait_status;
 #if defined(__sun) && defined(__SVR4)
 # include <sys/tty.h>
 # include <termios.h>
+#endif
+
+#ifdef __linux__
+# include <sys/file.h>
 #endif
 
 #include <sys/mman.h>
@@ -83,9 +87,8 @@ static C_TLS int C_wait_status;
 # define FILENAME_MAX          1024
 #endif
 
-static C_TLS struct flock C_flock;
-static C_TLS DIR *temphandle;
-static C_TLS struct passwd *C_user;
+static DIR *temphandle;
+static struct passwd *C_user;
 
 /* Android doesn't provide pw_gecos in the passwd struct */
 #ifdef __ANDROID__
@@ -94,10 +97,10 @@ static C_TLS struct passwd *C_user;
 # define C_PW_GECOS (C_user->pw_gecos)
 #endif
 
-static C_TLS int C_pipefds[ 2 ];
-static C_TLS time_t C_secs;
-static C_TLS struct timeval C_timeval;
-static C_TLS struct stat C_statbuf;
+static int C_pipefds[ 2 ];
+static time_t C_secs;
+static struct timeval C_timeval;
+static struct stat C_statbuf;
 
 #define C_fchdir(fd)        C_fix(fchdir(C_unfix(fd)))
 
@@ -142,7 +145,7 @@ static C_TLS struct stat C_statbuf;
 #define C_u_i_execvp(f,a)   C_fix(execvp(C_c_string(f), (char *const *)C_c_pointer_vector_or_null(a)))
 #define C_u_i_execve(f,a,e) C_fix(execve(C_c_string(f), (char *const *)C_c_pointer_vector_or_null(a), (char *const *)C_c_pointer_vector_or_null(e)))
 
-static C_TLS int C_uw;
+static int C_uw;
 #define C_WIFEXITED(n)      (C_uw = C_unfix(n), C_mk_bool(WIFEXITED(C_uw)))
 #define C_WIFSIGNALED(n)    (C_uw = C_unfix(n), C_mk_bool(WIFSIGNALED(C_uw)))
 #define C_WIFSTOPPED(n)     (C_uw = C_unfix(n), C_mk_bool(WIFSTOPPED(C_uw)))
@@ -156,12 +159,12 @@ static C_TLS int C_uw;
 # define C_mkfifo(fn, m)    C_fix(mkfifo(C_c_string(fn), C_unfix(m)))
 #endif
 
-#define C_flock_setup(t, s, n) (C_flock.l_type = C_unfix(t), C_flock.l_start = C_num_to_int(s), C_flock.l_whence = SEEK_SET, C_flock.l_len = C_num_to_int(n), C_SCHEME_UNDEFINED)
-#define C_flock_test(p)     (fcntl(fileno(C_port_file(p)), F_GETLK, &C_flock) >= 0 ? (C_flock.l_type == F_UNLCK ? C_fix(0) : C_fix(C_flock.l_pid)) : C_SCHEME_FALSE)
-#define C_flock_lock(p)     C_fix(fcntl(fileno(C_port_file(p)), F_SETLK, &C_flock))
-#define C_flock_lockw(p)    C_fix(fcntl(fileno(C_port_file(p)), F_SETLKW, &C_flock))
+static C_word C_flock(C_word n, C_word f)
+{
+    return C_fix(flock(C_unfix(n), C_unfix(f)));
+}
 
-static C_TLS sigset_t C_sigset;
+static sigset_t C_sigset;
 #define C_sigemptyset(d)    (sigemptyset(&C_sigset), C_SCHEME_UNDEFINED)
 #define C_sigaddset(s)      (sigaddset(&C_sigset, C_unfix(s)), C_SCHEME_UNDEFINED)
 #define C_sigdelset(s)      (sigdelset(&C_sigset, C_unfix(s)), C_SCHEME_UNDEFINED)
@@ -172,8 +175,8 @@ static C_TLS sigset_t C_sigset;
 #define C_sigprocmask_get(d)        C_fix(sigprocmask(SIG_SETMASK, NULL, &C_sigset))
 
 #define C_open(fn, fl, m)   C_fix(open(C_c_string(fn), C_unfix(fl), C_unfix(m)))
-#define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_data_pointer(b), C_unfix(n)))
-#define C_write(fd, b, n)   C_fix(write(C_unfix(fd), C_data_pointer(b), C_unfix(n)))
+#define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_c_string(b), C_unfix(n)))
+#define C_write(fd, b, start, n)   C_fix(write(C_unfix(fd), C_c_string(b) + C_unfix(start), C_unfix(n)))
 #define C_mkstemp(t)        C_fix(mkstemp(C_c_string(t)))
 
 #define C_ctime(n)          (C_secs = (n), ctime(&C_secs))
@@ -250,14 +253,15 @@ C_tm_get( C_word v, void *tm )
 #define C_strptime(s, f, v, stm) \
         (strptime(C_c_string(s), C_c_string(f), ((struct tm *)(stm))) ? C_tm_get((v), (stm)) : C_SCHEME_FALSE)
 
-static int set_file_mtime(char *filename, C_word atime, C_word mtime)
+static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 {
   struct stat sb;
   struct utimbuf tb;
+  C_word bv = C_block_item(filename, 0);
 
   /* Only lstat if needed */
   if (atime == C_SCHEME_FALSE || mtime == C_SCHEME_FALSE) {
-    if (lstat(filename, &sb) == -1) return -1;
+    if (lstat(C_c_string(bv), &sb) == -1) return -1;
   }
 
   if (atime == C_SCHEME_FALSE) {
@@ -270,7 +274,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   } else {
     tb.modtime = C_num_to_int64(mtime);
   }
-  return utime(filename, &tb);
+  return utime(C_c_string(bv), &tb);
 }
 
 <#
@@ -360,9 +364,9 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   (lambda (fd size . buffer)
     (##sys#check-fixnum fd 'file-read)
     (##sys#check-fixnum size 'file-read)
-    (let ([buf (if (pair? buffer) (car buffer) (make-string size))])
-      (unless (and (##core#inline "C_blockp" buf) (##core#inline "C_byteblockp" buf))
-	(##sys#signal-hook #:type-error 'file-read "bad argument type - not a string or blob" buf) )
+    (let ([buf (if (pair? buffer) (car buffer) (##sys#make-bytevector size))])
+      (unless (##core#inline "C_byteblockp" buf)
+	(##sys#signal-hook #:type-error 'file-read "bad argument type - not a bytevector" buf) )
       (let ([n (##core#inline "C_read" fd buf size)])
 	(when (eq? -1 n)
 	  (posix-error #:file-error 'file-read "cannot read from file" fd size) )
@@ -371,11 +375,11 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 (set! chicken.file.posix#file-write
   (lambda (fd buffer . size)
     (##sys#check-fixnum fd 'file-write)
-    (unless (and (##core#inline "C_blockp" buffer) (##core#inline "C_byteblockp" buffer))
-      (##sys#signal-hook #:type-error 'file-write "bad argument type - not a string or blob" buffer) )
+    (unless (##core#inline "C_byteblockp" buffer)
+      (##sys#signal-hook #:type-error 'file-write "bad argument type - not a bytevector" buffer) )
     (let ([size (if (pair? size) (car size) (##sys#size buffer))])
       (##sys#check-fixnum size 'file-write)
-      (let ([n (##core#inline "C_write" fd buffer size)])
+      (let ([n (##core#inline "C_write" fd buffer 0 size)])
         (when (eq? -1 n)
           (posix-error #:file-error 'file-write "cannot write to file" fd size) )
         n) ) ) )
@@ -385,7 +389,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
     (##sys#check-string template 'file-mkstemp)
     (let* ([buf (##sys#make-c-string template 'file-mkstemp)]
 	   [fd (##core#inline "C_mkstemp" buf)]
-	   [path-length (##sys#size buf)])
+	   [path-length (string-length buf)])
       (when (eq? -1 fd)
 	(posix-error #:file-error 'file-mkstemp "cannot create temporary file" template) )
       (values fd (##sys#substring buf 0 (fx- path-length 1) ) ) ) ) )
@@ -407,7 +411,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	   (nfdsr (##sys#length fdsrl))
 	   (nfdsw (##sys#length fdswl))
 	   (nfds (fx+ nfdsr nfdsw))
-	   (fds-blob (##sys#make-blob
+	   (fds-blob (##sys#make-bytevector
 		      (fx* nfds (foreign-value "sizeof(struct pollfd)" int)))))
       (do ((i 0 (fx+ i 1))
 	   (fdsrl fdsrl (cdr fdsrl)))
@@ -629,7 +633,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
    "(chicken.process-context.posix#current-group-id)") )
 
 (set! chicken.process-context.posix#current-effective-group-id
-  (getter-with-setter 
+  (getter-with-setter
    (foreign-lambda int "C_getegid")
    (lambda (id)
      (##sys#check-fixnum id 'current-effective-group-id)
@@ -735,14 +739,15 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 (define-foreign-variable _filename_max int "FILENAME_MAX")
 
 (define ##sys#read-symbolic-link
-  (let ((buf (make-string (fx+ _filename_max 1))))
+  (let ((buf (##sys#make-bytevector (fx+ _filename_max 1) 0)))
     (lambda (fname location)
       (let ((len (##core#inline
                   "C_do_readlink"
-                  (##sys#make-c-string fname location) buf)))
+                  (##sys#make-c-string fname location)
+                  buf)))
         (if (fx< len 0)
             (posix-error #:file-error location "cannot read symbolic link" fname)
-            (substring buf 0 len))))))
+            (##sys#buffer->string buf 0 len))))))
 
 (set! chicken.file.posix#read-symbolic-link
   (lambda (fname #!optional canonicalize)
@@ -775,12 +780,13 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 
 
 (define ##sys#custom-input-port
-  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close void) (more? #f))
+  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close void) (more? #f) enc)
     (when nonblocking? (##sys#file-nonblocking! fd) )
-    (let ([bufsiz (if (fixnum? bufi) bufi (##sys#size bufi))]
-	  [buf (if (fixnum? bufi) (##sys#make-string bufi) bufi)]
-	  [buflen 0]
-	  [bufpos 0] )
+    (let ((bufsiz (if (fixnum? bufi) bufi (##sys#size bufi)))
+	  (buf (if (fixnum? bufi) (##sys#make-bytevector bufi) bufi))
+	  (buflen 0)
+	  (bufpos 0)
+          (this-port #f))
       (let ([ready?
 	     (lambda ()
 	       (let ((res (##sys#file-select-one fd)))
@@ -794,7 +800,9 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	     (lambda ()
 	       (if (fx>= bufpos buflen)
 		   #!eof
-		   (##core#inline "C_subchar" buf bufpos)) )]
+             	     (##sys#decode-buffer buf bufpos 1 (##sys#slot this-port 15)
+                   (lambda (buf start n)
+                     (##core#inline "C_utf_decode" buf start)))))]
             [fetch
 	     (lambda ()
 	       (let loop ()
@@ -812,7 +820,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 			 [(and more? (fx= cnt 0))
 			  ;; When "more" keep trying, otherwise read once more
 			  ;; to guard against race conditions
-			  (if (more?)
+			  (if more?
 			      (begin
 				(##sys#thread-yield!)
 				(loop) )
@@ -827,14 +835,17 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 			 [else
 			  (set! buflen cnt)
 			  (set! bufpos 0)]) ) )	 )] )
-	(letrec ([this-port
+	(let ([the-port
 		  (make-input-port
 		   (lambda ()		; read-char
 		     (when (fx>= bufpos buflen)
 		       (fetch))
-		     (let ([ch (peek)])
-		       (unless (eof-object? ch) (set! bufpos (fx+ bufpos 1)))
-		       ch ) )
+                     (if (fx>= bufpos buflen)
+                         #!eof
+                         (##sys#decode-buffer buf bufpos 1 (##sys#slot this-port 15)
+                            (lambda (buf start n)
+                              (set! bufpos (fx+ bufpos n))
+                              (##core#inline "C_utf_decode" buf start)))))
 		   (lambda ()		; char-ready?
 		     (or (fx< bufpos buflen)
 			 (ready?)) )
@@ -842,24 +853,30 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 		     (when (fx< (##core#inline "C_close" fd) 0)
 		       (posix-error #:file-error loc "cannot close" fd nam))
 		     (on-close))
-		   (lambda ()		; peek-char
+		   peek-char:
+                   (lambda ()		; peek-char
 		     (when (fx>= bufpos buflen)
 		       (fetch))
 		     (peek) )
-		   (lambda (port n dest start) ; read-string!
-		     (let loop ([n (or n (fx- (##sys#size dest) start))] [m 0] [start start])
+                   read-bytevector:
+		   (lambda (port n dest start) ; read-bytevector!
+		     (let loop ([n (or n (fx- (##sys#size dest) start))]
+                                [m 0]
+                                [start start])
 		       (cond [(eq? 0 n) m]
 			     [(fx< bufpos buflen)
 			      (let* ([rest (fx- buflen bufpos)]
 				     [n2 (if (fx< n rest) n rest)])
-				(##core#inline "C_substring_copy" buf dest bufpos (fx+ bufpos n2) start)
+				(##core#inline "C_copy_memory_with_offset"
+                                  dest buf start bufpos n2)
 				(set! bufpos (fx+ bufpos n2))
 				(loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) ]
 			     [else
 			      (fetch)
-			      (if (eq? 0 buflen) 
+			      (if (eq? 0 buflen)
 				  m
 				  (loop n m start) ) ] ) ) )
+                   read-line:
 		   (lambda (p limit)	; read-line
 		     (when (fx>= bufpos buflen)
 		       (fetch))
@@ -882,79 +899,91 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 					       (values buf bufpos
 						       (fxmin buflen
                                                               (fx+ bufpos limit)))
-					       (values #f bufpos #f)))))))
+					       (values #f bufpos #f))))))
+                                (##sys#slot this-port 15))
 			     ;; Update row & column position
 			     (if full-line?
 				 (begin
 				   (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
 				   (##sys#setislot p 5 0))
 				 (##sys#setislot p 5 (fx+ (##sys#slot p 5)
-							  (##sys#size line))))
+							  (string-length line))))
 			     (set! bufpos next)
 			     line)) ) )
+                   read-buffered:
 		   (lambda (port)		; read-buffered
 		     (if (fx>= bufpos buflen)
 			 ""
-			 (let ((str (##sys#substring buf bufpos buflen)))
+			 (let* ((len (fx- buflen bufpos))
+                                (str (##sys#buffer->string/encoding buf bufpos len (##sys#slot this-port 15))))
 			   (set! bufpos buflen)
-			   str)))
-		   ) ] )
+                           str))))])
+          (set! this-port the-port)
 	  (##sys#setslot this-port 3 nam)
+          (##sys#setslot this-port 15 enc)
 	  this-port ) ) ) ) )
 
 (define ##sys#custom-output-port
-  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 0) (on-close void))
+  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 0) (on-close void)
+               enc)
     (when nonblocking? (##sys#file-nonblocking! fd) )
-    (letrec ([poke
-	      (lambda (str len)
+    (letrec ((this-port #f)
+             (poke
+	      (lambda (bv start len)
 		(let loop ()
-		  (let ((cnt (##core#inline "C_write" fd str len)))
+		  (let ((cnt (##core#inline "C_write" fd bv start len)))
 		    (cond ((fx= -1 cnt)
 			   (cond
 			    ((or (fx= _errno _ewouldblock)
 				 (fx= _errno _eagain))
 			     (##sys#thread-yield!)
-			     (poke str len) )
+			     (poke bv start len) )
 			    ((fx= _errno _eintr)
 			     (##sys#dispatch-interrupt loop))
 			    (else
 			     (posix-error loc #:file-error "cannot write" fd nam) ) ) )
 			  ((fx< cnt len)
-			   (poke (##sys#substring str cnt len) (fx- len cnt)) ) ) ) ))]
-	     [store
+			   (poke bv (fx+ start cnt) (fx- len cnt)) ) ) ) )))
+	     (store
 	      (let ([bufsiz (if (fixnum? bufi) bufi (##sys#size bufi))])
 		(if (fx= 0 bufsiz)
 		    (lambda (str)
 		      (when str
-			(poke str (##sys#size str)) ) )
-		    (let ([buf (if (fixnum? bufi) (##sys#make-string bufi) bufi)]
-			  [bufpos 0])
+                        (let ((bv (##sys#slot str 0)))
+                          (poke bv 0 (fx- (##sys#size bv) 1)))))
+		    (let ((buf (if (fixnum? bufi) (##sys#make-bytevector bufi) bufi))
+			  (bufpos 0))
 		      (lambda (str)
 			(if str
-			    (let loop ([rem (fx- bufsiz bufpos)] [start 0] [len (##sys#size str)])
-			      (cond [(fx= 0 rem)
-				     (poke buf bufsiz)
+                            (let ((bv (##sys#slot str 0)))
+                              (let loop ((rem (fx- bufsiz bufpos))
+                                         (start 0)
+                                         (len (fx- (##sys#size bv) 1)))
+			      (cond ((fx= 0 rem)
+				     (poke buf 0 bufsiz)
 				     (set! bufpos 0)
-				     (loop bufsiz 0 len)]
-				    [(fx< rem len)
-				     (##core#inline "C_substring_copy" str buf start rem bufpos)
-				     (loop 0 rem (fx- len rem))]
-				    [else
-				     (##core#inline "C_substring_copy" str buf start len bufpos)
-				     (set! bufpos (fx+ bufpos len))] ) )
+				     (loop bufsiz 0 len))
+				    ((fx< rem len)
+				     (##core#inline "C_copy_memory_with_offset" buf bv bufpos 0 len)
+				     (loop 0 rem (fx- len rem)))
+				    (else
+				     (##core#inline "C_copy_memory_with_offset" buf bv bufpos start len)
+				     (set! bufpos (fx+ bufpos len))) ) )
 			    (when (fx< 0 bufpos)
-			      (poke buf bufpos) ) ) ) ) ) )])
-      (letrec ([this-port
+			      (poke buf bufpos) ) ) ) ) ) ))))
+      (let ((the-port
 		(make-output-port
-		 (lambda (str)		; write-string
-		   (store str) )
+		 (lambda (str) (store str))
 		 (lambda ()		; close
 		   (when (fx< (##core#inline "C_close" fd) 0)
 		     (posix-error #:file-error loc "cannot close" fd nam))
 		   (on-close))
+                 force-output:
 		 (lambda ()		; flush
-		   (store #f) ) )] )
+		   (store #f) ) )) )
+        (set! this-port the-port)
 	(##sys#setslot this-port 3 nam)
+        (##sys#setslot this-port 15 enc)
 	this-port ) ) ) )
 
 
@@ -971,59 +1000,46 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
       (posix-error #:file-error 'file-truncate "cannot truncate file" fname off) ) ) )
 
 
-;;; Record locking:
+;;; File locking:
 
-(define-foreign-variable _f_wrlck int "F_WRLCK")
-(define-foreign-variable _f_rdlck int "F_RDLCK")
-(define-foreign-variable _f_unlck int "F_UNLCK")
+(define-foreign-variable _lock_sh int "LOCK_SH")
+(define-foreign-variable _lock_ex int "LOCK_EX")
+(define-foreign-variable _lock_un int "LOCK_UN")
+(define-foreign-variable _lock_nb int "LOCK_NB")
 
 (let ()
-  (define (setup port args loc)
-    (let-optionals* args ([start 0]
-                          [len #t] )
-      (##sys#check-open-port port loc)
-      (##sys#check-exact-integer start loc)
-      (if (eq? #t len)
-          (set! len 0)
-          (##sys#check-exact-integer len loc) )
-      (##core#inline "C_flock_setup" (if (= (##sys#slot port 1) 1) _f_rdlck _f_wrlck) start len)
-      (##sys#make-structure 'lock port start len) ) )
-  (define (err msg lock loc)
-    (posix-error #:file-error loc msg (##sys#slot lock 1) (##sys#slot lock 2) (##sys#slot lock 3)) )
+  (define (err msg port loc)
+    (posix-error #:file-error loc msg port) )
+  (define (fileno x loc)
+    (if (port? x)
+        (chicken.file.posix#port->fileno x)
+        (begin
+          (##sys#check-exact-integer x loc)
+          x)))
   (set! chicken.file.posix#file-lock
-    (lambda (port . args)
+    (lambda (port #!optional shared)
       (let loop ()
-	(let ((lock (setup port args 'file-lock)))
-	  (if (fx< (##core#inline "C_flock_lock" port) 0)
-	      (cond
-		((fx= _errno _eintr) (##sys#dispatch-interrupt loop))
-		(else (err "cannot lock file" lock 'file-lock)))
-	      lock)))))
+        (let ((r (##core#inline "C_flock" (fileno port 'file-lock)
+                                (##core#inline "C_fixnum_or" _lock_nb (if shared _lock_sh _lock_ex)))))
+          (cond ((eq? r 0) #t)
+                ((fx= _errno _eintr) (loop))
+                ((fx= _errno _ewouldblock) #f)
+                (else (err "locking file failed" port 'file-lock)))))))
   (set! chicken.file.posix#file-lock/blocking
-    (lambda (port . args)
+    (lambda (port #!optional shared)
       (let loop ()
-	(let ((lock (setup port args 'file-lock/blocking)))
-	  (if (fx< (##core#inline "C_flock_lockw" port) 0)
-	      (cond
-		((fx= _errno _eintr) (##sys#dispatch-interrupt loop))
-		(else (err "cannot lock file" lock 'file-lock/blocking)))
-	      lock)))))
-  (set! chicken.file.posix#file-test-lock
-    (lambda (port . args)
-      (let ([lock (setup port args 'file-test-lock)])
-        (cond [(##core#inline "C_flock_test" port) => (lambda (c) (and (not (fx= c 0)) c))]
-              [else (err "cannot unlock file" lock 'file-test-lock)] ) ) ) ) )
-
-(set! chicken.file.posix#file-unlock
-  (lambda (lock)
-    (##sys#check-structure lock 'lock 'file-unlock)
-    (##core#inline "C_flock_setup" _f_unlck (##sys#slot lock 2) (##sys#slot lock 3))
-    (when (fx< (##core#inline "C_flock_lock" (##sys#slot lock 1)) 0)
-      (cond
-       ((fx= _errno _eintr)
-	(##sys#dispatch-interrupt
-	 (lambda () (chicken.file.posix#file-unlock lock))))
-       (else (posix-error #:file-error 'file-unlock "cannot unlock file" lock))))))
+        (let ((r (##core#inline "C_flock" (fileno port 'file-lock/blocking)
+                                (if shared _lock_sh _lock_ex))))
+          (cond ((eq? r 0) #t)
+                ((fx= _errno _eintr) (loop))
+                (else (err "locking file failed" port 'file-lock/blocking)))))))
+  (set! chicken.file.posix#file-unlock
+    (lambda (port)
+      (let loop ()
+        (let ((r (##core#inline "C_flock" (fileno port 'file-unlock) _lock_un)))
+          (cond ((eq? r 0))
+                ((fx= _errno _eintr) (loop))
+                (else (err "unlocking file failed" port 'file-unlock))))))))
 
 
 ;;; FIFOs:
@@ -1082,7 +1098,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
       ;; flush all stdio streams before fork
       ((foreign-lambda int "C_fflush" c-pointer) #f)
       (let ((pid (fork)))
-	(when (fx= -1 pid) 
+	(when (fx= -1 pid)
 	  (posix-error #:process-error 'process-fork "cannot create child process"))
 	(if (and thunk (zero? pid))
 	    ((if killothers
@@ -1096,7 +1112,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	    pid)))))
 
 (set! chicken.process#process-execute
-  (lambda (filename #!optional (arglist '()) envlist exactf)
+  (lambda (filename #!optional (arglist '()) envlist _)
     (call-with-exec-args
      'process-execute filename (lambda (x) x) arglist envlist
      (lambda (prg argbuf envbuf)
@@ -1220,14 +1236,14 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 		     (connect-child loc (swapped-ends epipe) stderrf chicken.file.posix#fileno/stderr)
 		     (chicken.process#process-execute cmd args env)))) ) ) ))
           [input-port
-            (lambda (loc pid cmd pipe stdf stdfd on-close)
+            (lambda (loc pid cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
-                (##sys#custom-input-port loc cmd fd #t DEFAULT-INPUT-BUFFER-SIZE on-close) ) )]
+                (##sys#custom-input-port loc cmd fd #t DEFAULT-INPUT-BUFFER-SIZE on-close #f enc) ) )]
           [output-port
-            (lambda (loc pid cmd pipe stdf stdfd on-close)
+            (lambda (loc pid cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
-                (##sys#custom-output-port loc cmd fd #t DEFAULT-OUTPUT-BUFFER-SIZE on-close) ) )] )
-        (lambda (loc cmd args env stdoutf stdinf stderrf)
+                (##sys#custom-output-port loc cmd fd #t DEFAULT-OUTPUT-BUFFER-SIZE on-close enc) ) )] )
+        (lambda (loc cmd args env stdoutf stdinf stderrf enc)
           (receive [inpipe outpipe errpipe pid]
                      (spawn loc cmd args env stdoutf stdinf stderrf)
             ;When shared assume already "closed", since only created ports
@@ -1237,20 +1253,23 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
               (values
 	       (input-port loc pid cmd inpipe stdinf
 			   chicken.file.posix#fileno/stdin
-			   (make-on-close loc pid clsvec 0 1 2))
+			   (make-on-close loc pid clsvec 0 1 2)
+                           enc)
 	       (output-port loc pid cmd outpipe stdoutf
 			    chicken.file.posix#fileno/stdout
-			    (make-on-close loc pid clsvec 1 0 2))
+			    (make-on-close loc pid clsvec 1 0 2)
+                            enc)
 	       pid
 	       (input-port loc pid cmd errpipe stderrf
 			   chicken.file.posix#fileno/stderr
-			   (make-on-close loc pid clsvec 2 0 1)) ) ) ) ) ) ) ) )
+			   (make-on-close loc pid clsvec 2 0 1)
+                           enc) ) ) ) ) ) ) ) )
 
 ;;; Run subprocess connected with pipes:
 
 ;; TODO: See if this can be moved to posix-common
 (let ((%process
-        (lambda (loc err? cmd args env k)
+        (lambda (loc err? cmd args env enc k)
           (let ((chkstrlst
 		 (lambda (lst)
 		   (##sys#check-list lst loc)
@@ -1263,17 +1282,17 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
                   (set! cmd (shell-command loc)) ) )
 	    (when env (check-environment-list env loc))
 	    (##sys#call-with-values
-	     (lambda () (process-impl loc cmd args env #t #t err?))
+	     (lambda () (process-impl loc cmd args env #t #t err? enc))
 	     k)))))
   (set! chicken.process#process
-    (lambda (cmd #!optional args env exactf)
-      (%process 
-       'process #f cmd args env
+    (lambda (cmd #!optional args env (enc 'utf-8) exactf)
+      (%process
+       'process #f cmd args env enc
        (lambda (i o p e) (values i o p)))))
   (set! chicken.process#process*
-    (lambda (cmd #!optional args env exactf)
+    (lambda (cmd #!optional args env (enc 'utf-8) exactf)
       (%process
-       'process* #t cmd args env
+       'process* #t cmd args env enc
        values))))
 
 

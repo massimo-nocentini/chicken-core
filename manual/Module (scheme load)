@@ -1,0 +1,46 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (scheme load)
+
+<procedure>(load filename [environment-specifier])</procedure>
+
+It is an error if filename is not a string.
+
+The  load procedure reads expressions and definitions from the file designated
+by filename and evaluates
+them sequentially in the environment specified by
+environment-specifier. If
+environment-specifier is omitted, (interaction-environment) is assumed.
+
+The load procedure does not affect the values returned by current-input-port and 
+current-output-port. It returns an unspecified value.
+
+CHICKEN offers a few extensions to the R7RS definition of {{load}}:
+
+* The environment specifier may also be a procedure of a single argument taking a expression and is used to evaluate every toplevel expression read from the input file, if the file contains Scheme source code.
+
+* On platforms that support it (currently BSD, Haiku, MacOS X, Linux, Solaris, and Windows), {{load}} can be used to load shared objects.
+
+Example for loading compiled programs:
+
+ % cat x.scm
+ (define (hello) (print "Hello!"))
+ % csc -s x.scm
+ % csi -q
+ #;1> (load "x.so")
+ ; loading x.so ...
+ #;2> (hello)
+ Hello!
+ #;3>
+
+There are some limitations and caveats to the CHICKEN extensions you
+need to be aware of:
+
+* The second argument to {{load}} is ignored when loading compiled code.
+* A compiled file can only be loaded once. Subsequent attempts to load the same file have no effect.
+
+---
+Previous: [[Module (scheme lazy)]]
+
+Next: [[Module (scheme process-context)]]

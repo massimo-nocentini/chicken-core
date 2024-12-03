@@ -1,7 +1,7 @@
 ;; R7RS Tests
 
 (import (only (chicken port) with-input-from-string with-output-to-string)
-	(chicken condition))
+	(chicken condition) (scheme lazy))
 
 ;; Copied from R4RS tests
 (define cur-section '())
@@ -219,9 +219,8 @@
 ;; Edge case
 (test "" read-escaped-string (string-append "    " (string #\newline) "    "))
 
-;; NOT YET (is ambiguous with existing \xNN syntax in CHICKEN)
-#;(test #\tab escaped-char "x9;")
-#;(test #\tab escaped-char "x09;")
+(test #\tab escaped-char "x9;")
+(test #\tab escaped-char "x09;")
 
 
 

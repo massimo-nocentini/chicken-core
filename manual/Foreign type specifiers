@@ -26,7 +26,7 @@ This type maps to {{int}} in both C and C++.
 <type>char</type><br>
 <type>unsigned-char</type><br>
 
-A signed or unsigned character.  
+A signed or unsigned character.
 
 As an argument, the input Scheme character is cast to C {{char}} or
 {{unsigned char}}, resulting in an 8-bit value.  A Scheme character
@@ -98,9 +98,17 @@ so {{integer}} and {{integer32}} are functionally (if not semantically) equivale
 <type>integer64</type><br>
 <type>unsigned-integer64</type>
 
-A fixnum or bignum, mapping to {{int64_t}} or {{uint64_t}}.
-When outside of fixnum range the value will overflow into a bignum.
-Prior to CHICKEN 5, the value would overflow into a flonum.
+A fixnum or integral flonum, mapping to {{int64_t}} or {{uint64_t}}.
+When outside of fixnum range the value will overflow into a flonum.
+
+On a 32-bit system, the effective precision of this type is 52 bits
+plus the sign bit, as it is stored in a {{double}} flonum.  (In other
+words, numbers between 2^52 and 2^64-1 can be represented but there are
+gaps in the sequence; the same goes for their negative counterparts.)
+On a 64-bit system the range is 62 bits plus the sign bit, the
+maximum range of a fixnum.  (Numbers between 2^62 and 2^64-1 have gaps.)
+
+{{unsigned-integer64}} is not valid as a return type until CHICKEN 4.6.4.
 
 <type>long</type><br>
 <type>unsigned-long</type>
@@ -126,6 +134,11 @@ then it is automatically converted to a float.
 A floating-point number. Similar to {{double}}, but when used as a result type,
 then either an exact integer or a floating-point number is returned, depending
 on whether the result fits into an exact integer or not.
+
+<type>complex</type>
+
+A C99 {{double complex}} number. Accepts any numeric type but always
+converts to inexact.
 
 === Strings
 
@@ -177,13 +190,13 @@ to the caller).  Attempting to return a NULL string will raise an exception.
 
 === Bytevectors
 
-<type>blob</type><br>
-<type>nonnull-blob</type>
+<type>bytevector</type><br>
+<type>nonnull-bytevector</type>
 
-A blob object, passed as a pointer to its contents.  Permitted only as
-argument type, not return type.  
+A bytevector object, passed as a pointer to its contents.  Permitted only as
+argument type, not return type.
 
-Arguments of type {{blob}} may optionally be {{#f}}, which is passed
+Arguments of type {{bytevector}} may optionally be {{#f}}, which is passed
 as a NULL pointer.  For the {{nonnull-}} variant, passing a {{#f}}
 value will raise an exception.
 
@@ -227,7 +240,7 @@ An operating-system pointer or a locative.  {{c-pointer}} is untyped, whereas
 The value {{#f}} is allowed and is passed to C as a {{NULL}} pointer;
 similarly, NULL is returned as {{#f}}.  For the two {{nonnull-}} variants,
 passing {{#f}} will raise an exception, and returning NULL will result in
-a null {{pointer}} object.  
+a null {{pointer}} object.
 
 (Note: It is still possible to deliberately pass a null pointer through a
 {{nonnull-c-pointer}} by manually creating a null pointer object,
@@ -267,7 +280,7 @@ An arbitrary, raw Scheme data object (immediate or non-immediate).  A
 internal CHICKEN type for objects.  Typically, this consists of an
 object header and tag bits.  It is up to you to build or take apart
 such objects using the core library routines in {{chicken.h}} and
-{{runtime.c}}.  
+{{runtime.c}}.
 
 More information on object structure can be found in [[Data representation]].
 
@@ -278,7 +291,7 @@ More information on object structure can be found in [[Data representation]].
 
 An untyped pointer to the ''contents'' of a non-immediate Scheme
 object; for example, the raw byte contents of a string. Only allowed
-as an argument type, not a return type.  
+as an argument type, not a return type.
 
 The optional element type {{TYPE}} may be used to specify what C
 type should be used in the generated code. This avoids the need
@@ -291,26 +304,25 @@ Don't confuse this type with {{(c-pointer ...)}} which means something
 different (a machine-pointer object).
 
 {{scheme-pointer}} is typically used to get a pointer to the raw byte
-content of strings and blobs.  But if you pass in a SRFI-4 vector, you
-will get a pointer to a blob object header (''not'' the blob's contents),
-which is almost certainly wrong.  Instead, convert to a blob
+content of bytevectors.  But if you pass in a SRFI-4 vector, you
+will get a pointer to a bytevector object header (''not'' the bytevectors's contents),
+which is almost certainly wrong.  Instead, convert to a bytevector
 beforehand, or use a SRFI-4 specific type.
 
 === User-defined C types
 
 <type>(struct NAME)</type>
 
-A struct of the name {{NAME}}, which should be a string.
-
-Structs cannot be directly passed as arguments to foreign functions, nor
-can they be result values.  However, pointers to structs are allowed.
+A struct of the name {{NAME}} or {{(NAME)}}, where {{NAME}} should be a string.
+The latter specifies a typedef naming a structure. On the Scheme side, results
+and argumens of this type will
+be wrapped in a record structure named {{struct NAME}} (or {{NAME}}). Values of this type
+arew opaque can not be manipulated directly in Scheme code.
 
 <type>(union NAME)</type>
 
-A union of the name {{NAME}}, which should be a string.
-
-Unions cannot be directly passed as arguments to foreign functions, nor can
-they be result values. However, pointers to unions are allowed.
+A union of the name {{NAME}}, or {{(NAME)}}. Semantically handled identically
+to {{(struct NAME)}}.
 
 <type>(enum NAME)</type>
 
@@ -335,7 +347,7 @@ following operations:
 
 <type>(instance-ref CNAME SCHEMECLASS)</type>
 
-A reference to a C++ class instance. 
+A reference to a C++ class instance.
 
 <type>(template TYPE ARGTYPE ...)</type>
 
@@ -370,9 +382,10 @@ The foreign type {{TYPE}} with an additional {{const}} qualifier.
 <tr><td>{{float}}</td><td>{{float}}</td></tr>
 <tr><td>{{double}}</td><td>{{double}}</td></tr>
 <tr><td>{{number}}</td><td>{{double}}</td></tr>
+<tr><td>{{complex}}</td><td>{{double complex}}</td></tr>
 <tr><td>{{[nonnull-]c-pointer}}</td><td>{{void *}}</td></tr>
 <tr><td>{{[nonnull-]pointer-vector}}</td><td>{{void **}}</td></tr>
-<tr><td>{{[nonnull-]blob}}</td><td>{{unsigned char *}}</td></tr>
+<tr><td>{{[nonnull-]bytevector}}</td><td>{{unsigned char *}}</td></tr>
 <tr><td>{{[nonnull-]u8vector}}</td><td>{{unsigned char *}}</td></tr>
 <tr><td>{{[nonnull-]s8vector}}</td><td>{{char *}}</td></tr>
 <tr><td>{{[nonnull-]u16vector}}</td><td>{{unsigned short *}}</td></tr>
@@ -392,9 +405,11 @@ The foreign type {{TYPE}} with an additional {{const}} qualifier.
 <tr><td>{{([nonnull-]scheme-pointer TYPE)}}</td><td>{{TYPE *}}</td></tr>
 <tr><td>{{(enum NAME)}}</td><td>{{enum NAME}}</td></tr>
 <tr><td>{{(struct NAME)}}</td><td>{{struct NAME}}</td></tr>
+<tr><td>{{(struct (NAME))}}</td><td>{{NAME}}</td></tr>
+<tr><td>{{(union NAME)}}</td><td>{{union NAME}}</td></tr>
+<tr><td>{{(union (NAME))}}</td><td>{{NAME}}</td></tr>
 <tr><td>{{(ref TYPE)}}</td><td>{{TYPE &}}</td></tr>
 <tr><td>{{(template T1 T2 ...)}}</td><td>{{T1&lt;T2, ...>}}</td></tr>
-<tr><td>{{(union NAME)}}</td><td>{{union NAME}}</td></tr>
 <tr><td>{{(function RTYPE (ATYPE ...) [CALLCONV])}}</td><td>{{[CALLCONV] RTYPE (*)(ATYPE, ...)}}</td></tr>
 <tr><td>{{(instance CNAME SNAME)}}</td><td>{{CNAME *}}</td></tr>
 <tr><td>{{(instance-ref CNAME SNAME)}}</td><td>{{CNAME &}}</td></tr>

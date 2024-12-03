@@ -8,11 +8,13 @@
   (chicken irregex)
   (chicken memory)
   (chicken port)
+  (chicken io)
   (chicken format)
   (chicken process-context)
   (chicken process-context posix)
   (chicken tcp)
-  srfi-4)
+  (chicken number-vector)
+  (scheme write))
 
 (define ignored-symbols
   '(;; internal procedures

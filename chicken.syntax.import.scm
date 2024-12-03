@@ -34,7 +34,6 @@
    (get-line-number . chicken.syntax#get-line-number)
    (read-with-source-info . chicken.syntax#read-with-source-info)
    (strip-syntax . chicken.syntax#strip-syntax)
-   (syntax-error . chicken.syntax#syntax-error)
    (er-macro-transformer . chicken.syntax#er-macro-transformer)
    (ir-macro-transformer . chicken.syntax#ir-macro-transformer))
  ##sys#chicken.syntax-macro-environment)

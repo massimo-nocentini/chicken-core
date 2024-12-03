@@ -1,0 +1,114 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (chicken bytevector)
+
+This module contains procedures for dealing with "bytevectors".  Blobs are
+unstructured byte arrays (basically "binary strings"). You can't do
+much with them, but they allow conversion to and from
+[[Module srfi-4|SRFI-4 number vectors]] which define how to access a
+bytevector's byte contents.
+
+=== bytevector
+
+<procedure>(bytevector FIXNUM ...)</procedure>
+
+Returns a new bytevector containing the values {{FIXNUM ...}}.
+
+=== make-bytevector
+
+<procedure>(make-bytevector SIZE)</procedure>
+
+Returns a bytevector object of {{SIZE}} bytes, aligned on an 8-byte boundary,
+uninitialized.
+
+=== bytevector?
+
+<procedure>(bytevector? X)</procedure>
+
+Returns {{#t}} if {{X}} is a bytevector object, or
+{{#f}} otherwise.
+
+=== bytevector-length
+
+<procedure>(bytevector-length BYTEVECTOR)</procedure>
+
+Returns the number of bytes in {{BYTEVECTOR}}.
+
+=== bytevector-u8-ref
+
+<procedure>(bytevector-u8-ref BYTEVECTOR INDEX)</procedure>
+
+Returns the byte at {{INDEX}} in {{BYTEVECTOR}}.
+
+=== bytevector-u8-set!
+
+<procedure>(bytevector-u8-set! BYTEVECTOR INDEX VALUE)</procedure>
+
+Destructively modifies the byte at {{INDEX}} in {{BYTEVECTOR}} to {{VALUE}}, which
+should be a fixnum.
+
+=== utf8->string
+
+<procedure>(utf8->string BYTEVECTOR [VALIDATE])</procedure>
+
+Returns a string with the contents of {{BYTEVECTOR}}. if {{VALIDATE}}
+is given and false, then invalidly
+encoded characters do not signal an error - byte-sequences that do no represent
+valid UTF-8 characters are retained and, if extracted with {{string-ref}}
+are converted to a trailing surrogate pair half in the range U+DC80 to U+DCFF.
+
+=== string->utf8
+
+<procedure>(string->utf8 STRING)</procedure>
+
+Returns a bytevector with the contents of {{STRING}}.
+
+=== latin1->string
+
+<procedure>(latin1->string BYTEVECTOR)</procedure>
+
+Returns a string with the contents of {{BYTEVECTOR}} converted from Latin-1 (ISO-8859-1) encoding to UTF-8. 
+
+=== string->latin1
+
+<procedure>(string->latin1 STRING)</procedure>
+
+Returns a bytevector with the contents of {{STRING}} encoded as Latin-1 (ISO-?8859-1).
+
+=== bytevector=?
+
+<procedure>(bytevector=? BYTEVECTOR1 BYTEVECTOR2)</procedure>
+
+Returns {{#t}} if the two argument bytevectors are of the same
+size and have the same content.
+
+=== bytevector-append 
+
+<procedure>(bytevector-append BYTEVECTOR ...)</procedure>
+
+Returns a new bytevector holding the concatenated contents of all
+argument bytevectors.
+
+=== bytevector-copy
+
+<procedure>(bytevector-copy BYTEVECTOR #!optional START END)</procedure>
+
+Returns a new bytevector holding the contents of {{BYTEVECTOR}} between
+the indices {{START}} to {{END}}.
+
+=== bytevector-copy!
+
+<procedure>(bytevector-copy! TO AT FROM #!optional START END)</procedure>
+
+Copioes the contents of the bytevector FROM between
+the indices {{START}} to {{END}} into the bytevector {{TO}}, starting at
+index {{AT}}.
+
+
+---
+Previous: [[Module (chicken bitwise)]]
+
+Next: [[Module (chicken condition)]]
+
+

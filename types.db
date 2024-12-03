@@ -7,11 +7,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -193,7 +193,8 @@
 	     (((or symbol keyword procedure immediate) list)
 	      (##core#inline "C_u_i_memq" #(1) #(2))))
 
-(scheme#member (forall (a b) (#(procedure #:clean #:foldable) scheme#member (a (list-of b))
+(scheme#member (forall (a b) (#(procedure #:clean #:foldable) scheme#member (a (list-of b)
+                                #!optional (procedure (a b) *))
 			      (or false (pair a (list-of b)))))
 	       ((* null) (let ((#(tmp) #(1))) '#f))
 	       (((or symbol keyword procedure immediate) list)
@@ -217,7 +218,7 @@
 	      (##core#inline "C_u_i_assq" #(1) #(2))))
 
 (scheme#assoc (forall (a b c) (#(procedure #:clean #:foldable) scheme#assoc
-			       (a (list-of (pair b c)))
+			       (a (list-of (pair b c)) #!optional (procedure (a b) *))
 			       (or false (pair a c))))
 	      ((* null) (let ((#(tmp) #(1))) '#f))
 	      (((or symbol keyword procedure immediate) (list-of pair))
@@ -534,6 +535,8 @@
 (scheme#sqrt (#(procedure #:clean #:enforce #:foldable) scheme#sqrt (number) number)
 	     ;; Unfortunately this doesn't work when the argument is negative
 	     #;((float) (float) (##core#inline_allocate ("C_a_i_flonum_sqrt" 4) #(1))))
+(scheme#exact-integer-sqrt (#(procedure #:clean #:enforce #:foldable) scheme#exact-integer-sqrt (integer) integer integer)
+             ((integer) (##sys#exact-integer-sqrt #(1))))
 
 (scheme#sin (#(procedure #:clean #:enforce #:foldable) scheme#sin (number) (or float cplxnum))
 	    ((float) (float) (##core#inline_allocate ("C_a_i_flonum_sin" 4) #(1))))
@@ -577,22 +580,22 @@
 (scheme#char? (#(procedure #:pure #:predicate char) scheme#char? (*) boolean))
 
 ;; safe rewrites are already done by the optimizer
-(scheme#char=? (#(procedure #:clean #:enforce #:foldable) scheme#char=? (char char) boolean)
+(scheme#char=? (#(procedure #:clean #:enforce #:foldable) scheme#char=? (char char #!rest char) boolean)
 	       ((char char) (##core#inline "C_u_i_char_equalp" #(1) #(2))))
-(scheme#char>? (#(procedure #:clean #:enforce #:foldable) scheme#char>? (char char) boolean)
+(scheme#char>? (#(procedure #:clean #:enforce #:foldable) scheme#char>? (char char #!rest char) boolean)
 	       ((char char) (##core#inline "C_u_i_char_greaterp" #(1) #(2))))
-(scheme#char<? (#(procedure #:clean #:enforce #:foldable) scheme#char<? (char char) boolean)
+(scheme#char<? (#(procedure #:clean #:enforce #:foldable) scheme#char<? (char char #!rest char) boolean)
 	       ((char char) (##core#inline "C_u_i_char_lessp" #(1) #(2))))
-(scheme#char>=? (#(procedure #:clean #:enforce #:foldable) scheme#char>=? (char char) boolean)
+(scheme#char>=? (#(procedure #:clean #:enforce #:foldable) scheme#char>=? (char char #!rest char) boolean)
 		((char char) (##core#inline "C_u_i_char_greater_or_equal_p" #(1) #(2))))
-(scheme#char<=? (#(procedure #:clean #:enforce #:foldable) scheme#char<=? (char char) boolean)
+(scheme#char<=? (#(procedure #:clean #:enforce #:foldable) scheme#char<=? (char char #!rest char) boolean)
 		((char char) (##core#inline "C_u_i_char_less_or_equal_p" #(1) #(2))))
 
-(scheme#char-ci=? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci=? (char char) boolean))
-(scheme#char-ci<? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci<? (char char) boolean))
-(scheme#char-ci>? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci>? (char char) boolean))
-(scheme#char-ci>=? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci>=? (char char) boolean))
-(scheme#char-ci<=? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci<=? (char char) boolean))
+(scheme#char-ci=? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci=? (char char #!rest char) boolean))
+(scheme#char-ci<? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci<? (char char #!rest char) boolean))
+(scheme#char-ci>? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci>? (char char #!rest char) boolean))
+(scheme#char-ci>=? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci>=? (char char #!rest char) boolean))
+(scheme#char-ci<=? (#(procedure #:clean #:enforce #:foldable) scheme#char-ci<=? (char char #!rest char) boolean))
 (scheme#char-alphabetic? (#(procedure #:clean #:enforce #:foldable) scheme#char-alphabetic? (char) boolean))
 (scheme#char-whitespace? (#(procedure #:clean #:enforce #:foldable) scheme#char-whitespace? (char) boolean))
 (scheme#char-numeric? (#(procedure #:clean #:enforce #:foldable) scheme#char-numeric? (char) boolean))
@@ -607,24 +610,25 @@
 (scheme#string? (#(procedure #:pure #:predicate string) scheme#string? (*) boolean))
 
 (scheme#string=? (#(procedure #:clean #:enforce #:foldable) scheme#string=? (string string) boolean)
-		 ((string string) (##core#inline "C_u_i_string_equal_p" #(1) #(2))))
-
-(scheme#string>? (#(procedure #:clean #:enforce #:foldable) scheme#string>? (string string) boolean))
-(scheme#string<? (#(procedure #:clean #:enforce #:foldable) scheme#string<? (string string) boolean))
-(scheme#string>=? (#(procedure #:clean #:enforce #:foldable) scheme#string>=? (string string) boolean))
-(scheme#string<=? (#(procedure #:clean #:enforce #:foldable) scheme#string<=? (string string) boolean))
-(scheme#string-ci=? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci=? (string string) boolean))
-(scheme#string-ci<? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci<? (string string) boolean))
-(scheme#string-ci>? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci>? (string string) boolean))
-(scheme#string-ci>=? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci>=? (string string) boolean))
-(scheme#string-ci<=? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci<=? (string string) boolean))
+		 ((* *) (##core#inline "C_i_string_equal_p" #(1) #(2))))
+(scheme#string>? (#(procedure #:clean #:enforce #:foldable) scheme#string>? (string string #!rest string) boolean)
+                 ((string string) (##core#inline "C_i_string_equal_p" #(1) #(2))))
+(scheme#string<? (#(procedure #:clean #:enforce #:foldable) scheme#string<? (string string #!rest string) boolean))
+(scheme#string>=? (#(procedure #:clean #:enforce #:foldable) scheme#string>=? (string string #!rest string) boolean))
+(scheme#string<=? (#(procedure #:clean #:enforce #:foldable) scheme#string<=? (string string #!rest string) boolean))
+(scheme#string-ci=? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci=? (string string #!rest string) boolean)
+  		    ((* *) (##core#inline "C_i_string_ci_equal_p" #(1) #(2))))
+(scheme#string-ci<? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci<? (string string #!rest string) boolean))
+(scheme#string-ci>? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci>? (string string #!rest string) boolean))
+(scheme#string-ci>=? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci>=? (string string #!rest string) boolean))
+(scheme#string-ci<=? (#(procedure #:clean #:enforce #:foldable) scheme#string-ci<=? (string string #!rest string) boolean))
 
 (scheme#make-string (#(procedure #:clean #:enforce) scheme#make-string (fixnum #!optional char) string)
 		    ((fixnum char) (##sys#make-string #(1) #(2)))
 		    ((fixnum) (##sys#make-string #(1) '#\space)))
 
 (scheme#string-length (#(procedure #:clean #:enforce #:foldable) scheme#string-length (string) fixnum)
-	       ((string) (##sys#size #(1))))
+	       ((string) (##core#inline "C_u_i_string_length" #(1))))
 
 (scheme#string-ref (#(procedure #:clean #:enforce #:foldable) scheme#string-ref (string fixnum) char)
 		   ((string fixnum) (##core#inline "C_i_string_ref" #(1) #(2))))
@@ -635,12 +639,13 @@
 (scheme#string-append (#(procedure #:clean #:enforce) scheme#string-append (#!rest string) string)
 		      ((string string) (##sys#string-append #(1) #(2))))
 
-(scheme#string-copy (#(procedure #:clean #:enforce) scheme#string-copy (string) string))
+(scheme#string-copy (#(procedure #:clean #:enforce) scheme#string-copy (string #!optional fixnum fixnum) string))
+(scheme#string-copy! (#(procedure #:clean #:enforce) scheme#string-copy! (string fixnum string #!optional fixnum fixnum) undefined))
 
-(scheme#string->list (#(procedure #:clean #:enforce) scheme#string->list (string) (list-of char)))
+(scheme#string->list (#(procedure #:clean #:enforce) scheme#string->list (string #!optional fixnum fixnum) (list-of char)))
 (scheme#list->string (#(procedure #:clean #:enforce) scheme#list->string ((list-of char)) string))
 (scheme#substring (#(procedure #:clean #:enforce) scheme#substring (string fixnum #!optional fixnum) string))
-(scheme#string-fill! (#(procedure #:enforce) scheme#string-fill! (string char) string))
+(scheme#string-fill! (#(procedure #:enforce) scheme#string-fill! (string char #!optional fixnum fixnum) string))
 (scheme#string (#(procedure #:clean #:enforce) scheme#string (#!rest char) string))
 
 (scheme#vector? (#(procedure #:pure #:predicate vector) scheme#vector? (*) boolean))
@@ -665,14 +670,15 @@
 (##sys#vector-length (#(procedure #:clean #:enforce #:foldable) ##sys#vector-length (vector) fixnum)
 		     ((vector) (##sys#size #(1))))
 
-(scheme#vector->list (forall (a) (#(procedure #:clean #:enforce) scheme#vector->list ((vector-of a)) (list-of a))))
+(scheme#vector->list (forall (a) (#(procedure #:clean #:enforce) scheme#vector->list ((vector-of a) #!optional fixnum fixnum) (list-of a))))
 (##sys#vector->list (forall (a) (#(procedure #:clean #:enforce) ##sys#vector->list ((vector-of a)) (list-of a))))
 (scheme#list->vector (forall (a) (#(procedure #:clean #:enforce) scheme#list->vector ((list-of a)) (vector-of a))))
 (##sys#list->vector (forall (a) (#(procedure #:clean #:enforce) ##sys#list->vector ((list-of a)) (vector-of a))))
-(scheme#vector-fill! (#(procedure #:enforce) scheme#vector-fill! (vector *) undefined))
+(scheme#vector-fill! (#(procedure #:enforce) scheme#vector-fill! (vector * #!optional fixnum fixnum) undefined))
+(scheme#vector-copy (#(procedure #:enforce) scheme#vector-copy (vector #!optional fixnum fixnum) vector))
+(scheme#vector-copy! (#(procedure #:enforce) scheme#vector-copy! (vector fixnum vector #!optional fixnum fixnum) undefined))
 
 (scheme#procedure? (#(procedure #:pure #:predicate procedure) scheme#procedure? (*) boolean))
-
 
 (scheme#map (forall (a b) (#(procedure #:enforce) scheme#map ((procedure (a #!rest) b) (list-of a) #!rest list) (list-of b))))
 
@@ -682,15 +688,19 @@
 (scheme#apply (#(procedure #:enforce) scheme#apply (procedure #!rest) . *))
 (##sys#apply (#(procedure #:enforce) ##sys#apply (procedure #!rest) . *))
 
-(scheme#force (procedure scheme#force (*) . *)
-	      (((not (struct promise))) #(1)))
+(scheme#force (procedure scheme#force (*) . *) (((not (struct promise))) #(1)))
 
 (scheme#call-with-current-continuation
  (#(procedure #:enforce) scheme#call-with-current-continuation
   ((procedure (procedure) . *)) . *))
+(scheme#call/cc (#(procedure #:enforce) scheme#call-with-current-continuation ((procedure (*) . *)) . *))
 
 (scheme#input-port? (#(procedure #:pure #:predicate (refine (input) port)) scheme#input-port? (*) boolean))
 (scheme#output-port? (#(procedure #:pure #:predicate (refine (output) port)) scheme#output-port? (*) boolean))
+
+(scheme#port? (#(procedure #:pure #:predicate port) scheme#port? (*) boolean))
+(scheme#input-port-open? (#(procedure #:enforce) scheme#input-port-open? (input-port) boolean))
+(scheme#output-port-open? (#(procedure #:enforce) scheme#output-port-open? (output-port) boolean))
 
 (scheme#current-input-port
  (#(procedure #:clean #:enforce) scheme#current-input-port
@@ -771,6 +781,9 @@
 
 (scheme#char-ready? (#(procedure #:enforce) scheme#char-ready? (#!optional input-port) boolean))
 
+(scheme#make-rectangular (#(procedure #:enforce #:clean) scheme#make-rectangular (number number) number))
+(scheme#make-polar (#(procedure #:enforce #:clean) scheme#make-polar (number number) number))
+
 (scheme#real-part (#(procedure #:clean #:enforce #:foldable) scheme#real-part (number) (or integer float ratnum))
 	   (((or fixnum float bignum ratnum)) #(1))
 	   ((cplxnum) (##core#inline "C_u_i_cplxnum_real" #(1))))
@@ -812,7 +825,7 @@
 	     ((integer) (fixnum) (let ((#(tmp) #(1))) '1))
 	     ((ratnum) (integer) (##core#inline "C_u_i_ratnum_denom" #(1))))
 
-(scheme#load (procedure scheme#load (string #!optional (procedure (*) . *)) undefined))
+(scheme#load (procedure scheme#load (string #!optional (or (struct environment) (procedure (*) . *))) undefined))
 
 (scheme#eval (procedure scheme#eval (* #!optional (struct environment)) . *))
 
@@ -821,10 +834,74 @@
 
 (scheme#null-environment
  (#(procedure #:clean #:enforce) scheme#null-environment (#!optional fixnum) (struct environment)))
-
 (scheme#interaction-environment
  (#(procedure #:clean) scheme#interaction-environment () (struct environment)))
 
+(scheme#with-exception-handler (#(procedure #:clean #:enforce) scheme#with-exception-handler ((procedure (*) . *) (procedure () . *)) . *))
+(scheme#raise (#(procedure #:clean #:enforce) scheme#raise (*) noreturn))
+(scheme#raise-continuable (#(procedure #:clean #:enforce) scheme#raise-continuable (*) . *))
+(scheme#error-object-irritants
+  (#(procedure #:clean #:enforce)
+   scheme#error-object-irritants
+   ((struct condition))
+   (or list false)))
+(scheme#error-object-message
+  (#(procedure #:clean #:enforce)
+   scheme#error-object-message
+   ((struct condition))
+   (or string false)))
+(scheme#error-object?
+  (#(procedure #:pure #:predicate (struct condition))
+   scheme#error-object?
+   (*)
+   boolean))
+(scheme#file-error? (#(procedure #:pure) scheme#file-error? (*) boolean))
+(scheme#read-error? (#(procedure #:pure) scheme#read-error? (*) boolean))
+
+(scheme#square (#(procedure #:pure) scheme#square ((or integer ratnum float)) (or integer ratnum float)))
+(scheme#floor/ (#(procedure #:clean #:enforce #:foldable) scheme#floor/ ((or integer float) (or integer float)) (or integer float) (or integer float)))
+(scheme#truncate/ (#(procedure #:clean #:enforce #:foldable) scheme#truncate/ ((or integer float) (or integer float)) (or integer float) (or integer float)))
+(scheme#floor-quotient (#(procedure #:clean #:enforce #:foldable) scheme#floor-quotient ((or integer float) (or integer float))))
+(scheme#floor-remainder (#(procedure #:clean #:enforce #:foldable) scheme#floor-remainder ((or integer float) (or integer float))))
+
+(scheme#boolean=? (#(procedure #:pure) scheme#boolean=? (boolean boolean #!rest boolean) boolean))
+(scheme#symbol=? (#(procedure #:pure) scheme#symbol=? (symbol symbol #!rest symbol) boolean))
+
+(scheme#close-port (#(procedure #:enforce) scheme#close-port (port) undefined))
+
+(scheme#get-output-string (#(procedure #:clean #:enforce) scheme#get-output-string (output-port) string))
+(scheme#open-input-string (#(procedure #:clean #:enforce) scheme#open-input-string (string #!rest) input-port))
+(scheme#open-output-string (#(procedure #:clean) scheme#open-output-string (#!rest) output-port))
+(scheme#get-output-bytevector (#(procedure #:clean #:enforce) scheme#get-output-bytevector (output-port) bytevector))
+(scheme#open-input-bytevector (#(procedure #:clean #:enforce) scheme#open-input-bytevector (bytevector #!rest) input-port))
+(scheme#open-output-bytevector (#(procedure #:clean) scheme#open-output-bytevector (#!rest) output-port))
+
+(scheme#make-list (#(procedure #:clean #:enforce) scheme#make-list (fixnum *) list))
+
+(scheme#list-set! (#(procedure #:clean #:enforce) scheme#list-set! (list fixnum *) undefined))
+(scheme#list-copy (forall (a) (#(procedure #:clean #:enforce) scheme#list-copy ((list-of a)) (list-of a))))
+(scheme#string->vector (#(procedure #:clean #:enforce) scheme#string->vector (string #!optional fixnum fixnum) vector))
+(scheme#vector->string (#(procedure #:clean #:enforce) scheme#vector->string (vector #!optional fixnum fixnum) string))
+(scheme#string-for-each (#(procedure #:clean #:enforce) scheme#string-for-each ((procedure (#!rest char) char) #!rest string) undefined))
+(scheme#vector-for-each (#(procedure #:clean #:enforce) scheme#vector-for-each ((procedure (#!rest *) . *) #!rest vector) undefined))
+(scheme#string-map (#(procedure #:clean #:enforce) scheme#string-map ((procedure (#!rest char) char) #!rest string) string))
+(scheme#vector-map (#(procedure #:clean #:enforce) scheme#vector-map ((procedure (#!rest *) . *) #!rest vector) vector))
+
+(scheme#binary-port? (#(procedure #:pure) scheme#binary-port? (*) boolean))
+(scheme#textual-port? (#(procedure #:pure) scheme#textual-port? (*) boolean))
+(scheme#call-with-port (#(procedure #:clean #:enforce) scheme#call-with-port (port (procedure (port) . *)) . *))
+(scheme#eof-object (#(procedure #:pure) scheme#eof-object () eof))
+(scheme#features (#(procedure #:clean) scheme#features () (list-of symbol)))
+
+(scheme#peek-u8 (#(procedure #:clean #:enforce) scheme#peek-u8 (#!optional input-port) (or eof fixnum)))
+(scheme#write-string (#(procedure #:clean #:enforce) scheme#write-string (string #!optional output-port fixnum fixnum) undefined))
+
+(scheme#make-parameter (#(procedure #:clean #:enforce) scheme#make-parameter (* #!optional procedure) procedure))
+
+
+;; scheme.eval
+
+(scheme.eval#environment (procedure scheme.eval#environment (* #!optional (struct environment)) . *))
 
 
 ;; eval
@@ -840,7 +917,7 @@
        (##core#inline_allocate ("C_a_i_fixnum_plus" 5) #(1) '1))
       ((integer) (integer)
        (##core#inline_allocate ("C_s_a_u_i_integer_plus" 5) #(1) '1))
-      ((float) (float) 
+      ((float) (float)
        (##core#inline_allocate ("C_a_i_flonum_plus" 4) #(1) '1.0))
       ((*) (number)
        (##core#inline_allocate ("C_s_a_i_plus" 29) #(1) '1)))
@@ -856,7 +933,6 @@
        (##core#inline_allocate ("C_s_a_i_minus" 29) #(1) '1)))
 
 (chicken.base#subvector (forall (a) (#(procedure #:clean #:enforce) chicken.base#subvector ((vector-of a) fixnum #!optional fixnum) (vector-of a))))
-(chicken.base#vector-copy! (#(procedure #:enforce) chicken.base#vector-copy! (vector vector #!optional fixnum) undefined))
 (chicken.base#vector-resize
  (forall (a b) (#(procedure #:clean #:enforce) chicken.base#vector-resize ((vector-of a) fixnum #!optional b)
 		(vector-of (or a b)))))
@@ -871,9 +947,6 @@
 			     ((*) (##core#inline "C_i_exact_integerp" #(1))))
 (chicken.base#exact-integer-nth-root (#(procedure #:clean #:enforce #:foldable) chicken.base#exact-integer-nth-root (integer integer) integer integer)
 		    ((integer integer) (##sys#exact-integer-nth-root/loc 'exact-integer-nth-root #(1) #(2))))
-
-(chicken.base#exact-integer-sqrt (#(procedure #:clean #:enforce #:foldable) chicken.base#exact-integer-sqrt (integer) integer integer)
-		    ((integer) (##sys#exact-integer-sqrt #(1))))
 
 (chicken.base#weak-cons (forall (a b) (#(procedure #:pure) chicken.base#weak-cons (a b) (pair (or a bwp) b))))
 ;; NOTE: This is *not* a #:predicate, as we don't want to introduce a completely new weak-pair type
@@ -910,25 +983,10 @@
 (chicken.base#print (procedure chicken.base#print (#!rest *) undefined))
 (chicken.base#print* (procedure chicken.base#print* (#!rest) undefined))
 (chicken.base#procedure-information (#(procedure #:clean #:enforce) chicken.base#procedure-information (procedure) *))
-(chicken.base#promise? (#(procedure #:pure #:predicate (struct promise)) chicken.base#promise? (*) boolean))
-
-(chicken.base#make-promise (#(procedure #:enforce) chicken.base#make-promise (*) (struct promise))
-              (((struct promise)) #(1)))
-
-(chicken.base#call/cc (#(procedure #:enforce) chicken.base#call/cc ((procedure (*) . *)) . *))
-
-(chicken.base#port? (#(procedure #:pure #:predicate port) chicken.base#port? (*) boolean))
 
 (chicken.base#port-closed?
  (#(procedure #:clean #:enforce) chicken.base#port-closed? (port) boolean)
  ((port) (scheme#eq? (##sys#slot #(1) '8) '0)))
-
-(chicken.base#input-port-open? (#(procedure #:enforce) chicken.base#input-port-open? (input-port) boolean))
-(chicken.base#output-port-open? (#(procedure #:enforce) chicken.base#output-port-open? (output-port) boolean))
-
-(chicken.base#get-output-string (#(procedure #:clean #:enforce) chicken.base#get-output-string (output-port) string))
-(chicken.base#open-input-string (#(procedure #:clean #:enforce) chicken.base#open-input-string (string #!rest) input-port))
-(chicken.base#open-output-string (#(procedure #:clean) chicken.base#open-output-string (#!rest) output-port))
 
 (chicken.base#current-error-port
  (#(procedure #:clean #:enforce) chicken.base#current-error-port (#!optional output-port boolean boolean) output-port)
@@ -978,7 +1036,6 @@
 			(##core#inline "C_u_i_ratnum_num" #(1))))
 	((cplxnum) ((or float cplxnum)) (##sys#extended-signum #(1))))
 
-(chicken.base#make-parameter (#(procedure #:clean #:enforce) chicken.base#make-parameter (* #!optional procedure) procedure))
 (chicken.base#string->uninterned-symbol (#(procedure #:clean #:enforce) chicken.base#string->uninterned-symbol (string) symbol))
 (chicken.base#symbol-append (#(procedure #:clean #:enforce #:foldable) chicken.base#symbol-append (#!rest symbol) symbol))
 
@@ -1011,8 +1068,8 @@
 ;; TODO: Add nonspecializing type specific entries, to help flow analysis?
 (chicken.base#quotient&modulo (#(procedure #:clean #:enforce #:foldable) chicken.base#quotient&modulo ((or integer float) (or integer float)) (or integer float) (or integer float)))
 
-(chicken.base#record-printer (#(procedure #:enforce) chicken.base#record-printer (symbol) (or false procedure)))
-(chicken.base#set-record-printer! (#(procedure #:enforce) chicken.base#set-record-printer! (symbol procedure) undefined))
+(chicken.base#record-printer (#(procedure #:enforce) chicken.base#record-printer (*) (or false procedure)))
+(chicken.base#set-record-printer! (#(procedure #:enforce) chicken.base#set-record-printer! (* procedure) undefined))
 
 (chicken.base#alist-ref
  (forall (a b c d)
@@ -1050,6 +1107,10 @@
 (chicken.base#join (#(procedure #:clean #:enforce) chicken.base#join ((list-of list) #!optional list) list))
 (chicken.base#list-of? (#(procedure #:clean #:enforce) chicken.base#list-of? ((procedure (*) *)) (procedure (list) boolean)))
 
+(chicken.base#char-foldcase (#(procedure #:clean #:enforce #:foldable) chicken.base#char-foldcase (char) char)
+                            ((char) (##core#inline "C_utf_char_foldcase" #(1))))
+(chicken.base#string-foldcase (#(procedure #:clean #:enforce) chicken.base#string-foldcase (string) string))
+
 (chicken.base#o (#(procedure #:clean #:enforce) chicken.base#o (#!rest (procedure (*) *)) (procedure (*) *)))
 
 (chicken.base#rassoc
@@ -1057,6 +1118,11 @@
                   (a (list-of (pair b c)) #!optional (procedure (a b) *))
                   (or false (pair b c)))))
 (chicken.base#tail? (#(procedure #:clean) chicken.base#tail? (* *) boolean))
+
+(chicken.base#promise? (#(procedure #:pure #:predicate (struct promise)) chicken.base#promise? (*) boolean))
+
+(chicken.base#make-promise (#(procedure #:enforce) chicken.base#make-promise (*) (struct promise))
+              (((struct promise)) #(1)))
 
 
 ;; bitwise
@@ -1097,16 +1163,24 @@
 (chicken.bitwise#bitwise-not
  (#(procedure #:clean #:enforce #:foldable) chicken.bitwise#bitwise-not (integer) integer))
 
-;; blob
+;; bytevector
 
-(chicken.blob#blob? (#(procedure #:pure #:predicate blob) chicken.blob#blob? (*) boolean))
-(chicken.blob#blob=? (#(procedure #:clean #:enforce #:foldable) chicken.blob#blob=? (blob blob) boolean))
-(chicken.blob#blob-size (#(procedure #:clean #:enforce #:foldable) chicken.blob#blob-size (blob) fixnum)
-	   ((blob) (##sys#size #(1))))
-(chicken.blob#blob->string (#(procedure #:clean #:enforce) chicken.blob#blob->string (blob) string))
-(chicken.blob#make-blob (#(procedure #:clean #:enforce) chicken.blob#make-blob (fixnum) blob)
-	   ((fixnum) (##sys#make-blob #(1))))
-(chicken.blob#string->blob (#(procedure #:clean #:enforce) chicken.blob#string->blob (string) blob))
+(chicken.bytevector#bytevector (#(procedure #:clean) chicken.bytevector#bytevector (#!rest fixnum) bytevector))
+(chicken.bytevector#bytevector? (#(procedure #:pure #:predicate bytevector) chicken.bytevector#bytevector? (*) boolean))
+(chicken.bytevector#bytevector=? (#(procedure #:clean #:enforce #:foldable) chicken.bytevector#bytevector=? (bytevector bytevector) boolean))
+(chicken.bytevector#bytevector-length (#(procedure #:clean #:enforce #:foldable) chicken.bytevector#bytevector-size (bytevector) fixnum)
+	   ((bytevector) (##sys#size #(1))))
+(chicken.bytevector#utf8->string (#(procedure #:clean #:enforce) chicken.bytevector#utf8->string (bytevector #!optional boolean) string))
+(chicken.bytevector#latin1->string (#(procedure #:clean #:enforce) chicken.bytevector#latin1->string (bytevector) string))
+(chicken.bytevector#make-bytevector (#(procedure #:clean #:enforce) chicken.bytevector#make-bytevector (fixnum) bytevector)
+	   ((fixnum) (##sys#make-bytevector #(1))))
+(chicken.bytevector#string->utf8 (#(procedure #:clean #:enforce) chicken.bytevector#string->utf8 (string) bytevector))
+(chicken.bytevector#string->latin1 (#(procedure #:clean #:enforce) chicken.bytevector#string->latin1 (string) bytevector))
+(chicken.bytevector#bytevector-u8-ref (#(procedure #:clean #:pure #:enforce) chicken.bytevector#bytevector-u8-ref (bytevector fixnum) fixnum))
+(chicken.bytevector#bytevector-u8-set! (#(procedure #:clean #:enforce) chicken.bytevector#bytevector-u8-set! (bytevector fixnum fixnum) undefined))
+(chicken.bytevector#bytevector-copy (#(procedure #:clean #:enforce) chicken.bytevector#bytevector-copy (bytevector #!optional fixnum fixnum) bytevector))
+(chicken.bytevector#bytevector-copy! (#(procedure #:clean #:enforce) chicken.bytevector#bytevector-copy! (bytevector fixnum bytevector #!optional fixnum fixnum) undefined))
+(chicken.bytevector#bytevector-append (#(procedure #:clean #:enforce) chicken.bytevector#bytevector-append (#!rest bytevector) bytevector))
 
 ;; condition
 
@@ -1163,7 +1237,6 @@
 
 (chicken.time#cpu-time (#(procedure #:clean) chicken.time#cpu-time () fixnum fixnum))
 (chicken.time#current-seconds (#(procedure #:clean) chicken.time#current-seconds () integer))
-(chicken.time#current-milliseconds deprecated)
 (chicken.time#current-process-milliseconds (#(procedure #:clean) chicken.time#current-process-milliseconds () integer))
 
 (##sys#error (procedure ##sys#error (* #!rest) noreturn))
@@ -1344,7 +1417,7 @@
  (#(procedure #:clean) chicken.load#dynamic-load-libraries (#!optional (list-of string)) (list-of string)))
 (chicken.load#load-library (#(procedure #:enforce) chicken.load#load-library (symbol #!optional string) undefined))
 (chicken.load#load-noisily (procedure chicken.load#load-noisily (string #!rest) undefined))
-(chicken.load#load-relative (#(procedure #:enforce) chicken.load#load-relative (string #!optional (procedure (*) . *)) undefined))
+(chicken.load#load-relative (#(procedure #:enforce) chicken.load#load-relative (string #!optional (or (struct environment) (procedure (*) . *))) undefined))
 (chicken.load#load-verbose (#(procedure #:clean) chicken.load#load-verbose (#!optional *) *))
 (chicken.load#provide (#(procedure #:clean #:enforce) chicken.load#provide (#!rest symbol) undefined))
 (chicken.load#provided? (#(procedure #:clean #:enforce) chicken.load#provided? (#!rest symbol) boolean))
@@ -1356,10 +1429,9 @@
 
 (chicken.platform#build-platform (#(procedure #:pure) chicken.platform#build-platform () symbol))
 (chicken.platform#chicken-version (#(procedure #:pure) chicken.platform#chicken-version (#!optional *) string))
-(chicken.platform#chicken-home deprecated)
-(chicken.platform#include-path (#(procedure #:clean) chicken.platform#include-path () string))
+(chicken.platform#chicken-home (#(procedure #:clean) chicken.platform#chicken-home () string))
+(chicken.platform#include-path (#(procedure #:clean) chicken.platform#include-path (#!optional (list-of string)) (list-of string)))
 (chicken.platform#feature? (#(procedure #:clean) chicken.platform#feature? (#!rest (or keyword symbol string)) boolean))
-(chicken.platform#features (#(procedure #:clean) chicken.platform#features () (list-of keyword)))
 (chicken.platform#software-type (#(procedure #:pure) chicken.platform#software-type () symbol))
 (chicken.platform#software-version (#(procedure #:pure) chicken.platform#software-version () symbol))
 (chicken.platform#register-feature! (#(procedure #:clean #:enforce) chicken.platform#register-feature! (#!rest (or keyword symbol string)) undefined))
@@ -1426,9 +1498,9 @@
 				((pointer) (pointer) #(1))
 				((locative) (locative) #(1)))
 
-(##sys#check-blob (#(procedure #:clean #:enforce) ##sys#check-blob (blob #!optional *) *)
-		  ((blob) (let ((#(tmp) #(1))) '#t))
-		  ((blob *) (let ((#(tmp) #(1))) '#t)))
+(##sys#check-bytevector (#(procedure #:clean #:enforce) ##sys#check-bytevector (bytevector #!optional *) *)
+		  ((bytevector) (let ((#(tmp) #(1))) '#t))
+		  ((bytevector *) (let ((#(tmp) #(1))) '#t)))
 (##sys#check-pair (#(procedure #:clean #:enforce) ##sys#check-pair (pair #!optional *) *)
 		  ((pair) (let ((#(tmp) #(1))) '#t))
 		  ((pair *) (let ((#(tmp) #(1))) '#t)))
@@ -1441,6 +1513,12 @@
 (##sys#check-number (#(procedure #:clean #:enforce) ##sys#check-number (number #!optional *) *)
 		    ((number) (let ((#(tmp) #(1))) '#t))
 		    ((number *) (let ((#(tmp) #(1))) '#t)))
+(##sys#check-fixnum (#(procedure #:clean #:enforce) ##sys#check-fixnum (fixnum #!optional *) *)
+		   ((fixnum) (let ((#(tmp) #(1))) '#t))
+		   ((fixnum *) (let ((#(tmp) #(1))) '#t)))
+(##sys#check-bytevector (#(procedure #:clean #:enforce) ##sys#check-bytevector (bytevector #!optional *) *)
+		   ((bytevector) (let ((#(tmp) #(1))) '#t))
+		   ((bytevector *) (let ((#(tmp) #(1))) '#t)))
 (##sys#check-exact (#(procedure #:clean #:enforce) ##sys#check-exact (fixnum #!optional *) *)
 		   ((fixnum) (let ((#(tmp) #(1))) '#t))
 		   ((fixnum *) (let ((#(tmp) #(1))) '#t)))
@@ -1469,7 +1547,10 @@
 		     ((keyword) (let ((#(tmp) #(1))) '#t))
 		     ((keyword *) (let ((#(tmp) #(1))) '#t)))
 
-(##sys#check-port 
+(##sys#check-range (#(procedure #:clean #:enforce) ##sys#check-range (fixnum #!rest *) *))
+(##sys#check-range/including (#(procedure #:clean #:enforce) ##sys#check-range/including (fixnum #!rest *) *))
+
+(##sys#check-port
  (#(procedure #:clean #:enforce) ##sys#check-port ((or input-port output-port) #!optional *) *)
  (((or (refine (input) port) (refine (output) port))) (let ((#(tmp) #(1))) '#t))
  (((or (refine (input) port) (refine (output) port)) *) (let ((#(tmp) #(1))) '#t)))
@@ -1556,7 +1637,9 @@
 (chicken.io#read-token (#(procedure #:enforce) chicken.io#read-token ((procedure (char) *) #!optional input-port) string))
 (chicken.io#write-byte (#(procedure #:enforce) chicken.io#write-byte (fixnum #!optional output-port) undefined))
 (chicken.io#write-line (#(procedure #:enforce) chicken.io#write-line (string #!optional output-port) undefined))
-(chicken.io#write-string (#(procedure #:enforce) chicken.io#write-string (string #!optional * output-port) undefined))
+(chicken.io#write-bytevector (#(procedure #:enforce) chicken.io#write-bytevector (bytevector #!optional output-port fixnum fixnum) undefined))
+(chicken.io#read-bytevector (#(procedure #:enforce) chicken.io#read-bytevector (#!optional * input-port) bytevector))
+(chicken.io#read-bytevector! (#(procedure #:enforce) chicken.io#read-bytevector! (bytevector #!optional input-port fixnum fixnum) fixnum))
 
 ;; pretty-print
 
@@ -1576,7 +1659,7 @@
 (chicken.random#pseudo-random-integer (#(procedure #:clean #:enforce) chicken.random#pseudo-random-integer (integer) integer)
                                       ((fixnum) (##core#inline "C_random_fixnum" #(1))))
 (chicken.random#pseudo-random-real (#(procedure #:clean #:enforce) chicken.random#pseudo-random-real () float))
-(chicken.random#set-pseudo-random-seed! (#(procedure #:clean #:enforce) chicken.random#set-pseudo-random-seed! ((or blob string) #!optional fixnum) undefined))
+(chicken.random#set-pseudo-random-seed! (#(procedure #:clean #:enforce) chicken.random#set-pseudo-random-seed! (bytevector #!optional fixnum) undefined))
 (chicken.random#random-bytes (#(procedure #:clean #:enforce) chicken.random#random-bytes (#!optional * fixnum) *))
 
 ;; file
@@ -1598,6 +1681,13 @@
 (chicken.file#file-readable? (#(procedure #:clean #:enforce) chicken.file#file-readable? (string) boolean))
 (chicken.file#file-writable? (#(procedure #:clean #:enforce) chicken.file#file-writable? (string) boolean))
 (chicken.file#file-executable? (#(procedure #:clean #:enforce) chicken.file#file-executable? (string) boolean))
+
+
+;; scheme.file
+
+(scheme.file#file-exists? (#(procedure #:clean #:enforce) scheme.file#file-exists? (string) boolean))
+(scheme.file#open-binary-input-file (#(procedure #:clean #:enforce) scheme.file#open-binary-input-file (string #!rest keyword) input-port))
+(scheme.file#open-binary-output-file (#(procedure #:clean #:enforce) scheme.file#open-binary-output-file (string #!rest keyword) output-port))
 
 
 ;; pathname
@@ -1813,7 +1903,7 @@
  (#(procedure #:enforce) chicken.memory.representation#mutate-procedure! (procedure (procedure (procedure) . *)) procedure))
 
 (chicken.memory.representation#number-of-bytes (#(procedure #:clean) chicken.memory.representation#number-of-bytes (*) fixnum)
-		 (((or blob string)) (##sys#size #(1)))
+		 ((bytevector) (##sys#size #(1)))
 		 (((or port procedure symbol keyword pair vector locative float pointer-vector))
 		  ;; would be applicable to all structure types, but we can't specify
 		  ;; "(struct *)" (yet)
@@ -1857,8 +1947,8 @@
 (chicken.port#call-with-input-string (#(procedure #:enforce) chicken.port#call-with-input-string (string (procedure (input-port) . *)) . *))
 (chicken.port#call-with-output-string (#(procedure #:enforce) chicken.port#call-with-output-string ((procedure (output-port) . *)) string))
 (chicken.port#copy-port (#(procedure #:enforce) chicken.port#copy-port (* * #!optional (procedure (*) *) (procedure (* output-port) *)) undefined))
-(chicken.port#make-input-port (#(procedure #:clean #:enforce) chicken.port#make-input-port ((procedure () (or char eof)) (procedure () *) (procedure () . *) #!optional * * * *) input-port))
-(chicken.port#make-output-port (#(procedure #:clean #:enforce) chicken.port#make-output-port ((procedure (string) . *) (procedure () . *) #!optional (procedure () . *)) output-port))
+(chicken.port#make-input-port (#(procedure #:clean #:enforce) chicken.port#make-input-port ((procedure () (or char eof)) (procedure () *) (procedure () . *) #!rest *) input-port))
+(chicken.port#make-output-port (#(procedure #:clean #:enforce) chicken.port#make-output-port ((procedure (string) . *) (procedure () . *) #!rest *) output-port))
 (chicken.port#port-for-each (#(procedure #:enforce) chicken.port#port-for-each ((procedure (*) *) (procedure () . *)) undefined))
 
 (chicken.port#port-map
@@ -1877,13 +1967,13 @@
 (chicken.port#with-output-to-string (#(procedure #:enforce) chicken.port#with-output-to-string ((procedure () . *)) string))
 (chicken.port#with-error-output-to-string (#(procedure #:enforce) chicken.port#with-error-output-to-string ((procedure () . *)) string))
 
+(chicken.port#port-encoding
+ (#(procedure #:clean #:enforce) chicken.port#port-encoding (port) *)
+ ((port) (##sys#slot #(1) '15)))
+
 (chicken.port#port-name
  (#(procedure #:clean #:enforce) chicken.port#port-name (#!optional port) *)
  ((port) (##sys#slot #(1) '3)))
-
-(chicken.port#set-port-name!
- (#(procedure #:clean #:enforce) chicken.port#set-port-name! (port string) undefined)
- ((port string) (##sys#setslot #(1) '3 #(2))))
 
 (chicken.port#terminal-name (#(procedure #:clean #:enforce) chicken.port#terminal-name (port) string))
 (chicken.port#terminal-port? (#(procedure #:clean #:enforce) chicken.port#terminal-port? (port) boolean))
@@ -1986,8 +2076,8 @@
 (chicken.file.posix#file-creation-mode (#(procedure #:clean #:enforce) chicken.file.posix#file-creation-mode (#!optional fixnum) fixnum))
 (chicken.file.posix#file-group (#(procedure #:clean #:enforce) chicken.file.posix#file-owner ((or string fixnum port)) fixnum))
 (chicken.file.posix#file-link (#(procedure #:clean #:enforce) chicken.file.posix#file-link (string string) undefined))
-(chicken.file.posix#file-lock (#(procedure #:clean #:enforce) chicken.file.posix#file-lock (port #!optional fixnum integer) (struct lock)))
-(chicken.file.posix#file-lock/blocking (#(procedure #:clean #:enforce) chicken.file.posix#file-lock/blocking (port #!optional fixnum integer) (struct lock)))
+(chicken.file.posix#file-lock (#(procedure #:clean #:enforce) chicken.file.posix#file-lock ((or port fixnum) #!optional *) boolean))
+(chicken.file.posix#file-lock/blocking (#(procedure #:clean #:enforce) chicken.file.posix#file-lock/blocking ((or port fixnum) #!optional *) boolean))
 (chicken.file.posix#file-mkstemp (#(procedure #:clean #:enforce) chicken.file.posix#file-mkstemp (string) fixnum string))
 (chicken.file.posix#file-open (#(procedure #:clean #:enforce) chicken.file.posix#file-open (string fixnum #!optional fixnum) fixnum))
 (chicken.file.posix#file-owner (#(procedure #:clean #:enforce) chicken.file.posix#file-owner ((or string fixnum port)) fixnum))
@@ -1997,10 +2087,9 @@
 (chicken.file.posix#file-select (#(procedure #:clean #:enforce) chicken.file.posix#file-select ((or (list-of fixnum) fixnum false) (or (list-of fixnum) fixnum false) #!optional number) * *))
 (chicken.file.posix#file-size (#(procedure #:clean #:enforce) chicken.file.posix#file-size ((or string fixnum port)) integer))
 (chicken.file.posix#file-stat (#(procedure #:clean #:enforce) chicken.file.posix#file-stat ((or string fixnum port) #!optional *) (vector-of integer)))
-(chicken.file.posix#file-test-lock (#(procedure #:clean #:enforce) chicken.file.posix#file-test-lock (port #!optional fixnum *) boolean))
 (chicken.file.posix#file-truncate (#(procedure #:clean #:enforce) chicken.file.posix#file-truncate ((or string fixnum output-port) integer) undefined))
-(chicken.file.posix#file-unlock (#(procedure #:clean #:enforce) chicken.file.posix#file-unlock ((struct lock)) undefined))
-(chicken.file.posix#file-write (#(procedure #:clean #:enforce) chicken.file.posix#file-write (fixnum * #!optional fixnum) fixnum))
+(chicken.file.posix#file-unlock (#(procedure #:clean #:enforce) chicken.file.posix#file-unlock ((or fixnum port)) undefined))
+(chicken.file.posix#file-write (#(procedure #:clean #:enforce) chicken.file.posix#file-write (fixnum bytevector #!optional fixnum) fixnum))
 (chicken.file.posix#file-type (#(procedure #:clean #:enforce) chicken.file.posix#file-type ((or string fixnum port) #!optional * *) symbol))
 
 (chicken.file.posix#block-device? (#(procedure #:clean #:enforce) chicken.file.posix#block-device? ((or string fixnum port)) boolean))
@@ -2015,8 +2104,8 @@
 (chicken.file.posix#fileno/stdin fixnum)
 (chicken.file.posix#fileno/stdout fixnum)
 
-(chicken.file.posix#open-input-file* (#(procedure #:clean #:enforce) chicken.file.posix#open-input-file* (fixnum #!optional keyword) input-port))
-(chicken.file.posix#open-output-file* (#(procedure #:clean #:enforce) chicken.file.posix#open-output-file* (fixnum #!optional keyword) output-port))
+(chicken.file.posix#open-input-file* (#(procedure #:clean #:enforce) chicken.file.posix#open-input-file* (fixnum #!optional keyword symbol) input-port))
+(chicken.file.posix#open-output-file* (#(procedure #:clean #:enforce) chicken.file.posix#open-output-file* (fixnum #!optional keyword symbol) output-port))
 
 (chicken.file.posix#open/append fixnum)
 (chicken.file.posix#open/binary fixnum)
@@ -2078,7 +2167,7 @@
 ;; process
 
 (chicken.process#process-execute
- (#(procedure #:clean #:enforce) chicken.process#process-execute (string #!optional (list-of string) (list-of (pair string string)) fixnum) noreturn))
+ (#(procedure #:clean #:enforce) chicken.process#process-execute (string #!optional (list-of string) (list-of (pair string string)) boolean) noreturn))
 (chicken.process#process-fork (#(procedure #:enforce) chicken.process#process-fork (#!optional (or (procedure () . *) false) *) fixnum))
 (chicken.process#qs (#(procedure #:clean #:enforce) chicken.process#qs (string #!optional symbol) string))
 (chicken.process#process-run (#(procedure #:clean #:enforce) chicken.process#process-run (string #!optional (list-of string)) fixnum))
@@ -2087,8 +2176,8 @@
  (#(procedure #:clean #:enforce) chicken.process#process-spawn (fixnum string #!optional (list-of string) (list-of (pair string string)) boolean) fixnum))
 (chicken.process#system (#(procedure #:clean #:enforce) chicken.process#system (string) fixnum))
 (chicken.process#system* (#(procedure #:clean #:enforce) chicken.process#system* (string) undefined))
-(chicken.process#process (#(procedure #:clean #:enforce) chicken.process#process (string #!optional (list-of string) (list-of (pair string string)) boolean) input-port output-port fixnum))
-(chicken.process#process* (#(procedure #:clean #:enforce) chicken.process#process* (string #!optional (list-of string) (list-of (pair string string)) boolean) input-port output-port fixnum *))
+(chicken.process#process (#(procedure #:clean #:enforce) chicken.process#process (string #!optional (list-of string) (list-of (pair string string)) symbol boolean) input-port output-port fixnum))
+(chicken.process#process* (#(procedure #:clean #:enforce) chicken.process#process* (string #!optional (list-of string) (list-of (pair string string)) symbol boolean) input-port output-port fixnum))
 (chicken.process#process-wait (#(procedure #:clean #:enforce) chicken.process#process-wait (#!optional fixnum *) fixnum fixnum fixnum))
 (chicken.process#process-sleep (#(procedure #:clean #:enforce) chicken.process#process-sleep (fixnum) fixnum))
 (chicken.process#call-with-input-pipe (#(procedure #:enforce) chicken.process#call-with-input-pipe (string (procedure (input-port) . *) #!optional keyword) . *))
@@ -2178,177 +2267,150 @@
 (chicken.sort#topological-sort (#(procedure #:enforce) chicken.sort#topological-sort ((list-of list) (procedure (* *) *)) list))
 
 
-;; srfi-4
+;; (chicken number-vector)
 
-(srfi-4#blob->f32vector (#(procedure #:clean #:enforce) srfi-4#blob->f32vector (blob) (struct f32vector)))
-(srfi-4#blob->f32vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->f32vector/shared (blob) (struct f32vector)))
-(srfi-4#blob->f64vector (#(procedure #:clean #:enforce) srfi-4#blob->f64vector (blob) (struct f64vector)))
-(srfi-4#blob->f64vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->f64vector/shared (blob) (struct f64vector)))
-(srfi-4#blob->s16vector (#(procedure #:clean #:enforce) srfi-4#blob->s16vector (blob) (struct s16vector)))
-(srfi-4#blob->s16vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->s16vector/shared (blob) (struct s16vector)))
-(srfi-4#blob->s32vector (#(procedure #:clean #:enforce) srfi-4#blob->s32vector (blob) (struct s32vector)))
-(srfi-4#blob->s32vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->s32vector/shared (blob) (struct s32vector)))
-(srfi-4#blob->s8vector (#(procedure #:clean #:enforce) srfi-4#blob->s8vector (blob) (struct s8vector)))
-(srfi-4#blob->s8vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->s8vector/shared (blob) (struct s8vector)))
-(srfi-4#blob->u16vector (#(procedure #:clean #:enforce) srfi-4#blob->u16vector (blob) (struct u16vector)))
-(srfi-4#blob->u16vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->u16vector/shared (blob) (struct u16vector)))
-(srfi-4#blob->u32vector (#(procedure #:clean #:enforce) srfi-4#blob->u32vector (blob) (struct u32vector)))
-(srfi-4#blob->u32vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->u32vector/shared (blob) (struct u32vector)))
-(srfi-4#blob->u64vector (#(procedure #:clean #:enforce) srfi-4#blob->u64vector (blob) (struct u64vector)))
-(srfi-4#blob->u64vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->u64vector/shared (blob) (struct u64vector)))
-(srfi-4#blob->u8vector (#(procedure #:clean #:enforce) blob->u8vector (blob) (struct u8vector)))
-(srfi-4#blob->u8vector/shared (#(procedure #:clean #:enforce) srfi-4#blob->u8vector/shared (blob) (struct u8vector)))
-(srfi-4#f32vector (#(procedure #:clean #:enforce) srfi-4#f32vector (#!rest (or integer float)) (struct f32vector)))
-(srfi-4#f32vector->blob (#(procedure #:clean #:enforce) srfi-4#f32vector->blob ((struct f32vector)) blob))
-(srfi-4#f32vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#f32vector->blob/shared ((struct f32vector)) blob))
-(srfi-4#f32vector->list (#(procedure #:clean #:enforce) srfi-4#f32vector->list ((struct f32vector)) (list-of float)))
-
-(srfi-4#f32vector-length (#(procedure #:clean #:enforce) srfi-4#f32vector-length ((struct f32vector)) fixnum)
-		  (((struct f32vector)) (##core#inline "C_u_i_32vector_length" #(1))))
-
-(srfi-4#f32vector-ref (#(procedure #:clean #:enforce) srfi-4#f32vector-ref ((struct f32vector) fixnum) float))
-(srfi-4#f32vector-set! (#(procedure #:clean #:enforce) srfi-4#f32vector-set! ((struct f32vector) fixnum (or integer float)) undefined))
-
-(srfi-4#f32vector? (#(procedure #:pure #:predicate (struct f32vector)) srfi-4#f32vector? (*) boolean))
-
-(srfi-4#f64vector (#(procedure #:clean #:enforce) srfi-4#f64vector (#!rest (or integer float)) (struct f64vector)))
-(srfi-4#f64vector->blob (#(procedure #:clean #:enforce) srfi-4#f64vector->blob ((struct f64vector)) blob))
-(srfi-4#f64vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#f64vector->blob/shared ((struct f64vector)) blob))
-(srfi-4#f64vector->list (#(procedure #:clean #:enforce) srfi-4#f64vector->list ((struct f64vector)) (list-of float)))
-
-(srfi-4#f64vector-length (#(procedure #:clean #:enforce) srfi-4#f64vector-length ((struct f64vector)) fixnum)
-		  (((struct f64vector)) (##core#inline "C_u_i_64vector_length" #(1))))
-
-(srfi-4#f64vector-ref (#(procedure #:clean #:enforce) srfi-4#f64vector-ref ((struct f64vector) fixnum) float))
-(srfi-4#f64vector-set! (#(procedure #:clean #:enforce) srfi-4#f64vector-set! ((struct f64vector) fixnum (or integer float)) undefined))
-
-(srfi-4#f64vector? (#(procedure #:pure #:predicate (struct f64vector)) srfi-4#f64vector? (*) boolean))
-
-(srfi-4#list->f32vector (#(procedure #:clean #:enforce) srfi-4#list->f32vector ((list-of (or float integer))) (struct f32vector)))
-(srfi-4#list->f64vector (#(procedure #:clean #:enforce) srfi-4#list->f64vector ((list-of (or float integer))) (struct f64vector)))
-(srfi-4#list->s16vector (#(procedure #:clean #:enforce) srfi-4#list->s16vector ((list-of fixnum)) (struct s16vector)))
-(srfi-4#list->s32vector (#(procedure #:clean #:enforce) srfi-4#list->s32vector ((list-of integer)) (struct s32vector)))
-(srfi-4#list->s8vector (#(procedure #:clean #:enforce) srfi-4#list->s8vector ((list-of fixnum)) (struct s8vector)))
-(srfi-4#list->u16vector (#(procedure #:clean #:enforce) srfi-4#list->u16vector ((list-of fixnum)) (struct u16vector)))
-(srfi-4#list->u32vector (#(procedure #:clean #:enforce) srfi-4#list->u32vector ((list-of integer)) (struct u32vector)))
-(srfi-4#list->u64vector (#(procedure #:clean #:enforce) srfi-4#list->u64vector ((list-of integer)) (struct u64vector)))
-(srfi-4#list->u8vector (#(procedure #:clean #:enforce) srfi-4#list->u8vector ((list-of fixnum)) (struct u8vector)))
-(srfi-4#make-f32vector (#(procedure #:clean #:enforce) srfi-4#make-f32vector (fixnum #!optional (or integer float false) boolean boolean) (struct f32vector)))
-(srfi-4#make-f64vector (#(procedure #:clean #:enforce) srfi-4#make-f64vector (fixnum #!optional (or integer float false) boolean) (struct f64vector)))
-(srfi-4#make-s16vector (#(procedure #:clean #:enforce) srfi-4#make-s16vector (fixnum #!optional (or fixnum false) boolean boolean) (struct s16vector)))
-(srfi-4#make-s32vector (#(procedure #:clean #:enforce) srfi-4#make-s32vector (fixnum #!optional (or integer false) boolean boolean) (struct s32vector)))
-(srfi-4#make-s8vector (#(procedure #:clean #:enforce) srfi-4#make-s8vector (fixnum #!optional (or fixnum false) boolean boolean) (struct s8vector)))
-(srfi-4#make-u16vector (#(procedure #:clean #:enforce) srfi-4#make-u16vector (fixnum #!optional (or fixnum false) boolean boolean) (struct u16vector)))
-(srfi-4#make-u32vector (#(procedure #:clean #:enforce) srfi-4#make-u32vector (fixnum #!optional (or integer false) boolean boolean) (struct u32vector)))
-(srfi-4#make-u64vector (#(procedure #:clean #:enforce) srfi-4#make-u64vector (fixnum #!optional (or integer false) boolean boolean) (struct u64vector)))
-(srfi-4#make-u8vector (#(procedure #:clean #:enforce) srfi-4#make-u8vector (fixnum #!optional (or fixnum false) boolean boolean) (struct u8vector)))
-(srfi-4#read-u8vector (#(procedure #:enforce) srfi-4#read-u8vector (#!optional (or fixnum false) input-port) (or (struct u8vector) eof)))
-(srfi-4#read-u8vector! (#(procedure #:enforce) srfi-4#read-u8vector! ((or fixnum false) (struct u8vector) #!optional input-port fixnum) integer))
-(srfi-4#release-number-vector (procedure srfi-4#release-number-vector (*) undefined))
-(srfi-4#s16vector (#(procedure #:clean #:enforce) srfi-4#s16vector (#!rest fixnum) (struct s16vector)))
-(srfi-4#s16vector->blob (#(procedure #:clean #:enforce) srfi-4#s16vector->blob ((struct s16vector)) blob))
-(srfi-4#s16vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#s16vector->blob/shared ((struct s16vector)) blob))
-(srfi-4#s16vector->list (#(procedure #:clean #:enforce) srfi-4#s16vector->list ((struct s16vector)) (list-of fixnum)))
-
-(srfi-4#s16vector-length (#(procedure #:clean #:enforce) srfi-4#s16vector-length ((struct s16vector)) fixnum)
-		  (((struct s16vector)) (##core#inline "C_u_i_16vector_length" #(1))))
-
-(srfi-4#s16vector-ref (#(procedure #:clean #:enforce) srfi-4#s16vector-ref ((struct s16vector) fixnum) fixnum))
-(srfi-4#s16vector-set! (#(procedure #:clean #:enforce) srfi-4#s16vector-set! ((struct s16vector) fixnum fixnum) undefined))
-
-(srfi-4#s16vector? (#(procedure #:pure #:predicate (struct s16vector)) srfi-4#s16vector? (*) boolean))
-
-(srfi-4#s32vector (#(procedure #:clean #:enforce) srfi-4#s32vector (#!rest integer) (struct s32vector)))
-(srfi-4#s32vector->blob (#(procedure #:clean #:enforce) srfi-4#s32vector->blob ((struct s32vector)) blob))
-(srfi-4#s32vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#s32vector->blob/shared ((struct s32vector)) blob))
-(srfi-4#s32vector->list (#(procedure #:clean #:enforce) srfi-4#s32vector->list ((struct s32vector)) (list-of integer)))
-
-(srfi-4#s32vector-length (#(procedure #:clean #:enforce) srfi-4#s32vector-length ((struct s32vector)) fixnum)
-		  (((struct s32vector)) (##core#inline "C_u_i_32vector_length" #(1))))
-
-(srfi-4#s32vector-ref (#(procedure #:clean #:enforce) srfi-4#s32vector-ref ((struct s32vector) fixnum) integer))
-(srfi-4#s32vector-set! (#(procedure #:clean #:enforce) srfi-4#s32vector-set! ((struct s32vector) fixnum integer) undefined))
-
-(srfi-4#s32vector? (#(procedure #:pure #:predicate (struct s32vector)) srfi-4#s32vector? (*) boolean))
-
-(srfi-4#s8vector (#(procedure #:clean #:enforce) srfi-4#s8vector (#!rest fixnum) (struct s8vector)))
-(srfi-4#s8vector->blob (#(procedure #:clean #:enforce) srfi-4#s8vector->blob ((struct s8vector)) blob))
-(srfi-4#s8vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#s8vector->blob/shared ((struct s8vector)) blob))
-(srfi-4#s8vector->list (#(procedure #:clean #:enforce) srfi-4#s8vector->list ((struct s8vector)) (list-of fixnum)))
-
-(srfi-4#s8vector-length (#(procedure #:clean #:enforce) srfi-4#s8vector-length ((struct s8vector)) fixnum)
-		 (((struct s8vector)) (##core#inline "C_u_i_8vector_length" #(1))))
-
-(srfi-4#s8vector-ref (#(procedure #:clean #:enforce) srfi-4#s8vector-ref ((struct s8vector) fixnum) fixnum))
-(srfi-4#s8vector-set! (#(procedure #:clean #:enforce) srfi-4#s8vector-set! ((struct s8vector) fixnum fixnum) undefined))
-
-(srfi-4#s8vector? (#(procedure #:pure #:predicate (struct s8vector)) srfi-4#s8vector? (*) boolean))
-
-(srfi-4#subf32vector (#(procedure #:clean #:enforce) srfi-4#subf32vector ((struct f32vector) fixnum fixnum) (struct f32vector)))
-(srfi-4#subf64vector (#(procedure #:clean #:enforce) srfi-4#subf64vector ((struct f64vector) fixnum fixnum) (struct f64vector)))
-(srfi-4#subs16vector (#(procedure #:clean #:enforce) srfi-4#subs16vector ((struct s16vector) fixnum fixnum) (struct s16vector)))
-(srfi-4#subs32vector (#(procedure #:clean #:enforce) srfi-4#subs32vector ((struct s32vector) fixnum fixnum) (struct s32vector)))
-(srfi-4#subs8vector (#(procedure #:clean #:enforce) srfi-4#subs8vector  ((struct s8vector) fixnum fixnum) (struct s8vector)))
-(srfi-4#subu16vector (#(procedure #:clean #:enforce) srfi-4#subu16vector ((struct u16vector) fixnum fixnum) (struct u16vector)))
-(srfi-4#subu32vector (#(procedure #:clean #:enforce) srfi-4#subu32vector ((struct u32vector) fixnum fixnum) (struct u32vector)))
-(srfi-4#subu64vector (#(procedure #:clean #:enforce) srfi-4#subu64vector ((struct u64vector) fixnum fixnum) (struct u64vector)))
-(srfi-4#subu8vector (#(procedure #:clean #:enforce) srfi-4#subu8vector ((struct u8vector) fixnum fixnum) (struct u8vector)))
-(srfi-4#u16vector (#(procedure #:clean #:enforce) srfi-4#u16vector (#!rest fixnum) (struct u16vector)))
-(srfi-4#u16vector->blob (#(procedure #:clean #:enforce) srfi-4#u16vector->blob ((struct u16vector)) blob))
-(srfi-4#u16vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#u16vector->blob/shared ((struct u16vector)) blob))
-(srfi-4#u16vector->list (#(procedure #:clean #:enforce) srfi-4#u16vector->list ((struct u16vector)) (list-of fixnum)))
-
-(srfi-4#u16vector-length (#(procedure #:clean #:enforce) srfi-4#u16vector-length ((struct u16vector)) fixnum)
-		  (((struct u16vector)) (##core#inline "C_u_i_16vector_length" #(1))))
-
-(srfi-4#u16vector-ref (#(procedure #:clean #:enforce) srfi-4#u16vector-ref ((struct u16vector) fixnum) fixnum))
-(srfi-4#u16vector-set! (#(procedure #:clean #:enforce) srfi-4#u16vector-set! ((struct u16vector) fixnum fixnum) undefined))
-
-(srfi-4#u16vector? (#(procedure #:pure #:predicate (struct u16vector)) srfi-4#u16vector? (*) boolean))
-
-(srfi-4#u32vector (#(procedure #:clean #:enforce) srfi-4#u32vector (#!rest integer) (struct u32vector)))
-(srfi-4#u32vector->blob (#(procedure #:clean #:enforce) srfi-4#u32vector->blob ((struct u32vector)) blob))
-(srfi-4#u32vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#u32vector->blob/shared ((struct u32vector)) blob))
-(srfi-4#u32vector->list (#(procedure #:clean #:enforce) srfi-4#u32vector->list ((struct u32vector)) (list-of integer)))
-
-(srfi-4#u32vector-length (#(procedure #:clean #:enforce) srfi-4#u32vector-length ((struct u32vector)) fixnum)
-		  (((struct u32vector)) (##core#inline "C_u_i_32vector_length" #(1))))
-
-(srfi-4#u32vector-ref (#(procedure #:clean #:enforce) srfi-4#u32vector-ref ((struct u32vector) fixnum) integer))
-(srfi-4#u32vector-set! (#(procedure #:clean #:enforce) srfi-4#u32vector-set! ((struct u32vector) fixnum integer) undefined))
-
-(srfi-4#u32vector? (#(procedure #:pure #:predicate (struct u32vector)) srfi-4#u32vector? (*) boolean))
-
-(srfi-4#u64vector (#(procedure #:clean #:enforce) srfi-4#u64vector (#!rest integer) (struct u64vector)))
-(srfi-4#u64vector->blob (#(procedure #:clean #:enforce) srfi-4#u64vector->blob ((struct u64vector)) blob))
-(srfi-4#u64vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#u64vector->blob/shared ((struct u64vector)) blob))
-(srfi-4#u64vector->list (#(procedure #:clean #:enforce) srfi-4#u64vector->list ((struct u64vector)) (list-of integer)))
-
-(srfi-4#u64vector-length (#(procedure #:clean #:enforce) srfi-4#u64vector-length ((struct u64vector)) fixnum)
-		  (((struct u64vector)) (##core#inline "C_u_i_64vector_length" #(1))))
-
-(srfi-4#u64vector-ref (#(procedure #:clean #:enforce) srfi-4#u64vector-ref ((struct u64vector) fixnum) integer))
-(srfi-4#u64vector-set! (#(procedure #:clean #:enforce) srfi-4#u64vector-set! ((struct u64vector) fixnum integer) undefined))
-
-(srfi-4#u64vector? (#(procedure #:pure #:predicate (struct u64vector)) srfi-4#u64vector? (*) boolean))
-
-(srfi-4#u8vector (#(procedure #:clean #:enforce) srfi-4#u8vector (#!rest fixnum) (struct u8vector)))
-(srfi-4#u8vector->blob (#(procedure #:clean #:enforce) srfi-4#u8vector->blob ((struct u8vector)) blob))
-(srfi-4#u8vector->blob/shared (#(procedure #:clean #:enforce) srfi-4#u8vector->blob/shared ((struct u8vector)) blob))
-(srfi-4#u8vector->list (#(procedure #:clean #:enforce) srfi-4#u8vector->list ((struct u8vector)) (list-of fixnum)))
-
-(srfi-4#u8vector-length (#(procedure #:clean #:enforce) srfi-4#u8vector-length ((struct u8vector)) fixnum)
-		 (((struct u8vector)) (##core#inline "C_u_i_8vector_length" #(1))))
-
-(srfi-4#u8vector-ref (#(procedure #:clean #:enforce) srfi-4#u8vector-ref ((struct u8vector) fixnum) fixnum))
-(srfi-4#u8vector-set! (#(procedure #:clean #:enforce) srfi-4#u8vector-set! ((struct u8vector) fixnum fixnum) undefined))
-
-(srfi-4#u8vector? (#(procedure #:pure #:predicate (struct u8vector)) srfi-4#u8vector? (*) boolean))
-
-(srfi-4#write-u8vector (#(procedure #:enforce) srfi-4#write-u8vector ((struct u8vector) #!optional output-port fixnum fixnum) undefined))
-
-(srfi-4#number-vector? (#(procedure #:pure #:predicate (or (struct u8vector) (struct u16vector) (struct s8vector) (struct s16vector) (struct u32vector) (struct s32vector) (struct u64vector) (struct s64vector) (struct f32vector) (struct f64vector))) srfi-4#number-vector? (*) boolean))
-(##sys#srfi-4-vector? (#(procedure #:pure #:predicate (or (struct u8vector) (struct u16vector) (struct s8vector) (struct s16vector) (struct u32vector) (struct s32vector) (struct u64vector) (struct s64vector) (struct f32vector) (struct f64vector))) ##sys#srfi-4-vector? (*) boolean))
+(chicken.number-vector#bytevector->c128vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->c128vector (bytevector) (struct c128vector)))
+(chicken.number-vector#bytevector->c128vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->c128vector/shared (bytevector) (struct c128vector)))
+(chicken.number-vector#bytevector->c64vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->c64vector (bytevector) (struct c64vector)))
+(chicken.number-vector#bytevector->c64vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->c64vector/shared (bytevector) (struct c64vector)))
+(chicken.number-vector#bytevector->f32vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->f32vector (bytevector) (struct f32vector)))
+(chicken.number-vector#bytevector->f32vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->f32vector/shared (bytevector) (struct f32vector)))
+(chicken.number-vector#bytevector->f64vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->f64vector (bytevector) (struct f64vector)))
+(chicken.number-vector#bytevector->f64vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->f64vector/shared (bytevector) (struct f64vector)))
+(chicken.number-vector#bytevector->s16vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->s16vector (bytevector) (struct s16vector)))
+(chicken.number-vector#bytevector->s16vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->s16vector/shared (bytevector) (struct s16vector)))
+(chicken.number-vector#bytevector->s32vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->s32vector (bytevector) (struct s32vector)))
+(chicken.number-vector#bytevector->s32vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->s32vector/shared (bytevector) (struct s32vector)))
+(chicken.number-vector#bytevector->s8vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->s8vector (bytevector) (struct s8vector)))
+(chicken.number-vector#bytevector->s8vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->s8vector/shared (bytevector) (struct s8vector)))
+(chicken.number-vector#bytevector->u16vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->u16vector (bytevector) (struct u16vector)))
+(chicken.number-vector#bytevector->u16vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->u16vector/shared (bytevector) (struct u16vector)))
+(chicken.number-vector#bytevector->u32vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->u32vector (bytevector) (struct u32vector)))
+(chicken.number-vector#bytevector->u32vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->u32vector/shared (bytevector) (struct u32vector)))
+(chicken.number-vector#bytevector->u64vector (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->u64vector (bytevector) (struct u64vector)))
+(chicken.number-vector#bytevector->u64vector/shared (#(procedure #:clean #:enforce) chicken.number-vector#bytevector->u64vector/shared (bytevector) (struct u64vector)))
+(chicken.number-vector#c128vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#c128vector->bytevector ((struct c128vector)) bytevector))
+(chicken.number-vector#c128vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#c128vector->bytevector/shared ((struct c128vector)) bytevector))
+(chicken.number-vector#c128vector-length (#(procedure #:clean #:enforce) chicken.number-vector#c128vector-length ((struct c128vector)) fixnum))
+(chicken.number-vector#c128vector->list (#(procedure #:clean #:enforce) chicken.number-vector#c128vector->list ((struct c128vector)) (list-of float)))
+(chicken.number-vector#c128vector (#(procedure #:clean #:enforce) chicken.number-vector#c128vector (#!rest (or integer float)) (struct c128vector)))
+(chicken.number-vector#c128vector? (#(procedure #:pure #:predicate (struct c128vector)) chicken.number-vector#c128vector? (*) boolean))
+(chicken.number-vector#c128vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#c128vector-ref ((struct c128vector) fixnum) float))
+(chicken.number-vector#c128vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#c128vector-set! ((struct c128vector) fixnum (or integer float)) undefined))
+(chicken.number-vector#c64vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#c64vector->bytevector ((struct c64vector)) bytevector))
+(chicken.number-vector#c64vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#c64vector->bytevector/shared ((struct c64vector)) bytevector))
+(chicken.number-vector#c64vector-length (#(procedure #:clean #:enforce) chicken.number-vector#c64vector-length ((struct c64vector)) fixnum))
+(chicken.number-vector#c64vector->list (#(procedure #:clean #:enforce) chicken.number-vector#c64vector->list ((struct c64vector)) (list-of float)))
+(chicken.number-vector#c64vector (#(procedure #:clean #:enforce) chicken.number-vector#c64vector (#!rest (or integer float)) (struct c64vector)))
+(chicken.number-vector#c64vector? (#(procedure #:pure #:predicate (struct c64vector)) chicken.number-vector#c64vector? (*) boolean))
+(chicken.number-vector#c64vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#c64vector-ref ((struct c64vector) fixnum) float))
+(chicken.number-vector#c64vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#c64vector-set! ((struct c64vector) fixnum (or integer float)) undefined))
+(chicken.number-vector#f32vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#f32vector->bytevector ((struct f32vector)) bytevector))
+(chicken.number-vector#f32vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#f32vector->bytevector/shared ((struct f32vector)) bytevector))
+(chicken.number-vector#f32vector-length (#(procedure #:clean #:enforce) chicken.number-vector#f32vector-length ((struct f32vector)) fixnum) (((struct f32vector)) (##core#inline "C_u_i_32vector_length" #(1))))
+(chicken.number-vector#f32vector->list (#(procedure #:clean #:enforce) chicken.number-vector#f32vector->list ((struct f32vector)) (list-of float)))
+(chicken.number-vector#f32vector (#(procedure #:clean #:enforce) chicken.number-vector#f32vector (#!rest (or integer float)) (struct f32vector)))
+(chicken.number-vector#f32vector? (#(procedure #:pure #:predicate (struct f32vector)) chicken.number-vector#f32vector? (*) boolean))
+(chicken.number-vector#f32vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#f32vector-ref ((struct f32vector) fixnum) float))
+(chicken.number-vector#f32vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#f32vector-set! ((struct f32vector) fixnum (or integer float)) undefined))
+(chicken.number-vector#f64vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#f64vector->bytevector ((struct f64vector)) bytevector))
+(chicken.number-vector#f64vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#f64vector->bytevector/shared ((struct f64vector)) bytevector))
+(chicken.number-vector#f64vector-length (#(procedure #:clean #:enforce) chicken.number-vector#f64vector-length ((struct f64vector)) fixnum) (((struct f64vector)) (##core#inline "C_u_i_64vector_length" #(1))))
+(chicken.number-vector#f64vector->list (#(procedure #:clean #:enforce) chicken.number-vector#f64vector->list ((struct f64vector)) (list-of float)))
+(chicken.number-vector#f64vector (#(procedure #:clean #:enforce) chicken.number-vector#f64vector (#!rest (or integer float)) (struct f64vector)))
+(chicken.number-vector#f64vector? (#(procedure #:pure #:predicate (struct f64vector)) chicken.number-vector#f64vector? (*) boolean))
+(chicken.number-vector#f64vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#f64vector-ref ((struct f64vector) fixnum) float))
+(chicken.number-vector#f64vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#f64vector-set! ((struct f64vector) fixnum (or integer float)) undefined))
+(chicken.number-vector#list->c128vector (#(procedure #:clean #:enforce) chicken.number-vector#list->c128vector ((list-of integer)) (struct c128vector)))
+(chicken.number-vector#list->c64vector (#(procedure #:clean #:enforce) chicken.number-vector#list->c64vector ((list-of integer)) (struct c64vector)))
+(chicken.number-vector#list->f32vector (#(procedure #:clean #:enforce) chicken.number-vector#list->f32vector ((list-of (or float integer))) (struct f32vector)))
+(chicken.number-vector#list->f64vector (#(procedure #:clean #:enforce) chicken.number-vector#list->f64vector ((list-of (or float integer))) (struct f64vector)))
+(chicken.number-vector#list->s16vector (#(procedure #:clean #:enforce) chicken.number-vector#list->s16vector ((list-of fixnum)) (struct s16vector)))
+(chicken.number-vector#list->s32vector (#(procedure #:clean #:enforce) chicken.number-vector#list->s32vector ((list-of integer)) (struct s32vector)))
+(chicken.number-vector#list->s8vector (#(procedure #:clean #:enforce) chicken.number-vector#list->s8vector ((list-of fixnum)) (struct s8vector)))
+(chicken.number-vector#list->u16vector (#(procedure #:clean #:enforce) chicken.number-vector#list->u16vector ((list-of fixnum)) (struct u16vector)))
+(chicken.number-vector#list->u32vector (#(procedure #:clean #:enforce) chicken.number-vector#list->u32vector ((list-of integer)) (struct u32vector)))
+(chicken.number-vector#list->u64vector (#(procedure #:clean #:enforce) chicken.number-vector#list->u64vector ((list-of integer)) (struct u64vector)))
+(chicken.number-vector#list->u8vector (#(procedure #:clean #:enforce) chicken.number-vector#list->u8vector ((list-of fixnum)) bytevector))
+(chicken.number-vector#make-c128vector (#(procedure #:clean #:enforce) chicken.number-vector#make-c128vector (fixnum #!optional (or integer float false) boolean boolean) (struct c128vector)))
+(chicken.number-vector#make-c64vector (#(procedure #:clean #:enforce) chicken.number-vector#make-c64vector (fixnum #!optional (or integer float false) boolean boolean) (struct c64vector)))
+(chicken.number-vector#make-f32vector (#(procedure #:clean #:enforce) chicken.number-vector#make-f32vector (fixnum #!optional (or integer float false) boolean boolean) (struct f32vector)))
+(chicken.number-vector#make-f64vector (#(procedure #:clean #:enforce) chicken.number-vector#make-f64vector (fixnum #!optional (or integer float false) boolean) (struct f64vector)))
+(chicken.number-vector#make-s16vector (#(procedure #:clean #:enforce) chicken.number-vector#make-s16vector (fixnum #!optional (or fixnum false) boolean boolean) (struct s16vector)))
+(chicken.number-vector#make-s32vector (#(procedure #:clean #:enforce) chicken.number-vector#make-s32vector (fixnum #!optional (or integer false) boolean boolean) (struct s32vector)))
+(chicken.number-vector#make-s8vector (#(procedure #:clean #:enforce) chicken.number-vector#make-s8vector (fixnum #!optional (or fixnum false) boolean boolean) (struct s8vector)))
+(chicken.number-vector#make-u16vector (#(procedure #:clean #:enforce) chicken.number-vector#make-u16vector (fixnum #!optional (or fixnum false) boolean boolean) (struct u16vector)))
+(chicken.number-vector#make-u32vector (#(procedure #:clean #:enforce) chicken.number-vector#make-u32vector (fixnum #!optional (or integer false) boolean boolean) (struct u32vector)))
+(chicken.number-vector#make-u64vector (#(procedure #:clean #:enforce) chicken.number-vector#make-u64vector (fixnum #!optional (or integer false) boolean boolean) (struct u64vector)))
+(chicken.number-vector#make-u8vector (#(procedure #:clean #:enforce) chicken.number-vector#make-u8vector (fixnum #!optional (or fixnum false) boolean boolean) bytevector))
+(chicken.number-vector#number-vector? (#(procedure #:pure #:predicate (or bytevector (struct u16vector) (struct s8vector) (struct s16vector) (struct u32vector) (struct s32vector) (struct u64vector) (struct s64vector) (struct f32vector) (struct f64vector) (struct c64vector) (struct c128vector))) chicken.number-vector#number-vector? (*) boolean))
+(chicken.number-vector#release-number-vector (procedure chicken.number-vector#release-number-vector (*) undefined))
+(chicken.number-vector#s16vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#s16vector->bytevector ((struct s16vector)) bytevector))
+(chicken.number-vector#s16vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#s16vector->bytevector/shared ((struct s16vector)) bytevector))
+(chicken.number-vector#s16vector-length (#(procedure #:clean #:enforce) chicken.number-vector#s16vector-length ((struct s16vector)) fixnum) (((struct s16vector)) (##core#inline "C_u_i_16vector_length" #(1))))
+(chicken.number-vector#s16vector->list (#(procedure #:clean #:enforce) chicken.number-vector#s16vector->list ((struct s16vector)) (list-of fixnum)))
+(chicken.number-vector#s16vector (#(procedure #:clean #:enforce) chicken.number-vector#s16vector (#!rest fixnum) (struct s16vector)))
+(chicken.number-vector#s16vector? (#(procedure #:pure #:predicate (struct s16vector)) chicken.number-vector#s16vector? (*) boolean))
+(chicken.number-vector#s16vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#s16vector-ref ((struct s16vector) fixnum) fixnum))
+(chicken.number-vector#s16vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#s16vector-set! ((struct s16vector) fixnum fixnum) undefined))
+(chicken.number-vector#s32vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#s32vector->bytevector ((struct s32vector)) bytevector))
+(chicken.number-vector#s32vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#s32vector->bytevector/shared ((struct s32vector)) bytevector))
+(chicken.number-vector#s32vector-length (#(procedure #:clean #:enforce) chicken.number-vector#s32vector-length ((struct s32vector)) fixnum) (((struct s32vector)) (##core#inline "C_u_i_32vector_length" #(1))))
+(chicken.number-vector#s32vector->list (#(procedure #:clean #:enforce) chicken.number-vector#s32vector->list ((struct s32vector)) (list-of integer)))
+(chicken.number-vector#s32vector (#(procedure #:clean #:enforce) chicken.number-vector#s32vector (#!rest integer) (struct s32vector)))
+(chicken.number-vector#s32vector? (#(procedure #:pure #:predicate (struct s32vector)) chicken.number-vector#s32vector? (*) boolean))
+(chicken.number-vector#s32vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#s32vector-ref ((struct s32vector) fixnum) integer))
+(chicken.number-vector#s32vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#s32vector-set! ((struct s32vector) fixnum integer) undefined))
+(chicken.number-vector#s8vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#s8vector->bytevector ((struct s8vector)) bytevector))
+(chicken.number-vector#s8vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#s8vector->bytevector/shared ((struct s8vector)) bytevector))
+(chicken.number-vector#s8vector-length (#(procedure #:clean #:enforce) chicken.number-vector#s8vector-length ((struct s8vector)) fixnum) (((struct s8vector)) (##core#inline "C_u_i_8vector_length" #(1))))
+(chicken.number-vector#s8vector->list (#(procedure #:clean #:enforce) chicken.number-vector#s8vector->list ((struct s8vector)) (list-of fixnum)))
+(chicken.number-vector#s8vector (#(procedure #:clean #:enforce) chicken.number-vector#s8vector (#!rest fixnum) (struct s8vector)))
+(chicken.number-vector#s8vector? (#(procedure #:pure #:predicate (struct s8vector)) chicken.number-vector#s8vector? (*) boolean))
+(chicken.number-vector#s8vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#s8vector-ref ((struct s8vector) fixnum) fixnum))
+(chicken.number-vector#s8vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#s8vector-set! ((struct s8vector) fixnum fixnum) undefined))
+(chicken.number-vector#subc128vector (#(procedure #:clean #:enforce) chicken.number-vector#subc128vector ((struct c128vector) fixnum fixnum) (struct c128vector)))
+(chicken.number-vector#subc64vector (#(procedure #:clean #:enforce) chicken.number-vector#subc64vector ((struct c64vector) fixnum fixnum) (struct c64vector)))
+(chicken.number-vector#subf32vector (#(procedure #:clean #:enforce) chicken.number-vector#subf32vector ((struct f32vector) fixnum fixnum) (struct f32vector)))
+(chicken.number-vector#subf64vector (#(procedure #:clean #:enforce) chicken.number-vector#subf64vector ((struct f64vector) fixnum fixnum) (struct f64vector)))
+(chicken.number-vector#subs16vector (#(procedure #:clean #:enforce) chicken.number-vector#subs16vector ((struct s16vector) fixnum fixnum) (struct s16vector)))
+(chicken.number-vector#subs32vector (#(procedure #:clean #:enforce) chicken.number-vector#subs32vector ((struct s32vector) fixnum fixnum) (struct s32vector)))
+(chicken.number-vector#subs8vector (#(procedure #:clean #:enforce) chicken.number-vector#subs8vector  ((struct s8vector) fixnum fixnum) (struct s8vector)))
+(chicken.number-vector#subu16vector (#(procedure #:clean #:enforce) chicken.number-vector#subu16vector ((struct u16vector) fixnum fixnum) (struct u16vector)))
+(chicken.number-vector#subu32vector (#(procedure #:clean #:enforce) chicken.number-vector#subu32vector ((struct u32vector) fixnum fixnum) (struct u32vector)))
+(chicken.number-vector#subu64vector (#(procedure #:clean #:enforce) chicken.number-vector#subu64vector ((struct u64vector) fixnum fixnum) (struct u64vector)))
+(chicken.number-vector#subu8vector (#(procedure #:clean #:enforce) chicken.number-vector#subu8vector (bytevector fixnum fixnum) bytevector))
+(chicken.number-vector#u16vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#u16vector->bytevector ((struct u16vector)) bytevector))
+(chicken.number-vector#u16vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#u16vector->bytevector/shared ((struct u16vector)) bytevector))
+(chicken.number-vector#u16vector-length (#(procedure #:clean #:enforce) chicken.number-vector#u16vector-length ((struct u16vector)) fixnum) (((struct u16vector)) (##core#inline "C_u_i_16vector_length" #(1))))
+(chicken.number-vector#u16vector->list (#(procedure #:clean #:enforce) chicken.number-vector#u16vector->list ((struct u16vector)) (list-of fixnum)))
+(chicken.number-vector#u16vector (#(procedure #:clean #:enforce) chicken.number-vector#u16vector (#!rest fixnum) (struct u16vector)))
+(chicken.number-vector#u16vector? (#(procedure #:pure #:predicate (struct u16vector)) chicken.number-vector#u16vector? (*) boolean))
+(chicken.number-vector#u16vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#u16vector-ref ((struct u16vector) fixnum) fixnum))
+(chicken.number-vector#u16vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#u16vector-set! ((struct u16vector) fixnum fixnum) undefined))
+(chicken.number-vector#u32vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#u32vector->bytevector ((struct u32vector)) bytevector))
+(chicken.number-vector#u32vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#u32vector->bytevector/shared ((struct u32vector)) bytevector))
+(chicken.number-vector#u32vector-length (#(procedure #:clean #:enforce) chicken.number-vector#u32vector-length ((struct u32vector)) fixnum) (((struct u32vector)) (##core#inline "C_u_i_32vector_length" #(1))))
+(chicken.number-vector#u32vector->list (#(procedure #:clean #:enforce) chicken.number-vector#u32vector->list ((struct u32vector)) (list-of integer)))
+(chicken.number-vector#u32vector (#(procedure #:clean #:enforce) chicken.number-vector#u32vector (#!rest integer) (struct u32vector)))
+(chicken.number-vector#u32vector? (#(procedure #:pure #:predicate (struct u32vector)) chicken.number-vector#u32vector? (*) boolean))
+(chicken.number-vector#u32vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#u32vector-ref ((struct u32vector) fixnum) integer))
+(chicken.number-vector#u32vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#u32vector-set! ((struct u32vector) fixnum integer) undefined))
+(chicken.number-vector#u64vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#u64vector->bytevector ((struct u64vector)) bytevector))
+(chicken.number-vector#u64vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#u64vector->bytevector/shared ((struct u64vector)) bytevector))
+(chicken.number-vector#u64vector-length (#(procedure #:clean #:enforce) chicken.number-vector#u64vector-length ((struct u64vector)) fixnum) (((struct u64vector)) (##core#inline "C_u_i_64vector_length" #(1))))
+(chicken.number-vector#u64vector->list (#(procedure #:clean #:enforce) chicken.number-vector#u64vector->list ((struct u64vector)) (list-of integer)))
+(chicken.number-vector#u64vector (#(procedure #:clean #:enforce) chicken.number-vector#u64vector (#!rest integer) (struct u64vector)))
+(chicken.number-vector#u64vector? (#(procedure #:pure #:predicate (struct u64vector)) chicken.number-vector#u64vector? (*) boolean))
+(chicken.number-vector#u64vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#u64vector-ref ((struct u64vector) fixnum) integer))
+(chicken.number-vector#u64vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#u64vector-set! ((struct u64vector) fixnum integer) undefined))
+(chicken.number-vector#u8vector-length (#(procedure #:clean #:enforce) chicken.number-vector#u8vector-length (bytevector) fixnum) ((bytevector) (##core#inline "C_u_i_8vector_length" #(1))))
+(chicken.number-vector#u8vector->list (#(procedure #:clean #:enforce) chicken.number-vector#u8vector->list (bytevector) (list-of fixnum)))
+(chicken.number-vector#u8vector (#(procedure #:clean #:enforce) chicken.number-vector#u8vector (#!rest fixnum) bytevector))
+(chicken.number-vector#u8vector? (#(procedure #:pure #:predicate bytevector) chicken.number-vector#u8vector? (*) boolean))
+(chicken.number-vector#u8vector-ref (#(procedure #:clean #:enforce) chicken.number-vector#u8vector-ref (bytevector fixnum) fixnum))
+(chicken.number-vector#u8vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#u8vector-set! (bytevector fixnum fixnum) undefined))
+(##sys#srfi-4-vector? (#(procedure #:pure #:predicate (or bytevector (struct u16vector) (struct s8vector) (struct s16vector) (struct u32vector) (struct s32vector) (struct u64vector) (struct s64vector) (struct f32vector) (struct f64vector) (struct c64vector) (struct c128vector))) ##sys#srfi-4-vector? (*) boolean))
 
 ;; syntax
 
@@ -2365,18 +2427,17 @@
   (struct transformer)))
 (chicken.syntax#read-with-source-info (#(procedure #:enforce) chicken.syntax#read-with-source-info (#!optional input-port) *))
 (chicken.syntax#strip-syntax (#(procedure #:clean) chicken.syntax#strip-syntax (*) *))
-(chicken.syntax#syntax-error (procedure chicken.syntax#syntax-error (* #!rest) noreturn))
 
 ;; tcp
 
 (chicken.tcp#tcp-abandon-port (#(procedure #:clean #:enforce) chicken.tcp#tcp-abandon-port (port) undefined))
-(chicken.tcp#tcp-accept (#(procedure #:clean #:enforce) chicken.tcp#tcp-accept ((struct tcp-listener)) input-port output-port))
+(chicken.tcp#tcp-accept (#(procedure #:clean #:enforce) chicken.tcp#tcp-accept ((struct tcp-listener) #!optional symbol) input-port output-port))
 (chicken.tcp#tcp-accept-ready? (#(procedure #:clean #:enforce) chicken.tcp#tcp-accept-ready? ((struct tcp-listener)) boolean))
 (chicken.tcp#tcp-accept-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-accept-timeout (#!optional (or false integer)) (or false integer)))
 (chicken.tcp#tcp-addresses (#(procedure #:clean #:enforce) chicken.tcp#tcp-addresses (port) string string))
 (chicken.tcp#tcp-buffer-size (#(procedure #:clean #:enforce) chicken.tcp#tcp-buffer-size (#!optional (or false fixnum)) (or false fixnum)))
 (chicken.tcp#tcp-close (#(procedure #:clean #:enforce) chicken.tcp#tcp-close ((struct tcp-listener)) undefined))
-(chicken.tcp#tcp-connect (#(procedure #:clean #:enforce) chicken.tcp#tcp-connect (string #!optional fixnum) input-port output-port))
+(chicken.tcp#tcp-connect (#(procedure #:clean #:enforce) chicken.tcp#tcp-connect (string #!optional fixnum symbol) input-port output-port))
 (chicken.tcp#tcp-connect-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-connect-timeout (#!optional (or false integer)) (or false integer)))
 (chicken.tcp#tcp-listen (#(procedure #:clean #:enforce) chicken.tcp#tcp-listen (fixnum #!optional fixnum *) (struct tcp-listener)))
 
@@ -2391,6 +2452,22 @@
 (chicken.tcp#tcp-read-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-read-timeout (#!optional (or false integer)) (or false integer)))
 (chicken.tcp#tcp-write-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-write-timeout (#!optional (or false integer)) (or false integer)))
 
-
 ;; Undocumented internal module, only here to have the deprecation warning because some eggs use it
 (chicken.compiler.support#read/source-info deprecated)
+
+;; scheme.write
+
+(scheme.write#write (#(procedure #:enforce) scheme.write#write (* #!optional output-port) undefined))
+(scheme.write#write-shared (#(procedure #:enforce) scheme.write#write-shared (* #!optional output-port) undefined))
+(scheme.write#display (#(procedure #:enforce) scheme.write#display (* #!optional output-port) undefined))
+
+;; scheme.time
+
+(scheme.time#current-second (#(procedure #:enforce) scheme.time#current-second () float))
+(scheme.time#current-jiffy (#(procedure #:enforce) scheme.time#current-jiffy () fixnum))
+(scheme.time#jiffies-per-second (#(procedure #:enforce) scheme.time#jiffies-per-second () fixnum))
+
+;; scheme.process-context
+
+(scheme.process-context#exit (procedure scheme.process-context#exit (#!optional *) noreturn))
+(scheme.process-context#command-line (procedure scheme.process-context#command-line () (list-of string)))

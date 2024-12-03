@@ -36,4 +36,4 @@ Returns the number of bits needed to represent the exact integer N in
 ---
 Previous: [[Module (chicken base)]]
 
-Next: [[Module (chicken blob)]]
+Next: [[Module (chicken bytevector)]]

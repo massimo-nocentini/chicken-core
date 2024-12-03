@@ -20,7 +20,8 @@
 ;
 ; URL may be an alias (see below) or a real URL.
 
-(server "kitten-technologies")
+; TEMPORARY DISABLED
+;(server "kitten-technologies")
 (server "call-cc")
 
 
@@ -35,7 +36,7 @@
 ;
 ; (alias (NAME REALNAME) ...)
 
-(alias 
+(alias
  ("call-cc" "http://code.call-cc.org/cgi-bin/henrietta.cgi")
  ("kitten-technologies" "http://chicken.kitten-technologies.co.uk/henrietta.cgi"))
 
@@ -53,7 +54,7 @@
 ;
 ; (hack EXPR)
 ;
-;   EXPR should evaluate to a procedure of the type, where the 
+;   EXPR should evaluate to a procedure of the type, where the
 ;   procedure is of type EGGNAME DEPENDENCIES -> DEPENDENCIES' and
 ;   may modify the dependencies-list of an arbitrary egg. All
 ;   hack procedures are invoked in the order given here

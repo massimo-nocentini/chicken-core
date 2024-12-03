@@ -34,7 +34,7 @@ ARCH ?= $(shell sh $(SRCDIR)/config-arch.sh)
 
 C_COMPILER_OPTIONS ?= -fno-strict-aliasing -fwrapv -DHAVE_CHICKEN_CONFIG_H
 ifdef DEBUGBUILD
-C_COMPILER_OPTIMIZATION_OPTIONS ?= -g -Wall -Wno-unused
+C_COMPILER_OPTIMIZATION_OPTIONS ?= -g -Wall -Wno-unused -O0 -Wno-cpp
 else
 ifdef OPTIMIZE_FOR_SPEED
 C_COMPILER_OPTIMIZATION_OPTIONS ?= -O3 -fomit-frame-pointer

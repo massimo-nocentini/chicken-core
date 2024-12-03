@@ -88,41 +88,41 @@
 # define EWOULDBLOCK 0
 #endif
 
-static C_TLS int C_pipefds[ 2 ];
-static C_TLS time_t C_secs;
+static int C_pipefds[ 2 ];
+static time_t C_secs;
 
 /* pipe handles */
-static C_TLS HANDLE C_rd0, C_wr0, C_wr0_, C_rd1, C_wr1, C_rd1_;
-static C_TLS HANDLE C_save0, C_save1; /* saved I/O handles */
-static C_TLS char C_rdbuf; /* one-char buffer for read */
-static C_TLS int C_exstatus;
+static HANDLE C_rd0, C_wr0, C_wr0_, C_rd1, C_wr1, C_rd1_;
+static HANDLE C_save0, C_save1; /* saved I/O handles */
+static char C_rdbuf; /* one-char buffer for read */
+static int C_exstatus;
 
 /* platform information; initialized for cached testing */
-static C_TLS char C_shlcmd[256] = "";
+static char C_shlcmd[256] = "";
 
 /* Current user name */
-static C_TLS TCHAR C_username[255 + 1] = "";
+static C_char C_username[255 + 1] = "";
 
-#define open_binary_input_pipe(a, n, name)   C_mpointer(a, _popen(C_c_string(name), "r"))
+#define open_binary_input_pipe(a, n, name) C_mpointer(a, _wpopen(C_OS_FILENAME(name, 0), L"r"))
 #define open_text_input_pipe(a, n, name)     open_binary_input_pipe(a, n, name)
-#define open_binary_output_pipe(a, n, name)  C_mpointer(a, _popen(C_c_string(name), "w"))
+#define open_binary_output_pipe(a, n, name)  C_mpointer(a, _wpopen(C_OS_FILENAME(name, 0), L"w"))
 #define open_text_output_pipe(a, n, name)    open_binary_output_pipe(a, n, name)
 #define close_pipe(p)			     C_fix(_pclose(C_port_file(p)))
 
-#define C_chmod(fn, m)	    C_fix(chmod(C_c_string(fn), C_unfix(m)))
+#define C_chmod(fn, m)	    C_fix(_wchmod(C_OS_FILENAME(fn, 0), C_unfix(m)))
 #define C_pipe(d, m)	    C_fix(_pipe(C_pipefds, PIPE_BUF, C_unfix(m)))
 #define C_close(fd)	    C_fix(close(C_unfix(fd)))
 
 #define C_u_i_lstat(fn)     C_u_i_stat(fn)
 
-#define C_u_i_execvp(f,a)   C_fix(execvp(C_c_string(f), (const char *const *)C_c_pointer_vector_or_null(a)))
-#define C_u_i_execve(f,a,e) C_fix(execve(C_c_string(f), (const char *const *)C_c_pointer_vector_or_null(a), (const char *const *)C_c_pointer_vector_or_null(e)))
+#define C_u_i_execvp(f, a) C_fix(execvp(C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
+#define C_u_i_execve(f,a,e) C_fix(execve(C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
 
 /* MS replacement for the fork-exec pair */
-#define C_u_i_spawnvp(m,f,a)    C_fix(spawnvp(C_unfix(m), C_c_string(f), (const char *const *)C_c_pointer_vector_or_null(a)))
-#define C_u_i_spawnvpe(m,f,a,e) C_fix(spawnvpe(C_unfix(m), C_c_string(f), (const char *const *)C_c_pointer_vector_or_null(a), (const char *const *)C_c_pointer_vector_or_null(e)))
+#define C_u_i_spawnvp(m,f,a)    C_fix(spawnvp(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
+#define C_u_i_spawnvpe(m,f,a,e) C_fix(spawnvpe(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
 
-#define C_open(fn, fl, m)   C_fix(open(C_c_string(fn), C_unfix(fl), C_unfix(m)))
+#define C_open(fn, fl, m)   C_fix(_wopen(C_OS_FILENAME(fn, 0), C_unfix(fl), C_unfix(m)))
 #define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_data_pointer(b), C_unfix(n)))
 #define C_write(fd, b, n)   C_fix(write(C_unfix(fd), C_data_pointer(b), C_unfix(n)))
 
@@ -196,7 +196,7 @@ static errmap_t errmap[] =
     {0, 0}
 };
 
-static void C_fcall
+static void
 set_errno(DWORD w32err)
 {
     errmap_t *map;
@@ -211,14 +211,14 @@ set_errno(DWORD w32err)
     errno = ENOSYS; /* For lack of anything better */
 }
 
-static int C_fcall
+static int
 set_last_errno()
 {
     set_errno(GetLastError());
     return 0;
 }
 
-static int fd_to_path(C_word fd, TCHAR path[])
+static int fd_to_path(C_word fd, C_WCHAR path[])
 {
   DWORD result;
   HANDLE fh = (HANDLE)_get_osfhandle(C_unfix(fd));
@@ -228,7 +228,8 @@ static int fd_to_path(C_word fd, TCHAR path[])
     return -1;
   }
 
-  result = GetFinalPathNameByHandle(fh, path, MAX_PATH, VOLUME_NAME_DOS);
+	/* XXX wchar_t */
+  result = GetFinalPathNameByHandleW(fh, path, MAX_PATH, VOLUME_NAME_DOS);
   if (result == 0) {
     set_last_errno();
     return -1;
@@ -242,19 +243,19 @@ static int fd_to_path(C_word fd, TCHAR path[])
 
 static C_word C_fchmod(C_word fd, C_word m)
 {
-  TCHAR path[MAX_PATH];
+  C_WCHAR path[MAX_PATH];
   if (fd_to_path(fd, path) == -1) return C_fix(-1);
-  else return C_fix(chmod(path, C_unfix(m)));
+  else return C_fix(_wchmod(path, C_unfix(m)));
 }
 
 static C_word C_fchdir(C_word fd)
 {
-  TCHAR path[MAX_PATH];
+  C_WCHAR path[MAX_PATH];
   if (fd_to_path(fd, path) == -1) return C_fix(-1);
-  else return C_fix(chdir(path));
+  else return C_fix(_wchdir(path));
 }
 
-static int C_fcall
+static int
 process_wait(C_word h, C_word t)
 {
     if (WaitForSingleObject((HANDLE)h, (t ? 0 : INFINITE)) == WAIT_OBJECT_0)
@@ -273,10 +274,10 @@ process_wait(C_word h, C_word t)
 #define C_process_wait(p, t) (process_wait(C_unfix(p), C_truep(t)) ? C_SCHEME_TRUE : C_SCHEME_FALSE)
 
 
-static C_TLS int C_isNT = 0;
+static int C_isNT = 0;
 
 
-static int C_fcall
+static int
 C_windows_nt()
 {
   static int has_info = 0;
@@ -301,14 +302,14 @@ C_windows_nt()
 }
 
 
-static int C_fcall
+static int
 get_shlcmd()
 {
     /* Do we need to build the shell command pathname? */
     if (!strlen(C_shlcmd))
     {
       char *cmdnam = C_windows_nt() ? "\\cmd.exe" : "\\command.com";
-      UINT len = GetSystemDirectory(C_shlcmd, sizeof(C_shlcmd) - strlen(cmdnam));
+      UINT len = GetSystemDirectoryA(C_shlcmd, sizeof(C_shlcmd) - strlen(cmdnam));
       if (len)
 	C_strlcpy(C_shlcmd + len, cmdnam, sizeof(C_shlcmd));
       else
@@ -323,13 +324,13 @@ get_shlcmd()
 
 /* GetUserName */
 
-static int C_fcall
+static int
 get_user_name()
 {
-    if (!strlen(C_username))
+    if (!C_strlen(C_username))
     {
 	DWORD bufCharCount = sizeof(C_username) / sizeof(C_username[0]);
-	if (!GetUserName(C_username, &bufCharCount))
+	if (!GetUserNameA(C_username, &bufCharCount))
 	    return set_last_errno();
     }
     return 1;
@@ -355,7 +356,7 @@ get_user_name()
 
     Returns: zero return value indicates failure.
 */
-static int C_fcall
+static int
 C_process(const char *app, const char *cmdlin, const char **env,
 	  int *phandle, int *pstdin_fd, int *pstdout_fd, int *pstderr_fd,
 	  int params)
@@ -484,14 +485,16 @@ C_process(const char *app, const char *cmdlin, const char **env,
     return success;
 }
 
-static int set_file_mtime(char *filename, C_word atime, C_word mtime)
+static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 {
-  struct stat sb;
+  struct _stat64i32 sb;
   struct _utimbuf tb;
+  C_word bv = C_block_item(filename, 0);
+  C_WCHAR *fn = C_OS_FILENAME(bv, 0);
 
   /* Only stat if needed */
   if (atime == C_SCHEME_FALSE || mtime == C_SCHEME_FALSE) {
-    if (C_stat(filename, &sb) == -1) return -1;
+    if (C_stat(fn, &sb) == -1) return -1;
   }
 
   if (atime == C_SCHEME_FALSE) {
@@ -504,7 +507,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
   } else {
     tb.modtime = C_num_to_int64(mtime);
   }
-  return _utime(filename, &tb);
+  return _wutime(fn, &tb);
 }
 
 <#
@@ -545,7 +548,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
     (##sys#check-fixnum size 'file-read)
     (let ([buf (if (pair? buffer) (car buffer) (make-string size))])
       (unless (and (##core#inline "C_blockp" buf) (##core#inline "C_byteblockp" buf))
-	(##sys#signal-hook #:type-error 'file-read "bad argument type - not a string or blob" buf) )
+	(##sys#signal-hook #:type-error 'file-read "bad argument type - not a string or bytevector" buf) )
       (let ([n (##core#inline "C_read" fd buf size)])
 	(when (eq? -1 n)
           (##sys#signal-hook/errno
@@ -553,11 +556,14 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 	(list buf n) ) ) ) )
 
 (set! chicken.file.posix#file-write
-  (lambda (fd buffer . size)
+  (lambda (fd buffer #!optional size)
     (##sys#check-fixnum fd 'file-write)
-    (unless (and (##core#inline "C_blockp" buffer) (##core#inline "C_byteblockp" buffer))
-      (##sys#signal-hook #:type-error 'file-write "bad argument type - not a string or blob" buffer) )
-    (let ([size (if (pair? size) (car size) (##sys#size buffer))])
+    (when (string? buffer)
+      (set! buffer (##sys#slot buffer 0))
+      (unless size (set! size (fx- (##sys#size buffer) 1))))
+    (unless (##core#inline "C_byteblockp" buffer)
+      (##sys#signal-hook #:type-error 'file-write "bad argument type - not a string or bytevector" buffer) )
+    (let ((size (or size (##sys#size buffer))))
       (##sys#check-fixnum size 'file-write)
       (let ([n (##core#inline "C_write" fd buffer size)])
 	(when (eq? -1 n)
@@ -797,7 +803,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
     ; The environment list must be sorted & include current directory
     ; information for the system drives. i.e !C:=...
     ; For now any environment is ignored.
-    (lambda (loc cmd args env stdoutf stdinf stderrf #!optional exactf)
+    (lambda (loc cmd args env stdoutf stdinf stderrf exactf enc)
       (let* ((arglist (cons cmd args))
 	     (cmdlin (string-intersperse
 		      (if exactf
@@ -824,7 +830,7 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 
 ;; TODO: See if this can be moved to posix-common
 (let ((%process
-	(lambda (loc err? cmd args env exactf)
+	(lambda (loc err? cmd args env exactf enc)
 	  (let ((chkstrlst
 		 (lambda (lst)
 		   (##sys#check-list lst loc)
@@ -838,16 +844,16 @@ static int set_file_mtime(char *filename, C_word atime, C_word mtime)
 		(set! cmd (shell-command loc)) ) )
 	    (when env (check-environment-list env loc))
 	    (receive (in out pid err)
-		(process-impl loc cmd args env #t #t err? exactf)
+		(process-impl loc cmd args env #t #t err? exactf enc)
 	      (if err?
 		(values in out pid err)
 		(values in out pid) ) ) ) )) )
   (set! chicken.process#process
-    (lambda (cmd #!optional args env exactf)
-      (%process 'process #f cmd args env exactf) ))
+    (lambda (cmd #!optional args env (enc 'utf-8) exactf)
+      (%process 'process #f cmd args env exactf enc) ))
   (set! chicken.process#process*
-    (lambda (cmd #!optional args env exactf)
-      (%process 'process* #t cmd args env exactf) )) )
+    (lambda (cmd #!optional args env (enc 'utf-8) exactf)
+      (%process 'process* #t cmd args env exactf enc) )) )
 
 (define-foreign-variable _exstatus int "C_exstatus")
 

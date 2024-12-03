@@ -13,7 +13,6 @@
 /buildid
 /chicken-config.h
 /chicken-defaults.h
-/feathers
 
 # Compiled binary executables
 
@@ -65,6 +64,7 @@
 /port.c
 /posixunix.c
 /profiler.c
+/r7lib.c
 /read-syntax.c
 /repl.c
 /scheduler.c
@@ -78,7 +78,7 @@
 # Compiled Scheme modules' imports
 
 /chicken.bitwise.import.scm
-/chicken.blob.import.scm
+/chicken.bytevector.import.scm
 /chicken.compiler.batch-driver.import.scm
 /chicken.compiler.c-backend.import.scm
 /chicken.compiler.c-platform.import.scm
@@ -123,4 +123,13 @@
 /chicken.string.import.scm
 /chicken.tcp.import.scm
 /chicken.time.posix.import.scm
+/chicken.number-vector.import.scm
 /srfi-4.import.scm
+/scheme.write.import.scm
+/scheme.time.import.scm
+/scheme.file.import.scm
+/scheme.process-context.import.scm
+
+# Generated manual (from dist)
+
+/manual-html

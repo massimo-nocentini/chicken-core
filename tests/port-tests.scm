@@ -1,13 +1,17 @@
 (import chicken.condition chicken.file chicken.file.posix
 	chicken.flonum chicken.format chicken.io chicken.port
-	chicken.process chicken.process.signal chicken.tcp srfi-4)
+        chicken.bytevector
+	chicken.process chicken.process.signal chicken.tcp chicken.number-vector)
+
+(import (only (scheme base) input-port-open? output-port-open? open-input-string
+              write-string open-output-string get-output-string))
 
 (include "test.scm")
 (test-begin "ports")
 
 (define-syntax assert-error
   (syntax-rules ()
-    ((_ expr) 
+    ((_ expr)
      (assert (handle-exceptions _ #t expr #f)))))
 
 (define *text* #<<EOF
@@ -30,7 +34,7 @@ this is a test
 <sjamaan> heh
 <sjamaan> I think you outyucked us all [10:03]
 <foof> well, for large enough values of yuck, yuck! ~= yuck^yuck [10:04]
-ERC> 
+ERC>
 EOF
 )
 
@@ -39,7 +43,7 @@ EOF
 (assert (string=? "this is a test" (read-line p)))
 
 (assert
- (string=? 
+ (string=?
   "<foof> #;33> (let ((in (open-input-string \"\"))) (close-input-port in)"
   (read-line p)))
 (assert (= 20 (length (read-lines (open-input-string *text*)))))
@@ -61,14 +65,14 @@ EOF
 ;;; copy-port
 
 (assert
- (string=? 
+ (string=?
   *text*
   (with-output-to-string
     (lambda ()
       (copy-port (open-input-string *text*) (current-output-port)))))) ; read-char -> write-char
 
-(assert 
- (equal? 
+(assert
+ (equal?
   '(3 2 1)
   (let ((out '()))
     (copy-port				; read -> custom
@@ -79,18 +83,18 @@ EOF
     out)))
 
 (assert
- (equal? 
+ (equal?
   "abc"
   (let ((out (open-output-string)))
     (copy-port				; read-char -> custom
-     (open-input-string "abc") 
+     (open-input-string "abc")
      out
      read-char
      (lambda (x out) (write-char x out)))
     (get-output-string out))))
 
 (assert
- (equal? 
+ (equal?
   "abc"
   (let ((in (open-input-string "abc") )
 	(out (open-output-string)))
@@ -177,7 +181,7 @@ EOF
    (lambda ()
      (with-output-to-file "compiler.scm.2"
        (lambda ()
-	 (copy-port 
+	 (copy-port
 	  (current-input-port) (current-output-port)
 	  (lambda (port) (read-char port))
 	  (lambda (x port) (write-char x port))))))))
@@ -208,7 +212,7 @@ EOF
                ((exn i/o file) (printf "OK\n") okay))))))))
 
 (cond-expand
-  ((not mingw32)
+  ((not mingw)
 
    (define proc (process-fork (lambda () (tcp-accept (tcp-listen 8080)))))
 
@@ -226,7 +230,7 @@ EOF
      (check (tcp-port-numbers in))
      (check (tcp-abandon-port in)))	; Not sure about abandon-port
 
-   
+
    ;; This tests for two bugs which occurred on NetBSD and possibly
    ;; other platforms, possibly due to multiprocessing:
    ;; read-line with EINTR would loop endlessly and process-wait would
@@ -270,18 +274,13 @@ EOF
     (check (newline out))
     (check (write-char #\x out))
     (check (write-line "foo" out))
-    (check (write-u8vector '#u8(1 2 3) out))
+    (check (write-bytevector '#u8(1 2 3) out))
     ;;(check (port->fileno in))
     (check (flush-output out))
 
-    #+(not mingw32) 
-    (begin
-      (check (file-test-lock out))
-      (check (file-lock out))
-      (check (file-lock/blocking out)))
-
     (check (write-byte 120 out))
-    (check (write-string "foo" #f out))))
+    (check (write-string "foo" out))))
+
 
 (print "\n\nProcedures check on input ports being closed\n")
 (call-with-input-file "empty-file"
@@ -294,14 +293,9 @@ EOF
     ;;(check (port->fileno in))
     (check (terminal-port? in))	   ; Calls isatty() on C_SCHEME_FALSE?
     (check (read-line in 5))
-    (check (read-u8vector 5 in))
-    (check "read-u8vector!" (let ((dest (make-u8vector 5)))
-                              (read-u8vector! 5 dest in)))
-    #+(not mingw32) 
-    (begin
-      (check (file-test-lock in))
-      (check (file-lock in))
-      (check (file-lock/blocking in)))
+    (check (read-bytevector 5 in))
+    (check "read-bytevector!" (let ((dest (make-u8vector 5)))
+                              (read-bytevector! dest in 0 5)))
 
     (check (read-byte in))
     (check (read-token (constantly #t) in))
@@ -310,7 +304,7 @@ EOF
                             (read-string! 10 buf in) buf))))
 
 (print "\nEmbedded NUL bytes in filenames are rejected\n")
-(assert-error (with-output-to-file "embedded\x00null-byte" void))
+(assert-error (with-output-to-file "embedded\x00;null-byte" void))
 
 ;;; #978 -- port-position checks for read-line
 
@@ -332,7 +326,7 @@ EOF
   (read-process-line/pos "echo" (list "-n" str) limit))
 
 (define (test-port-position proc)
-  (test-equal "advance row when encountering delim" 
+  (test-equal "advance row when encountering delim"
 	      (proc "abcde\nfghi" 6)
 	      '("abcde" 2 0))
   (test-equal "reaching limit sets col to limit, and does not advance row"
@@ -433,6 +427,66 @@ EOF
 (test-group
  "read-line process port position tests"
  (test-port-position read-echo-line/pos))
+
+;; bytevector I/O, moved here from srf-4-tests.scm:
+;; Ticket #1124: read-u8vector! w/o length, dest smaller than source.
+(test-group
+ "bytevector I/O"
+(let ((input (open-input-string "abcdefghijklmnopqrstuvwxyz"))
+      (u8vec (make-bytevector 10)))
+  (assert (= 10 (read-bytevector! u8vec input)))
+  (assert (equal? u8vec #u8(97 98 99 100 101 102 103 104 105 106)))
+  (assert (= 5  (read-bytevector! u8vec input 5)))
+  (assert (equal? u8vec #u8(97 98 99 100 101 107 108 109 110 111)))
+  (assert (= 5  (read-bytevector! u8vec input 0 5)))
+  (assert (equal? u8vec #u8(112 113 114 115 116 107 108 109 110 111)))
+  (assert (= 6  (read-bytevector! u8vec input 0 10)))
+  (assert (equal? u8vec #u8(117 118 119 120 121 122 108 109 110 111))))
+
+(let ((input (open-input-string "abcdefghijklmnopqrs")))
+  (assert (equal? (read-bytevector 5 input)
+		  #u8(97 98 99 100 101)))
+  (assert (equal? (read-bytevector 5 input) #u8(102 103 104 105 106)))
+  (assert (equal? (read-bytevector #f input)
+		  #u8(107 108 109 110 111 112 113 114 115)))
+  (with-input-from-string "abcdefghijklmnopqrs"
+   (lambda ()
+     (assert (equal? (read-bytevector 5)
+		     #u8(97 98 99 100 101)))
+     (assert (equal? (read-bytevector 5) #u8(102 103 104 105 106)))
+     (assert (equal? (read-bytevector)
+		     #u8(107 108 109 110 111 112 113 114 115))))))
+
+(assert (string=?
+	 "abc"
+	 (with-output-to-string
+	   (lambda ()
+	     (write-bytevector #u8(97 98 99))))))
+
+(assert (string=?
+	 "bc"
+	 (with-output-to-string
+	   (lambda ()
+	     (write-bytevector #u8(97 98 99) (current-output-port) 1)))))
+
+(assert (string=?
+	 "a"
+	 (with-output-to-string
+	   (lambda ()
+	     (write-bytevector #u8(97 98 99) (current-output-port) 0 1)))))
+
+(assert (string=?
+	 "b"
+	 (with-output-to-string
+	   (lambda ()
+	     (write-bytevector #u8(97 98 99) (current-output-port) 1 2)))))
+
+(assert (string=?
+	 ""
+	 (with-output-to-string
+	   (lambda ()
+	     (write-bytevector #u8())))))
+)
 
 ;;;
 

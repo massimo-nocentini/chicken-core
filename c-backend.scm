@@ -8,11 +8,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -50,6 +50,7 @@
 	chicken.compiler.core
 	chicken.compiler.c-platform
 	chicken.compiler.support)
+(import (only (scheme base) open-output-string get-output-string))
 
 (include "mini-srfi-1.scm")
 
@@ -59,10 +60,9 @@
 
 (define (gen . data)
   (for-each
-   (lambda (x) 
-     (if (eq? #t x)
-	 (newline output)
-	 (display x output) ) )
+   (lambda (x)
+     (cond ((eq? #t x) (newline output))
+	   (else (display x output) ) ))
    data) )
 
 (define (gen-list lst)
@@ -121,10 +121,10 @@
 	       ((bwp) (gen "C_SCHEME_BROKEN_WEAK_PTR"))
 	       (else (bomb "bad immediate")) ) )
 
-	    ((##core#literal) 
+	    ((##core#literal)
 	     (let ((lit (first params)))
 	       (if (vector? lit)
-		   (gen "((C_word)li" (vector-ref lit 0) ")") 
+		   (gen "((C_word)li" (vector-ref lit 0) ")")
 		   (gen "lf[" (first params) #\])) ) )
 
             ((##core#float)
@@ -148,12 +148,12 @@
 	    ((##core#proc)
 	     (gen "(C_word)" (first params)) )
 
-	    ((##core#bind) 
+	    ((##core#bind)
 	     (let loop ((bs subs) (i i) (count (first params)))
 	       (cond [(> count 0)
 		      (gen #t #\t i #\=)
 		      (expr (car bs) i)
-		      (gen #\;) 
+		      (gen #\;)
 		      (loop (cdr bs) (add1 i) (sub1 count)) ]
 		     [else (expr (car bs) i)] ) ) )
 
@@ -177,7 +177,7 @@
              (expr (first subs) i)
              (gen ")"))
 
-	    ((##core#ref) 
+	    ((##core#ref)
 	     (gen "((C_word*)")
 	     (expr (car subs) i)
 	     (gen ")[" (+ (first params) 1) #\]) )
@@ -209,7 +209,7 @@
 		   (gen "C_fix(c - " (+ depth n) ")")
 		   (gen "C_u_i_length(t" (sub1 n) ")"))))
 
-	    ((##core#unbox) 
+	    ((##core#unbox)
 	     (gen "((C_word*)")
 	     (expr (car subs) i)
 	     (gen ")[1]") )
@@ -218,34 +218,34 @@
 	     (gen "C_set_block_item(")
 	     (expr (car subs) i)
 	     (gen #\, (first params) #\,)
-	     (expr (cadr subs) i) 
+	     (expr (cadr subs) i)
 	     (gen #\)) )
 
 	    ((##core#update)
 	     (gen "C_mutate(((C_word *)")
 	     (expr (car subs) i)
 	     (gen ")+" (+ (first params) 1) ",")
-	     (expr (cadr subs) i) 
+	     (expr (cadr subs) i)
 	     (gen #\)) )
 
 	    ((##core#updatebox_i)
 	     (gen "C_set_block_item(")
 	     (expr (car subs) i)
 	     (gen ",0,")
-	     (expr (cadr subs) i) 
+	     (expr (cadr subs) i)
 	     (gen #\)) )
 
 	    ((##core#updatebox)
 	     (gen "C_mutate(((C_word *)")
 	     (expr (car subs) i)
 	     (gen ")+1,")
-	     (expr (cadr subs) i) 
+	     (expr (cadr subs) i)
 	     (gen #\)) )
 
 	    ((##core#closure)
 	     (let ((n (first params)))
 	       (gen "(*a=C_CLOSURE_TYPE|" n #\,)
-	       (for-each 
+	       (for-each
 		(lambda (x j)
 		  (gen "a[" j "]=")
 		  (expr x i)
@@ -253,63 +253,63 @@
 		subs (list-tabulate n add1))
 	       (gen "tmp=(C_word)a,a+=" (add1 n) ",tmp)") ) )
 
-	    ((##core#box) 
+	    ((##core#box)
 	     (gen "(*a=C_VECTOR_TYPE|1,a[1]=")
 	     (expr (car subs) i)
 	     (gen ",tmp=(C_word)a,a+=2,tmp)") )
 
 	    ((##core#local) (gen #\t (first params)))
 
-	    ((##core#setlocal) 
+	    ((##core#setlocal)
 	     (gen #\t (first params) #\=)
 	     (expr (car subs) i) )
 
 	    ((##core#global)
 	     (let ((index (first params))
-		   (safe (second params)) 
+		   (safe (second params))
 		   (block (third params)) )
 	       (cond [block
 		      (if safe
 			  (gen "lf[" index "]")
 			  (gen "C_retrieve2(lf[" index "],C_text("
-			       (c-ify-string (##sys#symbol->string
+			       (c-ify-string (##sys#symbol->string/shared
 					      (fourth params))) "))"))]
 		     [safe (gen "*((C_word*)lf[" index "]+1)")]
 		     [else (gen "C_fast_retrieve(lf[" index "])")] ) ) )
 
 	    ((##core#setglobal)
 	     (let ((index (first params))
-		   (block (second params)) 
+		   (block (second params))
 		   (var (third params)))
 	       (if block
 		   (gen "C_mutate(&lf[" index "]")
 		   (gen "C_mutate((C_word*)lf[" index "]+1"))
-	       (gen " /* (set! " (uncommentify (##sys#symbol->string var)) " ...) */,")
+	       (gen " /* (set! " (uncommentify (##sys#symbol->string/shared var)) " ...) */,")
 	       (expr (car subs) i)
 	       (gen #\)) ) )
 
 	    ((##core#setglobal_i)
 	     (let ((index (first params))
-		   (block (second params)) 
+		   (block (second params))
 		   (var (third params)) )
 	       (cond [block
 		      (gen "lf[" index "] /* "
-			   (uncommentify (##sys#symbol->string var)) " */ =")
+			   (uncommentify (##sys#symbol->string/shared var)) " */ =")
 		      (expr (car subs) i)
 		      (gen #\;) ]
 		     [else
 		      (gen "C_set_block_item(lf[" index "] /* "
-			   (uncommentify (##sys#symbol->string var)) " */,0,")
+			   (uncommentify (##sys#symbol->string/shared var)) " */,0,")
 		      (expr (car subs) i)
 		      (gen #\)) ] ) ) )
 
 	    ((##core#undefined) (gen "C_SCHEME_UNDEFINED"))
 
-	    ((##core#call) 
+	    ((##core#call)
 	     (let* ((args (cdr subs))
 		    (n (length args))
 		    (nc i)
-		    (nf (add1 n)) 
+		    (nf (add1 n))
 		    (dbi (first params))
 		    (safe-to-call (second params))
 		    (p2 (pair? (cddr params)))
@@ -339,7 +339,7 @@
 			       (for-each
 				(lambda (arg tr)
 				  (gen #t #\t tr #\=)
-				  (expr arg i) 
+				  (expr arg i)
 				  (gen #\;) )
 				args ts)
 			       (for-each
@@ -364,13 +364,13 @@
 				    (unless customizable (gen nf #\,))
 				    (gen "av2);}") ) ) )))
 		     ((and (eq? '##core#global (node-class fn))
-			   (not unsafe) 
+			   (not unsafe)
 			   (not no-procedure-checks)
 			   (not safe-to-call))
 		      (let* ((gparams (node-parameters fn))
 			     (index (first gparams))
-			     (safe (second gparams)) 
-			     (block (third gparams)) 
+			     (safe (second gparams))
+			     (block (third gparams))
 			     (carg #f))
 			(gen #t "{C_proc tp=(C_proc)")
 			(cond (no-global-procedure-checks
@@ -384,13 +384,13 @@
 			       (if safe
 				   (gen "C_fast_retrieve_proc(" carg ")")
 				   (gen "C_retrieve2_symbol_proc(" carg ",C_text("
-					(c-ify-string (##sys#symbol->string (fourth gparams))) "))")))
+					(c-ify-string (##sys#symbol->string/shared (fourth gparams))) "))")))
 			      (safe
-			       (set! carg 
+			       (set! carg
 				 (string-append "*((C_word*)lf[" (number->string index) "]+1)"))
 			       (gen "C_fast_retrieve_proc(" carg ")"))
 			      (else
-			       (set! carg 
+			       (set! carg
 				 (string-append "*((C_word*)lf[" (number->string index) "]+1)"))
 			       (gen "C_fast_retrieve_symbol_proc(lf[" index "])") ))
 			(gen #\;)
@@ -406,12 +406,12 @@
 			  (gen "(void*)(*((C_word*)t" nc "+1))")
 			  (gen "C_fast_retrieve_proc(t" nc ")") )
 		      (gen ")(" nf ",av2);}") ) ) ) )
-	  
-	    ((##core#recurse) 
+
+	    ((##core#recurse)
 	     (let* ([n (length subs)]
 		    [nf (add1 n)]
 		    [tailcall (first params)]
-		    [call-id (second params)] 
+		    [call-id (second params)]
 		    [empty-closure (zero? (lambda-literal-closure-size ll))] )
 	       (cond (tailcall
 		      (let* ((temps (lambda-literal-temporaries ll))
@@ -419,7 +419,7 @@
 			(for-each
 			 (lambda (arg tr)
 			   (gen #t #\t tr #\=)
-			   (expr arg i) 
+			   (expr arg i)
 			   (gen #\;) )
 			 subs ts)
 			(for-each
@@ -432,7 +432,7 @@
 		      (expr-args subs i)
 		      (gen #\)) ) ) ) )
 
-	    ((##core#direct_call) 
+	    ((##core#direct_call)
 	     (let* ((args (cdr subs))
 		    (n (length args))
 		    (nf (add1 n))
@@ -454,7 +454,7 @@
 		   (gen #t "C_debugger(&(C_debug_info[" dbi "]),"
 			(if non-av-proc "0,NULL" "c,av") "),")))
 	       (gen #t "  " call-id #\()
-	       (when allocating 
+	       (when allocating
 		 (gen "C_a_i(&a," demand #\))
 		 (when (or (not empty-closure) (pair? args)) (gen #\,)) )
 	       (unless empty-closure
@@ -503,7 +503,7 @@
 
 	    ((##core#inline_update)
 	     (let ([t (second params)])
-	       (gen #\( (first params) "=(" (foreign-type-declaration t "") #\) (foreign-argument-conversion t)) 
+	       (gen #\( (first params) "=(" (foreign-type-declaration t "") #\) (foreign-argument-conversion t))
 	       (expr (first subs) i)
 	       (gen "),C_SCHEME_UNDEFINED)") ) )
 
@@ -518,7 +518,7 @@
 	       (gen "((*(" (foreign-type-declaration t "") "*)C_data_pointer(")
 	       (expr (first subs) i)
 	       (gen "))=" (foreign-argument-conversion t))
-	       (expr (second subs) i) 
+	       (expr (second subs) i)
 	       (gen "),C_SCHEME_UNDEFINED)") ) )
 
 	    ((##core#switch)
@@ -546,7 +546,7 @@
 	     (gen #\)) )
 
 	    (else (bomb "bad form" (node-class n))) ) ) )
-    
+
       (define (expr-args args i)
 	(let loop ((xs args))
 	  (unless (null? xs)
@@ -599,7 +599,7 @@
 	    (gen ";"))))
 
       (expr node temps) )
- 
+
     (define (header)
       (gen "/* Generated from " source-file " by the CHICKEN compiler" #t
 	   "   http://www.call-cc.org" #t
@@ -625,42 +625,42 @@
 	(generate-foreign-callback-stub-prototypes foreign-callback-stubs) ) )
 
     (define (trailer)
-      (gen #t #t "/*" #t 
+      (gen #t #t "/*" #t
 	   (uncommentify
 	    (get-output-string
 	     collected-debugging-output))
 	   "*/"
 	   #t "/* end of file */" #t))
-  
+
     (define (declarations)
       (let ((n (length literals)))
 	(gen #t #t "static C_PTABLE_ENTRY *create_ptable(void);")
 	(for-each
 	 (lambda (uu)
 	   (gen #t "C_noret_decl(C_" uu ")"
-		#t "C_externimport void C_ccall C_" uu "(C_word c,C_word *av) C_noret;"))
+		#t "C_extern void C_ccall C_" uu "(C_word c,C_word *av) C_noret;"))
 	 (map toplevel used-units))
 	(unless (zero? n)
-	  (gen #t #t "static C_TLS C_word lf[" n "];") )
+	  (gen #t #t "static C_word lf[" n "];") )
 	(gen #t "static double C_possibly_force_alignment;")
 	(do ((i 0 (add1 i))
 	     (llits lliterals (cdr llits)))
 	    ((null? llits))
-	  (let* ((ll (##sys#lambda-info->string (car llits)))
-		 (llen (string-length ll)))
-	    (gen #t "static C_char C_TLS li" i "[] C_aligned={C_lihdr(" 
+	  (let* ((ll (car llits))
+		 (llen (##sys#size ll)))
+	    (gen #t "static C_char li" i "[] C_aligned={C_lihdr("
 		 (arithmetic-shift llen -16) #\,
 		 (bitwise-and #xff (arithmetic-shift llen -8)) #\,
 		 (bitwise-and #xff llen)
 		 #\))
 	    (do ((n 0 (add1 n)))
 		((>= n llen))
-	      (gen #\, (char->integer (string-ref ll n))) )
+	      (gen #\, (##sys#byte ll n)))
 	    (do ((n (- (bitwise-and #xfffff8 (+ llen 7)) llen) (sub1 n))) ; fill up with zeros to align following entry
 		((zero? n))
 	      (gen ",0") )
 	    (gen "};")))))
-  
+
     (define (prototypes)
       (gen #t)
       (for-each
@@ -678,14 +678,12 @@
 		  (gen "C_noret_decl(" id ")" #t)
 		  (gen "static ")
 		  (gen (if direct "C_word " "void "))
-		  (if customizable
-		      (gen "C_fcall ")
-		      (gen "C_ccall ") )
+		  (unless customizable (gen "C_ccall "))
 		  (gen id) )
 		 (else
 		  (let ((uname (toplevel unit-name)))
 		    (gen "C_noret_decl(C_" uname ")" #t) ;XXX what's this for?
-		    (gen "C_externexport void C_ccall ")
+		    (gen "C_extern void C_ccall ")
 		    (gen "C_" uname) ) ) )
 	   (gen #\()
 	   (unless customizable (gen "C_word c,"))
@@ -699,10 +697,10 @@
 	   (unless direct (gen " C_noret"))
 	   (gen #\;) ))
        lambda-table*) )
-  
+
     (define (trampolines)
       (let ([ns '()]
-	    [nsr '()] 
+	    [nsr '()]
 	    [nsrv '()] )
 
 	(define (restore n)
@@ -729,7 +727,7 @@
 		 (apply gen (intersperse al #\,)) )
 	       (gen ");}") )))
 	 lambda-table*)))
-  
+
     (define (literal-frame)
       (do ([i 0 (add1 i)]
 	   [lits literals (cdr lits)] )
@@ -777,45 +775,28 @@
 	    ((block-variable-literal? lit))
 	    ((eq? lit (void))
 	     (gen #t to "=C_SCHEME_UNDEFINED;") )
-	    ((boolean? lit) 
+	    ((boolean? lit)
 	     (gen #t to #\= (if lit "C_SCHEME_TRUE" "C_SCHEME_FALSE") #\;) )
 	    ((char? lit)
 	     (gen #t to "=C_make_character(" (char->integer lit) ");") )
 	    ((or (keyword? lit) (symbol? lit)) ; handled slightly specially (see C_h_intern_in)
-	     (let* ((str (##sys#slot lit 1))
+	     (let* ((str (##sys#symbol->string/shared lit))
 		    (cstr (c-ify-string str))
-		    (len (##sys#size str))
+		    (len (fx- (##sys#size (##sys#slot lit 1)) 1))
 		    (intern (if (keyword? lit)
 				"C_h_intern_kw"
 				"C_h_intern")))
 	       (gen #t to "=")
 	       (gen intern "(&" to #\, len ", C_text(" cstr "));")))
-	    ((null? lit) 
+	    ((null? lit)
 	     (gen #t to "=C_SCHEME_END_OF_LIST;") )
 	    ((and (not (##sys#immediate? lit)) ; nop
 		  (##core#inline "C_lambdainfop" lit)))
 	    ((or (fixnum? lit) (not (##sys#immediate? lit)))
-	     (gen #t to "=C_decode_literal(C_heaptop,C_text(")
-	     (gen-string-constant (encode-literal lit))
-	     (gen "));"))
+	     (gen #t to "=C_decode_literal(C_heaptop,C_text(\"")
+	     (gen (encode-literal lit))
+	     (gen "\"));"))
 	    (else (bad-literal lit))))
-
-    (define (gen-string-constant str)
-      (let* ([len (##sys#size str)]
-	     [ns (fx/ len 80)]
-	     [srest (modulo len 80)] )
-	(do ([i ns (sub1 i)]
-	     [offset 0 (+ offset 80)] )
-	    ((zero? i)
-	     (when (or (zero? len) (not (zero? srest)))
-	       (gen (c-ify-string (string-like-substring str offset len))) ) )
-	  (gen (c-ify-string (string-like-substring str offset (+ offset 80))) #t) ) ) )
- 
-    (define (string-like-substring s start end)
-      (let* ([len (- end start)]
-	     [s2 (make-string len)] )
-	(##sys#copy-bytes s s2 start 0 len)
-	s2) )
 
     (define (procedures)
       (for-each
@@ -844,21 +825,19 @@
 	   (when empty-closure (debugging 'o "dropping unused closure argument" id))
 	   (gen #t #t)
 	   (gen "/* " (cleanup rname) " */" #t)
-	   (cond [(not (eq? 'toplevel id)) 
+	   (cond [(not (eq? 'toplevel id))
 		  (gen "static ")
 		  (gen (if direct "C_word " "void "))
-		  (if customizable
-		      (gen "C_fcall ")
-		      (gen "C_ccall ") )
+		  (unless customizable (gen "C_ccall "))
 		  (gen id) ]
 		 [else
-		  (gen "static C_TLS int toplevel_initialized=0;")
+		  (gen "static int toplevel_initialized=0;")
 		  (unless unit-name
 		    (gen #t "C_main_entry_point") )
 		  (gen #t #t "void C_ccall C_" topname) ] )
 	   (gen #\()
 	   (unless customizable (gen "C_word c,"))
-	   (when (and direct (not (zero? demand))) 
+	   (when (and direct (not (zero? demand)))
 	     (gen "C_word *a")
 	     (when (pair? varlist) (gen #\,)) )
 	   (if (or customizable direct)
@@ -1042,7 +1021,7 @@
 ;;; Create name that is safe for C comments:
 
 (define (cleanup s)
-  (let ([s2 #f] 
+  (let ([s2 #f]
 	[len (string-length s)] )
     (let loop ([i 0])
       (if (>= i len)
@@ -1054,7 +1033,7 @@
 		(begin
 		  (unless s2 (set! s2 (string-copy s)))
 		  (string-set! s2 i #\~) )
-		(when s2 (string-set! s2 i c)) ) 
+		(when s2 (string-set! s2 i c)) )
 	    (loop (add1 i)) ) ) ) ) )
 
 
@@ -1064,7 +1043,7 @@
   (list-tabulate
    n
    (lambda (i) (string-append "C_word " prefix (number->string i))) ) )
-  
+
 (define (make-argument-list n prefix)
   (list-tabulate
    n
@@ -1090,7 +1069,7 @@
   (for-each
    (lambda (stub)
      (gen #t)
-     (generate-foreign-callback-header "C_externexport " stub)
+     (generate-foreign-callback-header "C_extern " stub)
      (gen #\;) )
    stubs) )
 
@@ -1101,18 +1080,18 @@
 	    [rname (real-name2 id db)]
 	    [types (foreign-stub-argument-types stub)]
 	    [n (length types)]
-	    [rtype (foreign-stub-return-type stub)] 
-	    [sname (foreign-stub-name stub)] 
+	    [rtype (foreign-stub-return-type stub)]
+	    [sname (foreign-stub-name stub)]
 	    [body (foreign-stub-body stub)]
 	    [names (or (foreign-stub-argument-names stub) (make-list n #f))]
-	    [rconv (foreign-result-conversion rtype "C_a")] 
+	    [rconv (foreign-result-conversion rtype "C_a")]
 	    [cps (foreign-stub-cps stub)]
 	    [callback (foreign-stub-callback stub)] )
        (gen #t)
        (when rname
 	 (gen #t "/* from " (cleanup rname) " */") )
        (when body
-	 (gen #t "#define return(x) C_cblock C_r = (" rconv 
+	 (gen #t "#define return(x) C_cblock C_r = (" rconv
 	      "(x))); goto C_ret; C_cblockend"))
        (cond (cps
 	      (gen #t "C_noret_decl(" id ")"
@@ -1122,14 +1101,14 @@
 		  ((>= i n))
 		(gen #t "C_word C_a" i "=C_av[" (+ i 3) "];")))
 	     (else
-	      (gen #t "C_regparm static C_word C_fcall " id #\()
+	      (gen #t "C_regparm static C_word " id #\()
 	      (apply gen (intersperse (cons "C_word C_buf" (make-variable-list n "C_a")) #\,))
 	      (gen "){")))
        (gen #t "C_word C_r=C_SCHEME_UNDEFINED,*C_a=(C_word*)C_buf;")
        (for-each
 	(lambda (type index name)
-	  (gen #t 
-	       (foreign-type-declaration 
+	  (gen #t
+	       (foreign-type-declaration
 		type
 		(if name (symbol->string name) (sprintf "t~a" index)) )
 	       "=(" (foreign-type-declaration type "") #\)
@@ -1179,7 +1158,9 @@
 	   ((float double c-pointer nonnull-c-pointer
 		   c-string-list c-string-list*)
 	    (string-append ns "+3") )
-	   ((unsigned-integer unsigned-integer32 long integer integer32 
+	   ((complex cplxnum)
+	    (string-append ns "+5") )
+	   ((unsigned-integer unsigned-integer32 long integer integer32
 			      unsigned-long number)
 	    (string-append ns "+C_SIZEOF_FIX_BIGNUM"))
 	   ((unsigned-integer64 integer64 size_t ssize_t)
@@ -1190,11 +1171,11 @@
 	   ((nonnull-c-string nonnull-c-string* nonnull-unsigned-c-string nonnull-unsigned-c-string* symbol)
 	    (string-append ns "+2+C_bytestowords(C_strlen(" var "))") )
 	   (else
-	    (cond ((and (symbol? type) (lookup-foreign-type type)) 
+	    (cond ((and (symbol? type) (lookup-foreign-type type))
 		   => (lambda (t) (compute-size (vector-ref t 0) var ns) ) )
 		  ((pair? type)
 		   (case (car type)
-		     ((ref pointer c-pointer nonnull-pointer nonnull-c-pointer function instance 
+		     ((ref pointer c-pointer nonnull-pointer nonnull-c-pointer function instance
 			   nonnull-instance instance-ref)
 		      (string-append ns "+3") )
 		     ((const) (compute-size (cadr type) var ns))
@@ -1204,7 +1185,7 @@
        (let ((sizestr (let loop ((types argtypes) (vars vlist) (ns "0"))
 			(if (null? types)
 			    ns
-			    (loop (cdr types) (cdr vars) 
+			    (loop (cdr types) (cdr vars)
 				  (compute-size (car types) (car vars) ns))))))
 	 (gen #t)
 	 (when rname
@@ -1265,9 +1246,11 @@
       ((unsigned-long) (str "unsigned long"))
       ((float) (str "float"))
       ((double number) (str "double"))
+      ((complex cplxnum) (str "double complex"))
       ((c-pointer nonnull-c-pointer scheme-pointer nonnull-scheme-pointer) (str "void *"))
       ((c-string-list c-string-list*) "C_char **")
-      ((blob nonnull-blob u8vector nonnull-u8vector) (str "unsigned char *"))
+      ((bytevector nonnull-bytevector u8vector nonnull-u8vector) (str "unsigned char *"))
+      ((blob nonnull-blob) (str "unsigned char *")) ; DEPRECATED
       ((u16vector nonnull-u16vector) (str "unsigned short *"))
       ((s8vector nonnull-s8vector) (str "signed char *"))
       ((u32vector nonnull-u32vector) (str "unsigned int *")) ;; C_u32?
@@ -1278,7 +1261,7 @@
       ((f32vector nonnull-f32vector) (str "float *"))
       ((f64vector nonnull-f64vector) (str "double *"))
       ((pointer-vector nonnull-pointer-vector) (str "void **"))
-      ((nonnull-c-string c-string nonnull-c-string* c-string* symbol) 
+      ((nonnull-c-string c-string nonnull-c-string* c-string* symbol)
        (str "char *"))
       ((nonnull-unsigned-c-string nonnull-unsigned-c-string* unsigned-c-string unsigned-c-string*)
        (str "unsigned char *"))
@@ -1290,9 +1273,9 @@
 	     ((string? type) (str type))
 	     ((list? type)
 	      (let ((len (length type)))
-		(cond 
+		(cond
 		 ((and (= 2 len)
-		       (memq (car type) '(pointer nonnull-pointer c-pointer 
+		       (memq (car type) '(pointer nonnull-pointer c-pointer
 						  scheme-pointer nonnull-scheme-pointer
 						  nonnull-c-pointer) ) )
 		  (foreign-type-declaration (cadr type) (string-append "*" target)) )
@@ -1302,7 +1285,7 @@
 		 ((and (> len 2)
 		       (eq? 'template (car type)))
 		  (str
-		   (string-append 
+		   (string-append
 		    (foreign-type-declaration (cadr type) "")
 		    "<"
 		    (string-intersperse
@@ -1312,9 +1295,13 @@
 		 ((and (= len 2) (eq? 'const (car type)))
 		  (string-append "const " (foreign-type-declaration (cadr type) target)))
 		 ((and (= len 2) (eq? 'struct (car type)))
-		  (string-append "struct " (->string (cadr type)) " " target))
+                  (if (list? (cadr type))
+                      (string-append (->string (caadr type)) " " target)
+                      (string-append "struct " (->string (cadr type)) " " target)))
 		 ((and (= len 2) (eq? 'union (car type)))
-		  (string-append "union " (->string (cadr type)) " " target))
+                  (if (list? (cadr type))
+                      (string-append (->string (caadr type)) " " target)
+                      (string-append "union " (->string (cadr type)) " " target)))
 		 ((and (= len 2) (eq? 'enum (car type)))
 		  (string-append "enum " (->string (cadr type)) " " target))
 		 ((and (= len 3) (memq (car type) '(instance nonnull-instance)))
@@ -1331,10 +1318,10 @@
 		     " (*" target ")("
 		     (string-intersperse
 		      (map (lambda (at)
-			     (if (eq? '... at) 
+			     (if (eq? '... at)
 				 "..."
 				 (foreign-type-declaration at "") ) )
-			   argtypes) 
+			   argtypes)
 		      ",")
 		     ")" ) ) )
 		 (else (err)) ) ) )
@@ -1354,6 +1341,7 @@
       ((unsigned-short) "(unsigned short)C_unfix(")
       ((unsigned-long) "C_num_to_unsigned_long(")
       ((double number float) "C_c_double(")
+      ((complex cplxnum) "C_c_cplxnum(")
       ((integer integer32) "C_num_to_int(")
       ((integer64) "C_num_to_int64(")
       ((size_t) "(size_t)C_num_to_uint64(")
@@ -1365,10 +1353,10 @@
       ((nonnull-scheme-pointer) "C_data_pointer(")
       ((c-pointer) "C_c_pointer_or_null(")
       ((nonnull-c-pointer) "C_c_pointer_nn(")
-      ((blob) "C_c_bytevector_or_null(")
-      ((nonnull-blob) "C_c_bytevector(")
-      ((u8vector) "C_c_u8vector_or_null(")
-      ((nonnull-u8vector) "C_c_u8vector(")
+      ((u8vector bytevector) "C_c_bytevector_or_null(")
+      ((nonnull-bytevector nonnull-u8vector) "C_c_bytevector(")
+      ((blob) "C_c_bytevector_or_null(") ; DEPRECATED
+      ((nonnull-blob) "C_c_bytevector(") ; DEPRECATED
       ((u16vector) "C_c_u16vector_or_null(")
       ((nonnull-u16vector) "C_c_u16vector(")
       ((u32vector) "C_c_u32vector_or_null(")
@@ -1390,7 +1378,7 @@
       ((pointer-vector) "C_c_pointer_vector_or_null(")
       ((nonnull-pointer-vector) "C_c_pointer_vector(")
       ((c-string c-string* unsigned-c-string unsigned-c-string*) "C_string_or_null(")
-      ((nonnull-c-string nonnull-c-string* nonnull-unsigned-c-string 
+      ((nonnull-c-string nonnull-c-string* nonnull-unsigned-c-string
 			 nonnull-unsigned-c-string* symbol) "C_c_string(")
       ((bool) "C_truep(")
       (else
@@ -1408,6 +1396,10 @@
 		((function) "C_c_pointer_or_null(")
 		((const) (foreign-argument-conversion (cadr type)))
 		((enum) "C_num_to_int(")
+                ((struct union)
+                 (if (list? (cadr type))
+                     (sprintf "C_build_struct(~a," (caadr type))
+                     (sprintf "C_build_struct(~a ~a," (car type) (cadr type))))
 		((ref)
 		 (string-append "*(" (foreign-type-declaration (cadr type) "*")
 				")C_c_pointer_nn("))
@@ -1418,7 +1410,7 @@
 
 
 ;; Generate suitable conversion of a result value into Scheme data
-	    
+
 (define (foreign-result-conversion type dest)
   (let ((err (lambda ()
 	       (quit-compiling "illegal foreign return type `~A'" type))))
@@ -1431,10 +1423,11 @@
       ((byte) "C_fix((char)")
       ((unsigned-byte) "C_fix(0xff&(C_word)")
       ((float double) (sprintf "C_flonum(&~a," dest))	;XXX suboptimal for int64
+      ((complex cplxnum) (sprintf "C_inexact_cplxnum(&~a," dest))
       ((number) (sprintf "C_number(&~a," dest))
-      ((nonnull-c-string c-string nonnull-c-pointer c-string* nonnull-c-string* 
+      ((nonnull-c-string c-string nonnull-c-pointer c-string* nonnull-c-string*
 			 unsigned-c-string unsigned-c-string* nonnull-unsigned-c-string
-			 nonnull-unsigned-c-string* symbol c-string-list c-string-list*) 
+			 nonnull-unsigned-c-string* symbol c-string-list c-string-list*)
        (sprintf "C_mpointer(&~a,(void*)" dest) )
       ((c-pointer) (sprintf "C_mpointer_or_false(&~a,(void*)" dest))
       ((integer integer32) (sprintf "C_int_to_num(&~a," dest))
@@ -1455,6 +1448,10 @@
 		 (sprintf "C_mpointer(&~A,(void*)" dest) )
 		((ref)
 		 (sprintf "C_mpointer(&~A,(void*)&" dest) )
+                ((struct union)
+                 (if (list? (cadr type))
+                     (sprintf "C_a_extract_struct(&~A,~A," dest (caadr type))
+                     (sprintf "C_a_extract_struct(&~A,~A ~A," dest (car type) (cadr type))))
 		((instance)
 		 (sprintf "C_mpointer_or_false(&~A,(void*)" dest) )
 		((nonnull-instance)
@@ -1471,8 +1468,15 @@
 
 
 ;;; Encoded literals as strings, to be decoded by "C_decode_literal()"
-;; 
+;;
 ;; - everything hardcoded, using the FFI would be the ugly, but safer method.
+
+(define (oct n)
+  (string-append
+    (cond ((< n 8) "\\00")
+          ((< n 64) "\\0")
+          (else "\\"))
+    (number->string n 8)))
 
 (define (encode-literal lit)
   (define getbits
@@ -1494,27 +1498,27 @@ return((C_header_bits(lit) >> 24) & 0xff);
 	;; and we have no line number information here.
 	(quit-compiling
 	 "Encoded literal size of ~S is too large (must fit in 24 bits)" n)
-	(string
-	 (integer->char (bitwise-and #xff (arithmetic-shift n -16)))
-	 (integer->char (bitwise-and #xff (arithmetic-shift n -8)))
-	 (integer->char (bitwise-and #xff n)))))
+	(string-append
+          (oct (bitwise-and #xff (arithmetic-shift n -16)))
+	  (oct (bitwise-and #xff (arithmetic-shift n -8)))
+          (oct (bitwise-and #xff n)))))
   (define (finish str)		   ; can be taken out at a later stage
-    (string-append (string #\xfe) str))
+    (string-append "\\376" str))
   (finish
-   (cond ((eq? #t lit) "\xff\x06\x01")
-	 ((eq? #f lit) "\xff\x06\x00")
-	 ((char? lit) (string-append "\xff\x0a" (encode-size (char->integer lit))))
-	 ((null? lit) "\xff\x0e")
-	 ((eof-object? lit) "\xff\x3e")
-	 ((eq? (void) lit) "\xff\x1e")
+   (cond ((eq? #t lit) "\\377\\006\\001")
+	 ((eq? #f lit) "\\377\\006\\000")
+	 ((char? lit) (string-append "\\377\\012" (encode-size (char->integer lit))))
+	 ((null? lit) "\\377\\016")
+	 ((eof-object? lit) "\\377\\076")
+	 ((eq? (void) lit) "\\377\\036")
 	 ;; The big-fixnum? check can probably be simplified
 	 ((and (fixnum? lit) (not (big-fixnum? lit)))
 	  (string-append
-	   "\xff\x01"
-	   (string (integer->char (bitwise-and #xff (arithmetic-shift lit -24)))
-		   (integer->char (bitwise-and #xff (arithmetic-shift lit -16)))
-		   (integer->char (bitwise-and #xff (arithmetic-shift lit -8)))
-		   (integer->char (bitwise-and #xff lit)) ) ) )
+	   "\\377\\001"
+	   (oct (bitwise-and #xff (arithmetic-shift lit -24)))
+           (oct (bitwise-and #xff (arithmetic-shift lit -16)))
+	   (oct (bitwise-and #xff (arithmetic-shift lit -8)))
+	   (oct (bitwise-and #xff lit)) ) )
 	 ((exact-integer? lit)
 	  ;; Encode as hex to save space and get exact size
 	  ;; calculation.  We could encode as base 32 to save more
@@ -1523,30 +1527,68 @@ return((C_header_bits(lit) >> 24) & 0xff);
 	  ;; get a unique new type, as bignums don't have their own
 	  ;; type tag (they're encoded as structures).
 	  (let ((str (number->string lit 16)))
-	    (string-append "\xc2" (encode-size (string-length str)) str)))
+	    (string-append "\\320" (encode-size (fx- (##sys#size (##sys#slot str 0)) 1)) str)))
 	 ((flonum? lit)
-	  (string-append "\x55" (number->string lit) "\x00") )
-	 ((or (keyword? lit) (symbol? lit))
-	  (let ((str (##sys#slot lit 1)))
-	    (string-append 
-	     "\x01"
-	     (encode-size (string-length str))
-	     (if (keyword? lit) "\x02" "\x01")
-	     str) ) )
+	  (string-append "\\125" (number->string lit) "\\000") )
+	 ((keyword? lit)
+	  (let* ((str (keyword->string lit))
+                 (bv (##sys#slot str 0)))
+	    (string-append
+	     "\\001" (encode-size (fx- (##sys#size bv) 1)) "\\002"
+                    (byteblock->string bv -1)) ) )
+	 ((symbol? lit)
+	  (let* ((str (##sys#symbol->string/shared lit))
+                 (bv (##sys#slot str 0)))
+	    (string-append
+	     "\\001" (encode-size (fx- (##sys#size bv) 1)) "\\001"
+                    (byteblock->string bv -1) ) ))
+	 ((string? lit)
+	   (string-append
+	    (oct (getbits lit))
+	    (encode-size (##sys#size (##sys#slot lit 0)))
+            (byteblock->string (##sys#slot lit 0) 0) ))
+	 ((##core#inline "C_byteblockp" lit)
+	   (string-append
+	    (oct (getbits lit))
+	    (encode-size (getsize lit))
+  	    (byteblock->string lit 0) ))
 	 ((##sys#immediate? lit)
 	  (bomb "invalid literal - cannot encode" lit))
-	 ((##core#inline "C_byteblockp" lit)
-	  (##sys#string-append ; relies on the fact that ##sys#string-append doesn't check
-	   (string-append
-	    (string (integer->char (getbits lit)))
-	    (encode-size (getsize lit)) )
-	   lit) )
 	 (else
 	  (let ((len (getsize lit)))
 	    (string-intersperse
 	     (cons*
-	      (string (integer->char (getbits lit)))
+	      (oct (getbits lit))
 	      (encode-size len)
 	      (list-tabulate len (lambda (i) (encode-literal (##sys#slot lit i)))))
 	     ""))))) )
+
+(define (byteblock->string bb mlen)
+  (let ((out (open-output-string))
+        (len (fx+ (##sys#size bb) mlen)))
+    (do ((i 0 (fx+ i 1)))
+        ((fx>= i len) (get-output-string out))
+      (display (oct (##sys#byte bb i)) out))))
+
+(define (c-ify-string str)
+  (list->string
+   (cons
+    #\"
+    (let loop ((bytes (##sys#bytevector->list (##sys#slot str 0))))
+      (if (or (null? bytes)
+              (null? (cdr bytes)))
+          '(#\")
+	  (let ((code (car bytes)))
+	    (if (or (< code 32)
+                    (>= code 127)
+                    (memq code '(#\" #\' #\\ #\? #\*)))
+		(append '(#\\)
+                        (cond ((< code 8) '(#\0 #\0))
+                              ((< code 64) '(#\0))
+                              (else '()))
+			(string->list (number->string code 8))
+			(loop (cdr bytes)) )
+		(cons (integer->char code)
+                      (loop (cdr bytes))))))))))
+
 )

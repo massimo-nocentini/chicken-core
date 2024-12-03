@@ -5,6 +5,8 @@
 
 ;; bidirectional ports are specialized
 
+(import (only (scheme base) open-input-string))
+
 (let ((p (open-input-string "foo")))
   (when (output-port? p) ; indicates `p' is bidirectional
      (if (input-port? p) 'ok 'no)

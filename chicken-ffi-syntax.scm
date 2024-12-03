@@ -58,7 +58,7 @@
    (lambda (form r c)
      (if (feature? 'compiling)
 	 (transformer form r c)
-	 (syntax-error
+	 (##sys#syntax-error
 	  (car form) "The FFI is not supported in interpreted mode")))))
 
 (##sys#extend-macro-environment
@@ -190,7 +190,7 @@
 	 ,(cond ((string? code) code)
 		((symbol? code) (symbol->string code))
 		(else
-		 (syntax-error
+		 (##sys#syntax-error
 		  'foreign-value
 		  "bad argument type - not a string or symbol" 
 		  code))))

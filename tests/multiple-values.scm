@@ -1,3 +1,5 @@
+(import (only (scheme base) call/cc))
+
 (define-syntax assert-fail
   (syntax-rules ()
     ((_ exp)

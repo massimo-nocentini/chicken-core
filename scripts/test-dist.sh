@@ -15,7 +15,7 @@ fi
 
 case $# in
     1|2) ;;
-    *) 
+    *)
 	echo "usage: test-dist.sh [-bootstrap] PLATFORM [TARBALL]"
 	exit 1;;
 esac
@@ -29,8 +29,8 @@ if test -z `which gmake`; then
     makeprg=make
 fi
 
-# need Windows-style drive letter on mingw/msys
-if test -n "$MSYSTEM"; then
+# need Windows-style drive letter on mingw
+if [ $(uname) = Windows_NT ]; then
     pwdopts=-W
 fi
 

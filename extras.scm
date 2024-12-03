@@ -28,213 +28,8 @@
 (declare
  (unit extras)
  (uses data-structures))
-
-(module chicken.io
-  (read-list read-buffered read-byte read-line
-   read-lines read-string read-string! read-token
-   write-byte write-line write-string)
-
-(import scheme chicken.base chicken.fixnum)
-
+             
 (include "common-declarations.scm")
-
-
-;;; Read expressions from file:
-
-(define read-list
-  (let ((read read))
-    (lambda (#!optional (port ##sys#standard-input) (reader read) max)
-      (##sys#check-input-port port #t 'read-list)
-      (do ((x (reader port) (reader port))
-	   (i 0 (fx+ i 1))
-	   (xs '() (cons x xs)))
-	  ((or (eof-object? x) (and max (fx>= i max)))
-	   (##sys#fast-reverse xs))))))
-
-
-;;; Line I/O:
-
-(define read-line
-  (let ()
-    (lambda args
-      (let* ([parg (pair? args)]
-	     [p (if parg (car args) ##sys#standard-input)]
-	     [limit (and parg (pair? (cdr args)) (cadr args))])
-	(##sys#check-input-port p #t 'read-line)
-	(cond ((##sys#slot (##sys#slot p 2) 8) => (lambda (rl) (rl p limit)))
-	      (else
-	       (let* ((buffer-len (if limit limit 256))
-		      (buffer (##sys#make-string buffer-len)))
-		 (let loop ([i 0])
-		   (if (and limit (fx>= i limit))
-		       (##sys#substring buffer 0 i)
-		       (let ([c (##sys#read-char-0 p)])
-			 (if (eof-object? c)
-			     (if (fx= i 0)
-				 c
-				 (##sys#substring buffer 0 i) ) 
-			     (case c
-			       [(#\newline) (##sys#substring buffer 0 i)]
-			       [(#\return)
-				(let ([c (peek-char p)])
-				  (if (char=? c #\newline)
-				      (begin (##sys#read-char-0 p)
-					     (##sys#substring buffer 0 i))
-				      (##sys#substring buffer 0 i) ) ) ]
-			       [else
-				(when (fx>= i buffer-len)
-				  (set! buffer
-				    (##sys#string-append buffer (make-string buffer-len)))
-				  (set! buffer-len (fx+ buffer-len buffer-len)) )
-				(##core#inline "C_setsubchar" buffer i c)
-				(loop (fx+ i 1)) ] ) ) ) ) ) ) ) ) ) ) ) )
-
-(define read-lines
-  (lambda (#!optional (port ##sys#standard-input) max)
-    (##sys#check-input-port port #t 'read-lines)
-    (when max (##sys#check-fixnum max 'read-lines))
-    (let loop ((lns '())
-	       (n (or max most-positive-fixnum)))
-      (if (eq? n 0)
-	  (##sys#fast-reverse lns)
-	  (let ((ln (read-line port)))
-	    (if (eof-object? ln)
-		(##sys#fast-reverse lns)
-		(loop (cons ln lns) (fx- n 1))))))))
-
-(define write-line
-  (lambda (str . port)
-    (let* ((p (if (##core#inline "C_eqp" port '())
-                  ##sys#standard-output
-                  (##sys#slot port 0) ) ))
-      (##sys#check-output-port p #t 'write-line)
-      (##sys#check-string str 'write-line)
-      ((##sys#slot (##sys#slot p 2) 3) p str) ; write-string method
-      (##sys#write-char-0 #\newline p))))
-
-
-;;; Extended I/O 
-
-(define (read-string!/port n dest port start)
-  (cond ((eq? n 0) 0)
-	(else
-	 (let ((rdstring (##sys#slot (##sys#slot port 2) 7)))
-           (if rdstring
-	       (let loop ((start start) (n n) (m 0))
-		 (let ((n2 (rdstring port n dest start)))
-		   (##sys#setislot port 5 ; update port-position
-				   (fx+ (##sys#slot port 5) n2))
-		   (cond ((eq? n2 0) m)
-			 ((or (not n) (fx< n2 n)) 
-			  (loop (fx+ start n2) (and n (fx- n n2)) (fx+ m n2)))
-			 (else (fx+ n2 m)))))
-	       (let loop ((start start) (n n) (m 0))
-		 (let ((n2 (let ((c (##sys#read-char-0 port)))
-			     (if (eof-object? c)
-				 0
-				 (begin
-				   (##core#inline "C_setsubchar" dest start c)
-				   1) ) )  ) )
-		   (cond ((eq? n2 0) m)
-			 ((or (not n) (fx< n2 n)) 
-			  (loop (fx+ start n2) (and n (fx- n n2)) (fx+ m n2)) )
-			 (else (fx+ n2 m))) )))))))
-
-(define (read-string! n dest #!optional (port ##sys#standard-input) (start 0))
-  (##sys#check-input-port port #t 'read-string!)
-  (##sys#check-string dest 'read-string!)
-  (when n (##sys#check-fixnum n 'read-string!))
-  (let ((dest-size (##sys#size dest)))
-    (unless (and n (fx<= (fx+ start n) dest-size))
-      (set! n (fx- dest-size start))))
-  (##sys#check-fixnum start 'read-string!)
-  (read-string!/port n dest port start))
-
-(define-constant read-string-buffer-size 2048)
-
-(define read-string/port
-  (lambda (n p)
-    (cond ((eq? n 0) "") ; Don't attempt to peek (fd might not be ready)
-	  ((eof-object? (##sys#peek-char-0 p)) #!eof)
-          (n (let* ((str (##sys#make-string n))
-		    (n2 (read-string!/port n str p 0)))
-	       (if (eq? n n2)
-		   str
-		   (##sys#substring str 0 n2))))
-	  (else
-	   (let ([out (open-output-string)]
-		 (buf (make-string read-string-buffer-size)))
-	     (let loop ()
-	       (let ((n (read-string!/port read-string-buffer-size buf p 0)))
-		 (cond ((eq? n 0)
-			(get-output-string out))
-		       (else
-			(write-string buf n out)
-			(loop))))))))))
-
-(define (read-string #!optional n (port ##sys#standard-input))
-  (##sys#check-input-port port #t 'read-string)
-  (when n (##sys#check-fixnum n 'read-string))
-  (read-string/port n port))
-
-
-;; Make internal reader procedures available for use in srfi-4.scm:
-
-(define chicken.io#read-string/port read-string/port)
-(define chicken.io#read-string!/port read-string!/port)
-
-(define (read-buffered #!optional (port ##sys#standard-input))
-  (##sys#check-input-port port #t 'read-buffered)
-  (let ((rb (##sys#slot (##sys#slot port 2) 9))) ; read-buffered method
-    (if rb
-	(rb port)
-	"")))
-
-
-;;; read token of characters that satisfy a predicate
-
-(define read-token
-  (lambda (pred . port)
-    (let ([port (optional port ##sys#standard-input)])
-      (##sys#check-input-port port #t 'read-token)
-      (let ([out (open-output-string)])
-	(let loop ()
-	  (let ([c (##sys#peek-char-0 port)])
-	    (if (and (not (eof-object? c)) (pred c))
-		(begin
-		  (##sys#write-char-0 (##sys#read-char-0 port) out)
-		  (loop) )
-		(get-output-string out) ) ) ) ) ) ) )
-
-(define write-string 
-  (lambda (s . more)
-    (##sys#check-string s 'write-string)
-    (let-optionals more ([n #f] [port ##sys#standard-output])
-      (##sys#check-output-port port #t 'write-string)
-      (when n (##sys#check-fixnum n 'write-string))
-      ((##sys#slot (##sys#slot port 2) 3) ; write-string
-       port
-       (if (and n (fx< n (##sys#size s)))
-	   (##sys#substring s 0 n)
-	   s)))))
-
-
-;;; Binary I/O
-
-(define (read-byte #!optional (port ##sys#standard-input))
-  (##sys#check-input-port port #t 'read-byte)
-  (let ((x (##sys#read-char-0 port)))
-    (if (eof-object? x)
-	x
-	(char->integer x) ) ) )
-
-(define (write-byte byte #!optional (port ##sys#standard-output))
-  (##sys#check-fixnum byte 'write-byte)
-  (##sys#check-output-port port #t 'write-byte)
-  (##sys#write-char-0 (integer->char byte) port) )
-
-) ; module chicken.io
-
 
 ;;; Pretty print:
 ;
@@ -249,6 +44,7 @@
   (pp pretty-print pretty-print-width)
 
 (import scheme chicken.base chicken.fixnum chicken.keyword chicken.string)
+(import (only (scheme base) make-parameter open-output-string get-output-string port?))
 
 (define generic-write
   (lambda (obj display? width output)
@@ -295,11 +91,10 @@
       (cond ((pair? obj)        (wr-expr obj col))
 	    ((null? obj)        (wr-lst obj col))
 	    ((eof-object? obj)  (out "#!eof" col))
-	    ;; TODO: Remove once we have a bootstrapping libchicken with bwp-object?
-	    ((##core#inline "C_bwpp" obj) #;(bwp-object? obj) (out "#!bwp" col))
+	    ((bwp-object? obj)   (out "#!bwp" col))
 	    ((vector? obj)      (wr-lst (vector->list obj) (out "#" col)))
 	    ((boolean? obj)     (out (if obj "#t" "#f") col))
-	    ((##sys#number? obj)      (out (##sys#number->string obj) col))
+	    ((number? obj)      (out (##sys#number->string obj) col))
 	    ((or (keyword? obj) (symbol? obj))
 	     (let ((s (open-output-string)))
 	       (##sys#print obj #t s)
@@ -320,7 +115,7 @@
 				      (out (##sys#substring obj i j)
 					   col))))
 			  ((or (char<? c #\x20)
-			       (char=? c #\x7f))
+			       (char>=? c #\x7f))
 			   (loop (fx+ j 1)
 				 (fx+ j 1)
 				 (let ((col2
@@ -336,49 +131,41 @@
 					  (lambda (a)
 					    (out (cdr a) col2)))
 					 (else
-					  (out (number->string (char->integer c) 16)
-					       (out (if (char<? c #\x10) "0" "")
-						    (out "\\x" col2))))))))
+					  (out (string-append
+					  	 "\\x"
+					  	 (number->string (char->integer c) 16)
+					  	 ";")
+					  	col2))))))
 			  (else (loop i (fx+ j 1) col))))
 		       (out "\""
 			    (out (##sys#substring obj i j) col))))))
 	    ((char? obj)        (if display?
 				    (out (make-string 1 obj) col)
-				    (let ([code (char->integer obj)])
-				      (out "#\\" col)
-				      (cond [(char-name obj) 
-					     => (lambda (cn) 
-						  (out (##sys#slot cn 1) col) ) ]
-					    [(fx< code 32)
-					     (out "x" col)
-					     (out (number->string code 16) col) ]
-					    [(fx> code 255)
-					     (out (if (fx> code #xffff) "U" "u") col)
-					     (out (number->string code 16) col) ]
-					    [else (out (make-string 1 obj) col)] ) ) ) )
+				    (let ((code (char->integer obj))
+				          (col2 (out "#\\" col)))
+				      (cond ((char-name obj)
+					     => (lambda (cn)
+						  (out (##sys#symbol->string/shared cn) col2) ) )
+					    ((or (fx< code 32) (fx> code 127))
+					     (out (number->string code 16)
+					            (out "x" col2)))
+					    (else (out (make-string 1 obj) col2)) ) ) ) )
 	    ((##core#inline "C_undefinedp" obj) (out "#<unspecified>" col))
 	    ((##core#inline "C_unboundvaluep" obj) (out "#<unbound value>" col))
 	    ((##core#inline "C_immp" obj) (out "#<unprintable object>" col))
 	    ((##core#inline "C_anypointerp" obj) (out (##sys#pointer->string obj) col))
 	    ((##sys#generic-structure? obj)
-	     (let ([o (open-output-string)])
+	     (let ((o (open-output-string)))
 	       (##sys#user-print-hook obj #t o)
 	       (out (get-output-string o) col) ) )
 	    ((port? obj) (out (string-append "#<port " (##sys#slot obj 3) ">") col))
 	    ((##core#inline "C_bytevectorp" obj)
-	     (out "#${" col)
-	     (let ((len (##sys#size obj)))
-	       (do ((i 0 (fx+ i 1)))
-		   ((fx>= i len))
-		 (let ((b (##sys#byte obj i)))
-		   (when (fx< b 16)
-		     (out "0" col))
-		   (out (##sys#number->string b 16) col)))
-	       (out "}" col)))
+	     (out "#u8" col)
+             (wr-lst (##sys#bytevector->list obj) col))
 	    ((##core#inline "C_lambdainfop" obj)
-	     (out "#<lambda info " col)
-	     (out (##sys#lambda-info->string obj) col)
-	     (out ">" col) )
+	     (out ">"
+	          (out (##sys#lambda-info->string obj)
+	               (out "#<lambda info " col) )))
 	    (else (out "#<unprintable object>" col)) ) )
 
     (define (pp obj col)
@@ -423,7 +210,7 @@
 		  (let ((proc (style head)))
 		    (if proc
 			(proc expr col extra)
-			(if (> (string-length (##sys#symbol->string head))
+			(if (> (string-length (##sys#symbol->string/shared head))
 			       max-call-head-width)
 			    (pp-general expr col extra #f #f #f pp-expr)
 			    (pp-call expr col extra pp-expr))))
@@ -566,6 +353,7 @@
   (format fprintf printf sprintf)
 
 (import scheme chicken.base chicken.fixnum chicken.platform)
+(import (only (scheme base) open-output-string get-output-string))
 
 (define fprintf0
   (lambda (loc port msg args)
@@ -576,9 +364,9 @@
       (let rec ([msg msg] [args args])
 	(##sys#check-string msg loc)
 	(let ((index 0)
-	      (len (##sys#size msg)) )
+	      (len (string-length msg)) )
 	  (define (fetch)
-	    (let ((c (##core#inline "C_subchar" msg index)))
+	    (let ((c (string-ref msg index)))
 	      (set! index (fx+ index 1))
 	      c) )
 	  (define (next)
@@ -654,8 +442,7 @@
            (when (##core#inline "C_fixnum_lessp" n 0)
              (##sys#error 'set-pseudo-random-seed! "invalid size" n)))
         (else (set! n (##sys#size buf))))
-  (unless (##core#inline "C_byteblockp" buf)
-    (##sys#error 'set-pseudo-random-seed! "invalid buffer type" buf))
+  (##sys#check-bytevector buf 'set-pseudo-random-seed!)
   (##core#inline "C_set_random_seed" buf
                  (##core#inline "C_i_fixnum_min" 
                                 n 
@@ -685,13 +472,11 @@
                            (##sys#error 'random-bytes
                                         "invalid buffer type" buf))
                          buf)
-                        (else (make-string (or size nstate)))))
+                        (else (##sys#make-bytevector (or size nstate)))))
              (r (##core#inline "C_random_bytes" dest
                                (or size (##sys#size dest)))))
         (unless r
           (##sys#error 'random-bytes "unable to read random bytes"))
-        (unless (eq? buf dest)
-          (##core#inline "C_string_to_bytevector" dest))
         dest))))
 
 )

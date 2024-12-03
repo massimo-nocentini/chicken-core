@@ -11,7 +11,7 @@
 * Leaf routine optimization can theoretically result in code that thrashes, if tight loops perform excessively many mutations. In practice this doesn't happen.
 
 * Due to the header representation of block objects, the maximum size
-of a bytevector-like object (strings, blobs, srfi-4 vectors etc) is
+of a bytevector-like object (strings, bytevectors, srfi-4 vectors etc) is
 2^24 bytes or 16MiB.  On 64-bit machines the limit is less relevant,
 at 2^56 bytes, or 65536 TiB (64 PiB).
 

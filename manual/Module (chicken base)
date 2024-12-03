@@ -3,7 +3,7 @@
 
 == Module (chicken base)
 
-Core procedures and macros, acting as basic extensions to the R5RS
+Core procedures and macros, acting as basic extensions to the R7RS
 standard and other essential features.
 
 This module is used by default, unless a program is compiled with
@@ -12,7 +12,7 @@ the {{-explicit-use}} option.
 === Numeric predicates
 
 These allow you to make a more precise differentiation between number
-types and their properties, not provided by R5RS.
+types and their properties, not provided by R7RS.
 
 ==== fixnum?
 
@@ -119,17 +119,6 @@ in combination with comparison of numerical data by value.
 Adds/subtracts 1 from {{N}}.
 
 
-==== exact-integer-sqrt
-
-<procedure>(exact-integer-sqrt K)</procedure>
-
-Returns two values {{s}} and {{r}}, where {{s^2 + r = K}} and {{K < (s+1)^2}}.
-In other words, {{s}} is the closest square root we can find that's equal to or
-smaller than {{K}}, and {{r}} is the rest if {{K}} isn't a neat square of two numbers.
-
-This procedure is compatible with the definition from the R7RS
-{{(scheme base)}} library.
-
 ==== exact-integer-nth-root
 
 <procedure>(exact-integer-nth-root K N)</procedure>
@@ -193,14 +182,14 @@ noted above.
  (weak-cons "a" '(b c))               ===>  ("a" b c)
  (weak-cons 'a 3)                     ===>  (a . 3)
  (weak-cons '(a b) 'c)                ===>  ((a b) . c)
- 
+
  (import (chicken gc))
- 
+
  (let* ((x '(a b))
         (y (weak-cons x 'c)))
    (gc #t)
    (car x))                           ===> (a b)
- 
+
  (let ((x (weak-cons '(a b) 'c)))
    (gc #t)
    (car x))                           ===>  #!bwp
@@ -223,58 +212,6 @@ This predicate returns {{#t}} if and only if {{obj}} is a weak pair.
 
 This predicate returns {{#t}} if {{obj}} is the broken-weak-pointer
 value, otherwise {{#f}}.
-
-
-=== Lazy evaluation
-
-==== delay-force
-
-<macro>(delay-force <expression>)</macro><br>
-
-The expression {{(delay-force expression)}} is conceptually similar to
-{{(delay (force expression))}}, with the difference that forcing the
-result of {{delay-force}} will in effect result in a tail call to
-{{(force expression)}}, while forcing the result of
-{{(delay (force expression))}} might not.
-
-Thus iterative lazy algorithms that might result in a long series of
-chains of delay and force can be rewritten using delay-force to
-prevent consuming unbounded space during evaluation.
-
-This special form is compatible with the definition from the R7RS
-{{(scheme lazy)}} library.
-
-See the description of force under
-[[Module scheme#control-features|Control features]] in the "scheme"
-module documentation for a more complete description of delayed
-evaluation.
-
-For more information regarding the unbounded build-up of space, see
-the [[http://srfi.schemers.org/srfi-45/srfi-45.html|SRFI-45]]
-rationale.
-
-==== make-promise
-
-<procedure>(make-promise obj)</procedure>
-
-The make-promise procedure returns a promise which, when forced, will
-return {{obj}} . It is similar to {{delay}}, but does not delay its
-argument: it is a procedure rather than syntax. If {{obj}} is already
-a promise, it is returned.
-
-This procedure is compatible with the definition from the R7RS
-{{(scheme lazy)}} library.
-
-
-==== promise?
-
-<procedure>(promise? X)</procedure>
-
-Returns {{#t}} if {{X}} is a promise returned by {{delay}}, or
-{{#f}} otherwise.
-
-This procedure is compatible with the definition from the R7RS
-{{(scheme lazy)}} library.
 
 
 === Input/Output
@@ -524,17 +461,6 @@ Returns true if {{X}} is one of the tails (cdr's) of {{LIST}}.
 
 === Vectors
 
-==== vector-copy!
-
-<procedure>(vector-copy! VECTOR1 VECTOR2 [COUNT])</procedure>
-
-Copies contents of {{VECTOR1}} into {{VECTOR2}}. If the
-argument {{COUNT}} is given, it specifies the maximal number of
-elements to be copied. If not given, the minimum of the lengths of the
-argument vectors is copied.
-
-Exceptions: {{(exn bounds)}}
-
 ==== vector-resize
 
 <procedure>(vector-resize VECTOR N [INIT])</procedure>
@@ -636,7 +562,7 @@ of the last procedure application. For example
 is equivalent to
 
 <enscript highlight=scheme>
-(lambda args 
+(lambda args
   (apply pp args)
   (apply eval args) )
 </enscript>
@@ -683,6 +609,23 @@ applied to a list of elements that all satisfy the predicate procedure
 
 A single value version of {{compose}} (slightly faster). {{(o)}} is equivalent
 to {{identity}}.
+
+
+=== UNICODE case folding
+
+==== char-foldcase
+
+<procedure>(char-foldcase CHAR)</procedure>
+
+Performs simple UNICODE case folding to {{CHAR}}, language-specific mappings
+are not used.
+
+==== string-foldcase
+
+<procedure>(string-foldcase STRING)</procedure>
+
+Performs UNICODE case folding to {{STRING}}, language-specific mappings
+are not used. The resulting string may be longer than the original string.
 
 
 === User-defined named characters
@@ -756,7 +699,7 @@ identical to a symbol written before:
 (define sym 'foo)
 
 (eq? sym (with-input-from-string
-            (with-output-to-string 
+            (with-output-to-string
               (lambda () (write sym)))
 	    read))
 
@@ -770,7 +713,7 @@ multiple symbols with the same name may coexist:
 (define sym (gensym 'foo))   ; sym is a uninterned symbol like "foo42"
 
 (eq? sym (with-input-from-string    ; the symbol read will be an interned symbol
-            (with-output-to-string 
+            (with-output-to-string
               (lambda () (write sym)))
 	    read))
 
@@ -846,33 +789,6 @@ an error if {{ARGS}} contains more than one value.
 (incr 12 5)                                 ==> 17
 </enscript>
 
-
-==== case-lambda
-
-<macro>(case-lambda (LAMBDA-LIST1 EXP1 ...) ...)</macro>
-
-Expands into a lambda that invokes the body following the first
-matching lambda-list.
-
-<enscript highlight=scheme>
-(define plus
-  (case-lambda 
-    (() 0)
-    ((x) x)
-    ((x y) (+ x y))
-    ((x y z) (+ (+ x y) z))
-    (args (apply + args))))
-
-(plus)                      ==> 0
-(plus 1)                    ==> 1
-(plus 1 2 3)                ==> 6
-</enscript>
-
-For more information see the documentation for
-[[http://srfi.schemers.org/srfi-16/srfi-16.html|SRFI-16]]
-
-This special form is also compatible with the definition from the R7RS
-{{(scheme case-lambda)}} library.
 
 ==== let-optionals
 
@@ -1019,7 +935,7 @@ notation is supported).
 
 <enscript highlight=scheme>
 (letrec-values (((odd even)
-                   (values 
+                   (values
                      (lambda (n) (if (zero? n) #f (even (sub1 n))))
                      (lambda (n) (if (zero? n) #t (odd (sub1 n)))) ) ) )
   (odd 17) )                           ==> #t
@@ -1057,57 +973,6 @@ variables, similar to {{define-values}}.
 Returns the {{N}}th value (counting from zero) of the values returned
 by expression {{EXP}}.
 
-
-=== Parameters
-
-Parameters are CHICKEN's form of dynamic variables, except that they are
-procedures rather than actual variables.  A parameter is a procedure of
-zero or one arguments. To retrieve the value of a parameter call the
-parameter-procedure with zero arguments. To change the setting of the
-parameter, call the parameter-procedure with the new value as argument:
-
-<enscript highlight=scheme>
-(define foo (make-parameter 123))
-(foo)                             ==> 123
-(foo 99)
-(foo)                             ==> 99
-</enscript>
-
-Parameters are fully thread-local, each thread of execution
-owns a local copy of a parameters' value.
-
-CHICKEN implements
-[[http://srfi.schemers.org/srfi-39/srfi-39.html|SRFI-39]], which
-is also standardized by R7RS.
-
-
-==== parameterize
-
-<macro>(parameterize ((PARAMETER1 X1) ...) BODY ...)</macro>
-
-Binds the parameters {{PARAMETER1 ...}} dynamically to the values
-{{X1 ...}} during execution of {{BODY ...}}.  (see also:
-{{make-parameter}} in [[Parameters]]). Note that {{PARAMETER}} may
-be any expression that evaluates to a parameter procedure.
-
-This special form is compatible with the definition from the R7RS
-{{(scheme base)}} library.
-
-==== make-parameter
-
-<procedure>(make-parameter VALUE [GUARD])</procedure>
-
-Returns a procedure that accepts zero or one argument. Invoking the
-procedure with zero arguments returns {{VALUE}}. Invoking the
-procedure with one argument changes its value to the value of that
-argument and returns the new value (subsequent invocations with zero
-parameters return the new value). {{GUARD}} should be a procedure of a
-single argument. Any new values of the parameter (even the initial
-value) are passed to this procedure. The guard procedure should check
-the value and/or convert it to an appropriate form.
-
-This special form is compatible with the definition from the R7RS
-{{(scheme base)}} library.
 
 === Substitution forms and macros
 
@@ -1177,7 +1042,6 @@ Equivalent to:
 <enscript highlight=scheme>
 (if TEST (begin EXP1 EXP2 ...))
 </enscript>
-
 
 === Record structures
 
@@ -1282,15 +1146,55 @@ s                                   ==> "#,(foo 1 2 3)"
 
 === Other forms
 
+==== load
+
+<procedure>(load filename [evalproc])</procedure><br>
+
+Filename should be a string naming an existing file containing Scheme
+source code. The load procedure reads expressions and definitions from
+the file and evaluates them sequentially. It is unspecified whether the
+results of the expressions are printed. The load procedure does not
+affect the values returned by current-input-port and
+current-output-port. Load returns an unspecified value.
+
+CHICKEN offers a few extensions to the R7RS definition of {{load}}:
+
+* The {{filename}} may also be an input port.
+* The expressions which are read one by one from the source file are passed to the procedure indicated by the extra optional {{evalproc}} argument, which defaults to {{eval}}.
+* On platforms that support it (currently BSD, Haiku, MacOS X, Linux, Solaris, and Windows), {{load}} can be used to load shared objects.
+
+Example for loading compiled programs:
+
+ % cat x.scm
+ (define (hello) (print "Hello!"))
+ % csc -s x.scm
+ % csi -q
+ #;1> (load "x.so")
+ ; loading x.so ...
+ #;2> (hello)
+ Hello!
+ #;3>
+
+There are some limitations and caveats to the CHICKEN extensions you
+need to be aware of:
+
+* The second argument to {{load}} is ignored when loading compiled code.
+* If source code is loaded from a port, then that port is closed after all expressions have been read.
+* A compiled file can only be loaded once. Subsequent attempts to load the same file have no effect.
+
 ==== include
 
-<macro>(include STRING)</macro>
+<macro>(include STRING1 STRING2 ...)</macro>
+<macro>(include-ci STRING1 STRING2 ...)</macro>
 
-Include toplevel-expressions from the given source file in the currently
+Include toplevel-expressions from the given source files in the currently
 compiled/interpreted program.  If the included file has the extension
 {{.scm}}, then it may be omitted. The file is searched for in the
 current directory and all directories specified by the {{-include-path}}
 option.
+
+{{include-ci}} works as {{include}} but reads files in case-insensitive
+mode.
 
 ==== include-relative
 
@@ -1417,32 +1321,6 @@ to sleep and other threads may continue executing. Otherwise, the whole
 process is put to sleep.
 
 
-=== Ports
-
-==== String ports
-
-===== get-output-string
-
-<procedure>(get-output-string PORT)</procedure>
-
-Returns accumulated output of a port created with
-{{(open-output-string)}}.
-
-
-===== open-input-string
-
-<procedure>(open-input-string STRING)</procedure>
-
-Returns a port for reading from {{STRING}}.
-
-
-===== open-output-string
-
-<procedure>(open-output-string)</procedure>
-
-Returns a port for accumulating output in a string.
-
-
 === File Input/Output
 
 ==== flush-output
@@ -1454,28 +1332,11 @@ to the value of {{(current-output-port)}}.
 
 === Port predicates
 
-==== input-port-open?
-
-<procedure>(input-port-open? PORT)</procedure>
-
-Is the given {{PORT}} open for input?
-
-<procedure>(output-port-open? PORT)</procedure>
-
-Is the given {{PORT}} open for output?
-
 ==== port-closed?
 
 <procedure>(port-closed? PORT)</procedure>
 
 Is the given {{PORT}} closed (in all directions)?
-
-==== port?
-
-<procedure>(port? X)</procedure>
-
-Returns {{#t}} if {{X}} is a port object or {{#f}}
-otherwise.
 
 
 === Built-in parameters
@@ -1515,7 +1376,8 @@ If true, then the list delimiter synonyms {{#\[}} {{#\]}} and {{#\{}} {{#\}}} ar
 
 <parameter>(symbol-escape)</parameter>
 
-If true, then the symbol escape {{#\|}} {{#\|}} is enabled. Defaults to {{#t}}.
+If true, then the symbol escape {{#\|}} {{#\|}} is allowed when reading
+and printing expressions. Defaults to {{#t}}.
 
 
 ---
