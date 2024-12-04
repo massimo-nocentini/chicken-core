@@ -35,7 +35,6 @@
 		      write-simple)
   (import (rename scheme (display display-simple) (write write-simple))
 	  (only chicken.base foldl when optional)
-	  (only chicken.platform feature?)
 	  (only chicken.fixnum fx+ fx= fx<= fx-))
 
   (define (interesting? o)
