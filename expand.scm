@@ -7,11 +7,11 @@
 ; conditions are met:
 ;
 ;   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
-;     disclaimer. 
+;     disclaimer.
 ;   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
-;     disclaimer in the documentation and/or other materials provided with the distribution. 
+;     disclaimer in the documentation and/or other materials provided with the distribution.
 ;   Neither the name of the author nor the names of its contributors may be used to endorse or promote
-;     products derived from this software without specific prior written permission. 
+;     products derived from this software without specific prior written permission.
 ;
 ; THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
 ; OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
@@ -62,7 +62,7 @@
 (define-syntax map-se
   (syntax-rules ()
     ((_ ?se)
-     (map (lambda (a) 
+     (map (lambda (a)
 	    (cons (car a) (if (symbol? (cdr a)) (cdr a) '<macro>)))
 	  ?se))))
 
@@ -101,7 +101,7 @@
              (rn (or (getp var '##core#real-name) var)))
 	(putp alias '##core#macro-alias ua)
 	(putp alias '##core#real-name rn)
-	(dd "aliasing " alias " (real: " var ") to " 
+	(dd "aliasing " alias " (real: " var ") to "
 	    (if (pair? ua)
 		'<macro>
 		ua))
@@ -168,7 +168,7 @@
 	     (set-car! a se)
 	     (set-car! (cdr a) handler)
 	     a))
-	  (else 
+	  (else
 	   (let ((data (list se handler)))
 	     (##sys#macro-environment
 	      (cons (cons name data) me))
@@ -195,7 +195,7 @@
     (dd "invoking macro: " name)
     (dd `(STATIC-SE: ,@(map-se se)))
     (handle-exceptions ex
-	;; modify error message in condition object to include 
+	;; modify error message in condition object to include
 	;; currently expanded macro-name
 	(abort
 	 (if (and (##sys#structure? ex 'condition)
@@ -211,11 +211,11 @@
 		      (if (and (equal? '(exn . message) p)
 			       (pair? r)
 			       (string? (car r)) )
-			  (cons 
+			  (cons
 			   '(exn . message)
 			   (cons (string-append
 				  "during expansion of ("
-				  (##sys#symbol->string/shared name) 
+				  (##sys#symbol->string/shared name)
 				  " ...) - "
 				  (car r) )
 				 (cdr r) ) )
@@ -237,17 +237,17 @@
 	(dx `(,name ~~> ,exp2))
 	(expansion-result-hook exp exp2) ) ) )
   (define (expand head exp mdef)
-    (dd `(EXPAND: 
-	  ,head 
+    (dd `(EXPAND:
+	  ,head
 	  ,(cond ((getp head '##core#macro-alias) =>
 		  (lambda (a) (if (symbol? a) a '<macro>)) )
 		 (else '_))
-	  ,exp 
+	  ,exp
 	  ,(if (pair? mdef)
 	       `(SE: ,@(map-se (car mdef)))
 	       mdef)))
     (if (pair? mdef)
-        (values 
+        (values
 	 ;; force ref. opaqueness by passing dynamic se [what does this comment mean? I forgot ...]
            (call-handler head (cadr mdef) exp (car mdef) #f)
            #t)
@@ -272,7 +272,7 @@
 				(values
 				 `(##core#app
 				   (##core#letrec*
-				    ([,bindings 
+				    ([,bindings
 				      (##core#loop-lambda
 				       ,(map (lambda (b) (car b)) bs) ,@(cddr body))])
 				    ,bindings)
@@ -341,12 +341,12 @@
 	(let loop ([mode 0]		; req=0, opt=1, rest=2, key=3, end=4
 		   [req '()]
 		   [opt '()]
-		   [key '()] 
+		   [key '()]
 		   [llist llist0] )
 	  (cond [(null? llist)
-		 (values 
+		 (values
 		  (if rvar (##sys#append (reverse req) rvar) (reverse req))
-		  (let ([body 
+		  (let ([body
 			 (if (null? key)
 			     body
 			     `((,%let*
@@ -354,7 +354,7 @@
 					(let ((s (car k)))
 					  `(,s (##sys#get-keyword
 						(##core#quote ,(->keyword (strip-syntax s))) ,(or hasrest rvar)
-						,@(if (pair? (cdr k)) 
+						,@(if (pair? (cdr k))
 						      `((,%lambda () ,@(cdr k)))
 						      '())))))
 				      (reverse key) )
@@ -367,11 +367,11 @@
 			  [(and (not hasrest) (null? key))
 			   `((,%let-optionals*
 			      ,rvar ,(reverse opt) ,@body))]
-			  [else 
+			  [else
 			   `((,%let-optionals*
-			      ,rvar ,(##sys#append (reverse opt) (list (or hasrest rvar))) 
+			      ,rvar ,(##sys#append (reverse opt) (list (or hasrest rvar)))
 			      ,@body))] ) ) ) ]
-		[(symbol? llist) 
+		[(symbol? llist)
 		 (if (fx> mode 2)
 		     (err "rest argument list specified more than once")
 		     (begin
@@ -397,7 +397,7 @@
 				(if (not rvar) (set! rvar (car r)))
 				(set! hasrest (car r))
 				(loop 2 req opt '() (cdr r)) )
-			      (err "invalid syntax of `#!rest' argument") ) 
+			      (err "invalid syntax of `#!rest' argument") )
 			  (err "`#!rest' argument marker in wrong context") ) ]
 		     [(#!key)
 		      (if (not rvar) (set! rvar (macro-alias 'rest se)))
@@ -475,7 +475,7 @@
             (and (or (not (symbol? f))
                      (not (eq? (##sys#get id '##sys#override) 'value)))
                  (or (eq? f def)
-                     (and (symbol? f) 
+                     (and (symbol? f)
                           (not (eq? f id))
                           (repeat f))))))))
     (define comp-define (comp-def define-definition))
@@ -559,7 +559,7 @@
 			,(map cdr (reverse defs)) ,@body) ))
 	       ((not (pair? body)) (loop body defs #t))
 	       ((and (list? (car body))
-		     (>= 3 (length (car body))) 
+		     (>= 3 (length (car body)))
 		     (symbol? (caar body))
 		     (comp-define-syntax (caar body)))
 		(let ((def (car body)))
@@ -692,7 +692,7 @@
 	(cond ((null? defs) '())
 	      ((eq? 'syntax (caar defs))
 	       (cons (cadar defs) (loop (cdr defs))))
-	      (else (loop (cdr defs))))))		     
+	      (else (loop (cdr defs))))))
     (if (null? ##sys#syntax-context)
 	(##sys#syntax-error-hook msg arg)
 	(let ((out (open-output-string)))
@@ -706,7 +706,7 @@
 		   (outstr "\ninside expression `(")
 		   (##sys#print (strip-syntax (car ##sys#syntax-context)) #t out)
 		   (outstr " ...)'"))
-		  (else 
+		  (else
 		   (let* ((sym (strip-syntax (car cx)))
 			  (us (syntax-imports sym)))
 		     (cond ((pair? us)
@@ -834,7 +834,7 @@
       (let* ([sexp ##sys#syntax-error-culprit]
 	     [ln (get-line-number sexp)] )
 	(##sys#syntax-error
-	 (if ln 
+	 (if ln
 	     (string-append "(" ln ") in `" (symbol->string id) "' - " msg)
 	     (string-append "in `" (symbol->string id) "' - " msg) )
 	 exp) ) )
@@ -864,7 +864,7 @@
       (cond ((vector? p)
 	     (let* ((p2 (vector-ref p 0))
 		    (vlen (##sys#size p))
-		    (min (if (fx> vlen 1) 
+		    (min (if (fx> vlen 1)
 			     (vector-ref p 1)
 			     0) )
 		    (max (cond ((eq? vlen 1) 1)
@@ -875,7 +875,7 @@
 		   ((eq? x '())
 		    (if (fx< n min)
 			(err "not enough arguments") ) )
-		 (cond ((fx>= n max) 
+		 (cond ((fx>= n max)
 			(err "too many arguments") )
 		       ((not (pair? x))
 			(err "not a proper list") )
@@ -909,8 +909,8 @@
 
 ;;; explicit/implicit-renaming transformer
 
-(define (make-er/ir-transformer handler explicit-renaming?) 
-  (##sys#make-structure 
+(define (make-er/ir-transformer handler explicit-renaming?)
+  (##sys#make-structure
    'transformer
    (lambda (form se dse)
      (let ((renv '()))	  ; keep rename-environment for this expansion
@@ -930,8 +930,8 @@
 	       ((vector? sym)
 		(list->vector (rename (vector->list sym))))
 	       ((not (symbol? sym)) sym)
-	       ((assq sym renv) => 
-		(lambda (a) 
+	       ((assq sym renv) =>
+		(lambda (a)
 		  (dd `(RENAME/RENV: ,sym --> ,(cdr a)))
 		  (cdr a)))
 	       (else
@@ -970,12 +970,12 @@
 				       (lambda (a) (eq? ss1 (cdr a))))
 				      (else #f)))
 			       (else (eq? ss1 ss2)))))
-		      (else (eq? s1 s2))) ) ) 
-	   (dd `(COMPARE: ,s1 ,s2 --> ,result)) 
+		      (else (eq? s1 s2))) ) )
+	   (dd `(COMPARE: ,s1 ,s2 --> ,result))
 	   result))
        (define (lookup2 n sym dse)
 	 (let ((r (lookup sym dse)))
-	   (dd "  (lookup/DSE " (list n) ": " sym " --> " 
+	   (dd "  (lookup/DSE " (list n) ": " sym " --> "
 	       (if (and r (pair? r))
 		   '<macro>
 		   r)
@@ -1125,7 +1125,7 @@
 				 (test `(or ,@(cdr rest))))
 			     (err fx))))
 		   ((not) (not (test (cadr fx))))
-                   ((library) 
+                   ((library)
                     (if (and (pair? rest)
                              (null? (cdr rest)))
                         (locate-library (strip-syntax (car rest)))
@@ -1251,12 +1251,12 @@
             (dummy (register-r7rs-module real-name)))
        (define (parse-exports specs)
 	 (map (lambda (spec)
-                (cond ((and (list? spec) 
+                (cond ((and (list? spec)
                             (= 3 (length spec))
                             (eq? 'rename (car spec)))
                        `(export/rename ,(cdr spec)))
                       ((symbol? spec) `(export ,spec))
-                      (else 
+                      (else
                         (##sys#syntax-error 'define-library "invalid export specifier" spec name))))
             specs))
        (define (parse-imports specs)
@@ -1347,13 +1347,13 @@
  (##sys#er-transformer
   (lambda (x r c)
     (let ((exps (map (lambda (ren)
-                       (if (and (pair? ren) 
+                       (if (and (pair? ren)
                                 (symbol? (car ren))
                                 (pair? (cdr ren))
                                 (symbol? (cadr ren))
                                 (null? (cddr ren)))
                            (cons (car ren) (cadr ren))
-                           (##sys#syntax-error "invalid item in export rename list" 
+                           (##sys#syntax-error "invalid item in export rename list"
                                                     ren)))
                   (strip-syntax (cdr x))))
           (mod (##sys#current-module)))
@@ -1584,7 +1584,7 @@
 		`(##core#if ,hbody (,(r 'and) ,@rbody) #f) ) ) ) ) ) ) )
 
 (##sys#extend-macro-environment
- 'or 
+ 'or
  '()
  (##sys#er-transformer
   (lambda (form r c)
@@ -1656,12 +1656,12 @@
 		     (let ((tmp (r 'tmp)))
 		       `(##sys#call-with-values
 			 (##core#lambda () ,(car clause))
-			 (##core#lambda 
+			 (##core#lambda
 			  ,tmp
 			  (if (##sys#apply ,(cadr clause) ,tmp)
 			      (##sys#apply ,(cadddr clause) ,tmp)
 			      ,(expand rclauses #f) ) ) ) ) )
-		    (else `(##core#if ,(car clause) 
+		    (else `(##core#if ,(car clause)
 				      (##core#begin ,@(cdr clause))
 				      ,(expand rclauses #f) ) ) ) ) ) ) ) ) ) )
 
@@ -1733,7 +1733,7 @@
 	  (test (caddr form))
 	  (body (cdddr form))
 	  (dovar (r 'doloop)))
-      `(##core#let 
+      `(##core#let
 	,dovar
 	,(##sys#map (lambda (b) (list (car b) (car (cdr b)))) bindings)
 	(##core#if ,(car test)
@@ -1746,7 +1746,7 @@
 			 '(##core#undefined)
 			 `(##core#let () ,@body) )
 		    (##core#app
-		     ,dovar ,@(##sys#map (lambda (b) 
+		     ,dovar ,@(##sys#map (lambda (b)
 					   (if (eq? (cdr (cdr b)) '())
 					       (car b)
 					       (car (cdr (cdr b))) ) )
@@ -1775,7 +1775,7 @@
                               (else (list '##sys#cons `(##core#quote ,%unquote)
                                           (walk tail (fx- n 1)) ) )))
 		       ((c %quasiquote head)
-			(list '##sys#cons `(##core#quote ,%quasiquote) 
+			(list '##sys#cons `(##core#quote ,%quasiquote)
                               (walk tail (fx+ n 1)) ) )
 		       ((and (pair? head) (c %unquote-splicing (car head)))
                         (cond ((eq? n 0)
@@ -1796,7 +1796,7 @@
 		    (let ((bxs (assq 'b env)))
 		      (if (fx< (length bxs) 32)
 			  (simplify `(##sys#list ,(cdr (assq 'a env))
-						 ,@(cdr bxs) ) ) 
+						 ,@(cdr bxs) ) )
 			  x) ) ) )
 	      ((chicken.syntax#match-expression x '(##sys#append a (##core#quote ())) '(a))
 	       => (lambda (env) (cdr (assq 'a env))) )
