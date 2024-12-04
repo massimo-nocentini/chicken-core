@@ -141,12 +141,14 @@
       (define (include-file x ci e tf cntr tl?)
         (##sys#include-forms-from-file
           (cadr x) (caddr x) ci
-	  (lambda (forms)
-            (compile (if (pair? (cdddr x)) ; body?
-                         (##sys#canonicalize-body (append forms (cadddr x))
-                                                  (##sys#current-environment))
-                         `(##core#begin ,@forms))
-                     e #f tf cntr tl?))))
+	  (lambda (forms path)
+            (let ((code (if (pair? (cdddr x)) ; body?
+                            (##sys#canonicalize-body
+                              (append forms (cadddr x))
+                              (##sys#current-environment))
+                            `(##core#begin ,@forms))))
+	      (fluid-let ((##sys#current-source-filename path))
+                (compile code e #f tf cntr tl?))))))
 
       (define (compile x e h tf cntr tl?)
 	(cond ((keyword? x) (lambda v x))
@@ -1195,12 +1197,15 @@
 	  (print "; including " path " ..."))
 	(call-with-input-file path
 	  (lambda (in)
-            (##sys#setislot in 13 (not ci))
-	    (fluid-let ((##sys#current-source-filename path))
-               (do ((x (read-with-source-info in) (read-with-source-info in))
-                    (xs '() (cons x xs)))
-                   ((eof-object? x)
-                    (k (reverse xs)))))))))))
+	    (let ((oldci (##sys#slot in 13)))
+  	     (k (fluid-let ((##sys#current-source-filename path))
+                 (##sys#setislot in 13 (not ci))
+                 (do ((x (read-with-source-info in) (read-with-source-info in))
+                      (xs '() (cons x xs)))
+                     ((eof-object? x)
+                      (##sys#setislot in 13 oldci)
+                      (reverse xs))))
+                path))))))))
 
 
 ;;; Extensions:

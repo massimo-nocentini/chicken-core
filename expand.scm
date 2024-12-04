@@ -1283,7 +1283,7 @@
            (##sys#include-forms-from-file
                filename
                ##sys#current-source-filename ci?
-               (lambda (forms) (map expand/begin forms)))))
+               (lambda (forms path) (map expand/begin forms)))))
        (define (process-include-decls fnames)
 	 (parse-decls (append-map (lambda (fname) (read-forms fname #t)) fnames)))
        (define (fail spec)

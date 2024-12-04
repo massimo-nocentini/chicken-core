@@ -634,15 +634,17 @@
 		 (print "\n;; END OF FILE"))))) ) )
 
    (define (include-file x ci e dest ldest h ln tl?)
-       (##sys#include-forms-from-file
-              (cadr x) (caddr x) ci
-              (lambda (forms)
-                (walk (if (pair? (cdddr x)) ; body?
-                        (canonicalize-body/ln ln
-                                              (append forms (cadddr x))
-                                              compiler-syntax-enabled)
-                        `(##core#begin ,@forms))
-                    e dest ldest h ln tl?))))
+     (##sys#include-forms-from-file
+       (cadr x) (caddr x) ci
+       (lambda (forms path)
+         (let ((code (if (pair? (cdddr x)) ; body?
+                         (canonicalize-body/ln
+                           ln
+                           (append forms (cadddr x))
+                           compiler-syntax-enabled)
+                         `(##core#begin ,@forms))))
+           (fluid-let ((##sys#current-source-filename path))
+             (walk code e dest ldest h ln tl?))))))
 
   (define (walk x e dest ldest h outer-ln tl?)
     (cond ((keyword? x) `(quote ,x))
