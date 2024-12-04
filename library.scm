@@ -7510,6 +7510,7 @@ EOF
 (define-foreign-variable installation-home c-string "C_INSTALL_SHARE_HOME")
 (define-foreign-variable install-egg-home c-string "C_INSTALL_EGG_HOME")
 
+;; DEPRECATED
 (define (chicken-home) installation-home)
 
 (define (include-path #!optional new)
