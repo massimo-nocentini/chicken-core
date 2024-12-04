@@ -1459,15 +1459,6 @@
     (values vars hvars) ) )		; => freevars hiddenvars
 
 
-;;; Some pathname operations:
-
-(define (chop-separator str)		; Used only in batch-driver.scm
-  (let ([len (sub1 (string-length str))])
-    (if (and (> len 0)
-	     (memq (string-ref str len) '(#\\ #\/)))
-	(substring str 0 len)
-	str) ) )
-
 ;;; Special block-variable literal type:
 
 (define-record block-variable-literal
