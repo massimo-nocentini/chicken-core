@@ -259,8 +259,8 @@ tests/unicode-tests.scm
 tests/UTF-8-test.txt
 tests/invalid-utf-test.scm
 tests/file-encoding-test.scm
-tests/i-dont-know-i-jkust-work-here.utf-8.txt
-tests/i-dont-know-i-jkust-work-here.latin-1.txt
+tests/i-dont-know-i-just-work-here.utf-8.txt
+tests/i-dont-know-i-just-work-here.latin-1.txt
 tests/r7rs-tests-2.scm
 tests/life.scm
 tests/include.scm
@@ -475,7 +475,6 @@ manual-html/Module (chicken tcp).html
 manual-html/Module (chicken time).html
 manual-html/Module (chicken time posix).html
 manual-html/Module (chicken type).html
-manual-html/Module r4rs.html
 manual-html/Module scheme.html
 manual-html/Module (scheme base).html
 manual-html/Module (scheme case-lambda).html
