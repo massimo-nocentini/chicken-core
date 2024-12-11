@@ -2,7 +2,7 @@
 
 set -e
 
-# build 6.0.0-bootstrap tarball
+# build 6.0.0pre1 tarball
 
 getcmd="wget -c"
 mkcmd=make
@@ -16,11 +16,12 @@ esac
 
 mkdir -p boot/snapshot
 cd boot
-$getcmd https://code.call-cc.org/dev-snapshots/2024/07/01/chicken-6.0.0-bootstrap.tar.gz
-tar -xzf chicken-6.0.0-bootstrap.tar.gz
-cd chicken-6.0.0
-$mkcmd "$@" PREFIX="$(pwd)"/../snapshot
-$mkcmd "$@" PREFIX="$(pwd)"/../snapshot install
+$getcmd https://code.call-cc.org/dev-snapshots/2024/12/09/chicken-6.0.0pre1.tar.gz
+tar -xzf chicken-6.0.0pre1.tar.gz
+cd chicken-6.0.0pre1
+./configure --prefix "$(pwd)"/../snapshot
+$mkcmd "$@"
+$mkcmd "$@" install
 cd ../..
 
 # build a boot-chicken from git head using the snapshot
@@ -31,8 +32,8 @@ $mkcmd boot-chicken
 
 # remove snapshot installation and tarball
 rm -fr boot/snapshot
-rm -fr boot/chicken-6.0.0
-rm -f  boot/chicken-6.0.0-bootstrap.tar.gz
+rm -fr boot/chicken-6.0.0pre1
+rm -f  boot/chicken-6.0.0pre1.tar.gz
 
 echo
 echo 'Now, build chicken by passing "--chicken ./chicken-boot" to "configure",'
