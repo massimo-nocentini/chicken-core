@@ -11,16 +11,6 @@ When loaded, the feature identifier {{srfi-4}} is defined.
 
 The module exports the following identifiers:
 
-<procedure>(subu8vector U8VECTOR FROM TO)</procedure><br>
-<procedure>(subu16vector U16VECTOR FROM TO)</procedure><br>
-<procedure>(subu32vector U32VECTOR FROM TO)</procedure><br>
-<procedure>(subu64vector U32VECTOR FROM TO)</procedure><br>
-<procedure>(subs8vector S8VECTOR FROM TO)</procedure><br>
-<procedure>(subs16vector S16VECTOR FROM TO)</procedure><br>
-<procedure>(subs32vector S32VECTOR FROM TO)</procedure><br>
-<procedure>(subs64vector S32VECTOR FROM TO)</procedure><br>
-<procedure>(subf32vector F32VECTOR FROM TO)</procedure><br>
-<procedure>(subf64vector F64VECTOR FROM TO)</procedure><br>
 <procedure>(u8vector? OBJ)</procedure><br>
 <procedure>(s8vector? OBJ)</procedure><br>
 <procedure>(u16vector? OBJ)</procedure><br>
