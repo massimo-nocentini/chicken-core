@@ -971,9 +971,10 @@ EOF
             (list "-change" lib
                   (if deployed
 	              (make-pathname "@executable_path" lib)
-	              (make-pathname (if host-mode
-                                         host-libdir
-                                         TARGET_RUN_LIB_HOME)
+	              (make-pathname (or rpath
+                                         (if host-mode
+                                             host-libdir
+                                             TARGET_RUN_LIB_HOME))
                                      lib))
                   target-filename))))
   (unless keep-files
