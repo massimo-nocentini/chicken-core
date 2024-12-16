@@ -290,7 +290,7 @@ More information on object structure can be found in [[Data representation]].
 <type>(nonnull-scheme-pointer TYPE)</type>
 
 An untyped pointer to the ''contents'' of a non-immediate Scheme
-object; for example, the raw byte contents of a string. Only allowed
+object; for example, the raw byte contents of a bytevector. Only allowed
 as an argument type, not a return type.
 
 The optional element type {{TYPE}} may be used to specify what C
@@ -304,10 +304,13 @@ Don't confuse this type with {{(c-pointer ...)}} which means something
 different (a machine-pointer object).
 
 {{scheme-pointer}} is typically used to get a pointer to the raw byte
-content of bytevectors.  But if you pass in a SRFI-4 vector, you
-will get a pointer to a bytevector object header (''not'' the bytevectors's contents),
-which is almost certainly wrong.  Instead, convert to a bytevector
-beforehand, or use a SRFI-4 specific type.
+content of number vectors.  But if you pass in a SRFI-4 vector other
+than {{u8vector}}, you
+will get a pointer to a bytevector object header (''not'' the vectors's contents),
+which is almost certainly wrong.  Instead, convert to a number vector
+beforehand, or use a SRFI-4 specific type. {{u8vector}} and {{bytevector}}
+are synonymous and do not have an indirection pointer to the contents,
+the contents follow directly the header.
 
 === User-defined C types
 
