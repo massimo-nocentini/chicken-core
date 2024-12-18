@@ -1209,7 +1209,7 @@ EOF
                (lambda (_) ; peek-char
                  (if (eq? index bv-len)
                      #!eof
-                     ((##core#inline "C_i_bytevector_ref" bv index))))
+                     (##core#inline "C_i_bytevector_ref" bv index)))
                #f    ; write-char
                #f    ; write-bytevector
                (lambda (_ _) ; close
