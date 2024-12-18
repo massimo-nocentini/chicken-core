@@ -9,8 +9,12 @@ mkcmd=make
 case "$(uname)" in
     FreeBSD)
         mkcmd=gmake
+	# FreeBSD's ftp doesn't support HTTPS (only HTTP)
         getcmd=fetch;;
     *BSD)
+	# Counter-intuitively, the ftp(1) program on many
+	# BSDs supports both HTTP(S) and FTP
+        getcmd=ftp;;
         mkcmd=gmake;;
 esac
 
