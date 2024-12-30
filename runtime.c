@@ -604,19 +604,44 @@ C_dbg(C_char *prefix, C_char *fstr, ...)
 
 /* Startup code: */
 
-int CHICKEN_main(int argc, char *argv[], void *toplevel)
+int CHICKEN_main(int argc, C_WCHAR *argv[], void *toplevel)
 {
   C_word h, s, n;
 
   if(C_gui_mode) {
 #ifdef _WIN32
-    parse_argv(GetCommandLine());
+    parse_argv(C_utf8(GetCommandLineW()));
     argc = C_main_argc;
     argv = C_main_argv;
 #else
     /* ??? */
 #endif
   }
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  else {
+    int i, n;
+    C_char *aptr, *arg;
+    C_main_argv = (C_char **)malloc((MAXIMAL_NUMBER_OF_COMMAND_LINE_ARGUMENTS + 1) * sizeof(C_char *));
+
+    if(C_main_argv == NULL)
+      panic(C_text("cannot allocate argument-list buffer"));
+
+    for(i = 0; i < argc; ++i) {
+    	arg = C_utf8(argv[ i ]);
+    	n = strlen(arg);
+       aptr = (C_char *)malloc(n + 1);
+
+       if(!aptr) panic(C_text("cannot allocate argument buffer"));
+
+       C_strlcpy(aptr, arg, n + 1);
+       C_main_argv[ i ] = aptr;
+    }
+
+    C_main_argc = argc;
+    C_main_argv[ argc ] = NULL;
+    argv = C_main_argv;
+  }
+#endif
 
   pass_serious_signals = 0;
   CHICKEN_parse_command_line(argc, argv, &h, &s, &n);
@@ -629,22 +654,20 @@ int CHICKEN_main(int argc, char *argv[], void *toplevel)
 }
 
 
-/* Custom argv parser for Windoze: */
+/* Custom argv parser for Windowz: */
 
 void parse_argv(C_char *cmds)
 {
-  C_char *ptr = cmds,
-         *bptr0, *bptr, *aptr;
+  C_char *ptr = cmds, *bptr0, *bptr, *aptr;
   int n = 0;
-
-  C_main_argv = (C_char **)malloc(MAXIMAL_NUMBER_OF_COMMAND_LINE_ARGUMENTS * sizeof(C_char *));
+  C_main_argv = (C_char **)malloc((MAXIMAL_NUMBER_OF_COMMAND_LINE_ARGUMENTS + 1) * sizeof(C_char *));
 
   if(C_main_argv == NULL)
     panic(C_text("cannot allocate argument-list buffer"));
 
   C_main_argc = 0;
 
-  for(;;) {
+  while(C_main_argc < MAXIMAL_NUMBER_OF_COMMAND_LINE_ARGUMENTS) {
     while(C_utf_isspace((int)(*ptr))) ++ptr;
 
     if(*ptr == '\0') break;
@@ -653,15 +676,15 @@ void parse_argv(C_char *cmds)
       ++n;
 
     *bptr = '\0';
+    aptr = (C_char*)malloc(n + 1);
 
-    aptr = (C_char*) malloc(sizeof(C_char) * (n + 1));
-    if (!aptr)
-      panic(C_text("cannot allocate argument buffer"));
+    if(!aptr) panic(C_text("cannot allocate argument buffer"));
 
-    C_strlcpy(aptr, bptr0, sizeof(C_char) * (n + 1));
-
+    C_strlcpy(aptr, bptr0, n + 1);
     C_main_argv[ C_main_argc++ ] = aptr;
   }
+
+  C_main_argv[ C_main_argc ] = NULL;
 }
 
 /* simple linear congruential PRNG, to avoid OpenBSD warnings.

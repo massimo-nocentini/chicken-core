@@ -1610,7 +1610,11 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
  * "/proc/<pid>/exe" or some similar trick).
  */
 #ifdef SEARCH_EXE_PATH
-# define C_set_main_exe(fname)          C_main_exe = C_resolve_executable_pathname(fname)
+# if defined(_WIN32) && !defined(__CYGWIN__)
+#  define C_set_main_exe(fname)          C_main_exe = C_resolve_executable_pathname(C_utf8(fname))
+# else
+#  define C_set_main_exe(fname)          C_main_exe = C_resolve_executable_pathname(fname)
+# endif
 #else
 # define C_set_main_exe(fname)
 #endif
@@ -1625,10 +1629,19 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
     C_private_repository();				\
     return CHICKEN_main(0, NULL, (void *)C_toplevel); \
   }
+# elif defined(_WIN32) && !defined(__CYGWIN__)
+#  define C_main_entry_point            \
+  int wmain(int argc, wchar_t *argv[]) \
+ { \
+    C_set_gui_mode; \
+    C_set_main_exe(argv[0]);				\
+    C_private_repository();				\
+    return CHICKEN_main(argc, argv, (void*)C_toplevel); \
+  }
 # else
 #  define C_main_entry_point            \
   int main(int argc, char *argv[]) \
-  { \
+ { \
     C_set_gui_mode; \
     C_set_main_exe(argv[0]);				\
     C_private_repository();				\
@@ -1758,7 +1771,7 @@ C_varextern int
 C_varextern C_uword
   C_heap_growth,
   C_heap_shrinkage;
-C_varextern char
+C_varextern C_WCHAR
   **C_main_argv,
 #ifdef SEARCH_EXE_PATH
   *C_main_exe,
@@ -1775,7 +1788,7 @@ C_varextern C_word (*C_get_unbound_variable_value_hook)(C_word sym);
 C_BEGIN_C_DECLS
 
 C_fctexport void C_register_debug_info(C_DEBUG_INFO *);
-C_fctexport int CHICKEN_main(int argc, char *argv[], void *toplevel);
+C_fctexport int CHICKEN_main(int argc, C_WCHAR *argv[], void *toplevel);
 C_fctexport int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel);
 C_fctexport C_word CHICKEN_run(void *toplevel);
 C_fctexport C_word CHICKEN_continue(C_word k);
