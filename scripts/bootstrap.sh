@@ -14,7 +14,7 @@ case "$(uname)" in
     *BSD)
 	# Counter-intuitively, the ftp(1) program on many
 	# BSDs supports both HTTP(S) and FTP
-        getcmd=ftp;;
+        getcmd=ftp
         mkcmd=gmake;;
 esac
 
