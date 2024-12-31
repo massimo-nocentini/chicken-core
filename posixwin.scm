@@ -98,7 +98,7 @@ static char C_rdbuf; /* one-char buffer for read */
 static int C_exstatus;
 
 /* platform information; initialized for cached testing */
-static char C_shlcmd[256] = "";
+static char C_shlcmd[255 + 1] = "";
 
 /* Current user name */
 static C_char C_username[255 + 1] = "";
@@ -305,15 +305,16 @@ C_windows_nt()
 static int
 get_shlcmd()
 {
+        static wchar_t buf[ 255 ];
     /* Do we need to build the shell command pathname? */
     if (!strlen(C_shlcmd))
     {
       char *cmdnam = C_windows_nt() ? "\\cmd.exe" : "\\command.com";
-      UINT len = GetSystemDirectoryA(C_shlcmd, sizeof(C_shlcmd) - strlen(cmdnam));
+      UINT len = GetSystemDirectoryW(buf, sizeof(buf) - strlen(cmdnam));
       if (len)
-	C_strlcpy(C_shlcmd + len, cmdnam, sizeof(C_shlcmd));
+        C_strlcpy(C_shlcmd + len, cmdnam, sizeof(C_shlcmd));
       else
-	return set_last_errno();
+        return set_last_errno();
     }
 
     return 1;
@@ -327,11 +328,13 @@ get_shlcmd()
 static int
 get_user_name()
 {
+        static wchar_t buf[ 255 ];
     if (!C_strlen(C_username))
     {
-	DWORD bufCharCount = sizeof(C_username) / sizeof(C_username[0]);
-	if (!GetUserNameA(C_username, &bufCharCount))
-	    return set_last_errno();
+        DWORD bufCharCount = sizeof(buf) / sizeof(buf[0]);
+        if (!GetUserNameW(buf, &bufCharCount))
+            return set_last_errno();
+        C_strlcpy(C_username, C_utf8(buf), sizeof(C_username));
     }
     return 1;
 }
