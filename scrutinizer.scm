@@ -1573,6 +1573,7 @@
 	    (lambda (a)
 	      (let ((t2 (second a)))
 		(if (or (not t2)
+            (memq t done)
 			(memq t2 done))	; circular reference
 		    (if (third a)
 			(resolve (third a) (cons t done))
