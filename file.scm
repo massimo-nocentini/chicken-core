@@ -228,8 +228,8 @@ EOF
   (unless (eq? 0 (##core#inline "C_remove" (##sys#make-c-string filename 'delete-file)))
     (##sys#signal-hook/errno
      #:file-error (##sys#update-errno) 'delete-file
-     (##sys#string-append "cannot delete file - " strerror) filename)
-    filename))
+     (##sys#string-append "cannot delete file - " strerror) filename))
+  filename)
 
 (define (delete-file* file)
   (and (file-exists? file) (delete-file file)))

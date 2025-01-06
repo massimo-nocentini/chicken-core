@@ -70,7 +70,7 @@ not exist, an error is signaled.
 
 <procedure>(delete-file* STRING)</procedure>
 
-If the file with pathname {{STRING}} exists, it is deleted and {{#t}}
+If the file with pathname {{STRING}} exists, it is deleted and {{STRING}}
 is returned.  If the file does not exist, nothing happens and {{#f}}
 is returned.
 
