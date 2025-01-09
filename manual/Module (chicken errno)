@@ -55,6 +55,6 @@ return code of a system call before accessing {{errno}} anyway, so
 this should typically never happen.
 
 ---
-Previous: [[Module (chicken continuation)]]
+Previous: [[Module (chicken csi)]]
 
 Next: [[Module (chicken eval)]]
