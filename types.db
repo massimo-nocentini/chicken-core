@@ -2178,7 +2178,7 @@
 (chicken.process#system* (#(procedure #:clean #:enforce) chicken.process#system* (string) undefined))
 (chicken.process#process (#(procedure #:clean #:enforce) chicken.process#process (string #!optional (list-of string) (list-of (pair string string)) symbol boolean) (struct process)))
 (chicken.process#process* (#(procedure #:clean #:enforce) chicken.process#process* (string #!optional (list-of string) (list-of (pair string string)) symbol boolean) (struct process)))
-(chicken.process#process-wait (#(procedure #:clean #:enforce) chicken.process#process-wait (#!optional (or (struct process) fixnum) *) fixnum fixnum fixnum))
+(chicken.process#process-wait (#(procedure #:clean #:enforce) chicken.process#process-wait (#!optional (or (struct process) fixnum) *) fixnum boolean (or fixnum false)))
 (chicken.process#process-sleep (#(procedure #:clean #:enforce) chicken.process#process-sleep (fixnum) fixnum))
 (chicken.process#process-exit-status (#(procedure #:clean #:enforce) chicken.process#process-exit-status ((struct process)) *))
 (chicken.process#process-input-port (#(procedure #:clean #:enforce) chicken.process#process-input-port ((struct process)) output-port))

@@ -715,25 +715,29 @@ EOF
 (set! chicken.process#process-wait
   (lambda args
     (let-optionals* args ((proc #f) (nohang #f))
-      (if (and proc (process? proc) (process-exit-status proc))
+      (if (and (process? proc) (process-exit-status proc))
           (values (process-id proc)
                   (process-returned-normally? proc)
                   (process-exit-status proc))
           (let ((pid (get-pid proc -1)))
             (##sys#check-fixnum pid 'process-wait)
             (receive (epid enorm ecode) (process-wait-impl pid nohang)
-              (unless proc
-                (let ((a (assq pid children)))
-                  (when a
-                    (set! proc (cdr a))
-                    (drop-child pid))))
-              (when (process? proc)
-                (process-returned-normally?-set! proc enorm)
-                (process-exit-status-set! proc ecode))
-              (if (fx= epid -1)
-                  (posix-error #:process-error 'process-wait
-                               "waiting for child process failed" pid)
-                  (values epid enorm ecode) ) ) )) ) ) )
+              (cond
+               ((fx= epid -1)
+                (posix-error #:process-error 'process-wait
+                             "waiting for child process failed" pid))
+               ((fx= epid 0)
+                (values 0 #f #f))
+               (else
+                (unless (process? proc)
+                  (let ((a (assq epid children)))
+                    (when a
+                      (set! proc (cdr a))
+                      (drop-child epid))))
+                (when (process? proc)
+                  (process-returned-normally?-set! proc enorm)
+                  (process-exit-status-set! proc ecode))
+                (values epid enorm ecode))) ) )) ) ) )
 
 ;; This can construct argv or envp for process-execute or process-run
 (define list->c-string-buffer
