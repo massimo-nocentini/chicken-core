@@ -187,7 +187,9 @@
    call-with-output-pipe close-input-pipe close-output-pipe create-pipe
    open-input-pipe open-output-pipe with-input-from-pipe
    with-output-to-pipe process process* process-sleep pipe/buf
-   spawn/overlay spawn/wait spawn/nowait spawn/nowaito spawn/detach)
+   spawn/overlay spawn/wait spawn/nowait spawn/nowaito spawn/detach
+   process? process-exit-status process-returned-normally? process-input-port
+   process-output-port process-error-port process-id)
 
 (import scheme chicken.base chicken.fixnum chicken.platform)
 
@@ -250,6 +252,14 @@
 (define process)
 (define process*)
 (define process-sleep)
+
+(define process?)
+(define process-exit-status)
+(define process-returned-normally?)
+(define process-input-port)
+(define process-output-port)
+(define process-error-port)
+(define process-id)
 
 (define pipe/buf)
 

@@ -677,6 +677,36 @@ EOF
 
 ;;; Processes
 
+(define children '())
+
+(define-record process
+  id returned-normally? input-port output-port error-port exit-status)
+
+(define (get-pid x #!optional default)
+  (cond ((fixnum? x) x)
+        ((process? x) (process-id x))
+        (else default)))
+
+(define (register-pid pid)
+  (let ((p (make-process pid #f #f #f #f #f)))
+    (set! children (cons (cons pid p) children))
+    p))
+
+(define (drop-child pid)
+  (set! children
+    (let rec ((cs children))
+       (cond ((null? cs) '())
+             ((eq? pid (caar cs)) (cdr cs))
+             (else (rec (cdr cs)))))))
+
+(set! chicken.process#process? process?)
+(set! chicken.process#process-id process-id)
+(set! chicken.process#process-exit-status process-exit-status)
+(set! chicken.process#process-returned-normally? process-returned-normally?)
+(set! chicken.process#process-input-port process-input-port)
+(set! chicken.process#process-output-port process-output-port)
+(set! chicken.process#process-error-port process-error-port)
+
 (set! chicken.process#process-sleep
   (lambda (n)
     (##sys#check-fixnum n 'process-sleep)
@@ -684,54 +714,60 @@ EOF
 
 (set! chicken.process#process-wait
   (lambda args
-    (let-optionals* args ((pid #f) (nohang #f))
-      (let ((pid (or pid -1)))
-        (##sys#check-fixnum pid 'process-wait)
-        (receive (epid enorm ecode) (process-wait-impl pid nohang)
-          (if (fx= epid -1)
-              (posix-error #:process-error 'process-wait "waiting for child process failed" pid)
-              (values epid enorm ecode) ) ) ) ) ) )
+    (let-optionals* args ((proc #f) (nohang #f))
+      (if (and proc (process? proc) (process-exit-status proc))
+          (values (process-id proc)
+                  (process-returned-normally? proc)
+                  (process-exit-status proc))
+          (let ((pid (get-pid proc -1)))
+            (##sys#check-fixnum pid 'process-wait)
+            (receive (epid enorm ecode) (process-wait-impl pid nohang)
+              (unless proc
+                (let ((a (assq pid children)))
+                  (when a
+                    (set! proc (cdr a))
+                    (drop-child pid))))
+              (when (process? proc)
+                (process-returned-normally?-set! proc enorm)
+                (process-exit-status-set! proc ecode))
+              (if (fx= epid -1)
+                  (posix-error #:process-error 'process-wait
+                               "waiting for child process failed" pid)
+                  (values epid enorm ecode) ) ) )) ) ) )
 
 ;; This can construct argv or envp for process-execute or process-run
 (define list->c-string-buffer
-  (let ((c-string->allocated-pointer
-	 (foreign-lambda* c-pointer ((scheme-object o))
-	   "char *ptr = C_malloc(C_header_size(o)); \n"
-	   "if (ptr != NULL) {\n"
-	   "  C_memcpy(ptr, C_data_pointer(o), C_header_size(o)); \n"
-	   "}\n"
-	   "C_return(ptr);")))
     (lambda (string-list convert loc)
       (##sys#check-list string-list loc)
 
       (let* ((string-count (##sys#length string-list))
-	     ;; NUL-terminated, so we must add one
-	     (buffer (make-pointer-vector (add1 string-count) #f)))
+             ;; NUL-terminated, so we must add one
+             (buffer (make-pointer-vector (add1 string-count) #f)))
 
-	(handle-exceptions exn
-	    ;; Free to avoid memory leak, then reraise
-	    (begin (free-c-string-buffer buffer) (signal exn))
+        (handle-exceptions exn
+            ;; Free to avoid memory leak, then reraise
+            (begin (free-c-string-buffer buffer) (signal exn))
 
-	  (do ((sl string-list (cdr sl))
-	       (i 0 (fx+ i 1)))
-	      ((or (null? sl) (fx= i string-count))) ; Should coincide
+          (do ((sl string-list (cdr sl))
+               (i 0 (fx+ i 1)))
+              ((or (null? sl) (fx= i string-count))) ; Should coincide
 
-	    (##sys#check-string (car sl) loc)
-	    ;; This avoids embedded NULs and appends a NUL, so "cs" is
-	    ;; safe to copy and use as-is in the pointer-vector.
-	    (let* ((cs (##sys#make-c-string (convert (car sl)) loc))
-		   (csp (c-string->allocated-pointer cs)))
-	      (unless csp (error loc "Out of memory"))
-	      (pointer-vector-set! buffer i csp)))
+            (##sys#check-string (car sl) loc)
+            ;; This avoids embedded NULs and appends a NUL, so "cs" is
+            ;; safe to copy and use as-is in the pointer-vector.
+            (let* ((cs (##sys#make-c-string (convert (car sl)) loc))
+                   (csp (c-string->allocated-pointer cs)))
+              (unless csp (error loc "Out of memory"))
+              (pointer-vector-set! buffer i csp)))
 
-	  buffer)))))
+          buffer))))
 
 (define (free-c-string-buffer buffer-array)
   (let ((size (pointer-vector-length buffer-array)))
     (do ((i 0 (fx+ i 1)))
-	((fx= i size))
+        ((fx= i size))
       (and-let* ((s (pointer-vector-ref buffer-array i)))
-	(free s)))))
+        (free s)))))
 
 ;; Environments are represented as string->string association lists
 (define (check-environment-list lst loc)
