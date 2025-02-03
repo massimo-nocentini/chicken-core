@@ -94,6 +94,10 @@
 # define C_GNU_ENV
 #endif
 
+#if defined (__TINYC__)
+# define __STDC_NO_COMPLEX__
+#endif
+
 #if defined(__MINGW32__)
 /*
  * XXX This should probably be renamed or changed because it's misleading.
