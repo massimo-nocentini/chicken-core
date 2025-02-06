@@ -1114,17 +1114,16 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                (posix-error #:process-error 'process-fork "cannot create child process"))
               ((fx= 0 pid)              ; child process
                (set! children '())
-               (cond (thunk
-                      (maybe-kill-others (lambda ()
-                                           (##sys#call-with-cthulhu
-                                            (lambda ()
-                                              (thunk)
-                                              ;; Make sure to run clean up tasks.
-                                              ;; NOTE: ##sys#call-with-cthulhu will invoke
-                                              ;; a more low-level runtime C_exit_runtime(0)
-                                              (exit 0))))))
-                     (else
-        	      (maybe-kill-others (lambda () #f)))))
+               (maybe-kill-others (if thunk
+                                      (lambda ()
+                                        (##sys#call-with-cthulhu
+                                         (lambda ()
+                                           (thunk)
+                                           ;; Make sure to run clean up tasks.
+                                           ;; NOTE: ##sys#call-with-cthulhu will invoke
+                                           ;; a more low-level runtime C_exit_runtime(0)
+                                           (exit 0))))
+                                      (lambda () #f))))
               (else                     ; parent process
                (register-pid pid)))))))
 
