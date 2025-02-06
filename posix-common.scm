@@ -732,8 +732,8 @@ EOF
                 (unless (process? proc)
                   (let ((a (assq epid children)))
                     (when a
-                      (set! proc (cdr a))
-                      (drop-child epid))))
+                      (set! proc (cdr a)))))
+                (drop-child epid)
                 (when (process? proc)
                   (process-returned-normally?-set! proc enorm)
                   (process-exit-status-set! proc ecode))
