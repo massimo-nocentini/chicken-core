@@ -1110,21 +1110,23 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                                  (if killothers
                                      (##sys#kill-other-threads thunk)
                                      (thunk)))))
-        (when (fx= -1 pid)
-          (posix-error #:process-error 'process-fork "cannot create child process"))
-        (cond ((zero? pid)
-               ;; child
+        (cond ((fx= -1 pid)             ; error
+               (posix-error #:process-error 'process-fork "cannot create child process"))
+              ((fx= 0 pid)              ; child process
+               (set! children '())
                (cond (thunk
-                      (##sys#call-with-cthulhu
-                       (maybe-kill-others (lambda ()
-                                            (set! children '())
-                                            (thunk)
-                                            (exit 0)))))
+                      (maybe-kill-others (lambda ()
+                                           (##sys#call-with-cthulhu
+                                            (lambda ()
+                                              (thunk)
+                                              ;; Make sure to run clean up tasks.
+                                              ;; NOTE: ##sys#call-with-cthulhu will invoke
+                                              ;; a more low-level runtime C_exit_runtime(0)
+                                              (exit 0))))))
                      (else
-        	      (maybe-kill-others (lambda ()
-                                           (set! children '())
-                                           #f)))))
-              (else (register-pid pid)))))))
+        	      (maybe-kill-others (lambda () #f)))))
+              (else                     ; parent process
+               (register-pid pid)))))))
 
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist _)
