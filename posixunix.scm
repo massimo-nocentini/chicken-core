@@ -1208,18 +1208,12 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
              (chicken.file.posix#duplicate-fileno fd stdfd)
              (chicken.file.posix#file-close fd) ) )) )
     (let ((make-on-close
-           (lambda (loc pid clsvec idx idxa idxb)
+           (lambda (loc proc clsvec idx idxa idxb)
              (lambda ()
                (vector-set! clsvec idx #t)
                (when (and (vector-ref clsvec idxa) (vector-ref clsvec idxb))
-                 (receive (_ flg cod) (process-wait-impl pid #f)
-                   (and-let* ((a (assq pid children)))
-                     (process-returned-normally?-set! (cdr a) flg)
-                     (process-exit-status-set! (cdr a) flg)
-                     (drop-child pid))
-                   (unless flg
-                     (##sys#signal-hook #:process-error loc
-                                        "abnormal process exit" pid cod)) ) ) ) ))
+                 (chicken.process#process-wait proc #f) )
+               (void)) ))
           (needed-pipe
            (lambda (loc port)
              (and port
@@ -1256,11 +1250,11 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		     (connect-child loc (swapped-ends epipe) stderrf chicken.file.posix#fileno/stderr)
 		     (chicken.process#process-execute cmd args env)))) ) ) ))
           [input-port
-            (lambda (loc pid cmd pipe stdf stdfd on-close enc)
+            (lambda (loc cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
                 (##sys#custom-input-port loc cmd fd #t DEFAULT-INPUT-BUFFER-SIZE on-close #f enc) ) )]
           [output-port
-            (lambda (loc pid cmd pipe stdf stdfd on-close enc)
+            (lambda (loc cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
                 (##sys#custom-output-port loc cmd fd #t DEFAULT-OUTPUT-BUFFER-SIZE on-close enc) ) )] )
         (lambda (loc cmd args env stdoutf stdinf stderrf enc)
@@ -1269,22 +1263,21 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
             ;When shared assume already "closed", since only created ports
             ;should be explicitly closed, and when one is closed we want
             ;to wait.
-            (let ((clsvec (vector (not stdinf) (not stdoutf) (not stderrf)))
-                  (pid (process-id proc)))
+            (let ((clsvec (vector (not stdinf) (not stdoutf) (not stderrf))))
               (process-output-port-set! proc
-                (input-port loc pid cmd inpipe stdinf
+                (input-port loc cmd inpipe stdinf
                             chicken.file.posix#fileno/stdin
-                            (make-on-close loc pid clsvec 0 1 2)
+                            (make-on-close loc proc clsvec 0 1 2)
                             enc))
               (process-input-port-set! proc
-                (output-port loc pid cmd outpipe stdoutf
+                (output-port loc cmd outpipe stdoutf
                              chicken.file.posix#fileno/stdout
-                             (make-on-close loc pid clsvec 1 0 2)
+                             (make-on-close loc proc clsvec 1 0 2)
                              enc))
               (process-error-port-set! proc
-                (input-port loc pid cmd errpipe stderrf
+                (input-port loc cmd errpipe stderrf
                             chicken.file.posix#fileno/stderr
-                            (make-on-close loc pid clsvec 2 0 1)
+                            (make-on-close loc proc clsvec 2 0 1)
                             enc) )
               proc) ) ) ) ) ) )
 
