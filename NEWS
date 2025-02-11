@@ -14,6 +14,11 @@
     supported are currently UTF-8 (the default) and Latin-1 (ISO-8859-1).
   - `file-read', `file-write', 'set-pseudo-random-seed!' and `random-bytes'
     require a bytevector argument and do not accept strings.
+  - `process-fork', `process-run', `process' and `process*' return now
+    a process-object instead of a PID, use process record accessors to
+    retrieve exit-status and input/output ports. `process-wait' and
+    `process-signal' accept either a PID or a process object as
+    argument.
   - File-locking operations in the (chicken file posix) module now use the
     flock(2) system call, operator over whole files, are thread-safe and
     use a simpler interface. `file-test-lock' has been removed.

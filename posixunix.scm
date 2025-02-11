@@ -1092,24 +1092,37 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 ;;; Process handling:
 
+(define c-string->allocated-pointer
+  (foreign-lambda* c-pointer ((scheme-object o))
+     "char *ptr = C_malloc(C_header_size(o)); \n"
+     "if (ptr != NULL) {\n"
+     "  C_memcpy(ptr, C_data_pointer(o), C_header_size(o)); \n"
+     "}\n"
+     "C_return(ptr);"))
+
 (set! chicken.process#process-fork
   (let ((fork (foreign-lambda int "C_fork")))
     (lambda (#!optional thunk killothers)
       ;; flush all stdio streams before fork
       ((foreign-lambda int "C_fflush" c-pointer) #f)
       (let ((pid (fork)))
-	(when (fx= -1 pid)
-	  (posix-error #:process-error 'process-fork "cannot create child process"))
-	(if (and thunk (zero? pid))
-	    ((if killothers
-		 ##sys#kill-other-threads
-		 (lambda (thunk) (thunk)))
-	     (lambda ()
-	       (##sys#call-with-cthulhu
-		(lambda ()
-		  (thunk)
-		  (exit 0)))))
-	    pid)))))
+        (cond ((fx= -1 pid)             ; error
+               (posix-error #:process-error 'process-fork "cannot create child process"))
+              ((fx= 0 pid)              ; child process
+               (set! children '())
+               (when killothers
+                 (call-with-current-continuation (lambda (continue) (##sys#kill-other-threads (lambda () (continue #f))))))
+               (if thunk
+                   (##sys#call-with-cthulhu
+                    (lambda ()
+                      (thunk)
+                      ;; Make sure to run clean up tasks.
+                      ;; NOTE: ##sys#call-with-cthulhu will invoke
+                      ;; a more low-level runtime C_exit_runtime(0)
+                      (exit 0)))
+                   #f))
+              (else                     ; parent process
+               (register-pid pid)))))))
 
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist _)
@@ -1143,11 +1156,14 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (set! chicken.process#process-signal
   (lambda (id . sig)
-    (let ((sig (if (pair? sig) (car sig) _sigterm)))
-      (##sys#check-fixnum id 'process-signal)
+    (let ((sig (if (pair? sig) (car sig) _sigterm))
+          (pid (if (process? id) (process-id id) id)))
+      (##sys#check-fixnum pid 'process-signal)
       (##sys#check-fixnum sig 'process-signal)
-      (let ((r (##core#inline "C_kill" id sig)))
-      (when (fx= r -1) (posix-error #:process-error 'process-signal "could not send signal to process" id sig) ) ) ) ) )
+      (let ((r (##core#inline "C_kill" pid sig)))
+      (when (fx= r -1)
+        (posix-error #:process-error 'process-signal
+          "could not send signal to process" id sig) ) ) ) ) )
 
 (define (shell-command loc)
   (or (get-environment-variable "SHELL") "/bin/sh") )
@@ -1158,13 +1174,13 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (set! chicken.process#process-run
   (lambda (f . args)
     (let ((args (if (pair? args) (car args) #f))
-	  (pid (chicken.process#process-fork)) )
-      (cond ((not (eq? 0 pid)) pid)
-	    (args (chicken.process#process-execute f args))
-	    (else
-	     (chicken.process#process-execute
-	      (shell-command 'process-run)
-	      (shell-command-arguments f)) ) ) ) ) )
+          (proc (chicken.process#process-fork)) )
+      (cond (proc)
+            (args (chicken.process#process-execute f args))
+            (else
+             (chicken.process#process-execute
+              (shell-command 'process-run)
+              (shell-command-arguments f)) ) ) ) ) )
 
 ;;; Run subprocess connected with pipes:
 
@@ -1187,24 +1203,22 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (define process-impl
   (let ((replace-fd
-	 (lambda (loc fd stdfd)
-	   (unless (fx= stdfd fd)
-	     (chicken.file.posix#duplicate-fileno fd stdfd)
-	     (chicken.file.posix#file-close fd) ) )) )
+         (lambda (loc fd stdfd)
+           (unless (fx= stdfd fd)
+             (chicken.file.posix#duplicate-fileno fd stdfd)
+             (chicken.file.posix#file-close fd) ) )) )
     (let ((make-on-close
-	   (lambda (loc pid clsvec idx idxa idxb)
-	     (lambda ()
-	       (vector-set! clsvec idx #t)
-	       (when (and (vector-ref clsvec idxa) (vector-ref clsvec idxb))
-		 (receive (_ flg cod) (process-wait-impl pid #f)
-		   (unless flg
-		     (##sys#signal-hook #:process-error loc
-					"abnormal process exit" pid cod)) ) ) ) ))
-	  (needed-pipe
-	   (lambda (loc port)
-	     (and port
-		  (receive (i o) (chicken.process#create-pipe)
-		    (cons i o))) ))
+           (lambda (loc proc clsvec idx idxa idxb)
+             (lambda ()
+               (vector-set! clsvec idx #t)
+               (when (and (vector-ref clsvec idxa) (vector-ref clsvec idxb))
+                 (chicken.process#process-wait proc #f) )
+               (void)) ))
+          (needed-pipe
+           (lambda (loc port)
+             (and port
+                  (receive (i o) (chicken.process#create-pipe)
+                    (cons i o))) ))
         [connect-parent
           (lambda (loc pipe port fd)
             (and port
@@ -1236,64 +1250,60 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		     (connect-child loc (swapped-ends epipe) stderrf chicken.file.posix#fileno/stderr)
 		     (chicken.process#process-execute cmd args env)))) ) ) ))
           [input-port
-            (lambda (loc pid cmd pipe stdf stdfd on-close enc)
+            (lambda (loc cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
                 (##sys#custom-input-port loc cmd fd #t DEFAULT-INPUT-BUFFER-SIZE on-close #f enc) ) )]
           [output-port
-            (lambda (loc pid cmd pipe stdf stdfd on-close enc)
+            (lambda (loc cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
                 (##sys#custom-output-port loc cmd fd #t DEFAULT-OUTPUT-BUFFER-SIZE on-close enc) ) )] )
         (lambda (loc cmd args env stdoutf stdinf stderrf enc)
-          (receive [inpipe outpipe errpipe pid]
+          (receive [inpipe outpipe errpipe proc]
                      (spawn loc cmd args env stdoutf stdinf stderrf)
             ;When shared assume already "closed", since only created ports
             ;should be explicitly closed, and when one is closed we want
             ;to wait.
             (let ((clsvec (vector (not stdinf) (not stdoutf) (not stderrf))))
-              (values
-	       (input-port loc pid cmd inpipe stdinf
-			   chicken.file.posix#fileno/stdin
-			   (make-on-close loc pid clsvec 0 1 2)
-                           enc)
-	       (output-port loc pid cmd outpipe stdoutf
-			    chicken.file.posix#fileno/stdout
-			    (make-on-close loc pid clsvec 1 0 2)
-                            enc)
-	       pid
-	       (input-port loc pid cmd errpipe stderrf
-			   chicken.file.posix#fileno/stderr
-			   (make-on-close loc pid clsvec 2 0 1)
-                           enc) ) ) ) ) ) ) ) )
+              (process-output-port-set! proc
+                (input-port loc cmd inpipe stdinf
+                            chicken.file.posix#fileno/stdin
+                            (make-on-close loc proc clsvec 0 1 2)
+                            enc))
+              (process-input-port-set! proc
+                (output-port loc cmd outpipe stdoutf
+                             chicken.file.posix#fileno/stdout
+                             (make-on-close loc proc clsvec 1 0 2)
+                             enc))
+              (process-error-port-set! proc
+                (input-port loc cmd errpipe stderrf
+                            chicken.file.posix#fileno/stderr
+                            (make-on-close loc proc clsvec 2 0 1)
+                            enc) )
+              proc) ) ) ) ) ) )
 
 ;;; Run subprocess connected with pipes:
 
 ;; TODO: See if this can be moved to posix-common
 (let ((%process
-        (lambda (loc err? cmd args env enc k)
+        (lambda (loc err? cmd args env enc)
           (let ((chkstrlst
-		 (lambda (lst)
-		   (##sys#check-list lst loc)
-		   (for-each (cut ##sys#check-string <> loc) lst) )))
+                 (lambda (lst)
+                   (##sys#check-list lst loc)
+                   (for-each (cut ##sys#check-string <> loc) lst) )))
             (##sys#check-string cmd loc)
             (if args
                 (chkstrlst args)
                 (begin
                   (set! args (shell-command-arguments cmd))
                   (set! cmd (shell-command loc)) ) )
-	    (when env (check-environment-list env loc))
-	    (##sys#call-with-values
-	     (lambda () (process-impl loc cmd args env #t #t err? enc))
-	     k)))))
+            (when env (check-environment-list env loc))
+            (process-impl loc cmd args env #t #t err? enc)))))
   (set! chicken.process#process
     (lambda (cmd #!optional args env (enc 'utf-8) exactf)
-      (%process
-       'process #f cmd args env enc
-       (lambda (i o p e) (values i o p)))))
+      (%process 'process #f cmd args env enc)))
   (set! chicken.process#process*
     (lambda (cmd #!optional args env (enc 'utf-8) exactf)
-      (%process
-       'process* #t cmd args env enc
-       values))))
+      (%process 'process* #t cmd args env enc))))
 
 
 ;;; chroot:

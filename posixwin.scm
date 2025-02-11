@@ -107,30 +107,23 @@ static C_char C_username[255 + 1] = "";
 #define open_text_input_pipe(a, n, name)     open_binary_input_pipe(a, n, name)
 #define open_binary_output_pipe(a, n, name)  C_mpointer(a, _wpopen(C_OS_FILENAME(name, 0), L"w"))
 #define open_text_output_pipe(a, n, name)    open_binary_output_pipe(a, n, name)
-#define close_pipe(p)			     C_fix(_pclose(C_port_file(p)))
+#define close_pipe(p)                        C_fix(_pclose(C_port_file(p)))
 
-#define C_chmod(fn, m)	    C_fix(_wchmod(C_OS_FILENAME(fn, 0), C_unfix(m)))
-#define C_pipe(d, m)	    C_fix(_pipe(C_pipefds, PIPE_BUF, C_unfix(m)))
-#define C_close(fd)	    C_fix(close(C_unfix(fd)))
+#define C_chmod(fn, m)      C_fix(_wchmod(C_OS_FILENAME(fn, 0), C_unfix(m)))
+#define C_pipe(d, m)        C_fix(_pipe(C_pipefds, PIPE_BUF, C_unfix(m)))
+#define C_close(fd)         C_fix(close(C_unfix(fd)))
 
 #define C_u_i_lstat(fn)     C_u_i_stat(fn)
-
-#define C_u_i_execvp(f, a) C_fix(execvp(C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
-#define C_u_i_execve(f,a,e) C_fix(execve(C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
-
-/* MS replacement for the fork-exec pair */
-#define C_u_i_spawnvp(m,f,a)    C_fix(spawnvp(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
-#define C_u_i_spawnvpe(m,f,a,e) C_fix(spawnvpe(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
 
 #define C_open(fn, fl, m)   C_fix(_wopen(C_OS_FILENAME(fn, 0), C_unfix(fl), C_unfix(m)))
 #define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_data_pointer(b), C_unfix(n)))
 #define C_write(fd, b, n)   C_fix(write(C_unfix(fd), C_data_pointer(b), C_unfix(n)))
 
-#define C_flushall()	    C_fix(_flushall())
+#define C_flushall()        C_fix(_flushall())
 
 #define C_umask(m)          C_fix(_umask(C_unfix(m)))
 
-#define C_ctime(n)	    (C_secs = (n), ctime(&C_secs))
+#define C_ctime(n)          (C_secs = (n), ctime(&C_secs))
 
 #define TIME_STRING_MAXLENGTH 255
 static char C_time_string [TIME_STRING_MAXLENGTH + 1];
@@ -305,14 +298,14 @@ C_windows_nt()
 static int
 get_shlcmd()
 {
-        static wchar_t buf[ 255 ];
+    static wchar_t buf[ 255 ];
     /* Do we need to build the shell command pathname? */
     if (!strlen(C_shlcmd))
     {
       char *cmdnam = C_windows_nt() ? "\\cmd.exe" : "\\command.com";
-      UINT len = GetSystemDirectoryW(buf, sizeof(buf) - strlen(cmdnam));
+      UINT len = GetSystemDirectoryW(buf, sizeof(buf));
       if (len)
-        C_strlcpy(C_shlcmd + len, cmdnam, sizeof(C_shlcmd));
+        C_strlcpy(C_shlcmd + len, C_utf8(buf), sizeof(C_shlcmd));
       else
         return set_last_errno();
     }
@@ -328,7 +321,7 @@ get_shlcmd()
 static int
 get_user_name()
 {
-        static wchar_t buf[ 255 ];
+    static wchar_t buf[ 255 ];
     if (!C_strlen(C_username))
     {
         DWORD bufCharCount = sizeof(buf) / sizeof(buf[0]);
@@ -344,36 +337,37 @@ get_user_name()
 /*
     Spawn a process directly.
     Params:
-    app		Command to execute.
-    cmdlin	Command line (arguments).
-    env		Environment for the new process (may be NULL).
+    app         Command to execute.
+    cmdlin      Command line (arguments).
+    env         Environment for the new process (may be NULL).
     handle, stdin, stdout, stderr
-		Spawned process info are returned in integers.
-		When spawned process shares standard io stream with the parent
-		process the respective value in handle, stdin, stdout, stderr
-		is -1.
-    params	A bitmask controling operation.
-		Bit 1: Child & parent share standard input if this bit is set.
-		Bit 2: Share standard output if bit is set.
-		Bit 3: Share standard error if bit is set.
+                Spawned process info are returned in integers.
+                When spawned process shares standard io stream with the parent
+                process the respective value in handle, stdin, stdout, stderr
+                is -1.
+    params      A bitmask controling operation.
+                Bit 1: Child & parent share standard input if this bit is set.
+                Bit 2: Share standard output if bit is set.
+                Bit 3: Share standard error if bit is set.
 
-    Returns: zero return value indicates failure.
+    Returns: pid, zero return value indicates failure.
 */
-static int
+static DWORD
 C_process(const char *app, const char *cmdlin, const char **env,
-	  int *phandle, int *pstdin_fd, int *pstdout_fd, int *pstderr_fd,
-	  int params)
+          int *phandle, int *pstdin_fd, int *pstdout_fd, int *pstderr_fd,
+          int params)
 {
     int i;
     int success = TRUE;
+    DWORD pid;
     const int f_share_io[3] = { params & 1, params & 2, params & 4};
     int io_fds[3] = { -1, -1, -1 };
     HANDLE
-	child_io_handles[3] = { NULL, NULL, NULL },
-	standard_io_handles[3] = {
-	    GetStdHandle(STD_INPUT_HANDLE),
-	    GetStdHandle(STD_OUTPUT_HANDLE),
-	    GetStdHandle(STD_ERROR_HANDLE)};
+        child_io_handles[3] = { NULL, NULL, NULL },
+        standard_io_handles[3] = {
+            GetStdHandle(STD_INPUT_HANDLE),
+            GetStdHandle(STD_OUTPUT_HANDLE),
+            GetStdHandle(STD_ERROR_HANDLE)};
     const char modes[3] = "rww";
     HANDLE cur_process = GetCurrentProcess(), child_process = NULL;
     void* envblk = NULL;
@@ -411,24 +405,26 @@ C_process(const char *app, const char *cmdlin, const char **env,
 
     if (env && success)
     {
-	char** p;
-	int len = 0;
+        char** p;
+        int len = 0;
 
-	for (p = env; *p; ++p) len += strlen(*p) + 1;
+        for (p = env; *p; ++p) len += strlen(*p) + 1;
 
-	if (envblk = C_malloc(len + 1))
-	{
-	    char* pb = (char*)envblk;
-	    for (p = env; *p; ++p)
-	    {
-		C_strlcpy(pb, *p, len+1);
-		pb += strlen(*p) + 1;
-	    }
-	    *pb = '\0';
+        if (envblk = C_malloc((len + 1) * sizeof(wchar_t));
+        {
+            wchar_t* pb = (wchar_t*)envblk;
+            for (p = env; *p; ++p)
+            {
+            	wchar_t *u = C_utf16(*p, 0);
+            	int n = wcslen(*u);
+                C_memcpy(pb, *u, n + 1);
+                pb += n + 1;
+            }
+            *pb = '\0';
             /* This _should_ already have been checked for embedded NUL bytes */
-	}
-	else
-	    success = FALSE;
+        }
+        else
+            success = FALSE;
     }
 #endif
 
@@ -436,31 +432,32 @@ C_process(const char *app, const char *cmdlin, const char **env,
 
     if (success)
     {
-	PROCESS_INFORMATION pi;
-	STARTUPINFO si;
+        PROCESS_INFORMATION pi;
+        STARTUPINFO si;
 
-	ZeroMemory(&pi,sizeof pi);
-	ZeroMemory(&si,sizeof si);
-	si.cb = sizeof si;
-	si.dwFlags = STARTF_USESTDHANDLES;
-	si.hStdInput = child_io_handles[0];
-	si.hStdOutput = child_io_handles[1];
-	si.hStdError = child_io_handles[2];
+        ZeroMemory(&pi,sizeof pi);
+        ZeroMemory(&si,sizeof si);
+        si.cb = sizeof si;
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = child_io_handles[0];
+        si.hStdOutput = child_io_handles[1];
+        si.hStdError = child_io_handles[2];
 
-	/* FIXME passing 'app' param causes failure & possible stack corruption */
-	success = CreateProcess(
-	    NULL, (char*)cmdlin, NULL, NULL, TRUE, 0, envblk, NULL, &si, &pi);
+        /* FIXME passing 'app' param causes failure & possible stack corruption */
+        success = CreateProcessW(
+            NULL, C_utf16(cmdlin, 0), NULL, NULL, TRUE, 0, envblk, NULL, &si, &pi);
 
-	if (success)
-	{
-	    child_process=pi.hProcess;
-	    CloseHandle(pi.hThread);
-	}
-	else
-	    set_last_errno();
+        if (success)
+        {
+            child_process=pi.hProcess;
+            CloseHandle(pi.hThread);
+            pid = pi.dwProcessId;
+        }
+        else
+            set_last_errno();
     }
     else
-	set_last_errno();
+        set_last_errno();
 
     /****** cleanup & return *********/
 
@@ -512,6 +509,13 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
   }
   return _wutime(fn, &tb);
 }
+
+#define C_u_i_execvp(f, a) C_fix(_wexecvp(C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
+#define C_u_i_execve(f,a,e) C_fix(_wexecve(C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
+
+/* MS replacement for the fork-exec pair */
+#define C_u_i_spawnvp(m,f,a)    C_fix(_wspawnvp(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
+#define C_u_i_spawnvpe(m,f,a,e) C_fix(_wspawnvpe(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
 
 <#
 
@@ -717,17 +721,26 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 ; string-quote such arguments.
 (define quote-arg-string
   (let ((needs-quoting?
-	 ;; This is essentially (string-any char-whitespace? s) but we
-	 ;; don't want a SRFI-13 dependency. (Do we?)
-	 (lambda (s)
-	   (let ((len (string-length s)))
-	     (let loop ((i 0))
-	       (cond
-		((fx= i len) #f)
-		((char-whitespace? (string-ref s i)) #t)
-		(else (loop (fx+ i 1)))))))))
+         ;; This is essentially (string-any char-whitespace? s) but we
+         ;; don't want a SRFI-13 dependency. (Do we?)
+         (lambda (s)
+           (let ((len (string-length s)))
+             (let loop ((i 0))
+               (cond
+                ((fx= i len) #f)
+                ((char-whitespace? (string-ref s i)) #t)
+                (else (loop (fx+ i 1)))))))))
     (lambda (str)
       (if (needs-quoting? str) (string-append "\"" str "\"") str))))
+
+(define c-string->allocated-pointer
+  (foreign-lambda* c-pointer ((scheme-object o))
+     "char *ptr = C_malloc(C_header_size(o) * sizeof(wchar_t)); \n"
+     "if (ptr != NULL) {\n"
+     "  wchar_t *u = C_utf16(C_data_pointer(o), 0); \n"
+     "  C_memcpy(ptr, u, wcslen(u) + 1); \n"
+     "}\n"
+     "C_return(ptr);"))
 
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist exactf)
@@ -749,13 +762,14 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (call-with-exec-args
        'process-spawn filename argconv arglist envlist
        (lambda (prg argbuf envbuf)
-	 (##core#inline "C_flushall")
-	 (let ((r (if envbuf
-		      (##core#inline "C_u_i_spawnvpe" mode prg argbuf envbuf)
-		      (##core#inline "C_u_i_spawnvp" mode prg argbuf))))
-	   (when (fx= r -1)
-	     (posix-error #:process-error 'process-spawn "cannot spawn process" filename))
-	   r))))))
+         (##core#inline "C_flushall")
+         (let ((r (if envbuf
+                      (##core#inline "C_u_i_spawnvpe" mode prg argbuf envbuf)
+                      (##core#inline "C_u_i_spawnvp" mode prg argbuf))))
+           (if (fx= r -1)
+               (posix-error #:process-error 'process-spawn
+                            "cannot spawn process" filename)
+               (register-pid r))))))))
 
 (define-foreign-variable _shlcmd c-string "C_shlcmd")
 
@@ -808,62 +822,60 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
     ; For now any environment is ignored.
     (lambda (loc cmd args env stdoutf stdinf stderrf exactf enc)
       (let* ((arglist (cons cmd args))
-	     (cmdlin (string-intersperse
-		      (if exactf
-			  arglist
-			  (map quote-arg-string arglist)))))
-	(let-location ([handle int -1]
-		       [stdin_fd int -1] [stdout_fd int -1] [stderr_fd int -1])
-	  (let ([res
-		  (c-process cmd cmdlin #f
-		    (location handle)
-		    (location stdin_fd) (location stdout_fd) (location stderr_fd)
-		    (+ (if stdinf 0 1) (if stdoutf 0 2) (if stderrf 0 4)))])
-	    (if res
-	      (values
-	       (and stdoutf (chicken.file.posix#open-input-file*
-			     stdout_fd)) ;Parent stdin
-	       (and stdinf (chicken.file.posix#open-output-file*
-			    stdin_fd))  ;Parent stdout
-	       handle
-	       (and stderrf (chicken.file.posix#open-input-file*
-			     stderr_fd)))
+             (cmdlin (string-intersperse
+                      (if exactf
+                          arglist
+                          (map quote-arg-string arglist)))))
+        (let-location ([handle int -1]
+                       [stdin_fd int -1] [stdout_fd int -1] [stderr_fd int -1])
+          (let ([res
+                  (c-process cmd cmdlin #f
+                    (location handle)
+                    (location stdin_fd) (location stdout_fd) (location stderr_fd)
+                    (+ (if stdinf 0 1) (if stdoutf 0 2) (if stderrf 0 4)))])
+            (if (integer? res)
+              (make-process
+               res #f
+               (and stdoutf (chicken.file.posix#open-input-file*
+                             stdout_fd)) ;Parent stdin
+               (and stdinf (chicken.file.posix#open-output-file*
+                            stdin_fd))  ;Parent stdout
+               handle
+               (and stderrf (chicken.file.posix#open-input-file*
+                             stderr_fd)
+               #f))
               (##sys#signal-hook/errno
                #:process-error (##sys#update-errno) loc "cannot execute process" cmdlin))))))))
 
 ;; TODO: See if this can be moved to posix-common
 (let ((%process
-	(lambda (loc err? cmd args env exactf enc)
-	  (let ((chkstrlst
-		 (lambda (lst)
-		   (##sys#check-list lst loc)
-		   (for-each (cut ##sys#check-string <> loc) lst) )))
-	    (##sys#check-string cmd loc)
-	    (if args
-	      (chkstrlst args)
-	      (begin
-		(set! exactf #t)
-		(set! args (shell-command-arguments cmd))
-		(set! cmd (shell-command loc)) ) )
-	    (when env (check-environment-list env loc))
-	    (receive (in out pid err)
-		(process-impl loc cmd args env #t #t err? exactf enc)
-	      (if err?
-		(values in out pid err)
-		(values in out pid) ) ) ) )) )
+        (lambda (loc cmd args env exactf enc)
+          (let ((chkstrlst
+                 (lambda (lst)
+                   (##sys#check-list lst loc)
+                   (for-each (cut ##sys#check-string <> loc) lst) )))
+            (##sys#check-string cmd loc)
+            (if args
+              (chkstrlst args)
+              (begin
+                (set! exactf #t)
+                (set! args (shell-command-arguments cmd))
+                (set! cmd (shell-command loc)) ) )
+            (when env (check-environment-list env loc))
+            (process-impl loc cmd args env #t #t err? exactf enc)))))
   (set! chicken.process#process
     (lambda (cmd #!optional args env (enc 'utf-8) exactf)
-      (%process 'process #f cmd args env exactf enc) ))
+      (%process 'process cmd args env exactf enc) ))
   (set! chicken.process#process*
     (lambda (cmd #!optional args env (enc 'utf-8) exactf)
-      (%process 'process* #t cmd args env exactf enc) )) )
+      (%process 'process* cmd args env exactf enc) )) )
 
 (define-foreign-variable _exstatus int "C_exstatus")
 
 (define (process-wait-impl pid nohang)
-  (if (##core#inline "C_process_wait" pid nohang)
-    (values pid #t _exstatus)
-    (values -1 #f #f) ) )
+  (cond ((##core#inline "C_process_wait" pid nohang)
+          (values pid #t _exstatus))
+        (else (values -1 #f #f) ) ))
 
 
 ;;; Getting group- and user-information:
