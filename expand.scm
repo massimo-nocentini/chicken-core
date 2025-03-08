@@ -1274,7 +1274,7 @@
            (if (and (pair? e2) (eq? '##core#begin (car e2)))
                (cons '##core#begin (map expand/begin (cdr e2)))
                e2)))
-       (define (read-forms filename ci?)
+       (define (read-forms filename ci? #!optional (proc (lambda (x) (map expand/begin x))))
          (fluid-let ((##sys#default-read-info-hook
                        (let ((name 'chicken.compiler.support#read-info-hook))
                          (and (feature? 'compiling)
@@ -1283,15 +1283,15 @@
            (##sys#include-forms-from-file
                filename
                ##sys#current-source-filename ci?
-               (lambda (forms path) (map expand/begin forms)))))
+               (lambda (forms path) (proc forms)))))
        (define (process-include-decls fnames)
          (parse-decls
            (let loop ((fnames fnames) (all '()))
              (if (null? fnames)
                  (reverse all)
-                 (let ((forms (read-forms (car fnames) #t)))
+                 (let ((forms (read-forms (car fnames) #t (lambda (x) x))))
                    (loop (cdr fnames)
-                   		 (append (reverse forms) all)))))))
+                         (append (reverse forms) all)))))))
        (define (fail spec)
          (##sys#syntax-error 'define-library "invalid library declaration" spec))
        (define (parse-decls decls)
@@ -1320,9 +1320,11 @@
                    `(##core#begin ,(process-include-decls (cdr spec))
                                   ,(parse-decls more)))
                   ((cond-expand)
-                   `(##core#begin ,@(process-cond-expand (cdr spec))
-                                  ,(parse-decls more)))
-                  ((begin ##core#begin)
+                   (parse-decls (append (list (process-cond-expand (cdr spec)))
+                                        more)))
+                  ((##core#begin)
+                    (parse-decls (cdr spec)))
+                  ((begin)
                    `(##core#begin ,@(cdr spec)
                                   ,(parse-decls more)))
                   (else (fail spec)))))
