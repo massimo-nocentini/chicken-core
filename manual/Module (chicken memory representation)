@@ -122,6 +122,17 @@ Copies {{X}} recursively and returns the fresh copy. Objects allocated
 in static memory are copied back into garbage collected storage.
 
 
+==== number-vector-data
+
+<procedure>(number-vector-data VECTOR)</procedure>
+
+Returns the bytevector holding the raw data of the numeric vector {{VECTOR}},
+which should be a bytevector or a homogenous number vector as those
+exposed by the {{(chicken numvector)}} and {{srfi-4}} library modules.
+If {{VECTOR}} is a bytevector, the result will be identical to the argument.
+The returned bytevector shares storage with the original value.
+
+
 === Record instance
 
 

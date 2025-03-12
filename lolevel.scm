@@ -416,7 +416,7 @@ EOF
    number-of-slots object-become! object-copy procedure-data
    record->vector record-instance-length record-instance-slot
    record-instance-slot-set! record-instance-type record-instance?
-   set-procedure-data! vector-like?)
+   set-procedure-data! vector-like? number-vector-data)
 
 (import scheme chicken.base chicken.fixnum chicken.foreign)
 
@@ -554,10 +554,22 @@ EOF
   (##sys#check-closure old 'mutate-procedure!)
   (##sys#check-closure proc 'mutate-procedure!)
   (let* ([n (##sys#size old)]
-	 [words (##core#inline "C_words" n)]
-	 [new (##core#inline "C_copy_block" old (##sys#make-vector words))] )
+         [words (##core#inline "C_words" n)]
+         [new (##core#inline "C_copy_block" old (##sys#make-vector words))] )
     (##sys#become! (list (cons old (proc new))))
     new ) )
+
+
+;;; access backing store of numeric vector
+
+(define (number-vector-data v)
+  (cond ((and (##core#inline "C_blockp" v)
+              (##core#inline "C_bytevectorp" v))
+          v)
+        ((##sys#srfi-4-vector? v) (##sys#slot v 1))
+          (else (##sys#signal-hook #:type-error 'number-vector-data
+                  "bad argument type - not a numeric vector" v))))
+
 
 ) ; chicken.memory.representation
 

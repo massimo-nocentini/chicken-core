@@ -69,6 +69,7 @@
   - `include' and `include-relative' accept multiple filenames, `include-ci'
     has been added.
   - Added `include-path' to (chicken platform) module.
+  - Added `number-vector-data' to (chicken memory representation) module.
   - The platform-identifier "mingw32" has been renamed to "mingw".
 
 - Syntax expander:
