@@ -30,6 +30,8 @@
   - Removed `set-port-name!', use the SRFI-17 setter for `port-name'
     instead.
   - Added `port-encoding' to the (chicken port) module.
+  - `make-input-port' and `make-output-port' take their optional
+    port methods as keyword arguments now.
   - Locatives on strings are now indexed by code-point, not byte.
   - `symbol-escape' now also controls whether symbols are printed in
     escaped ("|...|") mode or not.
