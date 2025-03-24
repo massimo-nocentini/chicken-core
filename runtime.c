@@ -5953,7 +5953,7 @@ C_regparm C_word C_i_vector_length(C_word v)
 
 C_regparm C_word C_i_bytevector_length(C_word v)
 {
-  if(!C_truep(C_bytevectorp(v)))
+  if(C_immediatep(v) || !C_truep(C_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-length", v);
 
   return C_fix(C_header_size(v));
