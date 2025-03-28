@@ -140,6 +140,7 @@ or {{:}} should follow the syntax given below:
 <tr><td>{{keyword}}</td><td>keyword object</td></tr>
 <tr><td>{{true}}</td><td>boolean true</td></tr>
 <tr><td>{{vector}}</td><td>vector</td></tr>
+<tr><td>{{bytevector}}</td><td>bytevector</td></tr>
 </table>
 
 <table>
