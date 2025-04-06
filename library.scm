@@ -3307,10 +3307,9 @@ EOF
     (##sys#string->symbol str)))
 
 (set! chicken.base#string->uninterned-symbol
-  (let ((string-copy string-copy))
-    (lambda (str)
-      (##sys#check-string str 'string->uninterned-symbol)
-      (##sys#make-symbol (##sys#string->symbol-name str)))))
+  (lambda (str)
+    (##sys#check-string str 'string->uninterned-symbol)
+    (##sys#make-symbol (##sys#string->symbol-name str))))
 
 (set! chicken.base#gensym
   (let ((counter -1))
