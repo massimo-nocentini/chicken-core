@@ -356,7 +356,7 @@ time_t
   C_startup_time_sec,
   C_startup_time_msec,
   profile_frequency = 10000;
-char
+C_char
   **C_main_argv,
 #ifdef SEARCH_EXE_PATH
   *C_main_exe = NULL,
@@ -604,7 +604,7 @@ C_dbg(C_char *prefix, C_char *fstr, ...)
 
 /* Startup code: */
 
-int CHICKEN_main(int argc, C_WCHAR *argv[], void *toplevel)
+int CHICKEN_main(int argc, char *argv[], void *toplevel)
 {
   C_word h, s, n;
 
@@ -627,7 +627,7 @@ int CHICKEN_main(int argc, C_WCHAR *argv[], void *toplevel)
       panic(C_text("cannot allocate argument-list buffer"));
 
     for(i = 0; i < argc; ++i) {
-    	arg = C_utf8(argv[ i ]);
+    	arg = argv[ i ];
     	n = strlen(arg);
        aptr = (C_char *)malloc(n + 1);
 
@@ -1367,10 +1367,10 @@ C_word C_resize_pending_finalizers(C_word size) {
 
 /* Parse runtime options from command-line: */
 
-void CHICKEN_parse_command_line(int argc, char *argv[], C_word *heap, C_word *stack, C_word *symbols)
+void CHICKEN_parse_command_line(int argc, C_char *argv[], C_word *heap, C_word *stack, C_word *symbols)
 {
   int i;
-  char *ptr;
+  C_char *ptr;
   C_word x;
 
   C_main_argc = argc;

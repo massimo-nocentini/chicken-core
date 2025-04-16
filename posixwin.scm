@@ -353,7 +353,7 @@ get_user_name()
     Returns: pid, zero return value indicates failure.
 */
 static DWORD
-C_process(const char *app, const char *cmdlin, const char **env,
+C_process(const char *app, C_word cmdlin, const char **env,
           int *phandle, int *pstdin_fd, int *pstdout_fd, int *pstderr_fd,
           int params)
 {
@@ -415,7 +415,7 @@ C_process(const char *app, const char *cmdlin, const char **env,
             wchar_t* pb = (wchar_t*)envblk;
             for (p = env; *p; ++p)
             {
-            	wchar_t *u = C_utf16(*p, 0);
+            	wchar_t *u = C_utf16(*p, 0);  /* BOGUS! */
             	int n = wcslen(*u);
                 C_memcpy(pb, *u, n + 1);
                 pb += n + 1;
@@ -433,7 +433,7 @@ C_process(const char *app, const char *cmdlin, const char **env,
     if (success)
     {
         PROCESS_INFORMATION pi;
-        STARTUPINFO si;
+        STARTUPINFOW si;
 
         ZeroMemory(&pi,sizeof pi);
         ZeroMemory(&si,sizeof si);
@@ -510,12 +510,12 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
   return _wutime(fn, &tb);
 }
 
-#define C_u_i_execvp(f, a) C_fix(_wexecvp(C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
-#define C_u_i_execve(f,a,e) C_fix(_wexecve(C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
+#define C_u_i_execvp(f, a) C_fix(_wexecvp(C_utf16(f, 0), (void *)C_c_pointer_vector_or_null(a)))
+#define C_u_i_execve(f,a,e) C_fix(_wexecve(C_utf16(f, 0), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
 
 /* MS replacement for the fork-exec pair */
-#define C_u_i_spawnvp(m,f,a)    C_fix(_wspawnvp(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a)))
-#define C_u_i_spawnvpe(m,f,a,e) C_fix(_wspawnvpe(C_unfix(m), C_c_string(f), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
+#define C_u_i_spawnvp(m,f,a)    C_fix(_wspawnvp(C_unfix(m), C_utf16(f, 0), (void *)C_c_pointer_vector_or_null(a)))
+#define C_u_i_spawnvpe(m,f,a,e) C_fix(_wspawnvpe(C_unfix(m), C_utf16(f, 0), (void *)C_c_pointer_vector_or_null(a), (void *)C_c_pointer_vector_or_null(e)))
 
 <#
 
@@ -737,7 +737,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
   (foreign-lambda* c-pointer ((scheme-object o))
      "char *ptr = C_malloc(C_header_size(o) * sizeof(wchar_t)); \n"
      "if (ptr != NULL) {\n"
-     "  wchar_t *u = C_utf16(C_data_pointer(o), 0); \n"
+     "  wchar_t *u = C_utf16(o, 0); \n"
      "  C_memcpy(ptr, u, wcslen(u) + 1); \n"
      "}\n"
      "C_return(ptr);"))
@@ -815,7 +815,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (define process-impl
   ;; XXX TODO: When environment is implemented, check for embedded NUL bytes!
   (let ([c-process
-	  (foreign-lambda bool "C_process" c-string c-string c-pointer
+	  (foreign-lambda bool "C_process" c-string scheme-object c-pointer
 	    (c-pointer int) (c-pointer int) (c-pointer int) (c-pointer int) int)])
     ; The environment list must be sorted & include current directory
     ; information for the system drives. i.e !C:=...
@@ -829,7 +829,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
         (let-location ([handle int -1]
                        [stdin_fd int -1] [stdout_fd int -1] [stderr_fd int -1])
           (let ([res
-                  (c-process cmd cmdlin #f
+                  (c-process cmd (##sys#slot cmdlin 0) #f
                     (location handle)
                     (location stdin_fd) (location stdout_fd) (location stderr_fd)
                     (+ (if stdinf 0 1) (if stdoutf 0 2) (if stderrf 0 4)))])
@@ -849,7 +849,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 ;; TODO: See if this can be moved to posix-common
 (let ((%process
-        (lambda (loc cmd args env exactf enc)
+        (lambda (loc err? cmd args env exactf enc)
           (let ((chkstrlst
                  (lambda (lst)
                    (##sys#check-list lst loc)
@@ -865,10 +865,10 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
             (process-impl loc cmd args env #t #t err? exactf enc)))))
   (set! chicken.process#process
     (lambda (cmd #!optional args env (enc 'utf-8) exactf)
-      (%process 'process cmd args env exactf enc) ))
+      (%process 'process #f cmd args env exactf enc) ))
   (set! chicken.process#process*
     (lambda (cmd #!optional args env (enc 'utf-8) exactf)
-      (%process 'process* cmd args env exactf enc) )) )
+      (%process 'process* #t cmd args env exactf enc) )) )
 
 (define-foreign-variable _exstatus int "C_exstatus")
 
