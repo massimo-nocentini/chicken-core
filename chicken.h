@@ -1775,7 +1775,7 @@ C_varextern int
 C_varextern C_uword
   C_heap_growth,
   C_heap_shrinkage;
-C_varextern C_WCHAR
+C_varextern C_char
   **C_main_argv,
 #ifdef SEARCH_EXE_PATH
   *C_main_exe,
@@ -1792,7 +1792,7 @@ C_varextern C_word (*C_get_unbound_variable_value_hook)(C_word sym);
 C_BEGIN_C_DECLS
 
 C_fctexport void C_register_debug_info(C_DEBUG_INFO *);
-C_fctexport int CHICKEN_main(int argc, C_WCHAR *argv[], void *toplevel);
+C_fctexport int CHICKEN_main(int argc, C_char *argv[], void *toplevel);
 C_fctexport int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel);
 C_fctexport C_word CHICKEN_run(void *toplevel);
 C_fctexport C_word CHICKEN_continue(C_word k);
