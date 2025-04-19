@@ -102,7 +102,6 @@
 		    (set! options 
 		      (cons* 'optimize-leaf-routines
 			     'inline
-			     ;XXX 'clustering
 			     'lfa2
 			     options)) ) 
 		   ((3)
@@ -111,7 +110,6 @@
 			     'inline
 			     'inline-global
 			     'local
-			     ;XXX 'clustering
 			     'lfa2
 			     'specialize
 			     options) ) )
@@ -121,7 +119,6 @@
 			     'inline 
 			     'inline-global
 			     'specialize
-			     ;XXX 'clustering
 			     'lfa2
 			     'local 'unsafe
 			     options) ) )
@@ -137,7 +134,6 @@
 			       'no-lambda-info
 			       'inline
 			       'inline-global
-			       'clustering
 			       'lfa2
 			       options) ) ) ) )
 		 (loop (cdr rest)) ) )
