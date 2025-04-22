@@ -330,7 +330,7 @@ as {{(csc-options "OPT1" "OPT2" ...)}} instead of {{(csc-options "OPT1 OPT2")}}
 OPTION may optionally be a list of the form {{(custom-config FILENAME ARG ...)}},
 which allows to dynamically determine options to be passed to the {{csc}}
 program. FILENAME should be the name of a Scheme source file in the
-current build directory. The file is invoked as {{csc -s FILENAME ARG ...}}
+current build directory. The file is invoked as {{csi -s FILENAME ARG ...}}
 and should write s-expressions to stdout that are taken as additional
 options to be passed to {{csc}} when compiling a component. The expressions
 are read in, any list structure is flattened and all items are converted to
