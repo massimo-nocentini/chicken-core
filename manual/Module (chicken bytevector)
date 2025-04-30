@@ -80,7 +80,7 @@ Returns a bytevector with the contents of {{STRING}} encoded as Latin-1 (ISO-?88
 Returns {{#t}} if the two argument bytevectors are of the same
 size and have the same content.
 
-=== bytevector-append 
+=== bytevector-append
 
 <procedure>(bytevector-append BYTEVECTOR ...)</procedure>
 
