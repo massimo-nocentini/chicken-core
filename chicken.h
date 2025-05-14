@@ -1614,11 +1614,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
  * "/proc/<pid>/exe" or some similar trick).
  */
 #ifdef SEARCH_EXE_PATH
-# if defined(_WIN32) && !defined(__CYGWIN__)
-#  define C_set_main_exe(fname)          C_main_exe = C_resolve_executable_pathname(C_utf8(fname))
-# else
-#  define C_set_main_exe(fname)          C_main_exe = C_resolve_executable_pathname(fname)
-# endif
+# define C_set_main_exe(fname)          C_main_exe = C_resolve_executable_pathname(fname)
 #else
 # define C_set_main_exe(fname)
 #endif
@@ -1632,15 +1628,6 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
     C_set_main_exe(argv[0]);				\
     C_private_repository();				\
     return CHICKEN_main(0, NULL, (void *)C_toplevel); \
-  }
-# elif defined(_WIN32) && !defined(__CYGWIN__)
-#  define C_main_entry_point            \
-  int wmain(int argc, wchar_t *argv[]) \
- { \
-    C_set_gui_mode; \
-    C_set_main_exe(argv[0]);				\
-    C_private_repository();				\
-    return CHICKEN_main(argc, argv, (void*)C_toplevel); \
   }
 # else
 #  define C_main_entry_point            \

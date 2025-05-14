@@ -735,16 +735,17 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (define c-string->allocated-pointer
   (foreign-lambda* c-pointer ((scheme-object o))
-     "char *ptr = C_malloc(C_header_size(o) * sizeof(wchar_t)); \n"
+     "int len = C_header_size(o) * sizeof(wchar_t)); \n"
+     "char *ptr = C_malloc(len); \n"
      "if (ptr != NULL) {\n"
      "  wchar_t *u = C_utf16(o, 0); \n"
-     "  C_memcpy(ptr, u, wcslen(u) + 1); \n"
+     "  C_memcpy(ptr, u, len + 1); \n"
      "}\n"
      "C_return(ptr);"))
 
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist exactf)
-    (let ((argconv (if exactf (lambda (x) x) quote-arg-string)))
+    (let ((argconv (lambda (x) x)))
       (call-with-exec-args
        'process-execute filename argconv arglist envlist
        (lambda (prg argbuf envbuf)
@@ -757,7 +758,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (set! chicken.process#process-spawn
   (lambda (mode filename #!optional (arglist '()) envlist exactf)
-    (let ((argconv (if exactf (lambda (x) x) quote-arg-string)))
+    (let ((argconv (lambda (x) x)))
       (##sys#check-fixnum mode 'process-spawn)
       (call-with-exec-args
        'process-spawn filename argconv arglist envlist

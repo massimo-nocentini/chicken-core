@@ -608,39 +608,10 @@ int CHICKEN_main(int argc, char *argv[], void *toplevel)
 {
   C_word h, s, n;
 
-  if(C_gui_mode) {
 #ifdef _WIN32
     parse_argv(C_utf8(GetCommandLineW()));
     argc = C_main_argc;
     argv = C_main_argv;
-#else
-    /* ??? */
-#endif
-  }
-#if defined(_WIN32) && !defined(__CYGWIN__)
-  else {
-    int i, n;
-    C_char *aptr, *arg;
-    C_main_argv = (C_char **)malloc((MAXIMAL_NUMBER_OF_COMMAND_LINE_ARGUMENTS + 1) * sizeof(C_char *));
-
-    if(C_main_argv == NULL)
-      panic(C_text("cannot allocate argument-list buffer"));
-
-    for(i = 0; i < argc; ++i) {
-    	arg = argv[ i ];
-    	n = strlen(arg);
-       aptr = (C_char *)malloc(n + 1);
-
-       if(!aptr) panic(C_text("cannot allocate argument buffer"));
-
-       C_strlcpy(aptr, arg, n + 1);
-       C_main_argv[ i ] = aptr;
-    }
-
-    C_main_argc = argc;
-    C_main_argv[ argc ] = NULL;
-    argv = C_main_argv;
-  }
 #endif
 
   pass_serious_signals = 0;
@@ -672,12 +643,15 @@ void parse_argv(C_char *cmds)
 
     if(*ptr == '\0') break;
 
-    for(bptr0 = bptr = buffer; !C_utf_isspace((int)(*ptr)) && *ptr != '\0'; *(bptr++) = *(ptr++))
+    bptr0 = bptr = buffer;
+    n = 0;
+    while(!C_utf_isspace((int)(*ptr)) && *ptr != '\0') {
+      *(bptr++) = *(ptr++);
       ++n;
+    }
 
     *bptr = '\0';
     aptr = (C_char*)malloc(n + 1);
-
     if(!aptr) panic(C_text("cannot allocate argument buffer"));
 
     C_strlcpy(aptr, bptr0, n + 1);
