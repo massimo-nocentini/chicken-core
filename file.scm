@@ -63,14 +63,14 @@ static C_word C_rename(C_word old, C_word new) {
 
 # define C_remove(str)       C_fix(_wremove(C_utf16(str, 0)))
 # define C_rmdir(str)        C_fix(_wrmdir(C_utf16(str, 0)))
-# define C_mkdir(str)        C_fix(_wmkdir(C_utf16(str, 0), S_IRWXU | S_IRWXG | S_IRWXO))
+# define C_mkdir(str)        C_fix(_wmkdir(C_utf16(str, 0)))
 #else
 # include <sys/stat.h>
-# define C_test_access(fn, m) C_fix(access(C_utf16(C_c_string(fn), C_unfix(m)))
+# define C_test_access(fn, m) C_fix(access(C_c_string(fn), C_unfix(m)))
 # define C_rename(old, new)  C_fix(rename(C_c_string(old), C_c_string(new)))
 # define C_remove(str)       C_fix(remove(C_c_string(str)))
 # define C_rmdir(str)        C_fix(rmdir(C_c_string(str)))
-# define C_mkdir(str)        C_fix(mkdir(C_c_string(str)))
+# define C_mkdir(str)        C_fix(mkdir(C_c_string(str), S_IRWXU | S_IRWXG | S_IRWXO))
 #endif
 
 #include <sys/types.h>
