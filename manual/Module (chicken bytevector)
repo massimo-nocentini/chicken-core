@@ -3,11 +3,8 @@
 
 == Module (chicken bytevector)
 
-This module contains procedures for dealing with "bytevectors".  Blobs are
-unstructured byte arrays (basically "binary strings"). You can't do
-much with them, but they allow conversion to and from
-[[Module srfi-4|SRFI-4 number vectors]] which define how to access a
-bytevector's byte contents.
+This module contains procedures for dealing with "bytevectors",
+fixed-size sequences of unsigned 8-bit integers.
 
 === bytevector
 
@@ -83,7 +80,7 @@ Returns a bytevector with the contents of {{STRING}} encoded as Latin-1 (ISO-?88
 Returns {{#t}} if the two argument bytevectors are of the same
 size and have the same content.
 
-=== bytevector-append 
+=== bytevector-append
 
 <procedure>(bytevector-append BYTEVECTOR ...)</procedure>
 

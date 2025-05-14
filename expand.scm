@@ -1260,21 +1260,22 @@
                         (##sys#syntax-error 'define-library "invalid export specifier" spec name))))
             specs))
        (define (parse-imports specs)
-	 ;; XXX TODO: Should be import-for-syntax'ed as well?
-	 `(import ,@specs))
+         ;; XXX TODO: Should be import-for-syntax'ed as well?
+         `(import ,@specs))
        (define (process-includes fnames ci?)
-	 `(##core#begin
-	   ,@(map (lambda (fname)
+         `(##core#begin
+           ,@(map (lambda (fname)
                     (if (string? fname)
-                        `(##core#begin ,@(read-forms fname ci?)))
-		    (fname (##sys#syntax-error 'include "invalid include-filename" fname)))
-		  fnames)))
+                        `(##core#begin ,@(read-forms fname ci?))
+                        (##sys#syntax-error 'include "invalid filename"
+                          fname)))
+                  fnames)))
        (define (expand/begin e)
          (let ((e2 (expand e '())))
            (if (and (pair? e2) (eq? '##core#begin (car e2)))
                (cons '##core#begin (map expand/begin (cdr e2)))
                e2)))
-       (define (read-forms filename ci? #!optional (proc (lambda (x) (map expand/begin x))))
+       (define (read-forms filename ci?)
          (fluid-let ((##sys#default-read-info-hook
                        (let ((name 'chicken.compiler.support#read-info-hook))
                          (and (feature? 'compiling)
@@ -1283,13 +1284,13 @@
            (##sys#include-forms-from-file
                filename
                ##sys#current-source-filename ci?
-               (lambda (forms path) (proc forms)))))
+               (lambda (forms path) forms))))
        (define (process-include-decls fnames)
          (parse-decls
            (let loop ((fnames fnames) (all '()))
              (if (null? fnames)
                  (reverse all)
-                 (let ((forms (read-forms (car fnames) #t (lambda (x) x))))
+                 (let ((forms (read-forms (car fnames) #t)))
                    (loop (cdr fnames)
                          (append (reverse forms) all)))))))
        (define (fail spec)

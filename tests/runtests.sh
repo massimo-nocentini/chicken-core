@@ -106,9 +106,6 @@ $compile -analyze-only messages-test.scm 2>messages.out
 diff $DIFF_OPTS messages.expected messages.out
 
 echo "======================================== optimizer tests  ..."
-$compile clustering-tests.scm -clustering
-./a.out
-
 $compile rest-arg-tests.scm -specialize
 ./a.out
 

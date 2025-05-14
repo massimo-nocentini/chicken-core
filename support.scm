@@ -1853,8 +1853,6 @@ Usage: chicken FILENAME [OPTION ...]
                                    disable procedure call checks for toplevel
                                    bindings
     -strict-types                assume variable do not change their type
-    -clustering                  combine groups of local procedures into dispatch
-                                   loop
     -lfa2                        perform additional lightweight flow-analysis pass
     -unroll-limit LIMIT          specifies inlining limit for self-recursive calls
 

@@ -246,7 +246,6 @@
 	 (and-let* ((pn (memq 'profile-name options))) (cadr pn)))
 	(hsize (memq 'heap-size options))
 	(kwstyle (memq 'keyword-style options))
-	(loop/dispatch (memq 'clustering options))
 	(a-only (memq 'analyze-only options))
 	(do-scrutinize #t)
 	(do-lfa2 (memq 'lfa2 options))
@@ -773,9 +772,7 @@
 		 ;; Optimization loop:
 		 (let loop ((i 1)
 			    (node2 node1)
-			    (progress #t)
-			    (l/d #f)
-			    (l/d-done #f))
+                            (progress #t))
 		   (begin-time)
 		   ;; Analyze node tree for optimization
 		   (let ([db (analyze 'opt node2 i progress)])
@@ -805,24 +802,19 @@
 			    (debugging 'p "optimization pass" i)
 			    (begin-time)
 			    (receive (node2 progress-flag)
-				(if l/d
-				    (determine-loop-and-dispatch node2 db)
 				    (perform-high-level-optimizations
 				     node2 db block-compilation
 				     inline-locally inline-max-size
                                      unroll-limit
-				     inline-substitutions-enabled))
+                                   inline-substitutions-enabled)
 			      (end-time "optimization")
 			      (print-node "optimized-iteration" '|5| node2)
 			      (cond (progress-flag
-				     (loop (add1 i) node2 #t #f l/d))
-				    ((and (not l/d-done) loop/dispatch)
-				     (debugging 'p "clustering enabled")
-				     (loop (add1 i) node2 #t #t #t))
+                                     (loop (add1 i) node2 #t))
 				    ((not inline-substitutions-enabled)
 				     (debugging 'p "rewritings enabled")
 				     (set! inline-substitutions-enabled #t)
-				     (loop (add1 i) node2 #t #f l/d-done) )
+                                     (loop (add1 i) node2 #t) )
 				    (optimize-leaf-routines
 				     (begin-time)
 				     (let ([db (analyze 'leaf node2)])
@@ -833,11 +825,9 @@
 					 (end-time "leaf routine optimization")
 					 (loop (add1 i)
 					       node2
-					       progress
-					       #f
-					       l/d-done) ) ) )
+                                               progress) ) ) )
 				    (else
-				     (loop (add1 i) node2 #f #f l/d-done)) ) ) )
+                                     (loop (add1 i) node2 #f)) ) ) )
 
 			   (else
 			    ;; Secondary flow-analysis
