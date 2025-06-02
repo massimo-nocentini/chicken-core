@@ -735,7 +735,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (define c-string->allocated-pointer
   (foreign-lambda* c-pointer ((scheme-object o))
-     "int len = C_header_size(o) * sizeof(wchar_t)); \n"
+     "int len = C_header_size(o) * sizeof(wchar_t); \n"
      "char *ptr = C_malloc(len); \n"
      "if (ptr != NULL) {\n"
      "  wchar_t *u = C_utf16(o, 0); \n"

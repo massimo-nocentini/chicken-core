@@ -53,12 +53,13 @@
 #endif
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
+# include <direct.h>
 # define C_test_access(fn, m) C_fix(_waccess(C_utf16(fn, 0), C_unfix(m)))
 
 static C_word C_rename(C_word old, C_word new) {
-  C_char *s = C_utf16(old, 0), *s2 = C_utf16(new, 1);
+  wchar_t *s = C_utf16(old, 0), *s2 = C_utf16(new, 1);
   _wremove(s2);
-  return(C_fix(_wrename(s, s2));
+  return(C_fix(_wrename(s, s2)));
 }
 
 # define C_remove(str)       C_fix(_wremove(C_utf16(str, 0)))
@@ -80,14 +81,14 @@ static C_word C_rename(C_word old, C_word new) {
 # define C_opendir(s,h)      C_set_block_item(h, 0, (C_word) _wopendir(C_utf16(s, 0)))
 
 static C_word C_foundfile(C_word e,C_word b,C_word l) {
-   C_char *s = C_utf8(((struct dirent *) C_block_item(e, 0))->d_name);
+   C_char *s = C_utf8(((struct _wdirent  *)C_block_item(e, 0))->d_name);
    C_strlcpy(C_c_string(b), s, C_unfix(l));
    return(C_fix(strlen(s)));
 }
 
 #else
 # define C_opendir(s,h)      C_set_block_item(h, 0, (C_word) opendir(C_c_string(s)))
-# define C_foundfile(e,b,l)  (C_strlcpy(C_c_string(b), ((struct dirent *) C_block_item(e, 0))->d_name, C_unfix(l)), C_fix(strlen(((struct dirent *) C_block_item(e, 0))->d_name)))
+# define C_foundfile(e,b,l)  (C_strlcpy(C_c_string(b), ((struct _wdirent *)C_block_item(e, 0))->d_name, C_unfix(l)), C_fix(strlen(((struct dirent *) C_block_item(e, 0))->d_name)))
 #endif
 
 #define C_readdir(h,e)      C_set_block_item(e, 0, (C_word) readdir((DIR *)C_block_item(h, 0)))
