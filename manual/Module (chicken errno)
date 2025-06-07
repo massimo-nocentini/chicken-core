@@ -24,24 +24,40 @@ Returns the error code of the last system call.
 <constant>errno/srch</constant><br>
 <constant>errno/intr</constant><br>
 <constant>errno/io</constant><br>
+<constant>errno/nxio</constant><br>
+<constant>errno/2big</constant><br>
 <constant>errno/noexec</constant><br>
 <constant>errno/badf</constant><br>
 <constant>errno/child</constant><br>
+<constant>errno/again</constant><br>
 <constant>errno/nomem</constant><br>
 <constant>errno/acces</constant><br>
 <constant>errno/fault</constant><br>
 <constant>errno/busy</constant><br>
+<constant>errno/exist</constant><br>
+<constant>errno/xdev</constant><br>
+<constant>errno/nodev</constant><br>
 <constant>errno/notdir</constant><br>
 <constant>errno/isdir</constant><br>
 <constant>errno/inval</constant><br>
+<constant>errno/nfile</constant><br>
 <constant>errno/mfile</constant><br>
+<constant>errno/notty</constant><br>
+<constant>errno/fbig</constant><br>
 <constant>errno/nospc</constant><br>
 <constant>errno/spipe</constant><br>
-<constant>errno/pipe</constant><br>
-<constant>errno/again</constant><br>
 <constant>errno/rofs</constant><br>
-<constant>errno/exist</constant><br>
-<constant>errno/wouldblock</constant>
+<constant>errno/mlink</constant><br>
+<constant>errno/pipe</constant><br>
+<constant>errno/dom</constant><br>
+<constant>errno/range</constant><br>
+<constant>errno/deadlk</constant><br>
+<constant>errno/nametoolong</constant><br>
+<constant>errno/nolck</constant><br>
+<constant>errno/nosys</constant><br>
+<constant>errno/notempty</constant><br>
+<constant>errno/ilseq</constant><br>
+<constant>errno/wouldblock</constant><br>
 
 These variables contain error codes as returned by {{errno}}.
 
