@@ -82,6 +82,8 @@ static int execute(char **argv)
   static TCHAR cmdline[ MAX_COMMAND_LEN ];
   static int len;
 
+  ZeroMemory(&process_info, sizeof(PROCESS_INFORMATION));
+  ZeroMemory(&startup_info, sizeof(STARTUPINFO));
   startup_info.cb = sizeof(STARTUPINFO);
 
   /* quote command arguments */
@@ -93,16 +95,16 @@ static int execute(char **argv)
     }
   }
 
-  if(!CreateProcess(NULL, cmdline, NULL, NULL, TRUE, 
+  if(!CreateProcess(NULL, cmdline, NULL, NULL, TRUE,
                     NORMAL_PRIORITY_CLASS, NULL, NULL, &startup_info,
                     &process_info)) {
     fprintf(stderr, "creating subprocess failed\n");
     exit(1);
   }
 
-  CloseHandle(process_info.hThread);
-
   WaitForSingleObject(process_info.hProcess, INFINITE);
+  CloseHandle(process_info.hThread);
+  CloseHandle(process_info.hProcess);
   DWORD code;
 
   if(!GetExitCodeProcess(process_info.hProcess, &code)) {
