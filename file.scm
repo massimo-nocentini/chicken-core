@@ -85,14 +85,15 @@ static C_word C_foundfile(C_word e,C_word b,C_word l) {
    C_strlcpy(C_c_string(b), s, C_unfix(l));
    return(C_fix(strlen(s)));
 }
-
+# define C_readdir(h,e)      C_set_block_item(e, 0, (C_word) _wreaddir((_WDIR *)C_block_item(h, 0)))
+# define C_closedir(h)       (_wclosedir((_WDIR *)C_block_item(h, 0)), C_SCHEME_UNDEFINED)
 #else
 # define C_opendir(s,h)      C_set_block_item(h, 0, (C_word) opendir(C_c_string(s)))
 # define C_foundfile(e,b,l)  (C_strlcpy(C_c_string(b), ((struct dirent *)C_block_item(e, 0))->d_name, C_unfix(l)), C_fix(strlen(((struct dirent *) C_block_item(e, 0))->d_name)))
-#endif
 
-#define C_readdir(h,e)      C_set_block_item(e, 0, (C_word) readdir((DIR *)C_block_item(h, 0)))
-#define C_closedir(h)       (closedir((DIR *)C_block_item(h, 0)), C_SCHEME_UNDEFINED)
+# define C_readdir(h,e)      C_set_block_item(e, 0, (C_word) readdir((DIR *)C_block_item(h, 0)))
+# define C_closedir(h)       (closedir((DIR *)C_block_item(h, 0)), C_SCHEME_UNDEFINED)
+#endif
 
 static C_word C_u_i_symbolic_linkp(C_word path)
 {
