@@ -261,6 +261,8 @@ tests/file-encoding-test.scm
 tests/i-dont-know-i-just-work-here.utf-8.txt
 tests/i-dont-know-i-just-work-here.latin-1.txt
 tests/r7rs-tests-2.scm
+tests/r7rs-library-tests.scm
+tests/r7rs-library-tests-code.scm
 tests/life.scm
 tests/include.scm
 tests/include-ci.scm

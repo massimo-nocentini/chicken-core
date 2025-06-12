@@ -335,6 +335,7 @@ $interpret -i -s r5rs_pitfalls.scm
 echo "======================================== r7rs tests ..."
 $interpret -s r7rs-tests.scm
 $interpret -s r7rs-tests-2.scm
+$interpret -s r7rs-library-tests.scm
 $interpret -s life.scm
 
 echo "======================================== module tests ..."
