@@ -627,8 +627,9 @@ of a given type.
  [C function] void* C_pointer_address (C_word pointer)
 
 These macros and functions can be used to convert Scheme data objects
-back to C data. Note that {{C_c_string()}} returns a pointer
-to the character buffer of the actual Scheme object and is not
+back to C data. Note that {{C_c_string()}} takes a bytevector and returns
+a pointer to the contents as a character pointer. If the bytevector is the
+character sequence obtained from a string, then it is implicitly
 zero-terminated.
 
 ==== C_header_size
