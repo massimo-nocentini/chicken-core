@@ -735,33 +735,32 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (define c-string->allocated-pointer
   (foreign-lambda* c-pointer ((scheme-object o))
-     "int len = C_header_size(o) * sizeof(wchar_t); \n"
+     ;; includes 0 byte at end
+     "int len = C_header_size(o) * sizeof(C_WCHAR); \n"
      "char *ptr = C_malloc(len); \n"
      "if (ptr != NULL) {\n"
-     "  wchar_t *u = C_utf16(o, 0); \n"
-     "  C_memcpy(ptr, u, len + 1); \n"
+     "  C_WCHAR *u = C_utf16(o, 0); \n"
+     "  C_memcpy(ptr, u, len); \n"
      "}\n"
      "C_return(ptr);"))
 
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist exactf)
-    (let ((argconv (lambda (x) x)))
-      (call-with-exec-args
-       'process-execute filename argconv arglist envlist
+    (call-with-exec-args
+       'process-execute filename arglist envlist
        (lambda (prg argbuf envbuf)
-	 (##core#inline "C_flushall")
-	 (let ((r (if envbuf
-		      (##core#inline "C_u_i_execve" prg argbuf envbuf)
-		      (##core#inline "C_u_i_execvp" prg argbuf))))
-	   (when (fx= r -1)
-	     (posix-error #:process-error 'process-execute "cannot execute process" filename))))))))
+         (##core#inline "C_flushall")
+         (let ((r (if envbuf
+                      (##core#inline "C_u_i_execve" prg argbuf envbuf)
+                      (##core#inline "C_u_i_execvp" prg argbuf))))
+           (when (fx= r -1)
+             (posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
 
 (set! chicken.process#process-spawn
   (lambda (mode filename #!optional (arglist '()) envlist exactf)
-    (let ((argconv (lambda (x) x)))
       (##sys#check-fixnum mode 'process-spawn)
       (call-with-exec-args
-       'process-spawn filename argconv arglist envlist
+       'process-spawn filename arglist envlist
        (lambda (prg argbuf envbuf)
          (##core#inline "C_flushall")
          (let ((r (if envbuf
@@ -770,14 +769,14 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
            (if (fx= r -1)
                (posix-error #:process-error 'process-spawn
                             "cannot spawn process" filename)
-               (register-pid r))))))))
+               (register-pid r)))))))
 
 (define-foreign-variable _shlcmd c-string "C_shlcmd")
 
 (define (shell-command loc)
   (or (get-environment-variable "COMSPEC")
       (if (##core#inline "C_get_shlcmd")
-	  _shlcmd
+          _shlcmd
           (##sys#error/errno
            (##sys#update-errno) loc "cannot retrieve system directory"))))
 
@@ -788,12 +787,12 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
   (lambda (f . args)
     (let ((args (if (pair? args) (car args) #f)))
       (if args
-	  (chicken.process#process-spawn
-	   chicken.process#spawn/nowait f args)
-	  (chicken.process#process-spawn
-	   chicken.process#spawn/nowait
-	   (shell-command 'process-run)
-	   (shell-command-arguments f)) ) ) ) )
+          (chicken.process#process-spawn
+           chicken.process#spawn/nowait f args)
+          (chicken.process#process-spawn
+           chicken.process#spawn/nowait
+           (shell-command 'process-run)
+           (shell-command-arguments f)) ) ) ) )
 
 ;;; Run subprocess connected with pipes:
 (define-foreign-variable _rdbuf char "C_rdbuf")
@@ -802,13 +801,13 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 ; from original by Mejedi
 ;; process-impl
-; loc		 caller procedure symbol
-; cmd		 pathname or commandline
-; args		 string-list or '()
-; env		 string-list or #f (currently ignored)
-; stdoutf	 #f then share, or #t then create
-; stdinf	 #f then share, or #t then create
-; stderrf	 #f then share, or #t then create
+; loc            caller procedure symbol
+; cmd            pathname or commandline
+; args           string-list or '()
+; env            string-list or #f (currently ignored)
+; stdoutf        #f then share, or #t then create
+; stdinf         #f then share, or #t then create
+; stderrf        #f then share, or #t then create
 ;
 ; (values stdin-input-port? stdout-output-port? pid stderr-input-port?)
 ; where stdin-input-port?, etc. is a port or #f, indicating no port created.
@@ -816,8 +815,8 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (define process-impl
   ;; XXX TODO: When environment is implemented, check for embedded NUL bytes!
   (let ([c-process
-	  (foreign-lambda bool "C_process" c-string scheme-object c-pointer
-	    (c-pointer int) (c-pointer int) (c-pointer int) (c-pointer int) int)])
+          (foreign-lambda bool "C_process" c-string scheme-object c-pointer
+            (c-pointer int) (c-pointer int) (c-pointer int) (c-pointer int) int)])
     ; The environment list must be sorted & include current directory
     ; information for the system drives. i.e !C:=...
     ; For now any environment is ignored.

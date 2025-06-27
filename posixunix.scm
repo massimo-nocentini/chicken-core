@@ -1126,30 +1126,30 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist _)
     (call-with-exec-args
-     'process-execute filename (lambda (x) x) arglist envlist
+     'process-execute filename arglist envlist
      (lambda (prg argbuf envbuf)
        (let ((r (if envbuf
-		    (##core#inline "C_u_i_execve" prg argbuf envbuf)
-		    (##core#inline "C_u_i_execvp" prg argbuf))))
-	 (when (fx= r -1)
-	   (posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
+                    (##core#inline "C_u_i_execve" prg argbuf envbuf)
+                    (##core#inline "C_u_i_execvp" prg argbuf))))
+         (when (fx= r -1)
+           (posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
 
 (define-foreign-variable _wnohang int "WNOHANG")
 (define-foreign-variable _wait-status int "C_wait_status")
 
 (define (process-wait-impl pid nohang)
   (let* ((res (##core#inline "C_waitpid" pid (if nohang _wnohang 0)))
-	 (norm (##core#inline "C_WIFEXITED" _wait-status)) )
+         (norm (##core#inline "C_WIFEXITED" _wait-status)) )
     (if (and (fx= res -1) (fx= _errno _eintr))
-	(##sys#dispatch-interrupt
+        (##sys#dispatch-interrupt
          (lambda () (process-wait-impl pid nohang)))
-	(values
-	 res
-	 norm
-	 (cond (norm (##core#inline "C_WEXITSTATUS" _wait-status))
-	       ((##core#inline "C_WIFSIGNALED" _wait-status)
-		(##core#inline "C_WTERMSIG" _wait-status))
-	       (else (##core#inline "C_WSTOPSIG" _wait-status)) ) )) ) )
+        (values
+         res
+         norm
+         (cond (norm (##core#inline "C_WEXITSTATUS" _wait-status))
+               ((##core#inline "C_WIFSIGNALED" _wait-status)
+                (##core#inline "C_WTERMSIG" _wait-status))
+               (else (##core#inline "C_WSTOPSIG" _wait-status)) ) )) ) )
 
 (set! chicken.process-context.posix#parent-process-id (foreign-lambda int "C_getppid"))
 

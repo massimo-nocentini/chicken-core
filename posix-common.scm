@@ -785,26 +785,26 @@ EOF
 
 (define call-with-exec-args
   (let ((nop (lambda (x) x)))
-    (lambda (loc filename argconv arglist envlist proc)
+    (lambda (loc filename arglist envlist proc)
       (let* ((args (cons filename arglist)) ; Add argv[0]
-	     (argbuf (list->c-string-buffer args argconv loc))
-	     (envbuf #f))
+             (argbuf (list->c-string-buffer args (lambda (x) x) loc))
+             (envbuf #f))
 
-	(handle-exceptions exn
-	    ;; Free to avoid memory leak, then reraise
-	    (begin (free-c-string-buffer argbuf)
-		   (when envbuf (free-c-string-buffer envbuf))
-		   (signal exn))
+        (handle-exceptions exn
+            ;; Free to avoid memory leak, then reraise
+            (begin (free-c-string-buffer argbuf)
+                   (when envbuf (free-c-string-buffer envbuf))
+                   (signal exn))
 
-	  ;; Envlist is never converted, so we always use nop here
-	  (when envlist
-	    (check-environment-list envlist loc)
-	    (set! envbuf
-	      (list->c-string-buffer
-	       (map (lambda (p) (string-append (car p) "=" (cdr p))) envlist)
-	       nop loc)))
+          ;; Envlist is never converted, so we always use nop here
+          (when envlist
+            (check-environment-list envlist loc)
+            (set! envbuf
+              (list->c-string-buffer
+               (map (lambda (p) (string-append (car p) "=" (cdr p))) envlist)
+               nop loc)))
 
-	  (proc (##sys#make-c-string filename loc) argbuf envbuf))))))
+          (proc (##sys#make-c-string filename loc) argbuf envbuf))))))
 
 ;; Pipes:
 
