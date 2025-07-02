@@ -15,7 +15,7 @@ gc_start(int mode)
 static void
 gc_end(int mode, C_long ms)
 {
-  printf("<<<<< GC post hook - mode=%d, count=%d, ms=%ld\n", mode, --count, ms);
+  printf("<<<<< GC post hook - mode=%d, count=%d, ms=%ld\n", mode, --count, (long)ms);
 }
 
 <#
