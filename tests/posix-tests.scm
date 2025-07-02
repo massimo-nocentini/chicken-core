@@ -39,7 +39,7 @@
 ;; even if the process will get called
 (assert-error (process-execute "false\x00;123"))
 (assert-error (process-execute "false" '("1" "123\x00;456")))
-(assert-error (process-execute "false" '("123\x00;456") '(("foo\x00;bar" . "blabla") '("lalala" . "qux\x00;mooh"))))
+(assert-error (process-execute "false" '("123\x00;456") '(("foo\x00;bar" . "blabla") ("lalala" . "qux\x00;mooh"))))
 
 (let ((p (process csi-path '("-n" "-I" ".." "-e"
                         "(write 'err (current-error-port)) (write 'ok)"))))
