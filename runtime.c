@@ -630,7 +630,7 @@ int CHICKEN_main(int argc, char *argv[], void *toplevel)
 void parse_argv(C_char *cmds)
 {
   C_char *ptr = cmds, *bptr0, *bptr, *aptr;
-  int n = 0;
+  int n = 0, delim = 0;
   C_main_argv = (C_char **)malloc((MAXIMAL_NUMBER_OF_COMMAND_LINE_ARGUMENTS + 1) * sizeof(C_char *));
 
   if(C_main_argv == NULL)
@@ -645,10 +645,17 @@ void parse_argv(C_char *cmds)
 
     bptr0 = bptr = buffer;
     n = 0;
-    while(!C_utf_isspace((int)(*ptr)) && *ptr != '\0') {
+    if(*ptr == '\"' || *ptr == '\'') delim = *(ptr++);
+    else delim = 0;
+
+    while(*ptr != '\0') {
+      if(*ptr == delim || (C_utf_isspace((int)(*ptr)) && !delim)) break;
+      if(delim && *ptr == '\\') ++ptr;
       *(bptr++) = *(ptr++);
       ++n;
     }
+
+    if(delim) ++ptr;
 
     *bptr = '\0';
     aptr = (C_char*)malloc(n + 1);
