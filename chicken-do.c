@@ -88,7 +88,7 @@ static int execute(char **argv)
 
   /* quote command arguments */
   while(*argv != NULL) {
-    len += snprintf(cmdline + len, sizeof(cmdline) - len, "\"%s\" ", *(argv++));
+    len += snprintf(cmdline + len, sizeof(cmdline) - len, "%s ", *(argv++));
     if(len > sizeof(cmdline)) {
       fprintf(stderr, "argument list too long\n");
       exit(1);
@@ -98,7 +98,7 @@ static int execute(char **argv)
   if(!CreateProcess(NULL, cmdline, NULL, NULL, TRUE,
                     NORMAL_PRIORITY_CLASS, NULL, NULL, &startup_info,
                     &process_info)) {
-    fprintf(stderr, "creating subprocess failed\n");
+    fprintf(stderr, "creating subprocess failed (%ld)\n", GetLastError());
     exit(1);
   }
 
@@ -111,6 +111,9 @@ static int execute(char **argv)
     fprintf(stderr, "unable to obtain exit status of subprocess\n");
     exit(1);
   }
+  CloseHandle(process_info.hProcess);
+  CloseHandle(process_info.hThread);
+
 
   return code;
 #else
