@@ -728,7 +728,8 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
              (let loop ((i 0))
                (cond
                 ((fx= i len) #f)
-                ((char-whitespace? (string-ref s i)) #t)
+                ((char-whitespace? (string-ref s i)))
+                ((char=? #\' (string-ref s i)))
                 (else (loop (fx+ i 1)))))))))
     (lambda (str)
       (if (needs-quoting? str) (string-append "\"" str "\"") str))))
@@ -746,21 +747,23 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist exactf)
-    (call-with-exec-args
-       'process-execute filename arglist envlist
+    (let ((conv (if exactf (lambda (x) x) quote-arg-string)))
+     (call-with-exec-args
+       'process-execute filename conv arglist envlist
        (lambda (prg argbuf envbuf)
          (##core#inline "C_flushall")
          (let ((r (if envbuf
                       (##core#inline "C_u_i_execve" prg argbuf envbuf)
                       (##core#inline "C_u_i_execvp" prg argbuf))))
            (when (fx= r -1)
-             (posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
+             (posix-error #:process-error 'process-execute "cannot execute process" filename))))))))
 
 (set! chicken.process#process-spawn
   (lambda (mode filename #!optional (arglist '()) envlist exactf)
+    (let ((conv (if exactf (lambda (x) x) quote-arg-string)))
       (##sys#check-fixnum mode 'process-spawn)
       (call-with-exec-args
-       'process-spawn filename arglist envlist
+       'process-spawn filename conv arglist envlist
        (lambda (prg argbuf envbuf)
          (##core#inline "C_flushall")
          (let ((r (if envbuf
@@ -769,7 +772,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
            (if (fx= r -1)
                (posix-error #:process-error 'process-spawn
                             "cannot spawn process" filename)
-               (register-pid r)))))))
+               (register-pid r))))))))
 
 (define-foreign-variable _shlcmd c-string "C_shlcmd")
 

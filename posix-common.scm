@@ -785,9 +785,9 @@ EOF
 
 (define call-with-exec-args
   (let ((nop (lambda (x) x)))
-    (lambda (loc filename arglist envlist proc)
+    (lambda (loc filename argconv arglist envlist proc)
       (let* ((args (cons filename arglist)) ; Add argv[0]
-             (argbuf (list->c-string-buffer args (lambda (x) x) loc))
+             (argbuf (list->c-string-buffer args argconv loc))
              (envbuf #f))
 
         (handle-exceptions exn

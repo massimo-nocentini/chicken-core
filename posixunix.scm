@@ -1126,7 +1126,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (set! chicken.process#process-execute
   (lambda (filename #!optional (arglist '()) envlist _)
     (call-with-exec-args
-     'process-execute filename arglist envlist
+     'process-execute filename (lambda (x) x) arglist envlist
      (lambda (prg argbuf envbuf)
        (let ((r (if envbuf
                     (##core#inline "C_u_i_execve" prg argbuf envbuf)
