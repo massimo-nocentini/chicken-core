@@ -836,17 +836,16 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                     (location handle)
                     (location stdin_fd) (location stdout_fd) (location stderr_fd)
                     (+ (if stdinf 0 1) (if stdoutf 0 2) (if stderrf 0 4)))])
-            (if (integer? res)
+            (if res
               (make-process
-               res #f
-               (and stdoutf (chicken.file.posix#open-input-file*
-                             stdout_fd)) ;Parent stdin
+               handle #f
                (and stdinf (chicken.file.posix#open-output-file*
                             stdin_fd))  ;Parent stdout
-               handle
+               (and stdoutf (chicken.file.posix#open-input-file*
+                             stdout_fd)) ;Parent stdin
                (and stderrf (chicken.file.posix#open-input-file*
-                             stderr_fd)
-               #f))
+                             stderr_fd))
+               #f)
               (##sys#signal-hook/errno
                #:process-error (##sys#update-errno) loc "cannot execute process" cmdlin))))))))
 
