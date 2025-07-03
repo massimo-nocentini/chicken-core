@@ -103,8 +103,6 @@ static int execute(char **argv)
   }
 
   WaitForSingleObject(process_info.hProcess, INFINITE);
-  CloseHandle(process_info.hThread);
-  CloseHandle(process_info.hProcess);
   DWORD code;
 
   if(!GetExitCodeProcess(process_info.hProcess, &code)) {
@@ -155,7 +153,7 @@ static int execute(char **argv)
 }
 
 
-int main(int argc, char *argv[]) 
+int main(int argc, char *argv[])
 {
   int i, a = 0;
   struct stat *st, sd;
@@ -219,7 +217,7 @@ int main(int argc, char *argv[])
     if(stat(*d, &sd) == -1) {
       fprintf(stderr, "%s: %s\n", *d, strerror(errno));
       exit(1);
-    }      
+    }
 
     st = tstats;
 
