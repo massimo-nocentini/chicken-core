@@ -2205,6 +2205,8 @@ C_fctexport C_word C_i_live_finalizer_count(void) C_regparm;
 C_fctexport C_word C_i_profilingp(void) C_regparm;
 C_fctexport C_word C_i_tty_forcedp(void) C_regparm;
 C_fctexport C_word C_i_setenv(C_word var, C_word val) C_regparm;
+C_fctexport C_long C_current_jiffy(void) C_regparm;
+C_fctexport C_long C_jiffies_per_second(void) C_regparm;
 
 C_fctexport C_word C_a_i_cpu_time(C_word **a, int c, C_word buf) C_regparm;
 C_fctexport C_word C_a_i_exact_to_inexact(C_word **a, int c, C_word n) C_regparm;

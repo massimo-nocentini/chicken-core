@@ -13692,3 +13692,25 @@ C_char *C_getenventry(int i)
 	return environ[ i ] == NULL ? NULL : C_strdup(environ[ i ]);
 #endif
 }
+
+C_long C_current_jiffy(void) {
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	LARGE_INTEGER ticks;
+	QueryPerformanceCounter(&ticks);
+	return ticks.QuadPart;
+#else
+	struct timespec tm;
+	clock_gettime(CLOCK_MONOTONIC, &tm);
+	return tm.tv_nsec / 1000 + tm.tv_sec * 1000000;
+#endif
+}
+
+C_long C_jiffies_per_second(void) {
+#if defined(_WIN32) && !defined(__CYGWIN__)
+	LARGE_INTEGER ticks;
+	QueryPerformanceFrequency(&ticks);
+	return ticks.QuadPart;
+#else
+	return 1000000;
+#endif
+}

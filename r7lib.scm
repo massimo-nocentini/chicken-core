@@ -174,21 +174,21 @@
 )
 
 (module scheme.time (current-second
-		     current-jiffy
-		     jiffies-per-second)
+                     current-jiffy
+                     jiffies-per-second)
   (import (only chicken.base define-constant)
           (chicken foreign)
-	  (only chicken.time current-seconds)
-	  (only scheme + define inexact->exact))
+          (only chicken.time current-seconds)
+          (only scheme + define inexact->exact))
 
   ;; As of 2012-06-30.
   (define-constant tai-offset 35.)
 
   (define (current-second) (+ (current-seconds) tai-offset))
 
-  (define current-jiffy (foreign-lambda integer "clock"))
+  (define current-jiffy (foreign-lambda long "C_current_jiffy"))
 
-  (define (jiffies-per-second) (foreign-value "CLOCKS_PER_SEC" integer))
+  (define jiffies-per-second (foreign-lambda long "C_jiffies_per_second"))
 
 )
 
