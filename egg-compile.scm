@@ -1263,10 +1263,6 @@ EOF
 
 (define (maybe f x) (if f (list x) '()))
 
-(define (caretize str)
-  (string-translate* str '(("&" . "^&") ("^" . "^^") ("|" . "^|")
-                           ("<" . "^<") (">" . "^>"))))
-
 (define (ensure-line-limit str lim)
   (when (>= (string-length str) lim)
     (error "line length exceeds platform limit: " str))
