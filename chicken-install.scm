@@ -295,11 +295,11 @@
 
 (define (load-defaults)
   (let* ((cfg-dir (system-config-directory))
-         (user-file (and cfg-dir (make-pathname (list cfg-dir "chicken")
+         (user-file (and cfg-dir (make-pathname+ (list cfg-dir "chicken")
                                                 +defaults-file+)))
          (deff (or user-defaults
                    (and user-file (file-exists? user-file))
-                   (make-pathname host-sharedir +defaults-file+))))
+                   (make-pathname+ host-sharedir +defaults-file+))))
       (define (broken x)
 	(error "invalid entry in defaults file" deff x))
       (cond ((not (file-exists? deff)) '())
@@ -421,11 +421,11 @@
 ;; location, also make sure it is up to date
 
 (define (locate-egg name version)
-  (let* ((cached (make-pathname cache-directory name))
-         (metadata-dir (make-pathname cache-metadata-directory name))
+  (let* ((cached (make-pathname+ cache-directory name))
+         (metadata-dir (make-pathname+ cache-metadata-directory name))
          (now (current-seconds))
-         (status (make-pathname metadata-dir +status-file+))
-         (eggfile (make-pathname cached name +egg-extension+)))
+         (status (make-pathname+ metadata-dir +status-file+))
+         (eggfile (make-pathname+ cached name +egg-extension+)))
     (define (fetch lax)
       (when (file-exists? cached)
         (delete-directory cached #t))
@@ -457,8 +457,8 @@
                        (error "cached egg does not match CHICKEN version - use `-force' to install anyway" name)))
                  (else (fetch #f)))))
     (let* ((info (validate-egg-info (load-egg-info eggfile)))
-           (vfile (make-pathname metadata-dir +version-file+))
-           (tfile (make-pathname metadata-dir +timestamp-file+))
+           (vfile (make-pathname+ metadata-dir +version-file+))
+           (tfile (make-pathname+ metadata-dir +timestamp-file+))
            (lversion (or (get-egg-property info 'version)
                          (and (file-exists? vfile)
                               (with-input-from-file vfile read)))))
@@ -493,33 +493,33 @@
   ;;
   ;; Return (values <egg-dir> <version>).  <egg-dir> and <version>
   ;; will be #f in case they cannot be determined.
-  (let ((egg-dir (probe-dir (make-pathname location egg-name))))
+  (let ((egg-dir (probe-dir (make-pathname+ location egg-name))))
     (cond
      ((not egg-dir)
       (values #f #f))
      ;; <location>/<egg-name>/<egg-name>.egg
-     ((file-exists? (make-pathname egg-dir egg-name +egg-extension+))
+     ((file-exists? (make-pathname+ egg-dir egg-name +egg-extension+))
       (values egg-dir #f))
      (else
       ;; <location>/<egg-name>/<version>/<egg-name>.egg
       (if version
-          (values (probe-dir (make-pathname egg-dir (->string version)))
+          (values (probe-dir (make-pathname+ egg-dir (->string version)))
                   version)
           (let ((versions (directory egg-dir)))
             (if (null? versions)
                 (values #f #f)
                 (let ((latest (car (sort versions version>=?))))
-                  (values (make-pathname egg-dir (->string latest))
+                  (values (make-pathname+ egg-dir (->string latest))
                           latest)))))))))
 
 (define (write-cache-metadata egg egg-version)
-  (let ((metadata-dir (make-pathname cache-metadata-directory egg)))
+  (let ((metadata-dir (make-pathname+ cache-metadata-directory egg)))
     (when egg-version
-      (with-output-to-file (make-pathname metadata-dir +version-file+)
+      (with-output-to-file (make-pathname+ metadata-dir +version-file+)
         (cut write egg-version)))
-    (with-output-to-file (make-pathname metadata-dir +timestamp-file+)
+    (with-output-to-file (make-pathname+ metadata-dir +timestamp-file+)
       (cut write (current-seconds)))
-    (with-output-to-file (make-pathname metadata-dir +status-file+)
+    (with-output-to-file (make-pathname+ metadata-dir +status-file+)
       (cut write current-status))))
 
 (define (fetch-egg-sources name version dest lax)
@@ -554,7 +554,7 @@
            (receive (dir version-from-path)
                (locate-local-egg-dir (car locs) name version)
              (if dir
-                 (let* ((eggfile (make-pathname dir name +egg-extension+))
+                 (let* ((eggfile (make-pathname+ dir name +egg-extension+))
                         (info (validate-egg-info (load-egg-info eggfile)))
                         (rversion
                          ;; If version-from-path is non-#f, prefer it
@@ -586,7 +586,7 @@
                    (qs* to platform #t))))
 	(d "~a~%" cmd)
         (system+ cmd platform)))
-    (glob (make-pathname from "*"))))
+    (glob (make-pathname+ from "*"))))
 
 (define (check-remote-version name lversion cached)
   (let loop ((locs default-locations))
@@ -599,9 +599,9 @@
                         (loop (cdr srvs)))))))
           ;; The order of probe-dir's here is important.  First try
           ;; the path with version, then the path without version.
-          ((or (probe-dir (make-pathname (list (car locs) name)
+          ((or (probe-dir (make-pathname+ (list (car locs) name)
                                          (->string lversion)))
-               (probe-dir (make-pathname (car locs) name)))
+               (probe-dir (make-pathname+ (car locs) name)))
            => (lambda (dir)
                 ;; for locally available eggs, check set of files and
                 ;; timestamps
@@ -615,8 +615,8 @@
           (hfs (directory here)))
       (every (lambda (f)
                (and (member f hfs)
-                    (let ((tf2 (make-pathname there f))
-                          (hf2 (make-pathname here f)))
+                    (let ((tf2 (make-pathname+ there f))
+                          (hf2 (make-pathname+ here f)))
                       (and (<= (file-modification-time tf2)
                                (file-modification-time hf2))
                            (if (directory-exists? tf2)
@@ -629,7 +629,7 @@
 ;; check installed eggs for already installed files
 
 (define (matching-installed-files egg fnames)
-  (let ((eggs (glob (make-pathname (install-path) "*" +egg-info-extension+))))
+  (let ((eggs (glob (make-pathname+ (install-path) "*" +egg-info-extension+))))
     (let loop ((eggs eggs) (same '()))
       (cond ((null? eggs) same)
             ((string=? egg (pathname-file (car eggs)))
@@ -684,7 +684,7 @@
         (unless (member (car e+d+v) checked-eggs)
           (d "checking ~a ...~%" (car e+d+v))
           (set! checked-eggs (cons (car e+d+v) checked-eggs))
-          (let* ((fname (make-pathname (cadr e+d+v) (car e+d+v) +egg-extension+))
+          (let* ((fname (make-pathname+ (cadr e+d+v) (car e+d+v) +egg-extension+))
                  (info (validate-egg-info (load-egg-info fname))))
             (d "checking platform for `~a'~%" (car e+d+v))
             (check-platform (car e+d+v) info)
@@ -783,7 +783,7 @@
   (cond ((or (eq? x 'chicken) (equal? x "chicken"))
          (chicken-version))
         ((let* ((sf (chicken.load#find-file
-                     (make-pathname #f (->string x) +egg-info-extension+)
+                     (make-pathname+ #f (->string x) +egg-info-extension+)
                      (repo-path))))
            (and sf
                 (file-exists? sf)
@@ -878,10 +878,10 @@
     (lambda (egg)
       (let* ((name (car egg))
              (dir (cadr egg))
-             (metadata-dir (make-pathname cache-metadata-directory name))
-             (eggfile (make-pathname dir name +egg-extension+))
+             (metadata-dir (make-pathname+ cache-metadata-directory name))
+             (eggfile (make-pathname+ dir name +egg-extension+))
              (info (load-egg-info eggfile))
-             (vfile (make-pathname metadata-dir +version-file+))
+             (vfile (make-pathname+ metadata-dir +version-file+))
              (ver (and (file-exists? vfile)
                        (with-input-from-file vfile read))))
         (when (or host-extension
@@ -892,11 +892,10 @@
                                                                ver
                                                                platform
                                                                'host)))
-            (let ((bscript (make-pathname dir name
-                                          (build-script-extension 'host platform)))
-                  (iscript (make-pathname dir name
-                                          (install-script-extension 'host
-                                                                    platform))))
+            (let ((bscript (make-pathname+ dir name
+                                          (build-script-extension 'host)))
+                  (iscript (make-pathname+ dir name
+                                          (install-script-extension 'host platform))))
               (generate-shell-commands platform build bscript dir
                                        (build-prefix 'host name info)
                                        (build-suffix 'host name info)
@@ -925,9 +924,9 @@
                                                                ver
                                                                platform
                                                                'target)))
-            (let ((bscript (make-pathname dir name
+            (let ((bscript (make-pathname+ dir name
                                           (build-script-extension 'target platform)))
-                  (iscript (make-pathname dir name
+                  (iscript (make-pathname+ dir name
                                           (install-script-extension 'target
                                                                     platform))))
               (generate-shell-commands platform build bscript dir
@@ -959,8 +958,8 @@
   (let* ((name (car egg))
          (dir (cadr egg))
          (version (caddr egg))
-         (testdir (make-pathname dir "tests"))
-         (tscript (make-pathname testdir "run.scm")))
+         (testdir (make-pathname+ dir "tests"))
+         (tscript (make-pathname+ testdir "run.scm")))
     (if (and (directory-exists? testdir)
              (file-exists? tscript))
         (let ((old (current-directory))
@@ -1011,8 +1010,8 @@
 ;;; update module-db
 
 (define (update-db)
-  (let* ((files (glob (make-pathname (install-path) "*.import.so")
-                      (make-pathname (install-path) "*.import.scm")))
+  (let* ((files (glob (make-pathname+ (install-path) "*.import.so")
+                      (make-pathname+ (install-path) "*.import.scm")))
          (dbfile (create-temporary-file)))
       (print "loading import libraries ...")
       (fluid-let ((##sys#warnings-enabled #f))
@@ -1049,7 +1048,7 @@
           (lambda ()
             (for-each (lambda (x) (write x) (newline)) db)))
         (unless quiet (print "installing " +module-db+ " ..."))
-        (copy-file dbfile (make-pathname (install-path) +module-db+) #t)
+        (copy-file dbfile (make-pathname+ (install-path) +module-db+) #t)
         (delete-file dbfile))))
 
 
@@ -1064,8 +1063,8 @@
           (for-each
             (lambda (egg)
               (let* ((name (if (pair? egg) (car egg) egg))
-                     (cache-dir (make-pathname cache-directory name))
-                     (metadata-dir (make-pathname cache-metadata-directory name)))
+                     (cache-dir (make-pathname+ cache-directory name))
+                     (metadata-dir (make-pathname+ cache-metadata-directory name)))
                 (when (file-exists? cache-dir)
                   (d "purging ~a from cache at ~a~%" name cache-dir)
                   (delete-directory cache-dir #t))
