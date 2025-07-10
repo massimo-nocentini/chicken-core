@@ -2625,10 +2625,6 @@
 	  ((##core#rest-cdr ##core#rest-car ##core#rest-null? ##core#rest-length)
 	   (let* ((val (ref-var n here closure))
 		  (rest-var (if (eq? val n) (varnode (first params)) val)))
-	     (unless (or (eq? val n)
-			 (match-node val `(##core#ref (i) (##core#variable (,here))) '(i)))
-	       ;; If it's captured, replacement in optimizer was incorrect
-	       (bomb "Saw rest op for captured variable.  This should not happen!" class) )
 	     ;; If rest-cdrs have not all been eliminated, restore
 	     ;; them as regular cdr calls on the rest list variable.
 	     ;; This can be improved, as it can actually introduce
