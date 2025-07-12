@@ -139,7 +139,7 @@
     (if (irregex-search '(: bos ".." ("\\/")) dest*)
         (error "destination must be relative to CHICKEN install prefix" dest)
         (normalize-pathname
-         (make-pathname (if (eq? mode 'target)
+         (make-pathname+ (if (eq? mode 'target)
                             default-prefix
                             (override-prefix "/" host-prefix))
                         dest*)))))
@@ -1071,11 +1071,11 @@
                 (fdir (pathname-directory ds)))
            (when fdir
              (print mkdir " " ddir
-                    (qs* (make-pathname dest fdir) platform #t)))
+                    (qs* (make-pathname+ dest fdir) platform #t)))
            (print dcmd " " (qs* d platform #t)
                   " " ddir
                   (if fdir
-                      (qs* (make-pathname dest fdir) platform #t)
+                      (qs* (make-pathname+ dest fdir) platform #t)
                       dfile))
            (print-end-command platform)))
        ds)
@@ -1086,11 +1086,11 @@
                    (fdir (pathname-directory fs)))
               (when fdir
                 (print mkdir " " ddir
-                       (qs* (make-pathname dest fdir) platform #t)))
+                       (qs* (make-pathname+ dest fdir) platform #t)))
               (print fcmd " " (qs* f platform)
                      " " ddir
                      (if fdir
-                         (qs* (make-pathname dest fdir) platform #t)
+                         (qs* (make-pathname+ dest fdir) platform #t)
                          dfile)))
             (print-end-command platform))
           fs)))))
@@ -1147,9 +1147,7 @@
 ;;; affixes for build- and install-scripts
 
 (define ((build-prefix mode name info) platform)
-  (case platform
-    ((unix)
-     (printf #<<EOF
+  (printf #<<EOF
 #!/bin/sh~%
 set -e
 PATH=~a:$PATH
@@ -1161,24 +1159,20 @@ export CHICKEN_CSI=~a
 EOF
              (qs* default-bindir platform) (qs* default-cc platform)
 	     (qs* default-cxx platform) (qs* default-csc platform)
-	     (qs* default-csi platform)))))
+	     (qs* default-csi platform)))
 
 (define ((build-suffix mode name info) platform)
-  (case platform
-    ((unix)
-     (printf #<<EOF
+  (printf #<<EOF
 EOF
-             ))))
+             ))
 
 (define ((install-prefix mode name info) platform)
-  (case platform
-    ((unix)
-     (printf #<<EOF
+  (printf #<<EOF
 #!/bin/sh~%
 set -e
 
 EOF
-             ))))
+             ))
 
 (define ((install-suffix mode name info) platform)
   (let* ((infostr (with-output-to-string (cut pp info)))
@@ -1186,12 +1180,10 @@ EOF
          (mkdir (mkdir-command platform))
          (dir (destination-repository mode))
          (qdir (qs* dir platform #t))
-         (dest (qs* (make-pathname dir name +egg-info-extension+)
+         (dest (qs* (make-pathname+ dir name +egg-info-extension+)
 		    platform #t))
          (ddir (shell-variable "DESTDIR" platform)))
-    (case platform
-      ((unix)
-       (printf #<<EOF
+     (printf #<<EOF
 
 ~a ~a~a
 ~a ~a~a
@@ -1200,35 +1192,24 @@ cat >~a~a <<'ENDINFO'
 EOF
                mkdir ddir qdir
                dcmd ddir dest
-               ddir dest infostr)))))
+               ddir dest infostr)))
 
 ;;; some utilities for mangling + quoting
 
-;; The qs procedure quotes for mingw or other platforms.  We
-;; "normalised" the platform to "windows" in chicken-install, so we
-;; have to undo that here again.  It can also convert slashes to
-;; backslashes on Windows, which is necessary in many cases when
-;; running programs via "cmd".
-;;
-;; It also supports already-quoted arguments which can be taken as-is.
 (define (qs* arg platform #!optional slashify?)
-  (let* ((arg (->string arg))
-         (path arg))
-    (qs path (if (eq? platform 'windows) 'mingw platform))))
+  (qs (->string arg)))
 
 (define (prefix dir name)
-  (make-pathname dir (->string name)))
+  (make-pathname+ dir (->string name)))
 
-;; Workaround for obscure behaviour of "system" on Windows:  If a
-;; string starts with double quotes, you _must_ wrap the whole string
-;; in an extra set of quotes to avoid the outer quotes being stripped.
-;; Don't ask.
 (define (system+ str platform)
-  (system (if (and (eq? platform 'windows)
-		   (positive? (string-length str))
-		   (char=? #\" (string-ref str 0)))
-	      (string-append "\"" str "\"")
+  (system (if (eq? platform 'windows)
+              (string-append "sh -c \"" str "\"")
 	      str)))
+
+(define (make-pathname+ . args)
+  (let ((p1 (apply make-pathname args)))
+    (irregex-replace/all #\\ p1 "/")))
 
 (define (target-file fname mode)
   (if (eq? mode 'target) (string-append fname ".target") fname))
