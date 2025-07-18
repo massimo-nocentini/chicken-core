@@ -285,6 +285,10 @@
 ;   explicit-rest -> <boolean>               If true: procedure is called with consed rest list
 ;   captured-variables -> (<var> ...)        List of closed over variables
 ;   inline-target -> <boolean>               If true: was target of an inlining operation
+;   shareable-container -> <boolean>         If true: potentially may collect and share closed-over variables from (nested) contained closures
+;   shareable-user -> <boolean>              If true: closed-over variables may potentially be shared from the containing closure
+;   sharing-mode -> <container|user>         If container: actually collects and shares closed-over variables from (nested) contained closures. If user: receives container closure
+;   shared-closure -> (<var> ...)            List of transitively closed over variables of the sharing-container and its sharing-user
 
 
 (declare
@@ -2422,6 +2426,30 @@
 			     (db-put! db (first lparams) 'explicit-rest #t)
 			     (db-put! db rest 'consed-rest-arg #t) ) ) ) ) ) ) ) ) )
 
+         ;; If it has a known or local value which is a procedure, and referenced only once
+         ;; and only one call site or is an internal procedure, mark it as 'shareable-user so that
+         ;; its closed over variables may be shared with its containing procedure.
+         ;; Note that callbacks are exempt from this, because callback_wrapper creates an empty closure
+         ;; manually, throwing away our carefully crafted closure. TODO: can maybe be done better?
+         ;;
+         ;; If furthermore it only contains a single other procedure, mark it as 'shareable-container
+         ;; so that may share closed-over variables with that one procedure.
+         (and-let* ((val (or local-value value))
+                    ((eq? '##core#lambda (node-class val)))
+                    (lparams (node-parameters val))
+                    ((or (= 1 nreferences ncall-sites)
+                         (not (second lparams))))
+	            ((not (rassoc sym callback-names eq?))))
+	   (db-put! db (first lparams) 'shareable-user #t)
+           (and-let* ((id (first lparams))
+                      (contains (or (db-get db id 'contains) '()))
+                      ((= (length contains) 1)))
+             ;; TODO: It should be possible to have escaping / global procedures be containers, but
+             ;; they should not call themselves because then they might be setting variables in
+             ;; the closure to different values at different times.  So for now we're extra careful
+             ;; about which are containers.
+             (db-put! db (first lparams) 'shareable-container #t)))
+
 	 ;; Make 'removable, if it has no references and is not assigned to, and one of the following:
 	 ;; - it has either a value that does not cause any side-effects
 	 ;; - it is 'undefined
@@ -2501,6 +2529,8 @@
 
 (define (perform-closure-conversion node db)
   (let ((direct-calls 0)
+        (sharing-containers 0)
+        (sharing-users 0)
 	(customizable '())
 	(lexicals '()))
 
@@ -2604,6 +2634,68 @@
 
 	  (else (concatenate (map (lambda (n) (gather n here locals)) subs)) ) ) ))
 
+
+    ;; Merge shareable closures.  This allocates space for closed-over
+    ;; variables of the longest unbroken line of sharing-users in the
+    ;; sharing-container, mutating the database entries set up by
+    ;; "gather" to account for this.
+    (define (merge-shareable n shared-closure)
+      (let ((subs (node-subexpressions n))
+	    (params (node-parameters n)) )
+	(case (node-class n)
+
+	  ((quote ##core#undefined ##core#provide ##core#proc ##core#primitive)
+	   '())
+
+	  ((##core#lambda ##core#direct_lambda)
+	   (##sys#decompose-lambda-list
+	    (third params)
+	    (lambda (vars argc rest)
+	      (let* ((id (first params))
+                     (this-closure (test id 'captured-variables)))
+                ;; TODO: unbox vars that are only referenced inside the shared closure
+                (cond ((and shared-closure
+                            (test id 'shareable-user)
+                            ;; The user must close over all the shared closure vars, otherwise
+                            ;; we risk extending the lifetime of these vars for too long.
+                            (null? (lset-difference/eq? shared-closure this-closure))
+                            ;; Minimum shared closure size - don't want to share a single var, it's extra indirection
+                            (> (length this-closure) 1))
+                       ;; We only pass on the container to the subs if this is also a shareable-container
+                       (let ((sub-closure (merge-shareable (first subs) (and (test id 'shareable-container) this-closure))))
+                         ;; Reset captured vars.  This closure only captures the container
+                         (db-put! db id 'closure-size 1)
+                         (db-put! db id 'captured-variables '())
+                         (db-put! db id 'sharing-mode 'user)
+                         (set! sharing-users (add1 sharing-users))
+                         ;; Return the closed-over variables of this and the rest of the
+                         ;; users in the chain to the container for allocation.
+                         ;; Note that because the user always is a superset of the container,
+                         ;; we can just return the "deepest" user
+                         (if (null? sub-closure)
+                             this-closure
+                             sub-closure)))
+
+                      ((test id 'shareable-container)
+                       (let ((sub-closure (merge-shareable (first subs) this-closure)))
+                         (unless (null? sub-closure)
+                           ;; NOTE: We don't touch 'captured-variables, because the vars
+                           ;; on initial entry of the sharing closures are unchanged.
+                           ;; However, we do need to know the full closure
+                           (db-put! db id 'closure-size (length sub-closure))
+                           (db-put! db id 'sharing-mode 'container)
+                           (db-put! db id 'shared-closure sub-closure)
+                           (set! sharing-containers (add1 sharing-containers))))
+                       ;; This is a new container, so do not allow higher-up containers
+                       ;; to collect variables from this closure.
+                       '())
+
+                      (else (merge-shareable (first subs) #f)
+                            '()))))))
+
+	  (else (concatenate (map (lambda (n) (merge-shareable n shared-closure)) subs)) ) ) ))
+
+
     ;; Create explicit closures:
     (define (transform n crefvar closure)
       (let ((subs (node-subexpressions n))
@@ -2658,10 +2750,13 @@
 			(make-node
 			 'let (list var)
 			 (list (make-node '##core#box '() (list (varnode boxedalias)))
-			       (transform (second subs) crefvar closure) ) ) ) )
+			       (update-shared-closure-var var crefvar closure
+                                                          (transform (second subs) crefvar closure))) )) )
 		 (make-node
 		  'let params
-		  (maptransform subs crefvar closure) ) ) ) )
+                  (list (transform (first subs) crefvar closure)
+                        (update-shared-closure-var var crefvar closure
+                                                   (transform (second subs) crefvar closure))) ) ) ) )
 
 	  ((##core#lambda ##core#direct_lambda)
 	   (let ((llist (third params)))
@@ -2671,11 +2766,26 @@
 		(let* ((boxedvars (filter (lambda (v) (test v 'boxed)) vars))
 		       (boxedaliases (map cons boxedvars (map gensym boxedvars)))
 		       (cvar (gensym 'c))
+                       (all-vars (if rest (cons rest vars) vars))
 		       (id (if crefvar (first params) 'toplevel))
-                       (new-crefvar cvar)
-		       (capturedvars (or (test id 'captured-variables) '()))
-		       (csize (or (test id 'closure-size) 0))
-		       (info (and emit-closure-info (second params) (pair? llist))) )
+                       (sharing-mode (test id 'sharing-mode))
+		       (capturedvars (if (eq? sharing-mode 'user)
+					 (list #f) ; NOTE: Hacky way to indicate we want to pass on the closure
+					 (or (test id 'captured-variables) '())))
+		       (csize (or (test id 'closure-size) 0)) ; = (length new-closure) below
+		       (info (and emit-closure-info (second params) (pair? llist)))
+                       (new-crefvar (if (eq? sharing-mode 'user)
+                                        ;; Users should not look up vars in their own closure, but in
+                                        ;; the shared closure "container" (which is the only entry in their own closure)
+                                        (gensym 'scc)
+                                        cvar))
+		       (new-closure (case sharing-mode
+                                      ((container) (test id 'shared-closure)) ; Fresh container will hold the full shared closure
+				      ((user)
+                                       ;; Sharing user doesn't introduce new vars into closure, but uses shared container's closure
+				       closure)
+				      ;; Normal unshared closure is over its captured vars
+				      (else capturedvars))))
 		  ;; If rest-parameter is boxed: mark it as 'boxed-rest
 		  ;;  (if we don't do this than preparation will think the (boxed) alias
 		  ;;  of the rest-parameter is never used)
@@ -2701,21 +2811,39 @@
 			     (cond ((and rest (assq rest boxedaliases)) => cdr)
 				   (else rest) ) ) )
 			   (fourth params) )
-		     (list (let ((body (transform (car subs) new-crefvar capturedvars)))
-			     (if (pair? boxedvars)
-				 (let loop ((aliases (unzip1 boxedaliases))
-					    (values
-					     (map (lambda (a)
-						    (make-node '##core#box '() (list (varnode (cdr a)))))
-						  boxedaliases) ))
-				   (if (null? aliases)
-				       body
-				       (make-node 'let (list (car aliases))
-						  (list (car values)
-							(loop (cdr aliases) (cdr values))))))
-				 body) ) ) )
-		    (let ((cvars (map (lambda (v) (ref-var (varnode v) crefvar closure))
-				      capturedvars) ) )
+		     (list (wrap-crefvar cvar new-crefvar
+                                         (let ((body (update-shared-closure-vars all-vars new-crefvar new-closure
+								                 (transform (car subs) new-crefvar new-closure))))
+			                   (if (pair? boxedvars)
+				               (let loop ((aliases (unzip1 boxedaliases))
+					                  (values
+					                   (map (lambda (a)
+						                  (make-node '##core#box '() (list (varnode (cdr a)))))
+						                boxedaliases) ))
+				                 (if (null? aliases)
+				                     body
+				                     (make-node 'let (list (car aliases))
+						                (list (car values)
+							              (loop (cdr aliases) (cdr values))))))
+				               body) )) ) )
+		    (let ((cvars (map (lambda (v)
+                                        ;; NOTE: This memq redundancy is needed because "gather" reorders lexicals
+                                        ;; continually, so the index of the variables will differ between each user,
+                                        ;; meaning the collected shared closure is differently ordered than the
+                                        ;; capturedvars.  Otherwise, we could just map ref-var over capturedvars
+                                        ;; and append a bunch of undefineds at the end.
+                                        (cond ((not v) ; See capturedvars note above
+                                               (varnode crefvar))
+                                              ((memq v capturedvars)
+                                               ;; If it's a captured var, put it in the closure at the appropriate spot
+                                               (ref-var (varnode v) crefvar closure))
+                                              (else
+                                               ;; Shared closures have reserved spots which users further down will set!
+                                               ;; to a proper value.  Init those as undefined.
+                                               (make-node '##core#undefined '() '()))))
+				      (if (eq? sharing-mode 'container)
+                                          new-closure
+                                          capturedvars))))
 		      (if info
 			  (append
 			   cvars
@@ -2773,6 +2901,37 @@
     (define (maptransform xs crefvar closure)
       (map (lambda (x) (transform x crefvar closure)) xs) )
 
+    ;; If the crefvar (used by ref-var et al) differs from the
+    ;; closure's own "cvar" because it's a shared closure, introduce a
+    ;; let binding that obtains the shared closure from the cvar.
+    (define (wrap-crefvar cvar crefvar node)
+      (if (eq? cvar crefvar)
+          node
+          (make-node 'let (list crefvar)
+                     (list (make-node '##core#ref (list 1)
+			              (list (varnode cvar)) )
+                           node) ) ) )
+
+    ;; If a variable is introduced for the first time, and we're in a
+    ;; sharing user, we have to update its value in the shared container
+    ;; closure if it occurs there, so that further users can see it.
+    (define (update-shared-closure-var var crefvar closure node)
+      (cond ((posq var closure)
+	     => (lambda (i)
+                  (make-node 'let (list (gensym var))
+		             (list (make-node '##core#update (list (+ i 1))
+			                      (list (varnode crefvar) (varnode var)) )
+                                   node)) ) )
+	    (else node) ))
+
+    (define (update-shared-closure-vars vars crefvar closure node)
+      (let lp ((node node)
+               (vars vars))
+        (if (null? vars)
+            node
+            (lp (update-shared-closure-var (car vars) crefvar closure node)
+                (cdr vars)))))
+
     (define (ref-var n crefvar closure)
       (let ((var (first (node-parameters n))))
 	(cond ((posq var closure)
@@ -2785,8 +2944,14 @@
     (gather node #f '())
     (when (pair? customizable)
       (debugging 'o "customizable procedures" customizable))
+    (debugging 'p "closure conversion merging of shareables phase...")
+    (merge-shareable node #f)
+    (unless (and (zero? sharing-containers)
+                 (zero? sharing-users)) ;; Users should always be zero if containers is (but paranoia prevails, helps w/ debugging)
+      (debugging 'o "shared closure containers" sharing-containers)
+      (debugging 'o "shared closure users" sharing-users))
     (debugging 'p "closure conversion transformation phase...")
-    (let ((node2 (transform node #f #f)))
+    (let ((node2 (transform node #f '())))
       (unless (zero? direct-calls)
 	(debugging 'o "calls to known targets" direct-calls))
       node2) ) )

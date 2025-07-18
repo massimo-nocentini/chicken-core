@@ -117,7 +117,8 @@
 		 (undefined . und) (replacing . rpg) (unused . uud) (extended-binding . xtb)
 		 (inline-export . ilx) (hidden-refs . hrf)
 		 (value-ref . vvf)
-		 (customizable . cst) (has-unused-parameters . hup) (boxed-rest . bxr) ) )
+		 (customizable . cst) (has-unused-parameters . hup) (boxed-rest . bxr)
+                 (shareable-container . shc) (shareable-user . shu) ) )
 	(omit #f))
     (lambda (db)
       (unless omit
@@ -141,7 +142,8 @@
 		     (case (caar es)
 		       ((captured assigned boxed global contractable standard-binding assigned-locally
 				  collapsable removable undefined replacing unused simple inlinable inline-export
-				  has-unused-parameters extended-binding customizable constant boxed-rest hidden-refs)
+				  has-unused-parameters extended-binding customizable constant boxed-rest hidden-refs
+                                  shareable-container shareable-user)
 			(printf "\t~a" (cdr (assq (caar es) names))) )
 		       ((unknown)
 			(set! val 'unknown) )
@@ -152,7 +154,8 @@
 		       ((potential-values)
 			(set! pvals (cdar es)))
 		       ((replacable home contains contained-in use-expr closure-size rest-parameter
-				    captured-variables explicit-rest rest-cdr rest-null? consed-rest-arg)
+				    captured-variables explicit-rest rest-cdr rest-null? consed-rest-arg
+                                    shared-closure sharing-mode)
 			(printf "\t~a=~s" (caar es) (cdar es)) )
 		       ((derived-rest-vars)
 			(set! derived-rvars (cdar es)))
