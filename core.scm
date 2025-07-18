@@ -2605,7 +2605,7 @@
 	  (else (concatenate (map (lambda (n) (gather n here locals)) subs)) ) ) ))
 
     ;; Create explicit closures:
-    (define (transform n here closure)
+    (define (transform n crefvar closure)
       (let ((subs (node-subexpressions n))
 	    (params (node-parameters n))
 	    (class (node-class n)) )
@@ -2617,25 +2617,25 @@
 
 	  ((##core#variable)
 	   (let* ((var (first params))
-		  (val (ref-var n here closure)) )
+		  (val (ref-var n crefvar closure)) )
 	     (if (test var 'boxed)
 		 (make-node '##core#unbox '() (list val))
 		 val) ) )
 
 	  ((##core#rest-cdr ##core#rest-car ##core#rest-null? ##core#rest-length)
-	   (let* ((val (ref-var n here closure))
+	   (let* ((val (ref-var n crefvar closure))
 		  (rest-var (if (eq? val n) (varnode (first params)) val)))
 	     ;; If rest-cdrs have not all been eliminated, restore
 	     ;; them as regular cdr calls on the rest list variable.
 	     ;; This can be improved, as it can actually introduce
 	     ;; many more cdr calls than necessary.
 	     (cond ((eq? class '##core#rest-cdr)
-		    (transform (replace-rest-op-with-list-ops class rest-var params) here closure))
+		    (transform (replace-rest-op-with-list-ops class rest-var params) crefvar closure))
 
 		   ;; If n isn't val, this node was processed and the
 		   ;; variable got replaced by a closure access.
 		   ((not (eq? val n))
-		    (transform (replace-rest-op-with-list-ops class rest-var params) here closure))
+		    (transform (replace-rest-op-with-list-ops class rest-var params) crefvar closure))
 
 		   (else val)) ) )
 
@@ -2645,7 +2645,7 @@
                ##core#let_float ##core#box_float ##core#unbox_float
 	       ##core#inline_loc_ref
 	       ##core#inline_loc_update)
-	   (make-node (node-class n) params (maptransform subs here closure)) )
+	   (make-node (node-class n) params (maptransform subs crefvar closure)) )
 
 	  ((let)
 	   (let* ([var (first params)]
@@ -2654,14 +2654,14 @@
 	     (if boxedvar
 		 (make-node
 		  'let (list boxedalias)
-		  (list (transform (first subs) here closure)
+		  (list (transform (first subs) crefvar closure)
 			(make-node
 			 'let (list var)
 			 (list (make-node '##core#box '() (list (varnode boxedalias)))
-			       (transform (second subs) here closure) ) ) ) )
+			       (transform (second subs) crefvar closure) ) ) ) )
 		 (make-node
 		  'let params
-		  (maptransform subs here closure) ) ) ) )
+		  (maptransform subs crefvar closure) ) ) ) )
 
 	  ((##core#lambda ##core#direct_lambda)
 	   (let ((llist (third params)))
@@ -2671,7 +2671,8 @@
 		(let* ((boxedvars (filter (lambda (v) (test v 'boxed)) vars))
 		       (boxedaliases (map cons boxedvars (map gensym boxedvars)))
 		       (cvar (gensym 'c))
-		       (id (if here (first params) 'toplevel))
+		       (id (if crefvar (first params) 'toplevel))
+                       (new-crefvar cvar)
 		       (capturedvars (or (test id 'captured-variables) '()))
 		       (csize (or (test id 'closure-size) 0))
 		       (info (and emit-closure-info (second params) (pair? llist))) )
@@ -2700,7 +2701,7 @@
 			     (cond ((and rest (assq rest boxedaliases)) => cdr)
 				   (else rest) ) ) )
 			   (fourth params) )
-		     (list (let ((body (transform (car subs) cvar capturedvars)))
+		     (list (let ((body (transform (car subs) new-crefvar capturedvars)))
 			     (if (pair? boxedvars)
 				 (let loop ((aliases (unzip1 boxedaliases))
 					    (values
@@ -2713,7 +2714,7 @@
 						  (list (car values)
 							(loop (cdr aliases) (cdr values))))))
 				 body) ) ) )
-		    (let ((cvars (map (lambda (v) (ref-var (varnode v) here closure))
+		    (let ((cvars (map (lambda (v) (ref-var (varnode v) crefvar closure))
 				      capturedvars) ) )
 		      (if info
 			  (append
@@ -2739,23 +2740,23 @@
 			     (make-node
 			      (if immf '##core#updatebox_i '##core#updatebox)
 			      '()
-			      (list (make-node '##core#ref (list (add1 i)) (list (varnode here)))
-				    (transform val here closure) ) )
+			      (list (make-node '##core#ref (list (add1 i)) (list (varnode crefvar)))
+				    (transform val crefvar closure) ) )
 			     ;; Is the following actually used???
 			     (make-node
 			      (if immf '##core#update_i '##core#update)
 			      (list (add1 i))
-			      (list (varnode here)
-				    (transform val here closure) ) ) ) ) )
+			      (list (varnode crefvar)
+				    (transform val crefvar closure) ) ) ) ) )
 		   ((test var 'boxed)
 		    (make-node
 		     (if immf '##core#updatebox_i '##core#updatebox)
 		     '()
 		     (list (varnode var)
-			   (transform val here closure) ) ) )
+			   (transform val crefvar closure) ) ) )
 		   (else (make-node
 			  'set! (list var immf)
-			  (list (transform val here closure) ) ) ) ) ) )
+			  (list (transform val crefvar closure) ) ) ) ) ) )
 
 	  ((##core#primitive)
 	   (make-node
@@ -2769,15 +2770,15 @@
 
 	  (else (bomb "bad node (closure2)")) ) ) )
 
-    (define (maptransform xs here closure)
-      (map (lambda (x) (transform x here closure)) xs) )
+    (define (maptransform xs crefvar closure)
+      (map (lambda (x) (transform x crefvar closure)) xs) )
 
-    (define (ref-var n here closure)
+    (define (ref-var n crefvar closure)
       (let ((var (first (node-parameters n))))
 	(cond ((posq var closure)
 	       => (lambda (i)
 		    (make-node '##core#ref (list (+ i 1))
-			       (list (varnode here)) ) ) )
+			       (list (varnode crefvar)) ) ) )
 	      (else n) ) ) )
 
     (debugging 'p "closure conversion gathering phase...")
