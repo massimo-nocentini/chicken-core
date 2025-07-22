@@ -2532,7 +2532,8 @@
         (sharing-containers 0)
         (sharing-users 0)
 	(customizable '())
-	(lexicals '()))
+	(lexicals '())
+        (escaping-shared-vars '()))
 
     (define (test sym item) (db-get db sym item))
 
@@ -2652,8 +2653,7 @@
 	    (third params)
 	    (lambda (vars argc rest)
 	      (let* ((id (first params))
-                     (this-closure (test id 'captured-variables)))
-                ;; TODO: unbox vars that are only referenced inside the shared closure
+                     (this-closure (or (test id 'captured-variables) '())))
                 (cond ((and shared-closure
                             (test id 'shareable-user)
                             ;; The user must close over all the shared closure vars, otherwise
@@ -2677,20 +2677,37 @@
                              sub-closure)))
 
                       ((test id 'shareable-container)
-                       (let ((sub-closure (merge-shareable (first subs) this-closure)))
-                         (unless (null? sub-closure)
-                           ;; NOTE: We don't touch 'captured-variables, because the vars
-                           ;; on initial entry of the sharing closures are unchanged.
-                           ;; However, we do need to know the full closure
-                           (db-put! db id 'closure-size (length sub-closure))
-                           (db-put! db id 'sharing-mode 'container)
-                           (db-put! db id 'shared-closure sub-closure)
-                           (set! sharing-containers (add1 sharing-containers))))
+                       ;; If we're starting a new container, any captured vars from the
+                       ;; surrounding container will escape, like with a non-sharing closure
+                       (set! escaping-shared-vars (lset-union/eq? escaping-shared-vars this-closure))
+
+                       (fluid-let ((escaping-shared-vars '()))
+                         (let ((sub-closure (merge-shareable (first subs) this-closure)))
+                           (unless (null? sub-closure)
+                             ;; NOTE: We don't touch 'captured-variables, because the vars
+                             ;; on initial entry of the sharing closures are unchanged.
+                             ;; However, we do need to know the full closure
+                             (db-put! db id 'closure-size (length sub-closure))
+                             (db-put! db id 'sharing-mode 'container)
+                             (db-put! db id 'shared-closure sub-closure)
+                             (set! sharing-containers (add1 sharing-containers))
+
+                             ;; Shared vars introduced by users which don't escape don't have to be boxed
+                             ;; because the shared closure container itself already acts as a box.
+                             (let* ((user-introduced-vars (lset-difference/eq? sub-closure this-closure))
+                                    (unboxable-vars (lset-difference/eq? user-introduced-vars escaping-shared-vars)))
+                               (for-each (lambda (v)
+                                           (when (test v 'boxed) ; Not strictly needed, but cleaner this way
+                                             (db-put! db v 'boxed #f)))
+                                         unboxable-vars)))))
                        ;; This is a new container, so do not allow higher-up containers
                        ;; to collect variables from this closure.
                        '())
 
-                      (else (merge-shareable (first subs) #f)
+                      ;; All closed-over vars in non-user procedures "escape" the container (if any)
+                      ;; and must remain boxed.
+                      (else (set! escaping-shared-vars (lset-union/eq? escaping-shared-vars this-closure))
+                            (merge-shareable (first subs) #f)
                             '()))))))
 
 	  (else (concatenate (map (lambda (n) (merge-shareable n shared-closure)) subs)) ) ) ))
