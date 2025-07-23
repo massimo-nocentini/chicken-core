@@ -2535,6 +2535,29 @@
 	(lexicals '())
         (escaping-shared-vars '()))
 
+    ;; O(n) version of delete-duplicates (which is O(n^2)) specific for symbols
+    (define (delete-duplicate-symbols lst)
+      (let ((seen (make-hash-table)))
+        (let lp ((lst lst)
+                 (result '()))
+          (if (null? lst)
+	      (reverse result)
+	      (let ((x (car lst)))
+	        (cond ((hash-table-ref seen x)
+	               (lp (cdr lst) result))
+                      (else
+                       (hash-table-set! seen x #t)
+	               (lp (cdr lst)
+                           (cons x result)))))))))
+
+    ;; O(n+m) version of lset-difference/eq? (which is O(n*m)) specific for symbols
+    (define (symbolset-difference ls . lss)
+      (let ((seen (make-hash-table)))
+        (for-each (lambda (lst)
+                    (for-each (lambda (x) (hash-table-set! seen x #t)) lst))
+                  lss)
+        (remove (lambda (x) (hash-table-ref seen x)) ls)))
+
     (define (test sym item) (db-get db sym item))
 
     (define (register-customizable! var id)
@@ -2628,10 +2651,10 @@
 	    (lambda (vars argc rest)
 	      (let ((id (if here (first params) 'toplevel)))
 		(fluid-let ((lexicals (append locals lexicals)))
-		  (let ((c (delete-duplicates (gather (first subs) id vars) eq?)))
+		  (let ((c (delete-duplicate-symbols (gather (first subs) id vars))))
 		    (db-put! db id 'closure-size (length c))
 		    (db-put! db id 'captured-variables c)
-		    (lset-difference/eq? c locals vars)))))))
+		    (symbolset-difference c locals vars)))))))
 
 	  (else (concatenate (map (lambda (n) (gather n here locals)) subs)) ) ) ))
 
@@ -2658,7 +2681,7 @@
                             (test id 'shareable-user)
                             ;; The user must close over all the shared closure vars, otherwise
                             ;; we risk extending the lifetime of these vars for too long.
-                            (null? (lset-difference/eq? shared-closure this-closure))
+                            (null? (symbolset-difference shared-closure this-closure))
                             ;; Minimum shared closure size - don't want to share a single var, it's extra indirection
                             (> (length this-closure) 1))
                        ;; We only pass on the container to the subs if this is also a shareable-container
@@ -2694,8 +2717,8 @@
 
                              ;; Shared vars introduced by users which don't escape don't have to be boxed
                              ;; because the shared closure container itself already acts as a box.
-                             (let* ((user-introduced-vars (lset-difference/eq? sub-closure this-closure))
-                                    (unboxable-vars (lset-difference/eq? user-introduced-vars escaping-shared-vars)))
+                             (let* ((user-introduced-vars (symbolset-difference sub-closure this-closure))
+                                    (unboxable-vars (symbolset-difference user-introduced-vars escaping-shared-vars)))
                                (for-each (lambda (v)
                                            (when (test v 'boxed) ; Not strictly needed, but cleaner this way
                                              (db-put! db v 'boxed #f)))
