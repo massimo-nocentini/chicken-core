@@ -1446,13 +1446,15 @@
 
 ;; plist
 
-(chicken.plist#get (#(procedure #:clean #:enforce) chicken.plist#get (symbol symbol #!optional *) *)
-		   ((symbol symbol *) (##core#inline "C_i_getprop" #(1) #(2) #(3))))
-(chicken.plist#get-properties (#(procedure #:clean #:enforce) chicken.plist#get-properties (symbol list) symbol * list))
-(chicken.plist#put! (#(procedure #:clean #:enforce) chicken.plist#put! (symbol symbol *) undefined)
-		    ((symbol symbol *)
+(chicken.plist#get (#(procedure #:clean #:enforce) chicken.plist#get (symbol * #!optional *) *)
+		   ((symbol * *) (##core#inline "C_i_getprop" #(1) #(2) #(3)))
+                   ((symbol *) (##core#inline "C_i_getprop" #(1) #(2) '#f)))
+(chicken.plist#get-properties (forall (a)
+                                      (#(procedure #:clean #:enforce) chicken.plist#get-properties (symbol (or a (list-of a))) a * (list-of pair))))
+(chicken.plist#put! (#(procedure #:clean #:enforce) chicken.plist#put! (symbol * *) undefined)
+		    ((symbol * *)
 		     (##core#inline_allocate ("C_a_i_putprop" 8) #(1) #(2) #(3))))
-(chicken.plist#remprop! (#(procedure #:clean #:enforce) chicken.plist#remprop! (symbol symbol) undefined))
+(chicken.plist#remprop! (#(procedure #:clean #:enforce) chicken.plist#remprop! (symbol *) undefined))
 (chicken.plist#symbol-plist (#(procedure #:clean #:enforce) chicken.plist#symbol-plist (symbol) list)
 			    ((symbol) (##sys#slot #(1) '2)))
 

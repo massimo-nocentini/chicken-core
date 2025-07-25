@@ -7363,9 +7363,8 @@ EOF
 
 (define (get-properties sym props)
   (##sys#check-symbol sym 'get-properties)
-  (when (symbol? props)
+  (unless (pair? props)
     (set! props (list props)) )
-  (##sys#check-list props 'get-properties)
   (let loop ((plist (##sys#slot sym 2)))
     (if (null? plist)
 	(values #f #f #f)
