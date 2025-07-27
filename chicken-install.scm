@@ -123,12 +123,12 @@
       (destination-repository 'target)
       (destination-repository 'host)))
 
-(define (build-script-extension mode platform)
+(define (build-script-extension mode)
   (string-append "build"
                  (if (eq? mode 'target) ".target" "")
                  ".sh"))
 
-(define (install-script-extension mode platform)
+(define (install-script-extension mode)
   (string-append "install"
                  (if (eq? mode 'target) ".target" "")
                  ".sh"))
@@ -895,7 +895,7 @@
             (let ((bscript (make-pathname+ dir name
                                           (build-script-extension 'host)))
                   (iscript (make-pathname+ dir name
-                                          (install-script-extension 'host platform))))
+                                          (install-script-extension 'host))))
               (generate-shell-commands platform build bscript dir
                                        (build-prefix 'host name info)
                                        (build-suffix 'host name info)
@@ -925,10 +925,9 @@
                                                                platform
                                                                'target)))
             (let ((bscript (make-pathname+ dir name
-                                          (build-script-extension 'target platform)))
+                                          (build-script-extension 'target)))
                   (iscript (make-pathname+ dir name
-                                          (install-script-extension 'target
-                                                                    platform))))
+                                          (install-script-extension 'target))))
               (generate-shell-commands platform build bscript dir
                                        (build-prefix 'target name info)
                                        (build-suffix 'target name info)
