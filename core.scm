@@ -2395,6 +2395,12 @@
 		       (= 1 nreferences) )
 	       (quick-put! plist 'collapsable #t) ) ) )
 
+         (and-let* ((val (or local-value value))
+                    ((eq? '##core#lambda (node-class val)))
+	            ((rassoc sym callback-names eq?)))
+           (let ((lparams (node-parameters val)))
+             (db-put! db (first lparams) 'callback #t)))
+
 	 ;; If it has a known value that is a procedure, and if the number of call-sites is equal to the
 	 ;;  number of references (does not escape), then make all formal parameters 'unused which are
 	 ;;  never referenced or assigned (if no rest parameter exist):
@@ -2557,6 +2563,12 @@
                     (for-each (lambda (x) (hash-table-set! seen x #t)) lst))
                   lss)
         (remove (lambda (x) (hash-table-ref seen x)) ls)))
+
+    (define (symbolset= ls . lss)
+      (every (lambda (lst)
+               (and (null? (symbolset-difference ls lst))
+                    (null? (symbolset-difference lst ls))))
+             lss))
 
     (define (test sym item) (db-get db sym item))
 
@@ -2734,6 +2746,72 @@
                             '()))))))
 
 	  (else (concatenate (map (lambda (n) (merge-shareable n shared-closure)) subs)) ) ) ))
+
+
+    ;; Merge "reusable" closures.  The "shareable" closures above
+    ;; require great care to be taken because variables are mutated
+    ;; into the container closure by the user closure where they're
+    ;; introduced, which should not be observable.  However, closures
+    ;; where the full set of variables is already known may freely be
+    ;; reused any number of times because they're immutable.
+    ;; NOTE: Unboxing of non-escaping vars is not implemented yet.
+    (define (merge-reusable n reusable-closure)
+      (let ((subs (node-subexpressions n))
+	    (params (node-parameters n)) )
+	(case (node-class n)
+
+	  ((quote ##core#undefined ##core#provide ##core#proc ##core#primitive)
+	   #f)
+
+	  ((##core#lambda ##core#direct_lambda)
+	   (##sys#decompose-lambda-list
+	    (third params)
+	    (lambda (vars argc rest)
+	      (let* ((id (first params))
+                     (this-closure (or (test id 'shared-closure) (test id 'captured-variables) '()))
+                     (sharing-mode (test id 'sharing-mode))
+                     ;; Callbacks may not be reused (see TODO in analyze-expression)
+                     (is-callback? (test id '##compiler#callback-lambda))
+                     ;; We don't want existing containers or users' shared closures to be reused by contained closures.
+                     ;; However, we do allow containers to be moved "up front" if there are other closures that
+                     ;; share the same variables (which means there are no mutating assignments to closed-over vars).
+                     (container-needed? (merge-reusable (first subs) (and (not sharing-mode)
+                                                                          (not is-callback?)
+                                                                          this-closure))))
+                (cond ((and reusable-closure
+                            (not is-callback?)
+                            ;; The closure must match exactly with the reusable container
+                            ;; Note that if the closure is already a container, we compare
+                            ;; against its shared closure.  This is safe to do because
+                            ;; if they're the same, no variables are updated via mutation.
+                            (symbolset= reusable-closure this-closure)
+                            ;; Minimum shared closure size - don't want to share a single var, it's extra indirection
+                            (> (length this-closure) 1))
+                       ;; Reset captured vars.  This closure only captures the container
+                       (db-put! db id 'closure-size 1)
+                       (db-put! db id 'captured-variables '())
+                       (db-put! db id 'sharing-mode 'user)
+                       (set! sharing-users (add1 sharing-users))
+                       ;; If this closure was already marked as a container by merge-reusable-closures,
+                       ;; we turn it into a user.  Adjust counter to reflect this.
+                       (when (eq? sharing-mode 'container)
+                         (set! sharing-containers (sub1 sharing-containers)))
+                       ;; We'd like a container to be created in the creating closure
+                       #t)
+
+                      ;; If this closure cannot be turned into a sharing user, we might need to
+                      ;; turn it into a container if any of its subclosures were turned into a user.
+                      (container-needed?
+                       (db-put! db id 'sharing-mode 'container)
+                       (db-put! db id 'shared-closure this-closure)
+                       (set! sharing-containers (add1 sharing-containers))
+                       ;; Its parent does not become a container
+                       #f)
+
+                      ;; No reuse :'(
+                      (else #f))))))
+
+	  (else (any (lambda (n) (merge-reusable n reusable-closure)) subs) ) ) ))
 
 
     ;; Create explicit closures:
@@ -2986,6 +3064,7 @@
       (debugging 'o "customizable procedures" customizable))
     (debugging 'p "closure conversion merging of shareables phase...")
     (merge-shareable node #f)
+    (merge-reusable node #f)
     (unless (and (zero? sharing-containers)
                  (zero? sharing-users)) ;; Users should always be zero if containers is (but paranoia prevails, helps w/ debugging)
       (debugging 'o "shared closure containers" sharing-containers)
