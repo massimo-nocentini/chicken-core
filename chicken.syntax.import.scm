@@ -31,6 +31,7 @@
  'chicken.syntax
  'expand
  '((expand . chicken.syntax#expand)
+   (expand1 . chicken.syntax#expand1)
    (get-line-number . chicken.syntax#get-line-number)
    (read-with-source-info . chicken.syntax#read-with-source-info)
    (strip-syntax . chicken.syntax#strip-syntax)

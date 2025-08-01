@@ -424,15 +424,27 @@ EOF
    (lambda ()
      (let ((name (read)))
        (cond ((not name)
-	      (##sys#switch-module #f)
-	      (printf "; resetting current module to toplevel~%"))
-	     ((##sys#find-module (##sys#resolve-module-name name #f) #f) =>
-	      (lambda (m)
-		(##sys#switch-module m)
-		(printf "; switching current module to `~a'~%" name)))
-	     (else
-	      (printf "undefined module `~a'~%" name))))))
+              (##sys#switch-module #f)
+              (printf "; resetting current module to toplevel~%"))
+             ((##sys#find-module (##sys#resolve-module-name name #f) #f) =>
+              (lambda (m)
+                (##sys#switch-module m)
+                (printf "; switching current module to `~a'~%" name)))
+             (else
+              (printf "undefined module `~a'~%" name))))))
  ",m MODULE         switch to module with name `MODULE'")
+
+(toplevel-command
+ 'x1
+ (let ((pretty-print pretty-print))
+   (lambda ()
+     (let ([expr (read)])
+       ;; avoid bootstrapping issue, as chicken.syntax is not
+       ;; imported dynamically by bootstrap compiler
+       ;; this can be replaced by "expand1" later
+       (pretty-print (strip-syntax (chicken.syntax#expand1 expr)))
+       (##sys#void))))
+ ",x1 EXP           Pretty print expand1-ed expression EXP")
 
 
 ;;; Parse options from string:

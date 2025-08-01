@@ -36,6 +36,7 @@
 
 (module chicken.syntax
   (expand
+   expand1
    get-line-number
    read-with-source-info
    strip-syntax
@@ -304,6 +305,9 @@
       (if m
 	  (loop exp2)
 	  exp2) ) ) )
+
+(define (expand1 exp #!optional (se (##sys#current-environment)) cs?)
+  (nth-value 0 (##sys#expand-0 exp se cs?)) )
 
 
 ;;; Extended (DSSSL-style) lambda lists

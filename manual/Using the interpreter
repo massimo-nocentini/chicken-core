@@ -117,6 +117,8 @@ The toplevel loop understands a number of special commands:
 
 ; ,x EXP : Pretty-print macroexpanded expression {{EXP}} (the expression is not evaluated).
 
+; ,x1 EXP : Like {{,x}} but {{EXP}} is expanded only one step, using {{expand1}}.
+
 You can define your own toplevel commands using the {{toplevel-command}}
 procedure (see [[Module (chicken csi)]]).
 

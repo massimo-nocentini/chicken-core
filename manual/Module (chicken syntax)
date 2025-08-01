@@ -301,6 +301,14 @@ comparison {{(compare sym 'abc)}} should be written as {{(compare sym
 If {{X}} is a macro-form, expand the macro (and repeat expansion
 until expression is a non-macro form).  Returns the resulting expression.
 
+==== expand1
+
+<procedure>(expand1 X)</procedure>
+
+If {{X}} is a macro-form, expand the macro only once.  Unlike
+{{expand}}, does not repeat expansion when the resulting expression is
+itself a macro-form.  Returns the resulting expression.
+
 === Macro helper procedures
 
 ==== begin-for-syntax
