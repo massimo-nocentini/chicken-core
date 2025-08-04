@@ -1066,7 +1066,7 @@
            (when fdir
              (print mkdir " " ddir
                     (qs* (make-pathname dest fdir))))
-           (print dcmd " " (qs* d platform #t)
+           (print dcmd " " (qs* d)
                   " " ddir
                   (if fdir
                       (qs* (make-pathname dest fdir))
@@ -1081,7 +1081,7 @@
               (when fdir
                 (print mkdir " " ddir
                        (qs* (make-pathname dest fdir))))
-              (print fcmd " " (qs* f platform)
+              (print fcmd " " (qs* f)
                      " " ddir
                      (if fdir
                          (qs* (make-pathname dest fdir))
