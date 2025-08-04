@@ -30,11 +30,11 @@
 
 (cond-expand
   ((and windows (not cygwin))		; Cannot handle symlinks
-   (define (path lst)
-     (map (cut string-translate <> "/" "\\") lst)) )
+   #f )
   (else
-   (create-symbolic-link "dir-link-target" "dir-link-name")
-   (define (path lst) lst)))
+   (create-symbolic-link "dir-link-target" "dir-link-name")))
+
+(define (path lst) lst)
 
 (test-begin "find-files")
 

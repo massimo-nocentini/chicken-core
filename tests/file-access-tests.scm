@@ -7,7 +7,7 @@
 (import (chicken file)
         (chicken process-context))
 
-(define /   (car (command-line-arguments)))
+(define /   "/")
 (define //  (string-append / /))
 (define /// (string-append / / /))
 

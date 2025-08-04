@@ -9,10 +9,7 @@
         (chicken string))
 
 (define program-path
-  (cond-expand
-    ((and windows (not cygwin))
-     (string-translate (car (command-line-arguments)) "/" "\\"))
-    (else (car (command-line-arguments)))))
+   (car (command-line-arguments)))
 
 (define (read-symbolic-link* p)
   (cond-expand
