@@ -82,8 +82,13 @@ static C_word C_rename(C_word old, C_word new) {
 
 static C_word C_foundfile(C_word e,C_word b,C_word l) {
    C_char *s = C_utf8(((struct _wdirent *)C_block_item(e, 0))->d_name);
+   C_char *p = s;
+   while(*p != 0) {
+     *p = *p == '\\' ? '/' : *p;
+     ++p;
+   }
    C_strlcpy(C_c_string(b), s, C_unfix(l));
-   return(C_fix(strlen(s)));
+   return(C_fix(C_strlen(s)));
 }
 # define C_readdir(h,e)      C_set_block_item(e, 0, (C_word) _wreaddir((_WDIR *)C_block_item(h, 0)))
 # define C_closedir(h)       (_wclosedir((_WDIR *)C_block_item(h, 0)), C_SCHEME_UNDEFINED)

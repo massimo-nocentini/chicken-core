@@ -6902,9 +6902,30 @@ EOF
 ;;; Accessing process information (cwd, environ, etc.)
 
 #>
+#if defined(_WIN32) && !defined(__CYGWIN__)
+#include <direct.h>
 
-#define C_chdir(str) C_fix(chdir(C_c_string(str)))
-#define C_curdir(buf, size) (getcwd(C_c_string(buf), size) ? C_fix(strlen(C_c_string(buf))) : C_SCHEME_FALSE)
+static C_word C_chdir(C_word str) {
+	return C_fix(_wchdir(C_utf16(str, 0)));
+}
+
+static C_word C_curdir(C_word buf, C_word size) {
+	C_WCHAR *cwd = _wgetcwd((C_WCHAR *)C_c_string(buf), C_unfix(size));
+        if(cwd == NULL) return C_SCHEME_FALSE;
+	C_char *up = C_utf8(cwd);
+	C_char *p = up;
+	while(*p) {
+		*p = *p == '\\' ? '/' : *p;
+		++p;
+	}
+	int len = C_strlen(up);
+	C_memcpy(cwd, up, len + 1);
+        return C_fix(len);
+}
+#else
+# define C_chdir(str) C_fix(chdir(C_c_string(str)))
+# define C_curdir(buf, size) (getcwd(C_c_string(buf), size) ? C_fix(strlen(C_c_string(buf))) : C_SCHEME_FALSE)
+#endif
 
 <#
 

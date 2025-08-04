@@ -12825,11 +12825,7 @@ C_executable_dirname() {
   if((path = C_executable_pathname()) == NULL)
     return NULL;
 
-#if defined(_WIN32) && !defined(__CYGWIN__)
-  for(len = C_strlen(path); len >= 0 && path[len] != '\\'; len--);
-#else
-  for(len = C_strlen(path); len >= 0 && path[len] != '/'; len--);
-#endif
+  for(len = C_strlen(path); len >= 0 && path[len] != '/' && path[len] != '\\'; len--);
 
   path[len] = '\0';
   return path;
@@ -12866,6 +12862,11 @@ C_resolve_executable_pathname(C_char *fname)
 
   C_char *buf2 = C_strdup(C_utf8(buffer));
   C_free(buffer);
+  C_char *p = buf2;
+  while(*p) {
+    *p = *p == '\\' ? '/' : *p;
+    ++p;
+  }
   return buf2;
 #elif defined(C_MACOSX)
   C_char buf[C_MAX_PATH];
