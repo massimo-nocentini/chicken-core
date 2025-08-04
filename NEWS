@@ -73,6 +73,9 @@
   - Added `include-path' to (chicken platform) module.
   - Added `number-vector-data' to (chicken memory representation) module.
   - The platform-identifier "mingw32" has been renamed to "mingw".
+  - Library procedures that return paths now always convert them to 
+    contain forward slashes, 'make-pathname' always uses "/" for path
+    separation.
 
 - Syntax expander:
   - `syntax-rules' attempts to better support tail patterns with ellipses (#1736).
