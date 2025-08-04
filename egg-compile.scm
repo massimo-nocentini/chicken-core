@@ -139,7 +139,7 @@
     (if (irregex-search '(: bos ".." ("\\/")) dest*)
         (error "destination must be relative to CHICKEN install prefix" dest)
         (normalize-pathname
-         (make-pathname+ (if (eq? mode 'target)
+         (make-pathname (if (eq? mode 'target)
                             default-prefix
                             (override-prefix "/" host-prefix))
                         dest*)))))
@@ -946,18 +946,16 @@
                   (object-extension platform)
                   (archive-extension platform)))
          (sname (prefix srcdir name))
-         (out (qs* (target-file (conc sname ".static" ext) mode)
-		   platform #t))
-         (outlnk (qs* (conc sname +link-file-extension+) platform #t))
+         (out (qs* (target-file (conc sname ".static" ext) mode)))
+         (outlnk (qs* (conc sname +link-file-extension+)))
          (dest (effective-destination-repository mode))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR")))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir
-           (qs* (conc dest "/" output-file ext) platform #t))
+           (qs* (conc dest "/" output-file ext)))
     (print cmd " " outlnk " " ddir
-           (qs* (conc dest "/" output-file +link-file-extension+)
-		platform #t))
+           (qs* (conc dest "/" output-file +link-file-extension+)))
     (print-end-command platform)))
 
 (define ((install-dynamic-extension name #!key mode (ext ".so")
@@ -966,11 +964,11 @@
   (let* ((cmd (install-executable-command platform))
          (mkdir (mkdir-command platform))
          (sname (prefix srcdir name))
-         (out (qs* (target-file (conc sname ext) mode) platform #t))
+         (out (qs* (target-file (conc sname ext) mode)))
          (dest (effective-destination-repository mode))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform))
-         (destf (qs* (conc dest "/" output-file ext) platform #t)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR"))
+         (destf (qs* (conc dest "/" output-file ext))))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir destf)
     (print-end-command platform)))
@@ -986,42 +984,39 @@
   (let* ((cmd (install-file-command platform))
          (mkdir (mkdir-command platform))
          (sname (prefix srcdir name))
-         (out (qs* (target-file (conc sname ".import.scm") mode)
-		   platform #t))
+         (out (qs* (target-file (conc sname ".import.scm") mode)))
          (dest (effective-destination-repository mode))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR")))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir
-          (qs* (conc dest "/" name ".import.scm") platform #t))
+          (qs* (conc dest "/" name ".import.scm")))
     (print-end-command platform)))
 
 (define ((install-types-file name #!key mode types-file)
          srcdir platform)
   (let* ((cmd (install-file-command platform))
          (mkdir (mkdir-command platform))
-         (out (qs* (prefix srcdir (conc types-file ".types"))
-		   platform #t))
+         (out (qs* (prefix srcdir (conc types-file ".types"))))
          (dest (effective-destination-repository mode))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR")))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir
-          (qs* (conc dest "/" types-file ".types") platform #t))
+          (qs* (conc dest "/" types-file ".types")))
     (print-end-command platform)))
 
 (define ((install-inline-file name #!key mode inline-file)
          srcdir platform)
   (let* ((cmd (install-file-command platform))
          (mkdir (mkdir-command platform))
-         (out (qs* (prefix srcdir (conc inline-file ".inline"))
-		   platform #t))
+         (out (qs* (prefix srcdir (conc inline-file ".inline"))))
          (dest (effective-destination-repository mode))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR")))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir
-          (qs* (conc dest "/" inline-file ".inline") platform #t))
+          (qs* (conc dest "/" inline-file ".inline")))
     (print-end-command platform)))
 
 (define ((install-program name #!key mode output-file) srcdir platform)
@@ -1029,13 +1024,13 @@
          (mkdir (mkdir-command platform))
          (ext (executable-extension platform))
          (sname (prefix srcdir name))
-         (out (qs* (target-file (conc sname ext) mode) platform #t))
+         (out (qs* (target-file (conc sname ext) mode)))
          (dest (if (eq? mode 'target)
                    default-bindir
                    (override-prefix "/bin" host-bindir)))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform))
-         (destf (qs* (conc dest "/" output-file ext) platform #t)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR"))
+         (destf (qs* (conc dest "/" output-file ext))))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir destf)
     (print-end-command platform)))
@@ -1045,14 +1040,13 @@
          (mkdir (mkdir-command platform))
          (ext (object-extension platform))
          (sname (prefix srcdir name))
-         (out (qs* (target-file (conc sname ext) mode)
-		   platform #t))
+         (out (qs* (target-file (conc sname ext) mode)))
          (dest (effective-destination-repository mode))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR")))
     (print "\n" mkdir " " ddir dfile)
     (print cmd " " out " " ddir
-           (qs* (conc dest "/" output-file ext) platform #t))
+           (qs* (conc dest "/" output-file ext)))
     (print-end-command platform)))
 
 (define (install-random-files dest files mode srcdir platform)
@@ -1061,8 +1055,8 @@
          (root (string-append srcdir "/"))
          (mkdir (mkdir-command platform))
          (sfiles (map (cut prefix srcdir <>) files))
-         (dfile (qs* dest platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (dfile (qs* dest))
+         (ddir (shell-variable "DESTDIR")))
     (print "\n" mkdir " " ddir dfile)
     (let-values (((ds fs) (partition directory? sfiles)))
       (for-each
@@ -1071,11 +1065,11 @@
                 (fdir (pathname-directory ds)))
            (when fdir
              (print mkdir " " ddir
-                    (qs* (make-pathname+ dest fdir) platform #t)))
+                    (qs* (make-pathname dest fdir))))
            (print dcmd " " (qs* d platform #t)
                   " " ddir
                   (if fdir
-                      (qs* (make-pathname+ dest fdir) platform #t)
+                      (qs* (make-pathname dest fdir))
                       dfile))
            (print-end-command platform)))
        ds)
@@ -1086,11 +1080,11 @@
                    (fdir (pathname-directory fs)))
               (when fdir
                 (print mkdir " " ddir
-                       (qs* (make-pathname+ dest fdir) platform #t)))
+                       (qs* (make-pathname dest fdir))))
               (print fcmd " " (qs* f platform)
                      " " ddir
                      (if fdir
-                         (qs* (make-pathname+ dest fdir) platform #t)
+                         (qs* (make-pathname dest fdir))
                          dfile)))
             (print-end-command platform))
           fs)))))
@@ -1137,7 +1131,7 @@
     (with-output-to-file dest
       (lambda ()
         (prefix platform)
-        (print (cd-command platform) " " (qs* srcdir platform #t))
+        (print (cd-command platform) " " (qs* srcdir))
         (for-each
           (lambda (cmd) (cmd srcdir platform))
           cmds)
@@ -1157,9 +1151,9 @@ export CHICKEN_CSC=~a
 export CHICKEN_CSI=~a
 
 EOF
-             (qs* default-bindir platform) (qs* default-cc platform)
-	     (qs* default-cxx platform) (qs* default-csc platform)
-	     (qs* default-csi platform)))
+             (qs* default-bindir) (qs* default-cc)
+	     (qs* default-cxx) (qs* default-csc)
+	     (qs* default-csi)))
 
 (define ((build-suffix mode name info) platform)
   (printf #<<EOF
@@ -1179,10 +1173,9 @@ EOF
          (dcmd (remove-file-command platform))
          (mkdir (mkdir-command platform))
          (dir (destination-repository mode))
-         (qdir (qs* dir platform #t))
-         (dest (qs* (make-pathname+ dir name +egg-info-extension+)
-		    platform #t))
-         (ddir (shell-variable "DESTDIR" platform)))
+         (qdir (qs* dir))
+         (dest (qs* (make-pathname dir name +egg-info-extension+)))
+         (ddir (shell-variable "DESTDIR")))
      (printf #<<EOF
 
 ~a ~a~a
@@ -1196,31 +1189,27 @@ EOF
 
 ;;; some utilities for mangling + quoting
 
-(define (qs* arg platform #!optional slashify?)
+(define (qs* arg)
   (qs (->string arg)))
 
 (define (prefix dir name)
-  (make-pathname+ dir (->string name)))
+  (make-pathname dir (->string name)))
 
 (define (system+ str platform)
   (system (if (eq? platform 'windows)
               (string-append "sh -c \"" str "\"")
 	      str)))
 
-(define (make-pathname+ . args)
-  (let ((p1 (apply make-pathname args)))
-    (irregex-replace/all #\\ p1 "/")))
-
 (define (target-file fname mode)
   (if (eq? mode 'target) (string-append fname ".target") fname))
 
 (define (joins strs platform)
-  (string-intersperse (map (cut qs* <> platform) strs) " "))
+  (string-intersperse (map qs* strs) " "))
 
 (define (filelist dir lst)
   (map (cut prefix dir <>) lst))
 
-(define (shell-variable var platform)
+(define (shell-variable var)
   (string-append "\"${" var "}\""))
 
 (define prepare-custom-command void)
@@ -1229,7 +1218,7 @@ EOF
   (and custom (prefix srcdir custom)))
 
 (define (print-build-command targets sources command-and-args platform)
-  (print "\n" (qs* default-builder platform) " "
+  (print "\n" (qs* default-builder) " "
          (joins targets platform)
          " : " (joins sources platform) " "
          " : " (joins command-and-args platform)))
@@ -1239,7 +1228,7 @@ EOF
 (define (strip-dir-prefix prefix fname)
   (let* ((plen (string-length prefix))
          (p1 (substring fname 0 plen)))
-    (assert (string=? prefix p1) "wrong prefix")
+    (assert (string=? prefix p1) "wrong prefix" prefix p1)
     (substring fname (add1 plen))))
 
 (define (maybe f x) (if f (list x) '()))
