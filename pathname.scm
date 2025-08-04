@@ -83,9 +83,7 @@
   (irregex-match-data? (absolute-pathname-root pn)))
 
 (define-inline (*char-pds? ch)
-  (if ##sys#windows-platform
-      (memq ch '(#\\ #\/))
-      (eq? #\/ ch)))
+  (eq? #\/ ch))
 
 (define (chop-pds str)
   (and str
@@ -100,7 +98,7 @@
 (define make-pathname)
 (define make-absolute-pathname)
 
-(let ((pds (if ##sys#windows-platform "\\" "/")))
+(let ()
 
   (define (conc-dirs dirs)
     (##sys#check-list dirs 'make-pathname)
@@ -112,7 +110,7 @@
 		(loop (cdr strs))
 		(string-append
 		 (chop-pds (car strs))
-		 pds
+		 "/"
 		 (loop (cdr strs))))))))
 
   (define (canonicalize-dirs dirs)
@@ -150,7 +148,7 @@
        (let ((dir (canonicalize-dirs dirs)))
 	 (if (absolute-pathname? dir)
 	     dir
-	     (##sys#string-append pds dir)))
+	     (##sys#string-append "/" dir)))
        file ext))))
 
 (define decompose-pathname
@@ -240,11 +238,8 @@
 		 (cdr parts)))
             (else (cons part parts))))
     (lambda (path #!optional (platform bldplt))
-      (let ((sep (if (eq? platform 'windows) #\\ #\/)))
-        (define (pds? c)
-          (if (eq? platform 'windows)
-              (memq c '(#\/ #\\))
-              (eq? c #\/)))
+      (let ((sep #\/))
+        (define (pds? c) (eq? c #\/))
 	(##sys#check-string path 'normalize-pathname)
 	(let ((len (string-length path))
 	      (type #f)

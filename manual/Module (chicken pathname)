@@ -31,8 +31,7 @@ For any component that is not contained in {{PATHNAME}}, {{#f}} is returned.
 Returns a string that names the file with the
 components {{DIRECTORY, FILENAME}} and (optionally)
 {{EXTENSION}} with {{SEPARATOR}} being the directory separation indicator
-(usually {{/}} on UNIX systems and {{\}} on Windows, defaulting to whatever
-platform this is running on). 
+({{/}}). 
 {{DIRECTORY}} can be {{#f}} (meaning no
 directory component), a string or a list of strings. {{FILENAME}}
 and {{EXTENSION}} should be strings or {{#f}}.
@@ -78,7 +77,7 @@ Performs a simple "normalization" on the {{PATHNAME}}, suitably for
 or {{unix}} and defaults to on whatever platform is currently
 in use. All relative path elements and duplicate separators are processed 
 and removed.  If {{NAME}} ends with
-a {{/}} or is empty, the appropriate slash is appended to the tail.
+a {{/}} or is empty, a slash is appended to the tail.
 
 No directories or files are actually tested for existence; this 
 procedure only canonicalises path syntax.

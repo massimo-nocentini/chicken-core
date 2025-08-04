@@ -75,7 +75,7 @@ EOF
   (string-append default-bindir "/" (foreign-value "C_CSI_PROGRAM" c-string)))
 
 (define default-builder 
-  (make-pathname default-bindir (foreign-value "C_CHICKEN_DO_PROGRAM" c-string)))
+  (string-append default-bindir "/" (foreign-value "C_CHICKEN_DO_PROGRAM" c-string)))
 
 (define target-librarian (foreign-value "C_TARGET_LIBRARIAN" c-string))
 (define target-librarian-options (foreign-value "C_TARGET_LIBRARIAN_FLAGS" c-string))
@@ -120,14 +120,15 @@ EOF
 
 (define cache-directory
   (or (get-environment-variable "CHICKEN_EGG_CACHE")
-      (make-pathname (or (system-cache-directory)
-                         (current-directory))
-                     chicken-install-program)))
+      (string-append (or (system-cache-directory)
+                          (current-directory))
+                     "/"
+                      chicken-install-program)))
 
 (define cache-metadata-directory
   ;; Directory where the VERSION, TIMESTAMP and STATUS files are
   ;; stored (under their corresponding egg directory).
-  (make-pathname cache-directory ".cache-metadata"))
+  (string-append cache-directory "/.cache-metadata"))
 
 (define +version-file+ "VERSION")
 (define +timestamp-file+ "TIMESTAMP")
