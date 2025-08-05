@@ -49,8 +49,8 @@
       signature changed to the R7RS one.
     - `define-record-type' moved to (scheme base) and is generative,
       to be compliant with R7RS.
-  - `syntax-error' has been removed from (chicken syntax) and is now a macro
-    and part of (scheme base).
+  - `syntax-error' has been removed from (chicken syntax) and is now a
+    macro and part of (scheme base).
   - `record-instance?' and `make-record-instance' accept non-symbolic
     type specifiers to support generative record types.
   - The new (chicken number-vector) module now provides a superset of
@@ -66,19 +66,24 @@
     renamed to `(scheme XXX)'.
   - Hexadecimal escape sequences in strings and extended symbols must be
     terminated by the `;' character, following R7RS.
-  - The `#ci'/`#cs' read syntaxes have been removed, use `#![no-]fold-case'
+  - The `#ci'/`#cs' read syntaxes have been removed, use
+    `#![no-]fold-case'
     markers instead.
-  - `include' and `include-relative' accept multiple filenames, `include-ci'
+  - `include' and `include-relative' accept multiple filenames,
+    `include-ci'
     has been added.
   - Added `include-path' to (chicken platform) module.
   - Added `number-vector-data' to (chicken memory representation) module.
   - The platform-identifier "mingw32" has been renamed to "mingw".
-  - Library procedures that return paths now always convert them to 
+  - Library procedures that return paths now always convert them to
     contain forward slashes, 'make-pathname' always uses "/" for path
     separation.
+  - Added `expand1' to (chicken syntax) module for expanding a macro
+    only once, also added the ",x1" command to "csi" for this.
 
 - Syntax expander:
-  - `syntax-rules' attempts to better support tail patterns with ellipses (#1736).
+  - `syntax-rules' attempts to better support tail patterns with ellipses
+     (#1736).
 
 - FFI changes:
   - Strings and symbols passed to foreign code are not copied, they are
@@ -89,16 +94,19 @@
 
 - Tools
   - The compiler and interpreter option `-r5rs-syntax' has been renamed to
-    `-r7rs-syntax' and does not disable extended symbol syntax ("|...|") anymore.
-  - The "feathers" debugger has been removed from the core and is now available
-    as an egg.
+    `-r7rs-syntax' and does not disable extended symbol syntax ("|...|")
+    anymore.
+  - The "feathers" debugger has been removed from the core and is now
+    available as an egg.
   - The `set-describer!' procedure has been removed from the `csi' module.
-  - The "csc" program now accepts tool flags (e.g. -compiler, -cc etc) which
-    have paths with spaces in them without requiring the user to double-quote
-    them.  As a consequence, it no longer accepts programs with space separated
-    flags for tool arguments (e.g. "csc -cc 'gcc -debug'" etc).  If this is
-    desired, write a short shell script which calls the tool with your flags.
-  - `chicken-install' now locks the cache directory during egg-installation.
+  - The "csc" program now accepts tool flags (e.g. -compiler, -cc etc)
+    which have paths with spaces in them without requiring the user to
+    double-quote them.  As a consequence, it no longer accepts programs
+    with space separated flags for tool arguments (e.g.
+    "csc -cc 'gcc -debug'" etc).  If this is desired, write a short
+    shell script which calls the tool with your flags.
+  - `chicken-install' now locks the cache directory during
+    egg-installation.
   - Added component type `installed-c-object' to egg format.
   - The `csc-options' and `link-options' configuration clauses in egg
     specifications now allow `custom-config' forms to produce arbitrary
@@ -111,8 +119,8 @@
   - On Windows the minimal "mingw" build is not supported anymore, a POSIX
     shell and the basic sete of command-line utilities is now required
     (formerly the "mingw-msys" build). Chris Wellons "w64devkit" is now
-    the recommended toolchain. The platform identifier "mingw-msys" has been
-    renamed to "mingw".
+    the recommended toolchain. The platform identifier "mingw-msys" has
+    been renamed to "mingw".
   - The system can now be built with "zig cc" as a C compiler/linker
     replacement.
 
