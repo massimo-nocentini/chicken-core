@@ -552,7 +552,9 @@ EOF
     (u64vector "vector of unsigned 64-bit words" u64vector-length u64vector-ref)
     (s64vector "vector of signed 64-bit words" s64vector-length s64vector-ref)
     (f32vector "vector of 32-bit floats" f32vector-length f32vector-ref)
-    (f64vector "vector of 64-bit floats" f64vector-length f64vector-ref) ) )
+    (f64vector "vector of 64-bit floats" f64vector-length f64vector-ref)
+    (c64vector "vector of 32-bit complex numbers" c64vector-length c64vector-ref)
+    (c128vector "vector of 64-bit complex numbers" c128vector-length c128vector-ref) ) )
 
 (define (circular-list? x)
   (let lp ((x x) (lag x))
