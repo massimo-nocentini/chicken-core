@@ -203,8 +203,8 @@ EOF
          (len (fx/ (##core#inline "C_i_bytevector_length" bv) 8)))
     (##sys#check-range i 0 len 'c64vector-set!)
     (##sys#check-number y 'c64vector-set!)
-    (##core#inline "C_u_i_f32vector_set" x (fx/ i 2) (->f (real-part y)))
-    (##core#inline "C_u_i_f32vector_set" x (fx+ (fx/ i 2) 1) (->f (imag-part y)))))
+    (##core#inline "C_u_i_f32vector_set" x (fx* i 2) (->f (real-part y)))
+    (##core#inline "C_u_i_f32vector_set" x (fx+ (fx* i 2) 1) (->f (imag-part y)))))
 
 (define (c128vector-set! x i y)
   (##sys#check-structure x 'c128vector 'c128vector-set!)
@@ -212,8 +212,8 @@ EOF
          (len (fx/ (##core#inline "C_i_bytevector_length" bv) 16)))
     (##sys#check-range i 0 len 'c128vector-set!)
     (##sys#check-number y 'c128vector-set!)
-    (##core#inline "C_u_i_f64vector_set" x (fx/ i 2) (->f (real-part y)))
-    (##core#inline "C_u_i_f64vector_set" x (fx+ (fx/ i 2) 1) (->f (imag-part y)))))
+    (##core#inline "C_u_i_f64vector_set" x (fx* i 2) (->f (real-part y)))
+    (##core#inline "C_u_i_f64vector_set" x (fx+ (fx* i 2) 1) (->f (imag-part y)))))
 
 (define u8vector-ref bytevector-u8-ref)
 
