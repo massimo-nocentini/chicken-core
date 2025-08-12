@@ -664,7 +664,7 @@
        (lambda ()
          (fluid-let ((##sys#notices-enabled #f)) ; to avoid re-import warnings
            (load il)
-           (##sys#find-module mname 'import))))))
+           (##sys#find-module mname #t 'import))))))
 
 (define (find-module/import-library lib loc)
   (let ((mname (##sys#resolve-module-name lib loc)))
