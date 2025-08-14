@@ -137,14 +137,7 @@
 ;;; validate egg-information tree
 
 (define (egg-version? v)
-  (and (list? v)
-       (pair? v)
-       (null? (cdr v))
-       (let ((str (->string (car v))))
-         (irregex-match '(seq (+ numeric)
-                              (? #\. (+ numeric)
-                                 (? #\. (+ numeric))))
-                        str))))
+  (and (string? v) (positive? (string-length v))))
 
 (define (optname? x)
   (and (list? x)
