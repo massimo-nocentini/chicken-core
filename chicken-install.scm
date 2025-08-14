@@ -137,7 +137,10 @@
 ;;; validate egg-information tree
 
 (define (egg-version? v)
-  (and (string? v) (positive? (string-length v))))
+  (and (pair? v)
+       (null? (cdr v))
+       (let ((v (car v)))
+         (and (string? v) (positive? (string-length v))))))
 
 (define (optname? x)
   (and (list? x)
