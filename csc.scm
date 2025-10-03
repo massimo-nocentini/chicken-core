@@ -230,7 +230,7 @@
   (list (default-library)))
 
 (define (shared-library-files)
-  (list "-l" (if host-mode INSTALL_LIB_NAME TARGET_LIB_NAME)))
+  (list (string-append "-l" (if host-mode INSTALL_LIB_NAME TARGET_LIB_NAME))))
 
 (define translate-options '())
 
