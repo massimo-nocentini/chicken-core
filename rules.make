@@ -1014,7 +1014,7 @@ export PROGRAM_PREFIX
 export PROGRAM_SUFFIX
 
 check: $(TARGETS)
-	cd tests; sh -x runtests.sh
+	cd tests; sh runtests.sh
 
 # benchmark
 
