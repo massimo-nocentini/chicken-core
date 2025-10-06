@@ -119,3 +119,24 @@
       (let ((x (with-input-from-string (caar cs) read)))
         (unless (equal? x (cadar cs))
           (error "failed" x (cadar cs))))))
+
+;; complex vectors
+
+(define (dot v1 v2 n ref)
+  (do ((i 0 (add1 i))
+  	   (sum 0 (+ sum (* (ref v1 i) (ref v2 i)))))
+  	  ((>= i n) sum)))
+
+(assert
+  (= 1-i
+     (dot '#c64(1+i 1-i 0) '#c64(-i 0 2-i) 3 c64vector-ref)))
+(assert
+  (= 1-i
+     (dot '#c128(1+i 1-i 0) '#c128(-i 0 2-i) 3 c128vector-ref)))
+
+(assert
+  (= -1-i
+     (dot (c64vector 1+i 1-i 0) (c64vector 2+i 1-3i 0+2i) 3 c64vector-ref)))
+(assert
+  (= -1-i
+     (dot (c128vector 1+i 1-i 0) (c128vector 2+i 1-3i 0+2i) 3 c128vector-ref)))
