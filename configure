@@ -175,6 +175,8 @@ if [ -z "$platform" ]; then
         Windows_NT)
             platform=mingw
             case "$prefix" in
+            	 /usr/local)
+            	      prefix="C:/Program files/CHICKEN";;
                 [a-zA-Z]:*)
                 ;;
                 *)
