@@ -41,5 +41,5 @@ rm -f  boot/chicken-6.0.0pre1.tar.gz
 
 echo
 echo 'Now, build chicken by passing "--chicken ./chicken-boot" to "configure",'
-echo 'in addition to PREFIX, PLATFORM, and other parameters.'
+echo 'in addition to "--prefix ..." and additional parameters.'
 echo
