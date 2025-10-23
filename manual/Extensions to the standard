@@ -149,7 +149,7 @@ Interpretation depends on the directly following characters. Only the following 
 
 ; DSSSL Formal Parameter List Annotation : If followed by any of the character sequences {{optional}}, {{rest}} or {{key}}, then a symbol with the same name (and prefixed with {{#!}}) is returned
 
-; Read Mark Invocation : If a ''read mark'' with the same name as the token is registered, then its procedure is called and the result of the read-mark procedure will be returned
+; Read Mark Invocation : If a ''read mark'' with the same name as the token is registered, then its procedure is called and the result of the read-mark procedure will be returned (see {{set-read-syntax!}}).
 
 === Conditional Expansion
 
