@@ -39,10 +39,11 @@
     or not.
   - The following primitives have been moved from (chicken base)
     to R7RS modules:
-    - `exact-integer-sqrt?', `vector-copy!', `make-parameter', `call/cc',
-      `open-input-string', `open-output-string', `get-output-string',
-      `input-port-open?', `output-port-open?', `parameterize' and `port?'
-      moved from the (chicken base) to the (scheme base).
+    - `exact-integer?`, `exact-integer-sqrt?', `vector-copy!',
+      `make-parameter', `call/cc', `open-input-string',
+      `open-output-string', `get-output-string', `input-port-open?',
+      `output-port-open?', `parameterize' and `port?' moved from the
+      (chicken base) to the (scheme base) module.
     - `case-lambda' moved from (chicken base) to (scheme case-lambda).
     - `features' moved from (chicken platform) to (scheme base).
     - `write-string' moved from (chicken io) to (scheme base) and its
