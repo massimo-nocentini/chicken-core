@@ -1519,7 +1519,7 @@ return((C_header_bits(lit) >> 24) & 0xff);
            (oct (bitwise-and #xff (arithmetic-shift lit -16)))
 	   (oct (bitwise-and #xff (arithmetic-shift lit -8)))
 	   (oct (bitwise-and #xff lit)) ) )
-	 ((exact-integer? lit)
+	 ((##core#inline "C_i_exact_integerp" lit)
 	  ;; Encode as hex to save space and get exact size
 	  ;; calculation.  We could encode as base 32 to save more
 	  ;; space, but that makes debugging harder.  The type tag is

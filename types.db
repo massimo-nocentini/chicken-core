@@ -283,6 +283,11 @@
 		  ((integer) (##core#inline "C_i_integer_negativep" #(1)))
 		  ((*) (##core#inline "C_i_negativep" #(1))))
 
+(scheme#exact-integer? (#(procedure #:pure #:foldable) scheme#exact-integer? (*) boolean)
+			     ((integer) (let ((#(tmp) #(1))) '#t))
+			     (((not integer)) (let ((#(tmp) #(1))) '#f))
+			     ((*) (##core#inline "C_i_exact_integerp" #(1))))
+
 (scheme#max (#(procedure #:clean #:enforce #:foldable) scheme#max (#!rest number) number)
 	    ((fixnum fixnum) (fixnum) (chicken.fixnum#fxmax #(1) #(2)))
 	    ((float float) (float) (##core#inline "C_i_flonum_max" #(1) #(2))))
@@ -941,10 +946,6 @@
 (chicken.base#warning (procedure chicken.base#warning (* #!rest) undefined))
 (chicken.base#notice (procedure chicken.base#notice (* #!rest) undefined))
 
-(chicken.base#exact-integer? (#(procedure #:pure #:foldable) chicken.base#exact-integer? (*) boolean)
-			     ((integer) (let ((#(tmp) #(1))) '#t))
-			     (((not integer)) (let ((#(tmp) #(1))) '#f))
-			     ((*) (##core#inline "C_i_exact_integerp" #(1))))
 (chicken.base#exact-integer-nth-root (#(procedure #:clean #:enforce #:foldable) chicken.base#exact-integer-nth-root (integer integer) integer integer)
 		    ((integer integer) (##sys#exact-integer-nth-root/loc 'exact-integer-nth-root #(1) #(2))))
 

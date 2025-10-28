@@ -132,7 +132,7 @@
 	     write-char newline write display append symbol->string for-each map char? char->integer
 	     integer->char eof-object? vector-length string-length string-ref string-set! vector-ref
 	     vector-set! char=? char<? char>? char>=? char<=? gcd lcm reverse symbol? string->symbol
-	     number? complex? real? integer? rational? odd? even? positive? negative? exact? inexact?
+	     number? complex? real? integer? rational? odd? even? positive? negative? exact? inexact? exact-integer?
 	     max min quotient remainder modulo floor ceiling truncate round rationalize
 	     exact->inexact inexact->exact
 	     exp log sin expt sqrt cos tan asin acos atan number->string string->number char-ci=?
@@ -172,7 +172,7 @@
     chicken.base#current-error-port
     chicken.base#symbol-append chicken.base#foldl chicken.base#foldr
     chicken.base#setter chicken.base#getter-with-setter
-    chicken.base#equal=? chicken.base#exact-integer?
+    chicken.base#equal=?
     chicken.base#flush-output
 
     chicken.base#weak-cons chicken.base#weak-pair? chicken.base#bwp-object?
@@ -547,7 +547,7 @@
 (rewrite 'scheme#rational? 2 1 "C_i_rationalp" #t)
 (rewrite 'scheme#real? 2 1 "C_i_realp" #t)
 (rewrite 'scheme#integer? 2 1 "C_i_integerp" #t)
-(rewrite 'chicken.base#exact-integer? 2 1 "C_i_exact_integerp" #t)
+(rewrite 'scheme#exact-integer? 2 1 "C_i_exact_integerp" #t)
 (rewrite 'chicken.base#flonum? 2 1 "C_i_flonump" #t)
 (rewrite 'chicken.base#fixnum? 2 1 "C_fixnump" #t)
 (rewrite 'chicken.base#bignum? 2 1 "C_i_bignump" #t)

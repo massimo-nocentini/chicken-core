@@ -9,7 +9,7 @@
         (chicken platform)
         (chicken time))
 
-(import (only (scheme base) exact-integer-sqrt))
+(import (only (scheme base) exact-integer? exact-integer-sqrt))
 
 ;; The default "comparator" doesn't know how to deal with extended number types
 (current-test-comparator

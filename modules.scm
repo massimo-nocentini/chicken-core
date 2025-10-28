@@ -1175,6 +1175,7 @@
     (rational? . scheme#rational?) (zero? . scheme#zero?)
     (odd? . scheme#odd?) (even? . scheme#even?)
     (positive? . scheme#positive?) (negative? . scheme#negative?)
+    (exact-integer? . scheme#exact-integer?)
     (max . scheme#max) (min . scheme#min)
     (+ . scheme#+) (- . scheme#-) (* . scheme#*) (/ . scheme#/)
     (= . scheme#=) (> . scheme#>) (< . scheme#<)

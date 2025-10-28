@@ -226,6 +226,7 @@ EOF
      member assq assv assoc symbol? symbol->string string->symbol number?
      integer? exact? real? complex? inexact? rational? zero? odd? even?
      positive? negative?  max min + - * / = > < >= <= quotient remainder
+     exact-integer?
      modulo gcd lcm abs floor ceiling truncate round rationalize
      exact->inexact inexact->exact exp log expt sqrt
      sin cos tan asin acos atan
@@ -524,6 +525,7 @@ EOF
 (define (zero? n) (##core#inline "C_i_zerop" n))
 (define (positive? n) (##core#inline "C_i_positivep" n))
 (define (negative? n) (##core#inline "C_i_negativep" n))
+(define (exact-integer? x) (##core#inline "C_i_exact_integerp" x))
 
 (define number->string (##core#primitive "C_number_to_string"))
 (define string->number)
@@ -771,7 +773,7 @@ EOF
    ;; letrec-values nth-value optional parameterize rec receive
    ;; require-library require-extension set!-values syntax unless when
    bignum? flonum? fixnum? ratnum? cplxnum? finite? infinite? nan?
-   exact-integer? exact-integer-sqrt exact-integer-nth-root
+   exact-integer-sqrt exact-integer-nth-root
 
    port-closed? flush-output
    get-call-chain print print* add1 sub1 sleep
@@ -801,7 +803,6 @@ EOF
 (define (bignum? x) (##core#inline "C_i_bignump" x))
 (define (ratnum? x) (##core#inline "C_i_ratnump" x))
 (define (cplxnum? x) (##core#inline "C_i_cplxnump" x))
-(define (exact-integer? x) (##core#inline "C_i_exact_integerp" x))
 (define exact-integer-sqrt)
 (define exact-integer-nth-root)
 
@@ -2347,27 +2348,29 @@ EOF
 
 (set! scheme#numerator
   (lambda (n)
-    (cond ((exact-integer? n) n)
-	  ((##core#inline "C_i_flonump" n)
-	   (cond ((not (finite? n)) (##sys#error-bad-inexact n 'numerator))
-		 ((##core#inline "C_u_i_fpintegerp" n) n)
-		 (else (exact->inexact (numerator (inexact->exact n))))))
-	  ((ratnum? n) (%ratnum-numerator n))
-	  (else (##sys#signal-hook
-		 #:type-error 'numerator
-		 "bad argument type - not a rational number" n) ) )))
+    (cond ((##core#inline "C_i_exact_integerp" n) n)
+          ((##core#inline "C_i_flonump" n)
+           (cond ((not (finite? n)) (##sys#error-bad-inexact n 'numerator))
+                 ((##core#inline "C_u_i_fpintegerp" n) n)
+                 (else (exact->inexact (numerator (inexact->exact n))))))
+          ((ratnum? n) (%ratnum-numerator n))
+          (else (##sys#signal-hook
+                 #:type-error 'numerator
+                 "bad argument type - not a rational number" n) ) )))
+
 
 (set! scheme#denominator
   (lambda (n)
-    (cond ((exact-integer? n) 1)
-	  ((##core#inline "C_i_flonump" n)
-	   (cond ((not (finite? n)) (##sys#error-bad-inexact n 'denominator))
-		 ((##core#inline "C_u_i_fpintegerp" n) 1.0)
-		 (else (exact->inexact (denominator (inexact->exact n))))))
-	  ((ratnum? n) (%ratnum-denominator n))
-	  (else (##sys#signal-hook
-		 #:type-error 'numerator
-		 "bad argument type - not a rational number" n) ) )))
+    (cond ((##core#inline "C_i_exact_integerp" n) 1)
+          ((##core#inline "C_i_flonump" n)
+           (cond ((not (finite? n)) (##sys#error-bad-inexact n 'denominator))
+                 ((##core#inline "C_u_i_fpintegerp" n) 1.0)
+                 (else (exact->inexact (denominator (inexact->exact n))))))
+          ((ratnum? n) (%ratnum-denominator n))
+          (else (##sys#signal-hook
+                 #:type-error 'numerator
+                 "bad argument type - not a rational number" n) ) )))
+
 
 (define (##sys#extended-signum x)
   (cond
@@ -2456,7 +2459,8 @@ EOF
 (define (##sys#/-2 x y)
   (when (eq? y 0)
     (##sys#error-hook (foreign-value "C_DIVISION_BY_ZERO_ERROR" int) '/ x y))
-  (cond ((and (exact-integer? x) (exact-integer? y))
+  (cond ((and (##core#inline "C_i_exact_integerp" x)
+              (##core#inline "C_i_exact_integerp" y))
          (let ((g (%integer-gcd x y)))
            (ratnum (%integer-quotient x g) (%integer-quotient y g))))
         ;; Compnum *must* be checked first
@@ -2507,43 +2511,43 @@ EOF
 
 (set! scheme#floor
   (lambda (x)
-    (cond ((exact-integer? x) x)
-	  ((##core#inline "C_i_flonump" x) (fpfloor x))
-	  ;; (floor x) = greatest integer <= x
-	  ((ratnum? x) (let* ((n (%ratnum-numerator x))
-			      (q (quotient n (%ratnum-denominator x))))
-			 (if (>= n 0) q (- q 1))))
-	  (else (##sys#error-bad-real x 'floor)) )))
+    (cond ((##core#inline "C_i_exact_integerp" x) x)
+          ((##core#inline "C_i_flonump" x) (fpfloor x))
+          ;; (floor x) = greatest integer <= x
+          ((ratnum? x) (let* ((n (%ratnum-numerator x))
+                              (q (quotient n (%ratnum-denominator x))))
+                         (if (>= n 0) q (- q 1))))
+          (else (##sys#error-bad-real x 'floor)) )))
 
 (set! scheme#ceiling
   (lambda (x)
-    (cond ((exact-integer? x) x)
-	  ((##core#inline "C_i_flonump" x) (fpceiling x))
-	  ;; (ceiling x) = smallest integer >= x
-	  ((ratnum? x) (let* ((n (%ratnum-numerator x))
-			      (q (quotient n (%ratnum-denominator x))))
-			 (if (>= n 0) (+ q 1) q)))
-	  (else (##sys#error-bad-real x 'ceiling)) )))
+    (cond ((##core#inline "C_i_exact_integerp" x) x)
+          ((##core#inline "C_i_flonump" x) (fpceiling x))
+          ;; (ceiling x) = smallest integer >= x
+          ((ratnum? x) (let* ((n (%ratnum-numerator x))
+                              (q (quotient n (%ratnum-denominator x))))
+                         (if (>= n 0) (+ q 1) q)))
+          (else (##sys#error-bad-real x 'ceiling)) )))
 
 (set! scheme#truncate
   (lambda (x)
-    (cond ((exact-integer? x) x)
-	  ((##core#inline "C_i_flonump" x) (fptruncate x))
-	  ;; (rational-truncate x) = integer of largest magnitude <= (abs x)
-	  ((ratnum? x) (quotient (%ratnum-numerator x)
-				 (%ratnum-denominator x)))
-	  (else (##sys#error-bad-real x 'truncate)) )))
+    (cond ((##core#inline "C_i_exact_integerp" x) x)
+          ((##core#inline "C_i_flonump" x) (fptruncate x))
+          ;; (rational-truncate x) = integer of largest magnitude <= (abs x)
+          ((ratnum? x) (quotient (%ratnum-numerator x)
+                                 (%ratnum-denominator x)))
+          (else (##sys#error-bad-real x 'truncate)) )))
 
 (set! scheme#round
   (lambda (x)
-    (cond ((exact-integer? x) x)
-	  ((##core#inline "C_i_flonump" x)
-	   (##core#inline_allocate ("C_a_i_flonum_round_proper" 4) x))
-	  ((ratnum? x)
-	   (let* ((x+1/2 (+ x (%make-ratnum 1 2)))
-		  (r (floor x+1/2)))
-	     (if (and (= r x+1/2) (odd? r)) (- r 1) r)))
-	  (else (##sys#error-bad-real x 'round)) )))
+    (cond ((##core#inline "C_i_exact_integerp" x) x)
+          ((##core#inline "C_i_flonump" x)
+           (##core#inline_allocate ("C_a_i_flonum_round_proper" 4) x))
+          ((ratnum? x)
+           (let* ((x+1/2 (+ x (%make-ratnum 1 2)))
+                  (r (floor x+1/2)))
+             (if (and (= r x+1/2) (odd? r)) (- r 1) r)))
+          (else (##sys#error-bad-real x 'round)) )))
 
 (define (find-ratio-between x y)
   (define (sr x y)
@@ -2735,7 +2739,7 @@ EOF
         ((negative? n)
          (make-complex .0 (##core#inline_allocate
 			   ("C_a_i_sqrt" 4) (exact->inexact (- n)))))
-        ((exact-integer? n)
+        ((##core#inline "C_i_exact_integerp" n)
          (receive (s^2 r) (##sys#exact-integer-sqrt n)
            (if (eq? 0 r)
                s^2
@@ -2870,8 +2874,9 @@ EOF
 
 ;; Useful for sane error messages
 (define (##sys#internal-gcd loc a b)
-  (cond ((exact-integer? a)
-         (cond ((exact-integer? b) (%integer-gcd a b))
+  (cond ((##core#inline "C_i_exact_integerp" a)
+         (cond ((##core#inline "C_i_exact_integerp" b)
+                (%integer-gcd a b))
                ((and (##core#inline "C_i_flonump" b)
                      (##core#inline "C_u_i_fpintegerp" b))
                 (exact->inexact (%integer-gcd a (inexact->exact b))))
@@ -2880,7 +2885,7 @@ EOF
               (##core#inline "C_u_i_fpintegerp" a))
          (cond ((##core#inline "C_i_flonump" b)
                 (##core#inline_allocate ("C_a_i_flonum_gcd" 4) a b))
-               ((exact-integer? b)
+               ((##core#inline "C_i_exact_integerp" b)
                 (exact->inexact (%integer-gcd (inexact->exact a) b)))
                (else (##sys#error-bad-integer b loc))))
         (else (##sys#error-bad-integer a loc))))

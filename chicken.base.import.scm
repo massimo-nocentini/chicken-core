@@ -51,7 +51,6 @@
    (enable-warnings . chicken.base#enable-warnings)
    (equal=? . chicken.base#equal=?)
    (error . chicken.base#error)
-   (exact-integer? . chicken.base#exact-integer?)
    (exact-integer-nth-root . chicken.base#exact-integer-nth-root)
    (exit . chicken.base#exit)
    (exit-handler . chicken.base#exit-handler)
