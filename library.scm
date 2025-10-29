@@ -200,6 +200,15 @@ EOF
 ;; We get around this problem by using the "chicken.internal.syntax"
 ;; module, which is baked in and exports *every* available core macro.
 ;; See modules.scm, expand.scm and chicken-syntax.scm for details.
+;;
+;; NOTE #2: The module "scheme" is a legacy artifact, with CHICKEN
+;; 6 "scheme" being just an alias for "scheme.r5rs", and "scheme.base"
+;; is what used to be the standard Scheme module. We use it only
+;; to provide a prefix ("scheme#") for the exported toplevel
+;; identifiers, which now represent what is in the "scheme.base"
+;; standard module. Yes, this is somewhat confusing, but changing
+;; all prefixes to use the "proper" name would cause too many
+;; bootstrapping problems.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Pre-declaration of scheme, so it can be used later on.  We only use
