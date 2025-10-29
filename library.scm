@@ -2851,7 +2851,7 @@ EOF
 	  ((ratnum? b)
 	   ;; x^{a/b} = (x^{1/b})^a
 	   (cond
-	    ((exact-integer? a)
+	    ((##core#inline "C_i_exact_integerp" a)
 	     (if (negative? a)
 		 (log-expt (exact->inexact a) (exact->inexact b))
 		 (receive (ds^n r)
