@@ -1601,7 +1601,7 @@
   (define (fits? n)
     (fx<= (integer-length n) 24))
   (cond ((immediate? lit))
-	((exact-integer? lit)
+	((##core#inline "C_i_exact_integerp" lit)
 	 ;; Could use integer-length, but that's trickier (minus
 	 ;; symbol etc).  If the string is too large to allocate,
 	 ;; we'll also get an exception!
