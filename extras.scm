@@ -480,3 +480,43 @@
         dest))))
 
 )
+
+
+;;; Version comparison (used for egg versions)
+
+(module chicken.version (version>=?)
+
+(import scheme)
+(import (chicken base)
+        (chicken string)
+        (chicken fixnum))
+
+(define (version>=? v1 v2)
+  (define (version->list s)
+    (map (lambda (x) (or (string->number x) x))
+      (let ((len (string-length s)))
+        (let loop ((start 0) (pos 0))
+          (cond ((fx>= pos len)  (list (substring s start len)))
+                ((memv (string-ref s pos) '(#\- #\\ #\. #\_ #\/))
+                 (cons (substring s start pos)
+                       (let ((p2 (fx+ pos 1)))
+                         (loop p2 p2))))
+                (else (loop start (fx+ pos 1))))))))
+  (##sys#check-string v1 'version>=?)
+  (##sys#check-string v2 'version>=?)
+  (let loop ((p1 (version->list v1))
+             (p2 (version->list v2)))
+    (cond ((null? p1) (null? p2))
+          ((null? p2))
+          ((number? (car p1))
+           (and (number? (car p2))
+                (or (> (car p1) (car p2))
+                    (and (= (car p1) (car p2))
+                         (loop (cdr p1) (cdr p2))))))
+          ((number? (car p2)))
+          ((string>? (car p1) (car p2)))
+          (else
+            (and (string=? (car p1) (car p2))
+                 (loop (cdr p1) (cdr p2)))))))
+
+) ;; end module

@@ -342,6 +342,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 	|   |       |-- chicken.tcp.import.so
 	|   |       |-- chicken.time.import.so
 	|   |       |-- chicken.time.posix.import.so
+	|   |       |-- chicken.version.import.so
 	|   |       |-- scheme.file.import.so
 	|   |       |-- scheme.process-context.import.so
 	|   |       |-- scheme.time.import.so

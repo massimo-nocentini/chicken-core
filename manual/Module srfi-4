@@ -93,7 +93,7 @@ The module exports the following identifiers:
 <procedure>(list->f64vector F64LIST)</procedure><br>
 
 ---
-Previous: [[Module (chicken type)]]
+Previous: [[Module (chicken version)]]
 
 Next: [[Interface to external functions and variables]]
 

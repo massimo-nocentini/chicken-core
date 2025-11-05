@@ -95,6 +95,7 @@
 /chicken.eval.import.scm
 /chicken.file.import.scm
 /chicken.file.posix.import.scm
+/chicken.version.import.scm
 /chicken.fixnum.import.scm
 /chicken.flonum.import.scm
 /chicken.format.import.scm

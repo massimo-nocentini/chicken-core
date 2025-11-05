@@ -92,6 +92,7 @@
 (defmod chicken.read-syntax)
 (defmod chicken.repl)
 (defmod chicken.tcp)
+(defmod chicken.version)
 (defmod chicken.number-vector)
 (defmod srfi-4)
 (defmod scheme.write)

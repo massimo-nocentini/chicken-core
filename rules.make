@@ -479,6 +479,7 @@ $(eval $(call declare-emitted-import-lib-dependency,chicken.load,eval))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.format,extras))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.io,library))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.pretty-print,extras))
+$(eval $(call declare-emitted-import-lib-dependency,chicken.version,extras))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.random,extras))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.locative,lolevel))
 $(eval $(call declare-emitted-import-lib-dependency,chicken.memory,lolevel))
@@ -681,6 +682,7 @@ chicken-install.c: chicken-install.scm \
 		chicken.process-context.import.scm \
 		chicken.sort.import.scm \
 		chicken.string.import.scm \
+		chicken.version.import.scm \
 		chicken.tcp.import.scm
 chicken-uninstall.c: chicken-uninstall.scm \
 		chicken.file.import.scm \
@@ -843,7 +845,8 @@ extras.c: $(SRCDIR)extras.scm $(SRCDIR)common-declarations.scm
 	$(bootstrap-lib) \
 	-emit-import-library chicken.format \
 	-emit-import-library chicken.pretty-print \
-	-emit-import-library chicken.random
+	-emit-import-library chicken.random \
+	-emit-import-library chicken.version
 posixunix.c: $(SRCDIR)posix.scm $(SRCDIR)posixunix.scm $(SRCDIR)posix-common.scm $(SRCDIR)common-declarations.scm
 	$(bootstrap-lib) -feature platform-unix \
 	-emit-import-library chicken.errno \

@@ -81,6 +81,7 @@
     separation.
   - Added `expand1' to (chicken syntax) module for expanding a macro
     only once, also added the ",x1" command to "csi" for this.
+  - Added the (chicken version) module.
 
 - Syntax expander:
   - `syntax-rules' attempts to better support tail patterns with ellipses

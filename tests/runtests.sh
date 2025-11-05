@@ -554,4 +554,7 @@ $interpret -s multiple-values.scm
 $compile multiple-values.scm
 ./a.out
 
+echo "======================================== version module tests ..."
+$interpret -bnq version-module-tests.scm
+
 echo "======================================== done. All tests passed."

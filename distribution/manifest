@@ -251,6 +251,7 @@ tests/reverser/tags/1.1/reverser.egg
 tests/reverser/tags/1.1/reverser.scm
 tests/user-pass-tests.scm
 tests/version-tests.scm
+tests/version-module-tests.scm
 tests/messages-test.scm
 tests/messages.expected
 tests/types-db-consistency.scm
@@ -379,6 +380,8 @@ chicken.time.import.scm
 chicken.time.import.c
 chicken.time.posix.import.scm
 chicken.time.posix.import.c
+chicken.version.import.scm
+chicken.version.import.c
 srfi-4.import.scm
 srfi-4.import.c
 scheme.file.import.scm
@@ -476,6 +479,7 @@ manual-html/Module (chicken tcp).html
 manual-html/Module (chicken time).html
 manual-html/Module (chicken time posix).html
 manual-html/Module (chicken type).html
+manual-html/Module (chicken version).html
 manual-html/Module scheme.html
 manual-html/Module (scheme base).html
 manual-html/Module (scheme case-lambda).html

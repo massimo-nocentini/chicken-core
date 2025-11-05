@@ -74,6 +74,7 @@ default all exports of the [[Module scheme|scheme]],
 * [[Module (chicken time)]] : Fetching information about the current time
 * [[Module (chicken time posix)]] : Manipulating POSIX time
 * [[Module (chicken type)]] : Defining and using static typing information
+* [[Module (chicken version)]] : Version comparison operations
 * [[Module srfi-4]] : The subset of [[Module (chicken number-vector)]] specified by SRFI-4
 
 In addition to the core modules listed above, the following SRFI modules can be

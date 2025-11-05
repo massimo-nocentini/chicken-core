@@ -2462,6 +2462,9 @@
 (chicken.tcp#tcp-read-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-read-timeout (#!optional (or false integer)) (or false integer)))
 (chicken.tcp#tcp-write-timeout (#(procedure #:clean #:enforce) chicken.tcp#tcp-write-timeout (#!optional (or false integer)) (or false integer)))
 
+;; version
+(chicken.version#version>=? (#(procedure #:pure #:foldable) chicken.version#version>=? (* *) boolean))
+
 ;; Undocumented internal module, only here to have the deprecation warning because some eggs use it
 (chicken.compiler.support#read/source-info deprecated)
 
