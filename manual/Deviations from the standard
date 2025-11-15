@@ -2,8 +2,6 @@
 
 == Confirmed deviations from R7RS
 
-Identifiers are by default case-sensitive (see [[Using the compiler]]).
-
 === Number of arguments to procedures and macros
 
 The maximal number of arguments that may be passed to a

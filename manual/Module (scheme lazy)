@@ -117,7 +117,7 @@ The promise? procedure returns #t if its argument is a promise, and #f
 otherwise. Note that promises are not necessarily disjoint from other Scheme
 types such as procedures.
 
-<procedure>(make-promise obj)</promise>
+<procedure>(make-promise obj)</procedure>
 
 The make-promise procedure returns a promise which, when forced, will return
 obj. It is similar to delay, but does not delay its argument: it is a procedure

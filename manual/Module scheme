@@ -5,7 +5,7 @@
 
 This module is intended for backwards compatibility with older CHICKEN code
 and exports a subset of the R7RS procedures in {{(scheme base)}}, {{(scheme char)}},
- {{(scheme complex)}}, {{(scheme cxr)}}, {{(scheme eval)}}, {{(scheme file)}},
+{{(scheme complex)}}, {{(scheme cxr)}}, {{(scheme eval)}}, {{(scheme file)}},
 {{(scheme inexact)}}, {{(scheme lazy)}}, {{(scheme load)}},
 {{(scheme read)}}, {{(scheme repl)}}, {{(scheme write)}} and all macros that correspond to
 the bindings available by default in R5RS.

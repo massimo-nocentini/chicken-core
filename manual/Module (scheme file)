@@ -64,5 +64,4 @@ be deleted, an error that satisfies file-error? is signaled.
 ---
 Previous: [[Module (scheme complex)]]
 
-Next: [[Module (scheme
- eval)]]
+Next: [[Module (scheme eval)]]
