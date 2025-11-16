@@ -189,7 +189,10 @@
 	               (_ (d "  ~a (~a bytes)~%" name size))
 	      	       (data (read-bytevector size in)) )
 		  (with-output-to-file (make-pathname dest name)
-                    (lambda () (write-bytevector data))
+                    (lambda ()
+                      (if (eof-object? data)
+                          (display "")
+                          (write-bytevector data)))
                     #:binary ) )
 		(get-files (cons name files)) ) ) ) ) ))
 
