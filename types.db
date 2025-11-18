@@ -2373,7 +2373,7 @@
 (chicken.number-vector#s32vector-set! (#(procedure #:clean #:enforce) chicken.number-vector#s32vector-set! ((struct s32vector) fixnum integer) undefined))
 (chicken.number-vector#s8vector->bytevector (#(procedure #:clean #:enforce) chicken.number-vector#s8vector->bytevector ((struct s8vector)) bytevector))
 (chicken.number-vector#s8vector->bytevector/shared (#(procedure #:clean #:enforce) chicken.number-vector#s8vector->bytevector/shared ((struct s8vector)) bytevector))
-(chicken.number-vector#s8vector-length (#(procedure #:clean #:enforce) chicken.number-vector#s8vector-length ((struct s8vector)) fixnum) (((struct s8vector)) (##core#inline "C_u_i_8vector_length" #(1))))
+(chicken.number-vector#s8vector-length (#(procedure #:clean #:enforce) chicken.number-vector#s8vector-length ((struct s8vector)) fixnum) (((struct s8vector)) (##core#inline "C_u_i_s8vector_length" #(1))))
 (chicken.number-vector#s8vector->list (#(procedure #:clean #:enforce) chicken.number-vector#s8vector->list ((struct s8vector)) (list-of fixnum)))
 (chicken.number-vector#s8vector (#(procedure #:clean #:enforce) chicken.number-vector#s8vector (#!rest fixnum) (struct s8vector)))
 (chicken.number-vector#s8vector? (#(procedure #:pure #:predicate (struct s8vector)) chicken.number-vector#s8vector? (*) boolean))
