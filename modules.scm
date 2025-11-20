@@ -1194,6 +1194,7 @@
     (sqrt . scheme#sqrt)
     (square . scheme#square)
     (exact-integer-sqrt . scheme#exact-integer-sqrt)
+    (expt . scheme#expt)
     (number->string . scheme#number->string)
     (string->number . scheme#string->number)
     (char? . scheme#char?) (char=? . scheme#char=?)
@@ -1384,7 +1385,7 @@
 
 (##sys#register-core-module
  'scheme.inexact 'library
- '((exp . scheme#exp) (log . scheme#log) (expt . scheme#expt)
+ '((exp . scheme#exp) (log . scheme#log)
    (sqrt . scheme#sqrt) (nan? . chicken.base#nan?)
    (sin . scheme#sin) (cos . scheme#cos) (tan . scheme#tan)
    (asin . scheme#asin) (acos . scheme#acos) (atan . scheme#atan)
