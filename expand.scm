@@ -1325,10 +1325,14 @@
                    `(##core#begin ,(process-include-decls (cdr spec))
                                   ,(parse-decls more)))
                   ((cond-expand)
-                   (parse-decls (append (list (process-cond-expand (cdr spec)))
-                                        more)))
+                   (parse-decls
+                     `((##core#begin
+                        ,(process-cond-expand (cdr spec))
+                        ,@more))))
                   ((##core#begin)
-                    (parse-decls (cdr spec)))
+                    (parse-decls (append (cdr spec) more)))
+                  ((##core#undefined)	; residue from cond-expand
+                    (parse-decls more))
                   ((begin)
                    `(##core#begin ,@(cdr spec)
                                   ,(parse-decls more)))
