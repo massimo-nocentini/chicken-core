@@ -611,23 +611,6 @@ A single value version of {{compose}} (slightly faster). {{(o)}} is equivalent
 to {{identity}}.
 
 
-=== UNICODE case folding
-
-==== char-foldcase
-
-<procedure>(char-foldcase CHAR)</procedure>
-
-Performs simple UNICODE case folding to {{CHAR}}, language-specific mappings
-are not used.
-
-==== string-foldcase
-
-<procedure>(string-foldcase STRING)</procedure>
-
-Performs UNICODE case folding to {{STRING}}, language-specific mappings
-are not used. The resulting string may be longer than the original string.
-
-
 === User-defined named characters
 
 ==== char-name

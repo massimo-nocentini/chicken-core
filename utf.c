@@ -3712,6 +3712,40 @@ C_regparm C_word C_utf_string_foldcase(C_word from, C_word to, C_word len)
     return C_fix(pt - pt0);
 }
 
+C_regparm C_word C_utf_string_downcase(C_word from, C_word to, C_word len)
+{
+    C_u32 c;
+    int e;
+    C_char *pf = C_c_string(from), *pf2;
+    C_char *pt = C_c_string(to), *pt0 = pt;
+    int count = C_unfix(len);
+    while(count > 0) {
+        pf2 = utf8_decode(pf, &c, &e);
+        if(!e) c = C_utf_char_downcase(c);
+        pt = utf8_encode(c, pt);
+        count -= pf2 - pf;
+        pf = pf2;
+    }
+    return C_fix(pt - pt0);
+}
+
+C_regparm C_word C_utf_string_upcase(C_word from, C_word to, C_word len)
+{
+    C_u32 c;
+    int e;
+    C_char *pf = C_c_string(from), *pf2;
+    C_char *pt = C_c_string(to), *pt0 = pt;
+    int count = C_unfix(len);
+    while(count > 0) {
+        pf2 = utf8_decode(pf, &c, &e);
+        if(!e) c = C_utf_char_upcase(c);
+        pt = utf8_encode(c, pt);
+        count -= pf2 - pf;
+        pf = pf2;
+    }
+    return C_fix(pt - pt0);
+}
+
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #define C_WCHAR_FNBUF_SIZE	2048
 static C_WCHAR fnbuf[ C_WCHAR_FNBUF_SIZE ], *pfnbuf;

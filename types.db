@@ -653,6 +653,12 @@
 (scheme#string-fill! (#(procedure #:enforce) scheme#string-fill! (string char #!optional fixnum fixnum) string))
 (scheme#string (#(procedure #:clean #:enforce) scheme#string (#!rest char) string))
 
+(scheme#char-foldcase (#(procedure #:clean #:enforce #:foldable) scheme#char-foldcase (char) char)
+                            ((char) (##core#inline "C_utf_char_foldcase" #(1))))
+(scheme#string-foldcase (#(procedure #:clean #:enforce) scheme#string-foldcase (string) string))
+(scheme#string-upcase (#(procedure #:clean #:enforce) scheme#string-upcase (string) string))
+(scheme#string-downcase (#(procedure #:clean #:enforce) scheme#string-downcase (string) string))
+
 (scheme#vector? (#(procedure #:pure #:predicate vector) scheme#vector? (*) boolean))
 
 ;; special-cased (see scrutinizer.scm)
@@ -1107,10 +1113,6 @@
 (chicken.base#intersperse (#(procedure #:clean #:enforce) chicken.base#intersperse (list *) list))
 (chicken.base#join (#(procedure #:clean #:enforce) chicken.base#join ((list-of list) #!optional list) list))
 (chicken.base#list-of? (#(procedure #:clean #:enforce) chicken.base#list-of? ((procedure (*) *)) (procedure (list) boolean)))
-
-(chicken.base#char-foldcase (#(procedure #:clean #:enforce #:foldable) chicken.base#char-foldcase (char) char)
-                            ((char) (##core#inline "C_utf_char_foldcase" #(1))))
-(chicken.base#string-foldcase (#(procedure #:clean #:enforce) chicken.base#string-foldcase (string) string))
 
 (chicken.base#o (#(procedure #:clean #:enforce) chicken.base#o (#!rest (procedure (*) *)) (procedure (*) *)))
 

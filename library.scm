@@ -267,6 +267,8 @@ EOF
      string->vector vector->string textual-port? binary-port?
      input-port-open? output-port-open? floor/ truncate/
      exact inexact floor-remainder floor-quotient close-port
+     
+     char-foldcase string-foldcase string-upcase string-downcase
 
      ;; The following procedures are overwritten in eval.scm:
      eval interaction-environment null-environment
@@ -670,6 +672,36 @@ EOF
     (and (not (eq? n 0))
          (##core#inline "C_fixnum_difference" n 1))))
 
+;; case folding and conversion
+
+(define (char-foldcase c)
+  (##sys#check-char c 'char-foldcase)
+  (##core#inline "C_utf_char_foldcase" c))
+
+(define (string-foldcase str)
+  (##sys#check-string str 'string-foldcase)
+  (let* ((bv (##sys#slot str 0))
+         (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
+         (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
+         (len (##core#inline "C_utf_string_foldcase" bv buf n)))
+    (##sys#buffer->string buf 0 len)))
+    
+(define (string-downcase str)
+  (##sys#check-string str 'string-downcase)
+  (let* ((bv (##sys#slot str 0))
+         (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
+         (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
+         (len (##core#inline "C_utf_string_downcase" bv buf n)))
+    (##sys#buffer->string buf 0 len)))
+
+(define (string-upcase str)
+  (##sys#check-string str 'string-upcase)
+  (let* ((bv (##sys#slot str 0))
+         (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
+         (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
+         (len (##core#inline "C_utf_string_upcase" bv buf n)))
+    (##sys#buffer->string buf 0 len)))
+
 ;;; Procedures:
 
 (define (procedure? x) (##core#inline "C_i_closurep" x))
@@ -797,8 +829,6 @@ EOF
    alist-ref alist-update alist-update! rassoc atom? butlast chop
    compress flatten intersperse join list-of? tail? constantly
    complement compose conjoin disjoin each flip identity o
-
-   char-foldcase string-foldcase
 
    case-sensitive keyword-style parentheses-synonyms symbol-escape
 
@@ -1078,21 +1108,6 @@ EOF
 	      ((##sys#slot blst 0)
 	       (cons (##sys#slot lst 0) (loop (##sys#slot blst 1) (##sys#slot lst 1))))
 	      (else (loop (##sys#slot blst 1) (##sys#slot lst 1))) ) ) ) ) )
-
-
-;; case folding
-
-(define (char-foldcase c)
-  (##sys#check-char c 'char-foldcase)
-  (##core#inline "C_utf_char_foldcase" c))
-
-(define (string-foldcase str)
-  (##sys#check-string str 'string-foldcase)
-  (let* ((bv (##sys#slot str 0))
-         (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
-         (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
-         (len (##core#inline "C_utf_string_foldcase" bv buf n)))
-    (##sys#buffer->string buf 0 len)))
 
 
 ;;; Alists:
@@ -4926,7 +4941,10 @@ EOF
 		    (else
 		     (read-unreserved-char-0 port)
 		     (loop (##sys#peek-char-0 port)
-		           (cons (if csp c (char-foldcase c)) lst) ) ) ) ) )
+		           (cons (if csp 
+		                     c 
+		                     (##core#inline "C_utf_char_foldcase" c) )
+		                 lst) ) ) ) ) )
 
 	  (define (r-digits)
 	    (let loop ((c (##sys#peek-char-0 port)) (lst '()))
@@ -4989,7 +5007,10 @@ EOF
 				  (loop (cons c lst) #f qtd))))
 			   (else
 			    (loop
-			     (cons (if csp c (char-foldcase c)) lst)
+			     (cons (if csp 
+			               c 
+			               (##core#inline "C_utf_char_foldcase" c))
+			           lst)
 			     #f qtd)))))))))
 
 	  (define (r-char)
