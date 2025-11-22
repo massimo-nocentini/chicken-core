@@ -1175,7 +1175,7 @@
 	   ((bytevector) (##sys#size #(1))))
 (chicken.bytevector#utf8->string (#(procedure #:clean #:enforce) chicken.bytevector#utf8->string (bytevector #!optional boolean) string))
 (chicken.bytevector#latin1->string (#(procedure #:clean #:enforce) chicken.bytevector#latin1->string (bytevector) string))
-(chicken.bytevector#make-bytevector (#(procedure #:clean #:enforce) chicken.bytevector#make-bytevector (fixnum) bytevector)
+(chicken.bytevector#make-bytevector (#(procedure #:clean #:enforce) chicken.bytevector#make-bytevector (fixnum #!optional fixnum) bytevector)
 	   ((fixnum) (##sys#make-bytevector #(1))))
 (chicken.bytevector#string->utf8 (#(procedure #:clean #:enforce) chicken.bytevector#string->utf8 (string) bytevector))
 (chicken.bytevector#string->latin1 (#(procedure #:clean #:enforce) chicken.bytevector#string->latin1 (string) bytevector))
