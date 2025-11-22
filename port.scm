@@ -486,9 +486,9 @@ char *ttyname(int fd) {
       (let-location ((columns int)
 		     (rows int))
 	(if (fx= 0 (ttysize (##core#inline "C_port_fileno" port)
-			    (location columns)
-			    (location rows)))
-	    (values columns rows)
+			    (location rows)
+			    (location columns)))
+	    (values rows columns)
 	    (posix-error #:error 'terminal-size
 			 "cannot determine terminal size" port))))))
 
