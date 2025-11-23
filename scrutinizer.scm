@@ -143,7 +143,7 @@
 
 (define-constant struct-types
   '(u8vector s8vector u16vector s16vector u32vector s32vector u64vector
-    s64vector f32vector f64vector thread queue environment time
+    s64vector f32vector f64vector c64vector c128vector thread queue environment time
     continuation lock mmap condition hash-table tcp-listener))
 
 (define-constant type-expansions
