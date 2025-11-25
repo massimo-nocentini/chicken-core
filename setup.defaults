@@ -30,6 +30,7 @@
 ; (map (EXTENSIONNAME ... -> OTHEREXTENSIONNAME ...))
 
 (map (srfi-4 ->))
+(map (r7rs ->))
 
 
 ;; aliases for servers
