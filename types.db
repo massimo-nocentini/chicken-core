@@ -912,7 +912,7 @@
 
 ;; scheme.eval
 
-(scheme.eval#environment (procedure scheme.eval#environment (* #!optional list) . *))
+(scheme.eval#environment (procedure scheme.eval#environment (#!rest *) . *))
 
 
 ;; eval
