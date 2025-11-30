@@ -368,10 +368,10 @@ renamed.
 
 <procedure>(read-with-source-info [port])</procedure>
 
-Exactly like {{{read}}} from the {{{scheme}}} module, except it
+Exactly like {{read}} from the {{scheme}} module, except it
 registers the expression it read into the line number database, so
-that if {{{(read-with-source-info)}}} returns {{{OBJ}}},
-{{{(get-line-number OBJ)}}} will return the line number in {{{port}}}.
+that if {{(read-with-source-info)}} returns {{OBJ}},
+{{(get-line-number OBJ)}} will return the line number in {{port}}.
 
 The port argument may be omitted, in which case it defaults to the
 value returned by {{current-input-port}}. It is an error to read from
