@@ -216,6 +216,7 @@ tests/specialization-test-1.scm
 tests/specialization-test-2.scm
 tests/specialization-test-2.types
 tests/specialization.expected
+tests/test-create-temporary-file.scm
 tests/test-irregex.scm
 tests/re-tests.txt
 tests/lolevel-tests.scm

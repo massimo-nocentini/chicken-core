@@ -439,6 +439,9 @@ $interpret -s file-access-tests.scm
 echo "======================================== find-files tests ..."
 $interpret -bnq test-find-files.scm
 
+echo "======================================== create-temporary-file tests ..."
+$interpret -bnq test-create-temporary-file.scm
+
 echo "======================================== record-renaming tests ..."
 $interpret -bnq record-rename-test.scm
 
