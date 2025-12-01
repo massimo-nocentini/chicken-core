@@ -1,0 +1,22 @@
+[[tags: manual]]
+[[toc:]]
+
+== Module (chicken version)
+
+This module provides the {{version>=?}} procedure for version comparison.
+
+=== version>=?
+
+<procedure>(version>=? v1 v2)</procedure>
+
+Return {{#t}} if {{v1}} is greater than or equal to {{v2}},
+where both arguments are assumed to encode version numbers.
+The values can be of any type and will be converted to strings
+(using {{->string}}) if necessary. The comparison accepts
+separators like {{"."}}, {{"-"}}, etc. and compares sub-elements
+numerically, if possible.
+
+---
+Previous: [[Module (chicken type)]]
+
+Next: [[Module srfi-4]]
