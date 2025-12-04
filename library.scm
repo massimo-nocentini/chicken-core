@@ -1891,9 +1891,7 @@ EOF
       (if end
           (##sys#check-range/including end 0 len 'string-copy)
           (set! end len))
-      (let* ((bv (if start
-                     (##sys#substring s start1 end)
-                     (##sys#slot s 0)))
+      (let* ((bv (##sys#slot (if start (##sys#substring s start1 end) s) 0))
              (len (##sys#size bv))
              (n (fx- end start1))
              (bv2 (##sys#make-bytevector len)) )
