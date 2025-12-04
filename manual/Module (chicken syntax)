@@ -366,7 +366,7 @@ renamed.
 
 ==== read-with-source-info
 
-<procedure>(read-with-source-info [port])</procedure>
+<procedure>(read-with-source-info [port filename])</procedure>
 
 Exactly like {{read}} from the {{scheme}} module, except it
 registers the expression it read into the line number database, so
@@ -375,7 +375,10 @@ that if {{(read-with-source-info)}} returns {{OBJ}},
 
 The port argument may be omitted, in which case it defaults to the
 value returned by {{current-input-port}}. It is an error to read from
-a closed port.
+a closed port. If {{filename}} is given, it designates the name
+of the file associated. In case this argument is not given, the
+currently opened source file is used. If no current source file
+is opened, then the name defaults to "<stdin>".
 
 ==== get-line-number
 

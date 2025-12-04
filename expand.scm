@@ -768,12 +768,13 @@
 
 (define-constant line-number-database-size 997) ; Copied from core.scm
 
-(define (read-with-source-info #!optional (in ##sys#standard-input))
+(define (read-with-source-info #!optional (in ##sys#standard-input) fname)
   ;; Initialize line number db on first use
   (unless ##sys#line-number-database
     (set! ##sys#line-number-database (make-vector line-number-database-size '())))
   (##sys#check-input-port in #t 'read-with-source-info)
-  (##sys#read in read-with-source-info-hook) )
+  (fluid-let ((##sys#current-source-filename (or fname ##sys#current-source-filename)))
+    (##sys#read in read-with-source-info-hook) ) )
 
 
 (define (get-line-number sexp)
