@@ -415,7 +415,6 @@ scripts/chicken-flymake
 scripts/csc-trans
 scripts/compile-all
 scripts/compare-documentation-exports.scm
-scripts/mini-salmonella.scm
 scripts/make-wrapper.scm
 scripts/makedist.scm
 manual-html/Accessing external objects.html
