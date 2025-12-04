@@ -14,7 +14,6 @@
 
 (include "mini-srfi-1.scm")
 
-(define *release* #f)
 (define *help* #f)
 
 (define BUILDVERSION (with-input-from-file "buildversion" read))
@@ -50,7 +49,7 @@
     (newline (current-error-port))
     (system* cmd)))
 
-(define (release full?)
+(define (release)
   (let* ((files (with-input-from-file "distribution/manifest" read-lines))
 	 (distname (conc "chicken-" BUILDVERSION))
 	 (distfiles (map (cut prefix distname <>) files))
@@ -78,7 +77,7 @@
     (run "rm -fr ~a" distname)))
 
 (define (usage)
-  (print "usage: makedist [-release] [-make PROGRAM] [--platform=PLATFORM] MAKEOPTION ...")
+  (print "usage: makedist [-make PROGRAM] [--platform=PLATFORM] MAKEOPTION ...")
   (exit))
 
 (define *makeargs*
@@ -86,9 +85,7 @@
     (if (null? args)
 	'()
 	(let ((arg (car args)))
-	  (cond ((string=? "-release" arg)
-		 (set! *release* #t)
-		 (loop (cdr args)))
+	  (cond ((loop (cdr args)))
 		((string=? "-make" arg)
 		 (set! *make* (cadr args))
 		 (loop (cddr args)))
@@ -101,4 +98,4 @@
 
 (run "~a -f Makefile.~a distfiles ~a" *make* *platform* (string-intersperse *makeargs*))
 
-(release *release*)
+(release)
