@@ -113,6 +113,7 @@
   - The `csc-options' and `link-options' configuration clauses in egg
     specifications now allow `custom-config' forms to produce arbitrary
     computed compiler and linker options.
+  - Added scripts/smoke-test.sh to automate basic testing of chicken-core
 
 - Build system
   - A "configure" script is now used to prepare the sources for building
