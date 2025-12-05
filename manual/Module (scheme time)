@@ -1,7 +1,7 @@
 [[tags: manual]]
 [[toc:]]
 
-== Module (scheme repl)
+== Module (scheme time)
 
 <procedure>(current-second)</procedure>
 
