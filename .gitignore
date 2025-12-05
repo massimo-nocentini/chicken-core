@@ -63,6 +63,7 @@
 /pathname.c
 /port.c
 /posixunix.c
+/posixwin.c
 /profiler.c
 /r7lib.c
 /read-syntax.c
