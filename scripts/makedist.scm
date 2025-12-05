@@ -72,7 +72,8 @@
 		     (else (cons f missing))))
 		  '() files)))
       (unless (null? missing)
-	(warning "files missing" missing) ) )
+        (fprintf (current-error-port) "[ERROR] files missing: ~A~%" missing)
+        (exit 1) ) )
     (run "tar cfz ~a ~a" (conc distname ".tar.gz") distname)
     (run "rm -fr ~a" distname)))
 
