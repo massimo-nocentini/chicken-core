@@ -4,7 +4,7 @@
 == Data representation
 
 There exist two different kinds of data objects in the CHICKEN system:
-immediate and non-immediate objects. 
+immediate and non-immediate objects.
 
 === Immediate objects
 
@@ -78,7 +78,7 @@ container should be a weak reference ({{C_WEAK_PAIR_TYPE}}), otherwise
 it should be a strong reference ({{C_PAIR_TYPE}}).
 
 '''strings''': objects with type bits {{C_STRING_TYPE}}, currently 0010,
-holding a bytevector with the string contents represented as an UTF-8 encoded 
+holding a bytevector with the string contents represented as an UTF-8 encoded
 byte sequence. Note that invalid UTF-8 sequences are allowed inside strings,
 extracted characters at positions that contain invalid UTF-8
 sequences are represented as the trailing surrogate pair half (U+DC00|xx).
@@ -134,7 +134,7 @@ a pointer to the object referred to.
 '''pointers''': special vector objects with type bits
 {{C_POINTER_TYPE}}, currently 1001. The single slot contains a machine pointer.
 
-'''tagged pointers''': special vector objects with type bits 
+'''tagged pointers''': special vector objects with type bits
 {{C_TAGGED_POINTER_TYPE}}, currently 1011, Tagged pointers are similar to pointers,
 but the object contains an additional
 slot with a tag (an arbitrary data object) that identifies the type

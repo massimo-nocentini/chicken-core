@@ -9,7 +9,7 @@ procedures.  '''Use at your own risk.'''
 
 === Foreign pointers
 
-The abstract class of ''pointer'' is divided into 2 categories: 
+The abstract class of ''pointer'' is divided into 2 categories:
 
 ; ''pointer object'' : is a regular or [[#Tagged pointers|tagged]] foreign pointer object.
 
@@ -321,7 +321,7 @@ a pointer object allow {{#f}} as an alternative representation of
 the {{NULL}}-pointer.
 
 
-==== make-pointer-vector 
+==== make-pointer-vector
 
 <procedure>(make-pointer-vector LENGTH [INIT])</procedure>
 

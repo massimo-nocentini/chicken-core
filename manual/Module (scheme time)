@@ -16,7 +16,7 @@ plus a suitable constant might be the best an implementation can do.
 
 Returns the number of jiffies as an exact integer that have elapsed since an
 arbitrary, implementation-defined epoch. A jiffy is an implementation-defined
-fraction of a second which is defined by the return value of the 
+fraction of a second which is defined by the return value of the
 jiffies-per-second procedure. The starting epoch is guaranteed to be constant
 during a run of the program, but may vary between runs.
 

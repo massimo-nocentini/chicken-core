@@ -10,7 +10,7 @@ Delayed evaluation
 
 Semantics: The delay construct is used together with the procedure force to
 implement lazy evaluation or call by need. {{(delay <expression>)}} returns an
-object called a promise which at some point in the future can be asked (by the 
+object called a promise which at some point in the future can be asked (by the
 force procedure) to evaluate <expression>, and deliver the resulting value. The
 effect of <expression> returning multiple values is unspecified.
 
@@ -18,7 +18,7 @@ effect of <expression> returning multiple values is unspecified.
 
 Semantics: The expression {{(delay-force expression)}} is conceptually similar to
 {{(delay (force expression))}}, with the difference that forcing the result of delay-force will
-in effect result in a tail call to {{(force expression)}}, while forcing the result of 
+in effect result in a tail call to {{(force expression)}}, while forcing the result of
 {{(delay (force expression))}} might not. Thus iterative lazy algorithms that might result in a
 long series of chains of delay and force can be rewritten using delay-force to
 prevent consuming unbounded space during evaluation.
@@ -47,8 +47,8 @@ promise is not a promise, it may be returned unchanged.
    (lambda (stream) (car (force stream))))
  (define tail
    (lambda (stream) (cdr (force stream))))
- 
- (head (tail (tail integers))) ==>  2 
+
+ (head (tail (tail integers))) ==>  2
 
 The following example is a mechanical
 transformation of a lazy stream-filtering algorithm into Scheme. Each call to a
@@ -60,15 +60,15 @@ effect force such sequences iteratively.
 
  (define (stream-filter p? s)
    (delay-force
-    (if (null? (force s)) 
+    (if (null? (force s))
         (delay '())
         (let ((h (car (force s)))
               (t (cdr (force s))))
           (if (p? h)
               (delay (cons h (stream-filter p? t)))
               (stream-filter p? t))))))
- 
- (head (tail (tail (stream-filter odd? integers)))) ==> 5 
+
+ (head (tail (tail (stream-filter odd? integers)))) ==> 5
 
 The following examples are not intended to
 illustrate good programming style, as delay, force, and delay-force are mainly
@@ -87,9 +87,9 @@ matter how many times it is forced.
  (force p)              ==>  6
  p                      ==>  a promise, still
  (begin (set! x 10)
-        (force p))      ==>  6 
+        (force p))      ==>  6
 
-Various extensions to this semantics of delay, 
+Various extensions to this semantics of delay,
 force and delay-force are supported in some implementations:
 
 * Calling force on an object that is not a promise may simply return the object.

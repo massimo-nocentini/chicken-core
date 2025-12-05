@@ -362,7 +362,7 @@ Do not generate safety-checks. This is the same as specifying the
 
  [declaration specifier] (unused IDENTIFIER ...)
 
-Disables any warnings when the global variable {{IDENTIFIER}} is not defined but used, 
+Disables any warnings when the global variable {{IDENTIFIER}} is not defined but used,
 or defined but never used and not exported.
 
 

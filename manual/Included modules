@@ -9,8 +9,8 @@ part of a standard installation.  On top of these, you can install
 additional modules through the [[Extensions|eggs]] system.
 
 Note that toplevel code that is not contained in a module has by
-default all exports of the [[Module scheme|scheme]], 
-[[Module (chicken base)|(chicken base)]] and 
+default all exports of the [[Module scheme|scheme]],
+[[Module (chicken base)|(chicken base)]] and
 [[Module (chicken syntax)|(chicken syntax)]]  available.
 
 * [[Module scheme]] : Compatibility module for CHICKEN 5 code

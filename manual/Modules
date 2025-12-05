@@ -19,7 +19,7 @@ toplevel expressions. Exported syntax-definitions are compiled as
 well, and can be accessed in interpreted or compiled code by loading
 and importing the compiled file that contains the module.
 
-Imported toplevel bindings are mutable and can be assigned 
+Imported toplevel bindings are mutable and can be assigned
 (with {{set!}}), any modifications
 to these will change the global value and will be visible to other
 modules that export or import the same toplevel binding.
@@ -28,7 +28,7 @@ A module is initially empty (has no visible bindings with the exception
 of  {{import}} and {{cond-expand}}). You must at least
 import the {{scheme}} module to do anything useful. To access any
 of the non-standard macros and procedures, import the {{(chicken base)}}
-module. 
+module.
 
 CHICKEN's module system has the following features:
 
@@ -39,7 +39,7 @@ CHICKEN's module system has the following features:
 
 At toplevel and outside of a module, the initially available bindings
 are everything that is exported from the [[Module scheme|scheme]],
-[[Module (chicken base)|(chicken base)]] and 
+[[Module (chicken base)|(chicken base)]] and
 [[Module (chicken syntax)|(chicken syntax)]] modules.
 
 
@@ -71,7 +71,7 @@ remaining identifiers in the list to be visible as value bindings in the expansi
 the macro (this is a hint to the module expander to export bindings
 referenced by syntax-definitions which make use of them, but which
 would normally be internal to the module - which gives more
-opportunities for optimization). 
+opportunities for optimization).
 
 {{(interface: INTERFACENAME)}} adds all exports defined for the given
 interface to be added to the list of exported identifiers of this
@@ -115,7 +115,7 @@ at toplevel.
 <macro>(export EXPORT ...)</macro>
 
 Allows augmenting module-exports from inside the module-body.
-{{EXPORT}} is if the same form as an export-specifier in a 
+{{EXPORT}} is if the same form as an export-specifier in a
 {{module}} export list. An export must precede its first occurrence
 (either use or definition).
 
@@ -187,7 +187,7 @@ containing the module.
 <macro>(import-for-syntax IMPORT ...)</macro>
 
 Similar to {{import}}, but imports exported bindings of a module into
-the environment in which macro transformers are evaluated. 
+the environment in which macro transformers are evaluated.
 
 Note: currently this isn't fully correct - value bindings are still
 imported into the normal environment because a separate import
@@ -213,8 +213,8 @@ other modules:
 <enscript hightlight=scheme>
 (module r4rs ()
   (import scheme (chicken module))
-  (reexport 
-    (except scheme 
+  (reexport
+    (except scheme
       dynamic-wind values call-with-values eval scheme-report-environment
       null-environment interaction-environment)))
 </enscript>
@@ -235,7 +235,7 @@ inside modules are not visible outside of the module body.
 
 === import libraries
 
-''import libraries'' allow the syntactical (compile-time) 
+''import libraries'' allow the syntactical (compile-time)
 and run-time parts of a compiled module to be separated into a normal
 compiled file and a shared library that only contains macro definitions
 and module information. This reduces the size of executables and
@@ -252,7 +252,7 @@ can simply load the import library to make the module-definition
 available. Syntax-support definitions defined with {{define-for-syntax}}
 and expansion-time expressions of the form {{(begin-for-syntax ...)}}
 will be added to import libraries to make them available for exported
-syntax. Note that these definitions will ruthlessly pollute the 
+syntax. Note that these definitions will ruthlessly pollute the
 toplevel namespace and so they should be used sparingly.
 
 
@@ -281,7 +281,7 @@ are defined and used:
  
    (define-syntax greet
      (syntax-rules ()
-       ((_ whom) 
+       ((_ whom)
         (begin
           (display "Hello, ")
           (display whom)
@@ -342,7 +342,7 @@ load it manually:
   #;1> ,l test.import.so
   ; loading test.import.so ...
   #;1> (import test)
-  #;2> 
+  #;2>
 
 Note that you must use import libraries if you compile code
 that depends on other modules. The compiler will not execute
@@ -381,7 +381,7 @@ You can compile mymod.scm into a shared object and compile trymod.scm into an ex
   csc trymod.scm
 
 You can execute trymod and it will load the shared object mymod.so.  When loading a shared
-object, the CHICKEN runtime uses the libld API to obtain the entry point ("C_toplevel") to invoke top-level initialization code of the module (which also setups up global bindings, etc.).  However, if you move the trymod executable to another directory, it won't be able to find mymod.so to load it.  If you want include the object into the executable directly, it needs to have a unique entry point name, separate from any other entry point of other linked modules.  
+object, the CHICKEN runtime uses the libld API to obtain the entry point ("C_toplevel") to invoke top-level initialization code of the module (which also setups up global bindings, etc.).  However, if you move the trymod executable to another directory, it won't be able to find mymod.so to load it.  If you want include the object into the executable directly, it needs to have a unique entry point name, separate from any other entry point of other linked modules.
 
 To give the module a name, we pass the "-unit modulename" argument to csc, and the name of the module is added to the entry point, so the entry point for mymod would become "C_mymod_toplevel".  Then the "-uses modulename" argument is passed to csc while compiling and linking trymod so it knows to use that entry point.
 
@@ -392,12 +392,12 @@ To compile mymod.scm and trymod.scm and link them into the executable trymod, is
 
 This creates an executable that is dynamically linked against libchicken.so, but which includes the mymod.o object file directly.
 
-To create an executable that is statically linked, issue the following commands: 
+To create an executable that is statically linked, issue the following commands:
 
   csc -c -static -J mymod.scm -unit mymod -o mymod.o
   csc -o trymod -static mymod.o -uses mymod trymod.scm
 
-If you later add another module you'd need to compile it similar to how mymod.scm is 
+If you later add another module you'd need to compile it similar to how mymod.scm is
 compiled and add a "modulename.o -uses modulename" to the csc command that compiles trymod.scm.
 
 It is possible to use the csm program installed by the [[/egg/csm|csm egg]] to do this automatically.  To produce a dynamically linked program you would do:
@@ -447,7 +447,7 @@ We can easily instantiate the functor for other inputs:
       (if (= i n)
           '()
           (cons (f i) (loop (+ i 1))))))
-  (define (multiply x y) 
+  (define (multiply x y)
     (list-tabulate x (lambda _ (list-tabulate y (lambda _ '*))))))
 
 (module star-squarer = (squaring-functor stars))

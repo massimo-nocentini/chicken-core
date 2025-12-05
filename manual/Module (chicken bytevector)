@@ -65,7 +65,7 @@ Returns a bytevector with the contents of {{STRING}}.
 
 <procedure>(latin1->string BYTEVECTOR)</procedure>
 
-Returns a string with the contents of {{BYTEVECTOR}} converted from Latin-1 (ISO-8859-1) encoding to UTF-8. 
+Returns a string with the contents of {{BYTEVECTOR}} converted from Latin-1 (ISO-8859-1) encoding to UTF-8.
 
 === string->latin1
 

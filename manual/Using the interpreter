@@ -138,7 +138,7 @@ error. Depending on whether compiled or interpreted code was executing
 and how much debugging information is available, the call trace shows
 trace-buffer entries of the following shape:
 
-  <frame-number>:<environment?> <mode> <procedure-name> <form> 
+  <frame-number>:<environment?> <mode> <procedure-name> <form>
 
 {{<frame-number>}} gives the number of the call-trace entry, counting
 from zero and beginning with the most recent entry. If a {{[]}}
@@ -164,7 +164,7 @@ variable lookup done internally by the interpreter.
 
 The {{,e}} command runs the editor given by:
 
-* The parameter {{editor-command}} in the {{(chicken csi)}} module should 
+* The parameter {{editor-command}} in the {{(chicken csi)}} module should
   return a string naming
   an external editor and defaults to {{#f}}, which means no editor is currently
   selected (so the following alternatives are tried).

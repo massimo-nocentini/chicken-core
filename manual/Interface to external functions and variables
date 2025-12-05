@@ -9,10 +9,10 @@ The macros in this section, such as {{define-foreign-type}} and {{define-externa
 Note: Using the foreign library directly from the interpreter or the REPL will not work.
 
 * [[Accessing external objects]]
-* [[Foreign type specifiers]]  
-* [[Embedding]]                
-* [[C interface]]        
-* [[Data representation]]         
+* [[Foreign type specifiers]]
+* [[Embedding]]
+* [[C interface]]
+* [[Data representation]]
 
 ---
 Previous: [[Included modules]]

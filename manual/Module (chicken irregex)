@@ -226,10 +226,10 @@ Examples:
 
 (irregex-replace "(.)(.)" "ab" 2 1 "*")  => "ba*"
 
-(irregex-replace "...bar" "xxfoobar" (lambda (m) 
+(irregex-replace "...bar" "xxfoobar" (lambda (m)
               (string-reverse (irregex-match-substring m)))) => "xxraboof"
 
-(irregex-replace "(...)(bar)" "xxfoobar"  2 (lambda (m) 
+(irregex-replace "(...)(bar)" "xxfoobar"  2 (lambda (m)
               (string-reverse (irregex-match-substring m 1)))) => "xxbaroof"
 </enscript>
 
@@ -772,7 +772,7 @@ You define a chunking API with {{make-irregex-chunker}}:
 
 <procedure>(make-irregex-chunker <get-next> <get-string> [<get-start> <get-end> <get-substring> <get-subchunk>])</procedure>
 
-where 
+where
 
 {{(<get-next> chunk) => }} returns the next chunk, or {{#f}} if there are no more chunks
 

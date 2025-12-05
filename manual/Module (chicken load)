@@ -120,7 +120,7 @@ taken from the following set:
 ; {{local}} : If {{local}} is given, then any C/C++ symbols defined in the dynamically loaded file are not available for subsequently loaded files and libraries. Use this if you have linked foreign code into your dynamically loadable file and if you don't want to export them (for example because you want to load another file that defines the same symbols).
 ; {{global}} : The default is {{global}}, which means all C/C++ symbols are available to code loaded at a later stage.
 ; {{now}} : If {{now}} is specified, all symbols are resolved immediately.
-; {{lazy}} : Unresolved symbols are resolved as code from the file is executed. This is the default. 
+; {{lazy}} : Unresolved symbols are resolved as code from the file is executed. This is the default.
 
 Note that this procedure does not control the way Scheme variables are handled -
 this facility is mainly of interest when accessing foreign code.

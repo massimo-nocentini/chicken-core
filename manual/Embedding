@@ -24,7 +24,7 @@ only if this function has been called by the containing application.
 
 === CHICKEN_initialize
 
- [C function] int CHICKEN_initialize (int heap, int stack, int symbols, void *toplevel) 
+ [C function] int CHICKEN_initialize (int heap, int stack, int symbols, void *toplevel)
 
 Initializes the Scheme execution context and memory. {{heap}} holds
 the number of bytes that are to be allocated for the secondary
@@ -109,7 +109,7 @@ Applies the procedure passed in {{func}} to the list of arguments {{args}}, writ
 
  [C macro] int CHICKEN_apply_to_string (C_word func, C_word args, char *result, int size)
 
-Applies the procedure passed in {{func}} to the list of arguments {{args}}, writing a textual 
+Applies the procedure passed in {{func}} to the list of arguments {{args}}, writing a textual
 representation of the result into {{result}}.
 
 

@@ -29,18 +29,18 @@ The write-shared procedure is the same as write, except that shared structure
 must be represented using datum labels for all pairs and vectors that appear
 more than once in the output.
 
-<procedure>(write-simple obj [port])</procedure> 
+<procedure>(write-simple obj [port])</procedure>
 
 The write-simple procedure is the same as write, except that shared structure
 is never represented using datum labels. This can cause write-simple not to
 terminate if
 obj contains circular structure.
 
-<procedure>(display obj [port])</procedure> 
+<procedure>(display obj [port])</procedure>
 
 Writes a representation of
 obj to the given textual output
-port. Strings that appear in the written representation are output as if by 
+port. Strings that appear in the written representation are output as if by
 write-string instead of by write. Symbols are not escaped. Character objects
 appear in the representation as if written by write-char instead of by write.
 

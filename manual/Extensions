@@ -22,7 +22,7 @@ are usually libraries.
 
 Extensions are technically nothing but dynamically loadable compiled
 files with added meta-data that describes dependencies to other
-eggs, version information and things like the author/maintainer 
+eggs, version information and things like the author/maintainer
 of the egg. Three tools provide an easy to use interface for
 installing eggs, removing them and querying the current
 status of installed eggs.
@@ -33,7 +33,7 @@ status of installed eggs.
 To install an egg, run the {{chicken-install}} program
 with the egg name as argument. The egg archive is
 downloaded, its contents extracted and the contained egg description
-file is analyzed and the appropriate commands executed. 
+file is analyzed and the appropriate commands executed.
 This file is an abstract description of the contents of
 the egg and
 will be translated by {{chicken-install}} into build- and installation
@@ -100,7 +100,7 @@ examples of simple eggs.
 
 ==== A simple library
 
-The simplest case is a single file that does not export any syntax. 
+The simplest case is a single file that does not export any syntax.
 For example
 
 <enscript highlight=scheme>
@@ -121,7 +121,7 @@ We need an {{.egg}} file to build and install our nifty extension:
  (components (extension hello)))
 </enscript>
 
-After entering 
+After entering
 
  $ chicken-install
 
@@ -181,7 +181,7 @@ administrative rights or use the {{-sudo}} option.
 The extension can be used from the command line:
 
  $ hello2 one two three
- Hello, 
+ Hello,
  one two three !
 
 De-installation is just as easy - use the {{chicken-uninstall}}

@@ -28,7 +28,7 @@ defaults to the value of {{(interaction-environment)}}.  This is a
 CHICKEN extension to R7RS, which, though strictly nonportable, is very
 common among Scheme implementations.
 
- (eval '(* 7 3) (environment '(scheme base))) 
+ (eval '(* 7 3) (environment '(scheme base)))
      ==> 21
  
  (let ((f (eval '(lambda (f x) (f x x))

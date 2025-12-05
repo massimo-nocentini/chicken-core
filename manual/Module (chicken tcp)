@@ -4,7 +4,7 @@
 == Module (chicken tcp)
 
 This module provides basic facilities for communicating over TCP
-sockets.  
+sockets.
 
 All errors related to failing network operations will raise a condition
 of kind {{(exn i/o net)}}.
@@ -43,7 +43,7 @@ Waits until a connection is established on the port on which
 output-port that can be used to communicate with the remote
 process. The current value of {{tcp-accept-timeout}} is used to
 determine the maximal number of milliseconds (if any) to wait
-until a connection is established. When a client connects any 
+until a connection is established. When a client connects any
 read- and write-operations on the returned ports will use the
 current values (at the time of the connection) of {{tcp-read-timeout}}
 and {{tcp-write-timeout}}, respectively, to determine the maximal

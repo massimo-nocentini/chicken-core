@@ -29,7 +29,7 @@ random manner as possible.
 
 <procedure>(pseudo-random-integer RANGE)</procedure>
 
-Returns a uniformly distributed pseudo random integer between 0 and 
+Returns a uniformly distributed pseudo random integer between 0 and
 {{RANGE-1}}, which may be a big integer.
 
 

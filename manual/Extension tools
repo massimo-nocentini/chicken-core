@@ -8,7 +8,7 @@ are {{chicken-install}}, {{chicken-uninstall}} and {{chicken-status}}.
 
 {{chicken-install}} can be used in two modes: first, as a simple package
 manager that downloads publicly available eggs (and their dependencies, if
-necessary) and compiles the contained extensions, installing them on 
+necessary) and compiles the contained extensions, installing them on
 a user's system.
 
 For development of eggs, {{chicken-install}} can also be invoked
@@ -42,7 +42,7 @@ Alternatively obtain write/execute access to the default location of the reposit
 (usually {{/usr/local/lib/chicken}}) to avoid running as
 root. {{chicken-install}} also provides a {{-sudo}} option to perform
 the last installation steps as root user, but do building and other
-.setup script processing as normal. A third solution is to 
+.setup script processing as normal. A third solution is to
 override {{VARDIR}} when building the system
 (for example by passing {{"VARDIR=/foo/bar"}} on the make command line,
 or by modifying {{config.make}}. Eggs will then be installed in
@@ -61,7 +61,7 @@ repository directory, set the
 environment variables to the full path of the new reopsitory and copy all files
 from the default repository into the new one.
 
-Note that your binary version can differ from the one given in 
+Note that your binary version can differ from the one given in
 the examples here, if your
 chicken version is older or newer than the one used in these examples.
 Check your default location for the correct binary-version number.
@@ -84,7 +84,7 @@ sense when used in combination with {{CHICKEN_REPOSITORY_PATH}}.
 {{CHICKEN_INSTALL_PREFIX}} is intended for special situations and should be used
 with care. It is a last-resort utility to customize where build-results are placed.
 
-Make sure the paths given in these 
+Make sure the paths given in these
 environment variables are absolute and not relative.
 
 === Static linking
@@ -98,7 +98,7 @@ the dynamically loadable version. Use the {{linkage}} egg
 description property to select in what modes a component should
 be built.
 
-To identify the necessary object files during linking of 
+To identify the necessary object files during linking of
 extensions, {{csc}}
 creates so-called "link files" and installs them along the
 statically compiled object file in the local egg repository.
@@ -118,7 +118,7 @@ before trying to retrieve an egg via the network.
 The file {{<PREFIX>/share/chicken/setup.defaults}} holds various
 parameters that define where eggs should be downloaded, together
 with more obscure options, and can be used to customize the
-sources where eggs will be retrieved from. Adding a line of 
+sources where eggs will be retrieved from. Adding a line of
 the form
 
 {{(location "<PATH>")}}
@@ -162,11 +162,11 @@ You can override the location of the cache by setting the
 ==== Retrieval
 
 First the egg names given on the command line (or, if no arguments
-are given, all eggs identified by {{.egg}} files in the current 
+are given, all eggs identified by {{.egg}} files in the current
 directory, including any in a subdirectory named {{chicken}})
 must be retrieved, either from a local source or from the official
 egg repository. Should the egg exist in the egg cache we check
-whether this cached version is out of date. A cached egg is 
+whether this cached version is out of date. A cached egg is
 considered out of date, if a) it is locally available and all cached
 files belonging to the egg do not have newer timestamps than the
 local files, or b) if it is a remotely retrieved egg and no

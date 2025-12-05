@@ -27,7 +27,7 @@ Then all of
  (magnitude z)                  ==> |x[3]|
  (angle z)                      ==> x[angle]
 
-are true, where 
+are true, where
 
     −π ≤ x[angle] ≤ π with x[angle] = x[4] + 2 * π * n for some integer n.
 

@@ -23,12 +23,12 @@ void CopyResults(double* vector) {
     memcpy(vector, bezierBuffer, totalOutputPoints * sizeof(double));
 }
 
-// The original C function which takes an array of doubles, 
+// The original C function which takes an array of doubles,
 // does some sort of transmogrification,
 // retains a new malloc'd array of the results
 // and returns the count
 int GenerateResults(double* vector, int count) {
-    ... 
+    ...
 }
 </enscript>
 
@@ -43,7 +43,7 @@ and the "egg" which calls the C functions can be implemented like this:
     (define GenerateResults (foreign-lambda integer "GenerateResults" f64vector integer))
 
     (define (input->output input)
-        (let* ([size (GenerateResults input (f64vector-length input))] 
+        (let* ([size (GenerateResults input (f64vector-length input))]
                [vect (make-f64vector size)])
             (printf "returned size ~a~%" size)
             (CopyResults vect)

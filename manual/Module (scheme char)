@@ -12,7 +12,7 @@ R7RS Operations on characters.
 <procedure>(char-ci<=? char[1] char[2] char[3] ...)</procedure><br>
 
 These procedures are similar to char=?​ ​et cetera, but they treat upper case
-and lower case letters as the same. For example, {{(char-ci=?​ ​#\A #\a)}} returns 
+and lower case letters as the same. For example, {{(char-ci=?​ ​#\A #\a)}} returns
 #t.
 
 Specifically, these procedures behave as if char-foldcase were applied to their
@@ -85,7 +85,7 @@ to the argument in the sense of string=?, the argument may be returned. Note
 that language-sensitive mappings and foldings are not used. The Unicode
 Standard prescribes special treatment of the Greek letter Σ, whose normal
 lower-case form is σ but which becomes ς at the end of a word. See UAX #44
-(part of the Unicode Standard) for details. However, implementations of 
+(part of the Unicode Standard) for details. However, implementations of
 string-downcase are not required to provide this behavior, and may choose to
 change Σ to σ in all cases.
 

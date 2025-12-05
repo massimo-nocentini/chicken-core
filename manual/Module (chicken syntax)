@@ -179,7 +179,7 @@ expressions as arguments.
 
 Returns an explicit-renaming macro transformer procedure created from
 the procedural macro body {{TRANSFORMER}}, which is a procedure of
-three arguments. 
+three arguments.
 
 This procedure will be called on expansion with the complete
 s-expression of the macro invocation, a rename procedure that

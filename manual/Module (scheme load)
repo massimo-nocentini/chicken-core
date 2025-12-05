@@ -13,7 +13,7 @@ them sequentially in the environment specified by
 environment-specifier. If
 environment-specifier is omitted, (interaction-environment) is assumed.
 
-The load procedure does not affect the values returned by current-input-port and 
+The load procedure does not affect the values returned by current-input-port and
 current-output-port. It returns an unspecified value.
 
 CHICKEN offers a few extensions to the R7RS definition of {{load}}:

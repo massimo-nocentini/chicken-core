@@ -4,7 +4,7 @@
 
 == Deployment
 
-CHICKEN generates fully native binaries that can be distributed like 
+CHICKEN generates fully native binaries that can be distributed like
 normal C/C++ programs. There are various methods of deployment,
 depending on platform, linkage, external dependencies and whether
 the application should be built from sources or precompiled and
@@ -60,13 +60,13 @@ An alternate way of distributing compiled code is to ship the runtime library
 that you use. To make this work, any runtime linker paths compiled into
 binary objects need to be deleted or changed by using a tool like {{chrpath(1)}}
 or {{patchelf(1)}}, to a value that indicates that
-the library lookup should start in the same location as the main program. 
+the library lookup should start in the same location as the main program.
 (e.g. {{$ORIGIN}} on Linux). Don't forget to copy any extensions from the
 extension repository ({{$PREFIX/lib/chicken/$BINARYVERSION}}).
 
 Alternatively start your program through a separate
 script that sets {{LD_LIBRARY_PATH}} (or {{DYLD_LIBRARY_PATH}} on
-MacOS X). 
+MacOS X).
 For more details, consult
 the documentation of the operating system that you use to build your
 deployed binaries.
@@ -74,7 +74,7 @@ deployed binaries.
 A directory containing all binaries is fully "portable" in the sense that it will run directly
 from an USB-stick or any other removable media. At runtime the program can find
 out its location by invoking the {{repository-path}} procedure, which will return
-the full pathname in which the application is located. 
+the full pathname in which the application is located.
 
 Should the program depend on more libraries which are not available by
 default on the intended target systems, and which you would like to
@@ -163,7 +163,7 @@ depends on.
 
 ==== MacOS X
 
-The {{otool(1)}} program will show you dynamic libraries that your 
+The {{otool(1)}} program will show you dynamic libraries that your
 application requires. {{DYLD_LIBRARY_PATH}}
 can be set to override runtime linker paths and {{install_name_tool(1)}}
 is available to patch runtime linker paths directly. All of these tools

@@ -192,8 +192,8 @@ When a procedure is applied to a list of arguments, the parameters and arguments
 
 * Required-parameters are bound to successive arguments starting with the first argument. It shall be an error if there are fewer arguments than required-parameters.
 * Next, the optional-parameters are bound with the remaining arguments. If there are fewer arguments than optional-parameters, then the remaining optional-parameters are bound to the result of the evaluation of their corresponding <initializer>, if one was specified, otherwise {{#f}}. The corresponding <initializer> is evaluated in an environment in which all previous parameters have been bound.
-* If there is a rest-parameter, then it is bound to a list containing all the remaining arguments left over after the argument bindings with required-parameters and optional-parameters have been made. 
-* If {{#!key}} was specified in the parameter-list, there should be an even number of remaining arguments. These are interpreted as a series of pairs, where the first member of each pair is a keyword specifying the parameter name, and the second member is the corresponding value. If the same keyword occurs more than once in the list of arguments, then the corresponding value of the first keyword is the binding value. If there is no argument for a particular keyword-parameter, then the variable is bound to the result of evaluating <initializer>, if one was specified, otherwise {{#f}}. The corresponding <initializer> is evaluated in an environment in which all previous parameters have been bound. 
+* If there is a rest-parameter, then it is bound to a list containing all the remaining arguments left over after the argument bindings with required-parameters and optional-parameters have been made.
+* If {{#!key}} was specified in the parameter-list, there should be an even number of remaining arguments. These are interpreted as a series of pairs, where the first member of each pair is a keyword specifying the parameter name, and the second member is the corresponding value. If the same keyword occurs more than once in the list of arguments, then the corresponding value of the first keyword is the binding value. If there is no argument for a particular keyword-parameter, then the variable is bound to the result of evaluating <initializer>, if one was specified, otherwise {{#f}}. The corresponding <initializer> is evaluated in an environment in which all previous parameters have been bound.
 
 Needing a special mention is the close relationship between the
 rest-parameter and possible keyword-parameters.  Declaring a
@@ -222,7 +222,7 @@ Example:
  ((lambda x x) 3 4 5 6)       => (3 4 5 6)
  ((lambda (x y #!rest z) z)
   3 4 5 6)                    => (5 6)
- ((lambda (x y #!optional z #!rest r #!key i (j 1)) 
+ ((lambda (x y #!optional z #!rest r #!key i (j 1))
      (list x y z i: i j: j))
   3 4 5 i: 6 i: 7)            => (3 4 5 i: 6 j: 1)
 
@@ -419,7 +419,7 @@ expressions then #f is returned.
  (or (= 2 2) (> 2 1))                    ===>  #t
  (or (= 2 2) (< 2 1))                    ===>  #t
  (or #f #f #f)         ===>  #f
- (or (memq 'b '(a b c)) 
+ (or (memq 'b '(a b c))
      (/ 3 0))                            ===>  (b c)
 
 <macro>(unless TEST EXP1 EXP2 ...)</macro>
@@ -607,7 +607,7 @@ are lambda expressions and the restriction is satisfied automatically.
 
 <macro>(letrec* <bindings> <body>) </macro>
 
-Syntax: <Bindings> has the form {{((<variable[1]> <init[1]>) ...)}}, and 
+Syntax: <Bindings> has the form {{((<variable[1]> <init[1]>) ...)}}, and
 <body> is a sequence of zero or more
 definitions followed by one or more expressions as described in section 4.1.4.
 It is an error for a <variable> to appear more than once in the list of
@@ -651,7 +651,7 @@ Evaluating {{(means '(3 (1 4)))}} returns three values: 8/3, 2.28942848510666
 
 <macro>(let-values <mv binding spec> <body>)</macro>
 
-Syntax: <Mv binding spec> has the form {{((<formals[1]> <init[1]>) ...)}}, 
+Syntax: <Mv binding spec> has the form {{((<formals[1]> <init[1]>) ...)}},
 where each <init> is an expression, and <body> is
 zero or more definitions followed by a sequence of one or more expressions as
 described in section 4.1.4. It is an error for a variable to appear more than
@@ -795,7 +795,7 @@ given time is called the dynamic environment.
 
 Returns a newly allocated parameter object, which is a procedure that accepts
 zero arguments and returns the value associated with the parameter object.
-Initially, this value is the value of {{(converter init)}}, or of {{init}} 
+Initially, this value is the value of {{(converter init)}}, or of {{init}}
 if the conversion procedure {{converter}} is not specified. The associated value can be temporarily changed
 using {{parameterize}}, which is described below.
 
@@ -820,7 +820,7 @@ of the parameters are restored without passing them to the conversion
 procedure. The results of the last expression in the <body> are returned as the
 results of the entire parameterize expression.
 
-Note: If the conversion procedure is not idempotent, the results of 
+Note: If the conversion procedure is not idempotent, the results of
 (parameterize ((x (x))) ...), which appears to bind the parameter
 
 x to its current value, might not be what the user expects.
@@ -901,13 +901,13 @@ the comma at-sign expression sequence. A comma at-sign should only
 appear within a list or vector <qq template>.
 
  `(list ,(+ 1 2) 4)          ===>  (list 3 4)
- (let ((name 'a)) `(list ,name ',name))           
+ (let ((name 'a)) `(list ,name ',name))
                  ===>  (list a (quote a))
- `(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b)           
+ `(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b)
                  ===>  (a 3 4 5 6 b)
- `(( foo ,(- 10 3)) ,@(cdr '(c)) . ,(car '(cons)))           
+ `(( foo ,(- 10 3)) ,@(cdr '(c)) . ,(car '(cons)))
                  ===>  ((foo 7) . cons)
- `#(10 5 ,(sqrt 4) ,@(map sqrt '(16 9)) 8)           
+ `#(10 5 ,(sqrt 4) ,@(map sqrt '(16 9)) 8)
                  ===>  #(10 5 2 4 3 8)
 
 Quasiquote forms may be nested. Substitutions are made only for
@@ -916,11 +916,11 @@ outermost backquote. The nesting level increases by one inside each
 successive quasiquotation, and decreases by one inside each
 unquotation.
 
- `(a `(b ,(+ 1 2) ,(foo ,(+ 1 3) d) e) f)           
+ `(a `(b ,(+ 1 2) ,(foo ,(+ 1 3) d) e) f)
                  ===>  (a `(b ,(+ 1 2) ,(foo 4 d) e) f)
  (let ((name1 'x)
        (name2 'y))
-   `(a `(b ,,name1 ,',name2 d) e))           
+   `(a `(b ,,name1 ,',name2 d) e))
                  ===>  (a `(b ,x ,'y d) e)
 
 The two notations `<qq template> and (quasiquote <qq template>) are
@@ -930,9 +930,9 @@ identical in all respects. ,<expression> is identical to (unquote
 lists whose car is one of these symbols may vary between
 implementations.
 
- (quasiquote (list (unquote (+ 1 2)) 4))           
+ (quasiquote (list (unquote (+ 1 2)) 4))
                  ===>  (list 3 4)
- '(quasiquote (list (unquote (+ 1 2)) 4))           
+ '(quasiquote (list (unquote (+ 1 2)) 4))
                  ===>  `(list ,(+ 1 2) 4)
       i.e., (quasiquote (list (unquote (+ 1 2)) 4))
 
@@ -1188,7 +1188,7 @@ This allows syntactic abstractions to expand into code containing ellipses.
 
 (be-like-begin sequence)
 
-(sequence 1 2 3 4)  ==> 4 
+(sequence 1 2 3 4)  ==> 4
 }}
 
 As an example, if {{let}} and {{cond}} have their standard meaning
@@ -1219,7 +1219,7 @@ which would result in an invalid procedure call.
 <macro>(syntax-error <message> <args> ...)</macro>
 
 {{syntax-error}} behaves similarly to {{error}} except that implementations with
-an expansion pass separate from evaluation should signal an error as soon as 
+an expansion pass separate from evaluation should signal an error as soon as
 {{syntax-error}} is expanded. This can be used as a syntax-rules <template> for a
 <pattern> that is an invalid use of the macro, which can provide more
 descriptive error messages. <message> is a string literal, and <args> arbitrary
@@ -1496,7 +1496,7 @@ in allowing the ellipsis identifier to be user-defined by passing it as the firs
 argument to the {{syntax-rules}} form. Also, "tail" patterns of the form
 
   (syntax-rules ()
-    ((_ (a b ... c) 
+    ((_ (a b ... c)
       ...
 
 are supported.
@@ -1539,7 +1539,7 @@ constructor, and field accessors and mutators are defined for each record type.
 <macro>(define-record-type <name> <constructor> <pred> <field> ...)</macro>
 
 Syntax: <name> and <pred> are identifiers. The <constructor> is of the form
-{{(<constructor name> <field name> ...)}} and each <field> is either of the form 
+{{(<constructor name> <field name> ...)}} and each <field> is either of the form
 {{(<field name> <accessor name>)}} or of the form {{(<field name> <accessor name> <modifier name>)}}. It is an error for the same identifier to occur more than once
 as a field name. It is also an error for the same identifier to occur more than
 once as an accessor or mutator name.
@@ -1659,15 +1659,15 @@ the contents of the file are spliced directly into the current library
 definition. This can be used, for example, to share the same export declaration
 among multiple libraries as a simple form of library interface.
 
-The {{cond-expand}} declaration has the same syntax and semantics as the 
+The {{cond-expand}} declaration has the same syntax and semantics as the
 {{cond-expand}} expression type, except that it expands to spliced-in library
 declarations rather than expressions enclosed in begin.
 
 One possible implementation of libraries is as follows: After all {{cond-expand}}
 library declarations are expanded, a new environment is constructed for the
-library consisting of all imported bindings. The expressions from all begin, 
+library consisting of all imported bindings. The expressions from all begin,
 {{include}} and {{include-ci}} library declarations are expanded in that environment in
-the order in which they occur in the library. Alternatively, {{cond-expand}} and 
+the order in which they occur in the library. Alternatively, {{cond-expand}} and
 {{import}} declarations may be processed in left to right order interspersed with
 the processing of other declarations, with the environment growing as imported
 bindings are added to it by each import declaration.
@@ -2146,7 +2146,7 @@ given in the procedure's signature.  The conventions are as follows:
 ; {{z, z1, ... zj, ...}} : complex number
 ; {{x, x1, ... xj, ...}} : real number
 ; {{y, y1, ... yj, ...}} : real number
-; {{q, q1, ... qj, ...}} : rational number 
+; {{q, q1, ... qj, ...}} : rational number
 ; {{n, n1, ... nj, ...}} : integer
 ; {{k, k1, ... kj, ...}} : exact non-negative integer
 
@@ -2535,7 +2535,7 @@ reported.
 
 Radix must be an exact integer.  The R7RS standard only requires
 implementations to support 2, 8, 10, or 16, but CHICKEN allows any
-radix between 2 and 36, inclusive (note: a bug in CHICKEN 5 currently 
+radix between 2 and 36, inclusive (note: a bug in CHICKEN 5 currently
 limits the upper bound to 16).  If omitted, radix defaults to
 10. The procedure number->string takes a number and a radix and
 returns as a string an external representation of the given number in
@@ -2881,7 +2881,7 @@ Returns the kth element of list. (This is the same as the car of
 
  (list-ref '(a b c d) 2)                ===>  c
  (list-ref '(a b c d)
-           (inexact->exact (round 1.8))) 
+           (inexact->exact (round 1.8)))
                  ===>  c
 
 <procedure>(list-set! list k obj)</procedure>
@@ -2892,10 +2892,10 @@ The {{list-set!}} procedure stores obj in element k of list.
 
  (let ((ls (list 'one 'two 'five!)))
    (list-set! ls 2 'three)
-   ls)      
+   ls)
  ==>  (one two three)
 
- (list-set! '(0 1 2) 1 "oops")  
+ (list-set! '(0 1 2) 1 "oops")
  ==> error  ; constant list
 
 <procedure>(memq obj list)</procedure><br>
@@ -2935,11 +2935,11 @@ fields of the pairs in alist, while {{assv}} uses {{eqv?}} and {{assoc}} uses
  (assq 'd e)             ===>  #f
  (assq (list 'a) '(((a)) ((b)) ((c))))
                          ===>  #f
- (assoc (list 'a) '(((a)) ((b)) ((c))))   
+ (assoc (list 'a) '(((a)) ((b)) ((c))))
                                     ===>  ((a))
- (assq 5 '((2 3) (5 7) (11 13)))    
+ (assq 5 '((2 3) (5 7) (11 13)))
                                     ===>  unspecified
- (assv 5 '((2 3) (5 7) (11 13)))    
+ (assv 5 '((2 3) (5 7) (11 13)))
                                     ===>  (5 7)
 
 Rationale:   Although they are ordinarily used as predicates, memq,
@@ -3024,11 +3024,11 @@ this procedure.
 The following examples assume that the implementation's standard case
 is lower case:
 
- (symbol->string 'flying-fish)     
+ (symbol->string 'flying-fish)
                                            ===>  "flying-fish"
  (symbol->string 'Martin)                  ===>  "martin"
  (symbol->string
-    (string->symbol "Malvina"))     
+    (string->symbol "Malvina"))
                                            ===>  "Malvina"
 
 <procedure>(string->symbol string)</procedure><br>
@@ -3042,19 +3042,19 @@ themselves. See symbol->string.
 The following examples assume that the implementation's standard case
 is lower case:
 
- (eq? 'mISSISSIppi 'mississippi)  
+ (eq? 'mISSISSIppi 'mississippi)
                  ===>  #t
- (string->symbol "mISSISSIppi")  
+ (string->symbol "mISSISSIppi")
                  ===>  the symbol with name "mISSISSIppi"
- (eq? 'bitBlt (string->symbol "bitBlt"))     
+ (eq? 'bitBlt (string->symbol "bitBlt"))
                  ===>  #f
  (eq? 'JollyWog
       (string->symbol
-        (symbol->string 'JollyWog)))  
+        (symbol->string 'JollyWog)))
                  ===>  #t
  (string=? "K. Harper, M.D."
            (symbol->string
-             (string->symbol "K. Harper, M.D.")))  
+             (string->symbol "K. Harper, M.D.")))
                  ===>  #t
 
 ==== Characters
@@ -3221,9 +3221,9 @@ Examples:
 
  "The word \"recursion\" has many meanings."
  "Another example:\ntwo lines of text"
- "Here's text \ 
+ "Here's text \
     containing just one line"
- "\x03B1; is named GREEK SMALL LETTER ALPHA." 
+ "\x03B1; is named GREEK SMALL LETTER ALPHA."
 
 The length of a string is the
 number of characters that it contains. This number is an exact, non-negative
@@ -3271,7 +3271,7 @@ of string and returns an unspecified value.
 <procedure>(string=? string[1] string[2] string[3] ...)</procedure><br>
 
 Returns #t if the two strings are the same length and contain the same
-characters in the same positions, otherwise returns #f. 
+characters in the same positions, otherwise returns #f.
 
 <procedure>(string<? string[1] string[2] string[3] ...)</procedure><br>
 <procedure>(string>? string[1] string[2] string[3] ...)</procedure><br>
@@ -3389,13 +3389,13 @@ k must be a valid index of vector. Vector-ref returns the contents of
 element k of vector.
 
  (vector-ref '#(1 1 2 3 5 8 13 21)
-             5)  
+             5)
                  ===>  8
  (vector-ref '#(1 1 2 3 5 8 13 21)
              (let ((i (round (* 2 (acos -1)))))
                (if (inexact? i)
                    (inexact->exact i)
-                   i))) 
+                   i)))
                  ===> 13
 
 <procedure>(vector-set! vector k obj)</procedure><br>
@@ -3405,10 +3405,10 @@ of vector. The value returned by vector-set! is unspecified.
 
  (let ((vec (vector 0 '(2 2 2 2) "Anna")))
    (vector-set! vec 1 '("Sue" "Sue"))
-   vec)      
+   vec)
                  ===>  #(0 ("Sue" "Sue") "Anna")
- 
- (vector-set! '#(0 1 2) 1 "doe")  
+
+ (vector-set! '#(0 1 2) 1 "doe")
                  ===>  error  ; constant vector
 
 <procedure>(vector->list vector [start [end]])</procedure><br>
@@ -3418,9 +3418,9 @@ Vector->list returns a newly allocated list of the objects contained in
 the elements of vector. List->vector returns a newly created vector
 initialized to the elements of the list list.
 
- (vector->list '#(dah dah didah))  
+ (vector->list '#(dah dah didah))
                  ===>  (dah dah didah)
- (list->vector '(dididit dah))   
+ (list->vector '(dididit dah))
                  ===>  #(dididit dah)
 
 <procedure>(vector-fill! vector fill)</procedure><br>
@@ -3510,9 +3510,9 @@ Returns #t if obj is a procedure, otherwise returns #f.
 
  (procedure? car)                    ===>  #t
  (procedure? 'car)                   ===>  #f
- (procedure? (lambda (x) (* x x)))   
+ (procedure? (lambda (x) (* x x)))
                                      ===>  #t
- (procedure? '(lambda (x) (* x x)))  
+ (procedure? '(lambda (x) (* x x)))
                                      ===>  #f
  (call-with-current-continuation procedure?)
                                      ===>  #t
@@ -3544,11 +3544,11 @@ Like in SRFI-1, this procedure allows the arguments to be of unequal
 length; it terminates when the shortest list runs out.  This is a
 CHICKEN extension to R7RS.
 
- (map cadr '((a b) (d e) (g h)))   
+ (map cadr '((a b) (d e) (g h)))
                  ===>  (b e h)
  
  (map (lambda (n) (expt n n))
-      '(1 2 3 4 5))                
+      '(1 2 3 4 5))
                  ===>  (1 4 27 256 3125)
  
  (map + '(1 2 3) '(4 5 6))                 ===>  (5 7 9)
@@ -3559,7 +3559,7 @@ CHICKEN extension to R7RS.
           count)
         '(a b)))                         ===>  (1 2) or (2 1)
 
-<procedure>(string-map proc string[1] string[2] ...)</procedure> 
+<procedure>(string-map proc string[1] string[2] ...)</procedure>
 
 It is an error if proc does not accept as many arguments as there are strings and return a single character.
 
@@ -3597,14 +3597,14 @@ proc is applied to the elements of the
 vectors is unspecified. If multiple returns occur from vector-map, the values
 returned by earlier returns are not mutated.
 
- (vector-map cadr '#((a b) (d e) (g h)))   
+ (vector-map cadr '#((a b) (d e) (g h)))
  ==> #(b e h)
 
  (vector-map (lambda (n) (expt n n))
-             '#(1 2 3 4 5))                
+             '#(1 2 3 4 5))
  ==> #(1 4 27 256 3125)
 
- (vector-map + '#(1 2 3) '#(4 5 6 7))       
+ (vector-map + '#(1 2 3) '#(4 5 6 7))
  ==>  #(5 7 9)
 
  (let ((count 0))
@@ -3635,9 +3635,9 @@ CHICKEN extension to R7RS.
 <procedure>(string-for-each proc string[1] string[2] ...)</procedure>
 
 It is an error if proc does not accept as many arguments as there are strings.
-The arguments to string-for-each are like the arguments to string-map, but 
+The arguments to string-for-each are like the arguments to string-map, but
 string-for-each calls
-proc for its side effects rather than for its values. Unlike string-map, 
+proc for its side effects rather than for its values. Unlike string-map,
 string-for-each is guaranteed to call
 proc on the elements of the
 strings in order from the first element(s) to the last, and the value returned
@@ -3655,9 +3655,9 @@ proc to mutate any of the strings.
 <procedure>(vector-for-each proc vector[1] vector[2] ...)</procedure>
 
 It is an error if proc does not accept as many arguments as there are vectors.
-The arguments to vector-for-each are like the arguments to vector-map, but 
+The arguments to vector-for-each are like the arguments to vector-map, but
 vector-for-each calls
-proc for its side effects rather than for its values. Unlike vector-map, 
+proc for its side effects rather than for its values. Unlike vector-map,
 vector-for-each is guaranteed to call
 proc on the elements of the
 vectors in order from the first element(s) to the last, and the value returned
@@ -3771,7 +3771,7 @@ continuations take exactly one value. Values might be defined as
 follows:
 
  (define (values . things)
-   (call-with-current-continuation 
+   (call-with-current-continuation
      (lambda (cont) (apply cont things))))
 
 <procedure>(call-with-values producer consumer)</procedure><br>
@@ -3857,7 +3857,7 @@ dynamic context of the {{dynamic-wind}} form.
 === Exceptions
 
 This section describes Scheme’s exception-handling and exception-raising
-procedures. 
+procedures.
 
 Exception handlers are one-argument procedures that determine the action the
 program takes when an exceptional situation is signaled. The system implicitly
@@ -3896,7 +3896,7 @@ thunk.
   (lambda ()
    (+ 1 (raise 'an-error))))
 
-prints  "something went wrong" 
+prints  "something went wrong"
 After printing, the second example then raises another exception.
 
 <procedure>(raise obj)</procedure>
@@ -3912,7 +3912,7 @@ obj and the object raised by the secondary exception is unspecified.
 <procedure>(raise-continuable obj)</procedure>
 
 Raises an exception by invoking the current exception handler on
-obj. The handler is called with the same dynamic environment as the call to 
+obj. The handler is called with the same dynamic environment as the call to
 raise-continuable, except that: (1) the current exception handler is the one
 that was in place when the handler being called was installed, and (2) if the
 handler being called returns, then it will again become the current exception
@@ -4107,7 +4107,7 @@ port, rendering the
 port incapable of delivering or accepting data. It is an error to apply the
 last two procedures to a port which is not an input or output port,
 respectively. Scheme implementations may provide ports which are simultaneously
-input and output ports, such as sockets; the close-input-port and 
+input and output ports, such as sockets; the close-input-port and
 close-output-port procedures can then be used to close the input and output
 sides of the port independently.
 
@@ -4120,7 +4120,7 @@ the string. If the string is modified, the effect is unspecified.
 
 <procedure>(open-output-string)</procedure>
 
-Returns a textual output port that will accumulate characters for retrieval by 
+Returns a textual output port that will accumulate characters for retrieval by
 get-output-string.
 
 <procedure>(get-output-string port)</procedure>
@@ -4148,7 +4148,7 @@ bytevector.
 
 <procedure>(open-output-bytevector)</procedure>
 
-Returns a binary output port that will accumulate bytes for retrieval by 
+Returns a binary output port that will accumulate bytes for retrieval by
 get-output-bytevector.
 
 <procedure>(get-output-bytevector port)</procedure>
@@ -4160,7 +4160,7 @@ so far in the order they were output.
 
 ==== Input
 
-If port is omitted from any input procedure, it defaults to the value returned by 
+If port is omitted from any input procedure, it defaults to the value returned by
 (current-input-port). It is an error to attempt an input operation on a closed
 port.
 
@@ -4299,7 +4299,7 @@ port and returns an unspecified value.
 <procedure>(write-bytevector bytevector [port [start [end]]])</procedure>
 
 See [[Module (chicken bytevector)|The (chicken bytevector) module]] for more
-information. 
+information.
 
 <procedure>(flush-output-port [port])</procedure>
 
@@ -4320,7 +4320,7 @@ return:
 
  (features)  ==>
    (r7rs ratios exact-complex full-unicode
-    gnu-linux little-endian 
+    gnu-linux little-endian
     fantastic-scheme
     fantastic-scheme-1.0
     space-ship-control-system)

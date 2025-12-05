@@ -4,7 +4,7 @@
 == Module (chicken numvector)
 
 Homogeneous numeric vector datatypes. This module provides a superset
-of [[http://srfi.schemers.org/srfi-4/srfi-4.html|SRFI-4]]. The 
+of [[http://srfi.schemers.org/srfi-4/srfi-4.html|SRFI-4]]. The
 module [[Module srfi-4|srfi-4]] is also available for compatibility reasons.
 
 When loaded, the feature identifier {{srfi-4}} is defined.
@@ -53,7 +53,7 @@ called float vectors):
 The only difference between the two float vector types is that
 {{f64vector}}s preserve at least as much precision as {{f32vector}}s.
 
-And there are two datatypes of inexact complex homogeneous vectors (which will be called complex vectors): 
+And there are two datatypes of inexact complex homogeneous vectors (which will be called complex vectors):
 
 <table>
 <tr><th>Datatype</th><th>Type of elements</th></tr>
@@ -82,12 +82,12 @@ analogous to those available for Scheme's heterogeneous vectors.
 The external representation of instances of the datatype {{XXXvector}}
 is {{#XXX( ...elements... )}}.
 
-For example, 
+For example,
 
  #u8(0 #e1e2 #xff)}}  ; a {{u8vector}} of length 3 containing 0, 100, 255
  #f64(-1.5)           ; a {{f64vector}} of length 1 containing -1.5.
 
-This external representation is also available in program source code. For example, 
+This external representation is also available in program source code. For example,
 
  (set! x '#u8(1 2 3))
 
@@ -106,8 +106,8 @@ is equivalent to
  '#u8(#\x7f #\x45 #\x4c #\x46 2 1)
 
 Character literals inside numeric vectors expand into the UTF-8 sequence of
-the characters they represent, for strings the contained characters 
-are interpreted in whatever encoding is used for the text file or stream 
+the characters they represent, for strings the contained characters
+are interpreted in whatever encoding is used for the text file or stream
 in which the literal appears.
 
 Note that {{#u8"..."}} can be used as an abbreviation for the special case

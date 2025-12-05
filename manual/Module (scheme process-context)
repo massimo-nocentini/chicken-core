@@ -9,7 +9,7 @@ Returns the command line passed to the process as a list of strings. The first
 string corresponds to the command name. It is
 an error to mutate any of these strings.
 
-<procedure>(exit [obj])</procedure> 
+<procedure>(exit [obj])</procedure>
 
 Runs all outstanding dynamic-wind after procedures, terminates the running program, and communicates an exit
 value to the operating system. If no argument is supplied, or if
@@ -38,7 +38,7 @@ Windows and Posix.
 Many operating systems provide each running process with an environment
 consisting of environment variables. (This environment is not to be confused
 with the Scheme environments that can be passed to eval)
-Both the name and value of an environment variable are strings. The procedure 
+Both the name and value of an environment variable are strings. The procedure
 get-environment-variable returns the value of the environment variable
 name, or #f if the named environment variable is not found. It may use locale
 information to encode the name and decode the value of the environment
@@ -46,7 +46,7 @@ variable. It is an error if
 get-environment-variable can’t decode the value. It is also an error to mutate
 the resulting string.
 
- (get-environment-variable "PATH") 
+ (get-environment-variable "PATH")
  ==> "/usr/local/bin:/usr/bin:/bin"
 
 <procedure>(get-environment-variables)</procedure>

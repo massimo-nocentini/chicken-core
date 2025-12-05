@@ -242,7 +242,7 @@ Yes, looks good.
 
 By default, the tools that CHICKEN provides to install, list and uninstall
 extensions will operate on both the host and the target repository.
-So running {{arm-chicken-install}} will compile and install the extension 
+So running {{arm-chicken-install}} will compile and install the extension
 for the host system and for the cross-target. To selectively install, uninstall
 or list extensions for either the host or the target system use the
 {{-host}} and {{-target}} options for the tools.
@@ -261,8 +261,8 @@ egg dependencies.
  > $HOME/cross/bin/mingw-csc -static hello.scm
  # hello.exe should now run on Window without any runtime DLL dependencies:
  > x86_64-w64-mingw32-objdump -p hello.exe | grep "DLL Name"
-    DLL Name: KERNEL32.dll 
-    DLL Name: msvcrt.dll 
+    DLL Name: KERNEL32.dll
+    DLL Name: msvcrt.dll
     DLL Name: USER32.dll
     DLL Name: WS2_32.dll
  # or using wine

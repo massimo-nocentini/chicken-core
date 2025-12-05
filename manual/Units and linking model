@@ -5,11 +5,11 @@
 
 Compiling Scheme code to standalone executables or dynamically
 loadable files is the most common and simplest way of using CHICKEN.
-The extension system handles straightforward cases of static linking 
+The extension system handles straightforward cases of static linking
 of modules in a mostly transparent way, which is usually sufficient
 for normal situations.
 
-But for more advanced uses like static linking, creating dynamic 
+But for more advanced uses like static linking, creating dynamic
 libraries or embedding compiled code into other (usually C/C++ based)
 applications it is helpful to understand the internal model CHICKEN
 uses to organize compiled code and separate compilation units.
@@ -34,7 +34,7 @@ startup process to execute the forms of the file.
 For standalone executables and dynamically loaded code the toplevel
 function has a fixed, predefined name ({{C_toplevel}}). For static
 linking or for using multiple toplevels in a shared library that combines
-multiple compilation units (like {{libchicken}}, for example), non-internal 
+multiple compilation units (like {{libchicken}}, for example), non-internal
 function names have to be different to be properly
 distinguished, so we assign a unique ''unit'' name to each compilation unit that
 is intended to be linked with other compilation units.
@@ -63,10 +63,10 @@ argument.
 
 Note that this model of using code from other compilation units does not
 address syntax definitions, it's for running pure, fully expanded and compiled
-code. Syntax and modules are handled at a higher level, using import 
+code. Syntax and modules are handled at a higher level, using import
 libraries, which are compiled or interpreted separate files setting up module
-information to allow the compiler to properly resolve module namespaces 
-and imports. 
+information to allow the compiler to properly resolve module namespaces
+and imports.
 
 ----
 Previous: [[Egg specification format]]
