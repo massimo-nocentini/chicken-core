@@ -415,9 +415,9 @@ scripts/chicken-flymake
 scripts/csc-trans
 scripts/compile-all
 scripts/compare-documentation-exports.scm
-scripts/mini-salmonella.scm
 scripts/make-wrapper.scm
 scripts/makedist.scm
+scripts/smoke-test.sh
 manual-html/Accessing external objects.html
 manual-html/Acknowledgements.html
 manual-html/Bibliography.html
