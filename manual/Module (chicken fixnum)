@@ -24,6 +24,7 @@ your code.
 <procedure>(fxmod N1 N2)</procedure>
 <procedure>(fxrem N1 N2)</procedure>
 <procedure>(fxneg N)</procedure>
+<procedure>(fxlen N)</procedure>
 <procedure>(fxmin N1 N2)</procedure>
 <procedure>(fxmax N1 N2)</procedure>
 <procedure>(fxand N1 N2)</procedure>
@@ -36,7 +37,8 @@ your code.
 
 {{fx+}} and friends are arithmetic fixnum operations.  These procedures do not
 check their arguments, so non-fixnum parameters will result in incorrect
-results. {{fxneg}} negates its argument.
+results. {{fxneg}} negates its argument, {{fxlen}} returns the integer length
+in bits.
 
 On division by zero, {{fx/}}, {{fxmod}} and {{fxrem}} signal a
 condition of kind {{(exn arithmetic)}}.

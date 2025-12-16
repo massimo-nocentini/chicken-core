@@ -51,7 +51,7 @@ should be a fixnum.
 
 Returns a string with the contents of {{BYTEVECTOR}}. if {{VALIDATE}}
 is given and false, then invalidly
-encoded characters do not signal an error - byte-sequences that do no represent
+encoded characters do not signal an error - byte-sequences that are not representing
 valid UTF-8 characters are retained and, if extracted with {{string-ref}}
 are converted to a trailing surrogate pair half in the range U+DC80 to U+DCFF.
 

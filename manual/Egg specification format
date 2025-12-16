@@ -73,10 +73,10 @@ symbol {{chicken}}, in case you want your extension to depend
 on a minimum required CHICKEN of {{VERSION}} or newer.
 
 This property can also be used to specify a minimum version of CHICKEN
-required by the egg.  For example, to require at least CHICKEN 5.3.0:
+required by the egg.  For example, to require at least CHICKEN 6.0.0:
 
 <enscript highlight=scheme>
-(dependencies (chicken "5.3.0"))
+(dependencies (chicken "6.0.0"))
 </enscript>
 
 ==== test-dependencies
