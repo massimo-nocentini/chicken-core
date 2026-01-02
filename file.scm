@@ -100,15 +100,25 @@ static C_word C_foundfile(C_word e,C_word b,C_word l) {
 # define C_closedir(h)       (closedir((DIR *)C_block_item(h, 0)), C_SCHEME_UNDEFINED)
 #endif
 
-static C_word C_u_i_symbolic_linkp(C_word path)
+static C_word C_u_i_lstat(C_word path)
 {
 #if !defined(_WIN32) || defined(__CYGWIN__)
   struct stat buf;
   if (lstat(C_c_string(path), &buf) == 0)
-    return C_mk_bool(S_ISLNK(buf.st_mode));
+    return C_fix(buf.st_mode);
+#else
+  struct _stat buf;
+  if(_wstat(C_utf16(C_utf16(path, 0), &buf) == 0)
+    return C_SCHEME_TRUE;
 #endif
   return C_SCHEME_FALSE;
 }
+
+#if !defined(_WIN32) || defined(__CYGWIN__)
+# define C_u_i_symbolic_linkp(m)		C_mk_bool(S_ISLNK(C_unfix(m)))
+#else
+# define C_u_i_symbolic_linkp(m)        C_SCHEME_FALSE
+#endif
 
 EOF
 ))
@@ -204,8 +214,11 @@ EOF
 		    (loop)
 		    (cons file (loop)))))))))
 
-(define-inline (*symbolic-link? name loc)
-  (##core#inline "C_u_i_symbolic_linkp" (##sys#make-c-string name loc)))
+(define-inline (*lstat name loc)
+  (##core#inline "C_u_i_lstat" (##sys#make-c-string name loc)))
+
+(define-inline (*symbolic-link? m)
+  (##core#inline "C_u_i_symbolic_linkp" m))
 
 (define-inline (*create-directory loc name)
   (unless (fx= 0 (##core#inline "C_mkdir" (##sys#make-c-string name loc)))
@@ -239,7 +252,7 @@ EOF
 		      follow-symlinks: #f)))
 	  (for-each
 	   (lambda (f)
-	     ((cond ((*symbolic-link? f 'delete-directory) delete-file)
+	     ((cond ((*symbolic-link? (*lstat f 'delete-directory)) delete-file)
 		    ((directory-exists? f) rmdir)
 		    (else delete-file))
 	      f))
@@ -259,7 +272,8 @@ EOF
   filename)
 
 (define (delete-file* file)
-  (and (file-exists? file) (delete-file file)))
+  (and (*lstat file 'delete-file*)
+       (delete-file file)))
 
 (define (rename-file oldfile newfile #!optional (clobber #f))
   (##sys#check-string oldfile 'rename-file)
@@ -431,7 +445,7 @@ EOF
 		 (rest (##sys#slot fs 1)))
 	    (cond ((directory-exists? f)
 		   (cond ((member filename '("." "..")) (loop dir rest r))
-			 ((and (*symbolic-link? f 'find-files) (not follow-symlinks))
+			 ((and (*symbolic-link? (*lstat f 'find-files)) (not follow-symlinks))
 			  (loop dir rest (if (pproc f) (action f r) r)))
 			 ((lproc f)
 			  (loop dir
