@@ -11135,7 +11135,7 @@ static C_regparm double decode_flonum_literal(C_char *str)
 
 static char *to_n_nary(C_uword num, C_uword base, int negp, int as_flonum)
 {
-  static char *digits = "0123456789abcdef";
+  static char *digits = "0123456789abcdefghijklmnopqrstuvwxyz";
   char *p;
   C_uword shift = C_ilen(base) - 1;
   int mask = (1 << shift) - 1;
@@ -11203,7 +11203,7 @@ void C_ccall C_fixnum_to_string(C_word c, C_word *av)
     radix = ((c == 3) ? 10 : C_unfix(av[ 3 ])),
     neg = ((num & C_INT_SIGN_BIT) ? 1 : 0);
 
-  if (radix < 2 || radix > 16) {
+  if (radix < 2 || radix > 36) {
     barf(C_BAD_ARGUMENT_TYPE_BAD_BASE_ERROR, "number->string", C_fix(radix));
   }
 
@@ -11287,7 +11287,7 @@ void C_ccall C_integer_to_string(C_word c, C_word *av)
     int len, radix_shift;
     size_t nbits;
 
-    if ((radix < 2) || (radix > 16)) {
+    if ((radix < 2) || (radix > 36)) {
       barf(C_BAD_ARGUMENT_TYPE_BAD_BASE_ERROR, "number->string", C_fix(radix));
     }
 
@@ -11327,7 +11327,7 @@ void C_ccall C_integer_to_string(C_word c, C_word *av)
 
 static void bignum_to_str_2(C_word c, C_word *av)
 {
-  static char *characters = "0123456789abcdef";
+  static char *characters = "0123456789abcdefghijklmnopqrstuvwxyz";
   C_word
     self = av[ 0 ],
     string = av[ 1 ],

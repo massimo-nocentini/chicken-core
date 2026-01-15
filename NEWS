@@ -84,6 +84,8 @@
   - Added the (chicken version) module.
   - "delete-file*" and "delete-file" now behave consistently with
     broken symlinks.
+  - number->string now accepts bases up to 36, where before it only accepted
+    bases up to 16 (thanks to Diego A. Mundo)
 
 - Syntax expander:
   - `syntax-rules' attempts to better support tail patterns with ellipses
