@@ -2586,6 +2586,14 @@ string (e.g. "#o177"). If radix is not supplied, then the default
 radix is 10. If string is not a syntactically valid notation for a
 number, then string->number returns #f.
 
+If the radix is higher than 18, the parser treats ambiguous syntax
+that might be a complex number, like {{{"+i"}}} and {{{"-i"}}} (and
+any prefixes like {{{"+1234i"}}}), as an integer.  If you want this to
+be parsed as a complex number, explicitly write down {{{"0+i"}}} to
+disambiguate.  Note that {{{number->string}}} will always emit complex
+numbers using the full notation, so it can always be read back by
+{{{string->number}}}.
+
  (string->number "100")                ===>  100
  (string->number "100" 16)             ===>  256
  (string->number "1e2")                ===>  100.0

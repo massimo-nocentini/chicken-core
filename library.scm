@@ -2965,8 +2965,6 @@ EOF
 	(string-append (number->string (%ratnum-numerator n) base)
 		       "/"
 		       (number->string (%ratnum-denominator n) base)))
-       ;; What about bases that include an "i"?  That could lead to
-       ;; ambiguous results.
        ((cplxnum? n) (let ((r (%cplxnum-real n))
                            (i (%cplxnum-imag n)) )
                        (string-append
@@ -3047,20 +3045,36 @@ EOF
          ;; position.  If the cdr is false, that's the end of the string.
          ;; If just #f is returned, the string contains invalid number syntax.
          (scan-digits
-          (lambda (start)
-            (let lp ((i start))
+          (lambda (start cplx?)
+            (let lp ((i start)
+                     ;; Drop is true when the last read character is
+                     ;; an "i" while reading the second part of a
+                     ;; rectangular complex number literal *and* the
+                     ;; radix is 19 or above.  In that case, we back
+                     ;; up one character to ensure we don't consume
+                     ;; the trailing "i", which we otherwise would.
+                     (drop? #f))
               (if (fx= i len)
-                  (and (fx> i start) (cons i #f))
+                  (and (fx> i start)
+                       (if drop?
+                           (cons (sub1 i) (sub1 i))
+                           (cons i #f)))
                   (let ((c (string-ref str i)))
                     (if (fx<= radix 10)
                         (if (and (char>=? c #\0) (char<=? c 0..r))
-                            (lp (fx+ i 1))
+                            (lp (fx+ i 1) #f)
                             (and (fx> i start) (cons i i)))
                         (if (or (and (char>=? c #\0) (char<=? c #\9))
                                 (and (char>=? c #\a) (char<=? c a..r))
                                 (and (char>=? c #\A) (char<=? c A..r)))
-                            (lp (fx+ i 1))
-                            (and (fx> i start) (cons i i)))))))))
+                            (lp (fx+ i 1)
+                                (and cplx? (fx>= radix 19)
+                                     (or (char=? c #\i)
+                                         (char=? c #\I))))
+                            (and (fx> i start)
+                                 (if (and drop? (not (char=? c #\/))) ;; Fractional numbers are an exception - the i may only come after the slash
+                                     (cons (sub1 i) (sub1 i))
+                                     (cons i i))))))))))
          (scan-hashes
           (lambda (start)
             (let lp ((i start))
@@ -3071,8 +3085,8 @@ EOF
                         (lp (fx+ i 1))
                         (and (fx> i start) (cons i i))))))))
          (scan-digits+hashes
-          (lambda (start neg? all-hashes-ok?)
-            (let* ((digits (and (not seen-hashes?) (scan-digits start)))
+          (lambda (start neg? cplx? all-hashes-ok?)
+            (let* ((digits (and (not seen-hashes?) (scan-digits start cplx?)))
                    (hashes (if digits
                                (and (cdr digits) (scan-hashes (cdr digits)))
                                (and all-hashes-ok? (scan-hashes start))))
@@ -3091,7 +3105,7 @@ EOF
                  (let ((sign (case (string-ref str start)
                                ((#\+) 'pos) ((#\-) 'neg) (else #f))))
                    (and-let* ((start (if sign (fx+ start 1) start))
-                              (end (scan-digits start)))
+                              (end (scan-digits start #f)))
                      (cons (##core#inline_allocate
 			    ("C_s_a_i_digits_to_integer" 6)
 			    str start (car end) radix (eq? sign 'neg))
@@ -3099,7 +3113,7 @@ EOF
          (scan-decimal-tail             ; The part after the decimal dot
           (lambda (start neg? decimal-head)
             (and (fx< start len)
-                 (let* ((tail (scan-digits+hashes start neg? decimal-head))
+                 (let* ((tail (scan-digits+hashes start neg? #f decimal-head))
                         (next (if tail (cdr tail) start)))
                    (and (or decimal-head (not next)
                             (fx> next start)) ; Don't allow empty "."
@@ -3121,13 +3135,13 @@ EOF
                                        (h (or decimal-head 0)))
                                   (cons (if t (+ h t) h) next)))))))))
          (scan-ureal
-          (lambda (start neg?)
+          (lambda (start neg? cplx?)
             (if (and (fx> len (fx+ start 1)) (eq? radix 10)
                      (eq? (string-ref str start) #\.))
                 (begin
                   (go-inexact! neg?)
                   (scan-decimal-tail (fx+ start 1) neg? #f))
-                (and-let* ((end (scan-digits+hashes start neg? #f)))
+                (and-let* ((end (scan-digits+hashes start neg? cplx? #f)))
                   (case (and (cdr end) (string-ref str (cdr end)))
                     ((#\.)
                      (go-inexact! neg?)
@@ -3147,7 +3161,7 @@ EOF
                     ((#\/)
                      (set! seen-hashes? #f) ; Reset flag for denominator
                      (and-let* (((fx> len (cdr end)))
-                                (d (scan-digits+hashes (fx+ (cdr end) 1) #f #f))
+                                (d (scan-digits+hashes (fx+ (cdr end) 1) #f cplx? #f))
                                 (num (car end))
                                 (denom (car d)))
                        (if (not (eq? denom 0))
@@ -3161,7 +3175,7 @@ EOF
                                   ((+1) (cons +inf.0 (cdr d))))))))
                     (else end))))))
          (scan-real
-          (lambda (start)
+          (lambda (start cplx?)
             (and (fx< start len)
                  (let* ((sign (case (string-ref str start)
                                 ((#\+) 'pos) ((#\-) 'neg) (else #f)))
@@ -3171,7 +3185,10 @@ EOF
                           ((#\i #\I)
                            (or (and sign
                                     (cond
-                                     ((fx= (fx+ next 1) len) ; [+-]i
+                                     ((and (fx= (fx+ next 1) len)  ; [+-]i
+                                           ;; Reject bare "+i" in higher radixes where this would be ambiguous
+                                           (or cplx?
+                                               (fx< radix 19)))
                                       (cons (if (eq? sign 'neg) -1 1) next))
                                      ((and (fx<= (fx+ next 5) len)
                                            (string-ci=? (substring str next (fx+ next 5)) "inf.0"))
@@ -3180,7 +3197,7 @@ EOF
                                             (and (fx< (fx+ next 5) len)
                                                  (fx+ next 5))))
                                      (else #f)))
-                               (scan-ureal next (eq? sign 'neg))))
+                               (scan-ureal next (eq? sign 'neg) cplx?)))
                           ((#\n #\N)
                            (or (and sign
                                     (fx<= (fx+ next 5) len)
@@ -3189,9 +3206,9 @@ EOF
                                            (cons (make-nan)
                                                  (and (fx< (fx+ next 5) len)
                                                       (fx+ next 5)))))
-                               (scan-ureal next (eq? sign 'neg))))
-                          (else (scan-ureal next (eq? sign 'neg)))))))))
-         (number (and-let* ((r1 (scan-real offset)))
+                               (scan-ureal next (eq? sign 'neg) cplx?)))
+                          (else (scan-ureal next (eq? sign 'neg) cplx?))))))))
+         (number (and-let* ((r1 (scan-real offset #f)))
                    (case (and (cdr r1) (string-ref str (cdr r1)))
                      ((#f) (car r1))
                      ((#\i #\I) (and (fx= len (fx+ (cdr r1) 1))
@@ -3200,7 +3217,7 @@ EOF
                                      (make-rectangular 0 (car r1))))
                      ((#\+ #\-)
                       (set! seen-hashes? #f) ; Reset flag for imaginary part
-                      (and-let* ((r2 (scan-real (cdr r1)))
+                      (and-let* ((r2 (scan-real (cdr r1) #t))
                                  ((cdr r2))
                                  ((fx= len (fx+ (cdr r2) 1)))
                                  ((or (eq? (string-ref str (cdr r2)) #\i)
@@ -3208,7 +3225,7 @@ EOF
                         (make-rectangular (car r1) (car r2))))
                      ((#\@)
                       (set! seen-hashes? #f) ; Reset flag for angle
-                      (and-let* ((r2 (scan-real (fx+ (cdr r1) 1)))
+                      (and-let* ((r2 (scan-real (fx+ (cdr r1) 1) #f))
                                  ((not (cdr r2))))
                         (make-polar (car r1) (car r2))))
                      (else #f)))))

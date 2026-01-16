@@ -517,3 +517,41 @@
 (assert (eqv? 0.0 (string->number "0.0")))
 (assert (eqv? -0.0 (string->number "-0e1")))
 (assert (eqv? 0.0 (string->number "0e-1")))
+
+;; Nonambiguous cases involving reading of complex numbers in lower bases
+(assert (eqv? (string->number "-i" 18) (make-rectangular 0 -1)))
+(assert (eqv? (string->number "-1i" 18) (make-rectangular 0 -1)))
+(assert (eqv? (string->number "0-1i" 18) (make-rectangular 0 -1)))
+(assert (eqv? (string->number "i" 18) #f))
+(assert (eqv? (string->number "+i" 18) (make-rectangular 0 1)))
+(assert (eqv? (string->number "+1i" 18) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+i" 18) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+1i" 18) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+1/1i" 18) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+i/1i" 18) #f))
+(assert (eqv? (string->number "+i/1i" 18) #f))
+
+;; Ambiguous cases involving reading of complex numbers in higher bases and their disambiguated versions
+(assert (eqv? (string->number "-i" 19) -18))
+(assert (eqv? (string->number "-1i" 19) -37))
+(assert (eqv? (string->number "0-1i" 19) (make-rectangular 0 -1)))
+(assert (eqv? (string->number "i" 19) 18))
+(assert (eqv? (string->number "+i" 19) 18))
+(assert (eqv? (string->number "+1i" 19) 37))
+(assert (eqv? (string->number "0+i" 19) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+1i" 19) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+1/1i" 19) (make-rectangular 0 1)))
+(assert (eqv? (string->number "0+i/1i" 19) (make-rectangular 0 18)))
+(assert (eqv? (string->number "+i/1i" 19) 18/37))
+
+;; Nonambiguous cases (polar notation requires no trailing "i")
+;; This makes sure the i is correctly consumed by the integer parser in higher bases
+;; and the number is invalid in lower bases.
+(assert (eqv? (string->number "+1@i" 18) #f))
+(assert (eqv? (string->number "+1@1i" 18) #f))
+(assert (eqv? (string->number "+1@1/i" 18) #f))
+(assert (eqv? (string->number "+1@1/1i" 18) #f))
+(assert (eqv? (string->number "+1@i" 19) (make-polar 1 18)))
+(assert (eqv? (string->number "+1@1i" 19) (make-polar 1 37)))
+(assert (eqv? (string->number "+1@1/i" 19) (make-polar 1 1/18)))
+(assert (eqv? (string->number "+1@1/1i" 19) (make-polar 1 1/37)))
