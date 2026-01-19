@@ -166,7 +166,7 @@
 
 ;;; parse custom configuration information from script
 
-(define (parse-custom-config arg)
+(define (parse-custom-config eggfile arg)
   (define (read-all)
     (let loop ((lst '()))
       (let ((x (read)))
@@ -174,12 +174,15 @@
             (reverse lst)
             (loop (append (reverse (flatten x)) lst))))))
   (if (and (list? arg) (eq? 'custom-config (car arg)))
-      (let* ((arg (cdr arg))
+      (let* ((args (cdr arg))
              (in (with-input-from-pipe
-                  (conc default-csi " -s "
-                        (if (list? arg)
-                            (string-intersperse (map ->string arg) " ")
-                            (->string arg)))
+                  (string-intersperse
+                    (append 
+                      (list default-csi "-s"
+                            (make-pathname (pathname-directory eggfile)
+                                           (->string (car args))))
+                      (cdr args))
+                    " ")
                   read-all)))
         (map ->string in))
       (list arg)))
@@ -421,12 +424,12 @@
          (set! opts
            (apply append
              opts
-             (map parse-custom-config (cdr info)))))
+             (map (cut parse-custom-config eggfile <>) (cdr info)))))
         ((link-options)
          (set! lopts
            (apply append
              lopts
-             (map parse-custom-config (cdr info)))))
+             (map (cut parse-custom-config eggfile <>) (cdr info)))))
         ((source)
          (set! src (->string (arg info 1 name?))))
         ((install-name)
@@ -461,7 +464,7 @@
         (else (compile-common info compile-data/include 'data/include))))
     (define (compile-options info)
       (define (custom info)
-        (map parse-custom-config info))
+        (map (cut parse-custom-config eggfile <>) info))
       (case (car info)
         ((csc-options) (set! opts (apply append opts (custom (cdr info)))))
         ((link-options) (set! lopts (apply append lopts (custom (cdr info)))))
