@@ -75,6 +75,8 @@
     has been added.
   - Added `include-path' to (chicken platform) module.
   - Added `number-vector-data' to (chicken memory representation) module.
+  - `define-library' has been extended to support the `export-all'
+    specification.
   - The platform-identifier "mingw32" has been renamed to "mingw".
   - Library procedures that return paths now always convert them to
     contain forward slashes, 'make-pathname' always uses "/" for path

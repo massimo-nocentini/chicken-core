@@ -1253,9 +1253,10 @@
             (name (cadr x))
             (real-name (library-id name))
             (decls (cddr x))
+            (all #f)
             (dummy (register-r7rs-module real-name)))
        (define (parse-exports specs)
-	 (map (lambda (spec)
+         (map (lambda (spec)
                 (cond ((and (list? spec)
                             (= 3 (length spec))
                             (eq? 'rename (car spec)))
@@ -1310,6 +1311,10 @@
                    (##sys#check-syntax 'export spec '(_ . #(_ 0)))
                    `(##core#begin ,@(parse-exports (cdr spec))
                                   ,(parse-decls more)))
+                  ((export-all)
+                   (##sys#check-syntax 'export-all spec '(_))
+                   (set! all #t)
+                   (parse-decls more))
                   ((import)
                    (##sys#check-syntax 'import spec '(_ . #(_ 0)))
                    `(##core#begin ,(parse-imports (cdr spec))
@@ -1339,16 +1344,19 @@
                                   ,(parse-decls more)))
                   (else (fail spec)))))
                 (else (fail (car decls)))))
-       `(##core#module ,real-name ((,dummy))
-	 ;; gruesome hack: we add a dummy export for adding indirect exports
-	 (##core#define-syntax ,dummy
-	  (##sys#er-transformer (##core#lambda (x r c) (##core#undefined))))
-	 ;; Set up an R7RS environment for the module's body.
-	 (import-for-syntax (only scheme.base ,@implicit-r7rs-library-bindings))
-	 (import (only scheme.base ,@implicit-r7rs-library-bindings)
-            (only chicken.module export/rename))
-	 ;; Now process all toplevel library declarations
-	 ,(parse-decls decls))))))
+       (let ((pd (parse-decls decls)))
+         `(##core#module ,real-name ,(if all #t `((,dummy)))
+           ;; gruesome hack: we add a dummy export for adding indirect exports
+           ,@(if all
+                 '()
+                 `((##core#define-syntax ,dummy
+                    (##sys#er-transformer (##core#lambda (x r c) (##core#undefined))))))
+           ;; Set up an R7RS environment for the module's body.
+           (import-for-syntax (only scheme.base ,@implicit-r7rs-library-bindings))
+           (import (only scheme.base ,@implicit-r7rs-library-bindings)
+                   (only chicken.module export/rename))
+           ;; Now process all toplevel library declarations
+           ,pd))))))
 
 (##sys#extend-macro-environment
  'export '()

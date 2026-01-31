@@ -1619,6 +1619,8 @@ A <library declaration> is any of:
 
 *   {{(export <export spec> ...)}}
 
+*   {{(export-all)}}
+
 *   {{(import <import set> ...)}}
 
 *   {{(begin <command or definition> ...)}}
@@ -1645,6 +1647,10 @@ as the name of the binding within the library. A {{rename}} spec exports the
 binding defined within or imported into the library and named by <identifier
 [1]> in each {{(<identifier[1]> <identifier[2]>)}} pairing, using <identifier[2]>
 as the external name.
+
+As an extension to R7RS, CHICKEN allows the {{(export-all)}} specifier,
+which exports all defined entities to be visible when importing the
+library.
 
 An import declaration provides a way to import the identifiers exported by
 another library.
