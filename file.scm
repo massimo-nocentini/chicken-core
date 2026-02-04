@@ -108,7 +108,7 @@ static C_word C_u_i_lstat(C_word path)
     return C_fix(buf.st_mode);
 #else
   struct _stat buf;
-  if(_wstat(C_utf16(C_utf16(path, 0), &buf) == 0)
+  if(_wstat(C_utf16(path, 0), &buf) == 0)
     return C_SCHEME_TRUE;
 #endif
   return C_SCHEME_FALSE;
