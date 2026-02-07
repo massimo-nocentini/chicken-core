@@ -102,9 +102,9 @@ ifdef GCHOOKS
 	echo "#define C_GC_HOOKS" >>$@.tmp
 endif
 # Feature macros are unsupported on FreeBSD and DragonFly
-	echo "#if !defined(__FreeBSD__) && !defined(__DragonFly__)" >> $@
-	echo "# define C_USE_STD_FEATURE_MACROS" >> $@
-	echo "#endif" >> $@
+	echo "#if !defined(__FreeBSD__) && !defined(__DragonFly__)" >> $@.tmp
+	echo "# define C_USE_STD_FEATURE_MACROS" >> $@.tmp
+	echo "#endif" >> $@.tmp
 	cat $@.tmp chicken-defaults.h >$@.tmp2
 	rm $@.tmp
 	mv $@.tmp2 $@
