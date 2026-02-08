@@ -102,8 +102,10 @@ Call procedure {{THUNK}} with the current output-port temporarily
 bound to {{PORT}}.
 
 ==== make-input-port
+==== make-binary-input-port
 
 <procedure>(make-input-port READ-CHAR CHAR-READY? CLOSE #!key peek-char read-bytevector read-line)</procedure>
+<procedure>(make-binary-input-port READ-U8 U8-READY? CLOSE #!key peek-u8 read-bytevector)</procedure>
 
 Returns a custom input port. Common operations on this port are
 handled by the given parameters, which should be procedures of no
@@ -113,13 +115,15 @@ procedures:
 * {{READ-CHAR}} is the most fundamental reader, and must always be
 present.  It is a thunk which is called when the next character is
 to be read and it should return a character or {{#!eof}}.
-* {{CHAR-READY?}} is a thunk which is called when {{char-ready?}}
-is called on this port and should return {{#t}} or {{#f}}.
+* {{READ-U8}} similar to {{READ-CHAR}} but reads and returns a byte.
+* {{CHAR-READY?}}/{{U8-READY?}} are thunks which are called when {{char-ready?}}
+or {{u8-ready?}} are called on this port and should return {{#t}} or {{#f}}.
 * {{CLOSE}} is a thunk which is called when the port is closed.
-* {{peek-char}} is a thunk which is called when {{peek-char}} is
-called on this port and should return a character or {{#!eof}}. If it
-is not provided or {{#f}}, {{READ-CHAR}} will be used instead and the
-created port object handles peeking automatically (by calling {{READ}}
+* {{peek-char}}/{{peek-u8}} are thunks which are called when {{peek-char}} 
+or {{peek-u8}} are
+called on this port and should return a character/byte or {{#!eof}}. If
+not provided or {{#f}}, {{READ-CHAR}}/{{READ-U8}} will be used instead and the
+created port object handles peeking automatically (by calling the reader procedure
 and buffering the character).
 * {{read-bytevector}} is called when {{read-bytevector}} or {{read-string!}} is called (or the
 higher-level non-mutating {{read-string}} and {{read-bytevector}}).  It will be invoked with 4
@@ -144,21 +148,25 @@ number (ie, the line) and slot 5 is the column number (ie, the
 character on the line).  If the port's positions are not updated,
 {{port-position}} won't work.
 
-Note that reading binary input from a custom input is only possible
+Note that reading binary input from a custom non-binary input port is only possible
 when the {{read-bytevector}} operation is given, as byte-input can
 currently not ben synthesized from character-input operations.
 
 
 ==== make-output-port
+==== make-binary-output-port
 
 <procedure>(make-output-port WRITE CLOSE #!key force-output)</procedure>
+<procedure>(make-binary-output-port WRITE CLOSE #!key force-output write-bytevector)</procedure>
 
 Returns a custom output port. Common operations on this port are handled
 by the given parameters, which should be procedures.  {{WRITE}} is
 called when output is sent to the port and receives a single argument,
-a string.  {{CLOSE}} is called when the port is closed and should
+a string (or bytevector for binary ports).  {{CLOSE}} is called when the port is closed and should
 be a procedure of no arguments. {{force-output}} (if provided) is called
-for flushing the output port.
+for flushing the output port. The optional {{write-bytevector}} allows
+more optimized writing of partial buffers and takes 3 arguments: a
+bytevector, a starting position and an endong position.
 
 
 ==== with-error-output-to-port

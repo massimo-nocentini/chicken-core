@@ -40,8 +40,8 @@
   (call-with-input-string
    call-with-output-string
    copy-port
-   make-input-port
-   make-output-port
+   make-input-port make-binary-input-port
+   make-output-port make-binary-output-port
    port-encoding
    port-fold
    port-for-each
@@ -420,6 +420,116 @@ char *ttyname(int fd) {
       (##sys#set-port-data! port data)
       port) ) )
 
+(define make-binary-input-port
+  (lambda (read ready? close #!key peek-u8 read-bytevector)
+    (define read-bv
+      (if read-bytevector
+          (lambda (p n dest start)
+            (let* ((off (getlast p dest start))
+                   (start (##core#inline "C_fixnum_plus" start off))
+                   (n (##core#inline "C_fixnum_difference" n off)))
+              (##core#inline "C_fixnum_plus"
+               off 
+               (read-bytevector dest start (##core#inline "C_fixnum_plus" start n)))))
+          (lambda (p n dest start)
+            (let* ((off (getlast p dest start))
+                   (start (##core#inline "C_fixnum_plus" start off))
+                   (n (##core#inline "C_fixnum_difference" n off)))
+              (##core#inline "C_fixnum_plus"
+               off 
+               (let loop ((i 0))
+                 (if (##core#inline "C_fixnum_greater_or_equal_p" i n)
+                     i
+                     (let ((b (read)))
+                       (cond ((eof-object? b) i)
+                             (else
+                               (##core#inline "C_setsubbyte" 
+                                dest
+                                (##core#inline "C_fixnum_plus" i start)
+                                b)
+                               (loop (##core#inline "C_fixnum_plus" i 1))))))))))))
+    (define (getlast p dest i)
+      (let ((last (##sys#slot p 10)))
+        (cond (last 
+                (##core#inline "C_setsubbyte" dest i (char->integer last))
+                (##sys#setislot p 10 #f)
+                1)
+              (else 0))))
+    (define (tochar x) 
+      (if (eof-object? x)
+          x
+          (integer->char x)))
+    (let* ((class
+             (vector
+               (lambda (p)                ; read-char
+                 (let ((last (##sys#slot p 10)))
+                   (cond (last
+                           (##sys#setislot p 10 #f)
+                           last)
+                         (else (tochar (read)) ) ) ))
+               (lambda (p)                ; peek-char
+                 (let ((last (##sys#slot p 10)))
+                   (cond (peek-u8 (tochar (peek-u8)))
+                         (last last)
+                         (else
+                           (let ((last (tochar (read))))
+                             (##sys#setislot p 10 last)
+                             last) ) ) ) )
+               #f                         ; write-char
+               #f                         ; write-bytevector
+               (lambda (p d)              ; close
+                 (close))
+               #f                         ; flush-output
+               (lambda (p)                ; char-ready?
+                 (ready?) )
+               read-bv        ; read-bytevector!
+               #f                  ; read-line
+               #f))
+           (data (vector #f))
+           (port (##sys#make-port 1 class "(custom binary)" 'custom)))
+      (##sys#setslot port 10 #f)
+      (##sys#setslot port 14 'binary)
+      (##sys#setslot port 15 'binary)
+      (##sys#set-port-data! port data)
+      port) ) )
+      
+(define make-binary-output-port
+  (lambda (write close #!key force-output write-bytevector)
+    (define write-bv 
+      (or write-bytevector
+          (lambda (bv start end) 
+            (##sys#check-bytevector bv 'make-binary-output-port)
+            (let loop ((i start)
+                       (end (or end (##sys#size bv))))
+               (unless (##core#inline "C_fixnum_greater_or_equal_p" i end)
+                 (write (##core#inline "C_subbyte" bv i))
+                 (loop (##core#inline "C_fixnum_plus" i 1) end))))))
+    (let* ((class
+             (vector
+               #f                      ; read-char
+               #f                      ; peek-char
+               (lambda (p c)       ; write-char
+                 (let* ((len (##core#inline "C_utf_bytes" c))
+                        (buf (##sys#make-bytevector len))
+                        (n (##core#inline "C_utf_insert" buf 0 c)))
+                   (write-bv buf 0 len)))
+               (lambda (p bv from to)           ; write-bytevector
+                 (write-bv bv from to))
+               (lambda (p d)       ; close
+                 (close))
+               (lambda (p)           ; flush-output
+                 (when force-output (force-output)) )
+               #f                      ; char-ready?
+               #f                      ; read-bytevector!
+               #f                         ; read-line
+               #f))                         ; read-buffered
+           (data (vector #f))
+           (port (##sys#make-port 2 class "(custom binary)" 'custom)))
+      (##sys#set-port-data! port data)
+      (##sys#setslot port 15 'binary)
+      (##sys#setslot port 14 'binary)
+      port) ) )
+      
 (define (make-bidirectional-port i o)
   (let* ((class (vector
 		 (lambda (_)             ; read-char

@@ -4,7 +4,8 @@
 	chicken.process chicken.process.signal chicken.tcp chicken.number-vector)
 
 (import (only (scheme base) input-port-open? output-port-open? open-input-string
-              write-string open-output-string get-output-string))
+              write-string open-output-string get-output-string
+              flush-output-port peek-u8 u8-ready? read-u8 write-u8))
 
 (include "test.scm")
 (test-begin "ports")
@@ -212,7 +213,7 @@ EOF
                ((exn i/o file) (printf "OK\n") okay))))))))
 
 (cond-expand
-  ((not mingw)
+  ((not windows)
 
    (define proc (process-fork (lambda () (tcp-accept (tcp-listen 8080)))))
 
@@ -427,6 +428,79 @@ EOF
 (test-group
  "read-line process port position tests"
  (test-port-position read-echo-line/pos))
+ 
+;; binary custom ports
+
+(define count 1)
+(define open #t)
+
+(define (rdb)
+  (let ((c count))
+    (cond ((> c 5) #!eof)
+          (else
+            (set! count (+ count 1))
+            c))))
+
+(define (brdy?) #t)
+(define (cls) (set! open #f))
+
+(define (rbv bv from to)
+  (let loop ((i from))
+    (if (>= i to) 
+        (- i from)
+        (let ((b (rdb)))
+          (if (eof-object? b)
+          	  (- i from)
+              (begin
+                (u8vector-set! bv i b)
+                (loop (+ i 1))))))))
+      
+(define (pkb) count)
+     
+(define written '())
+
+(define (wrb b)
+  (set! written (append written (list b))))
+  
+(define (wrbv bv from to)
+  (do ((i from (+ i 1)))
+      ((>= i to) (- from to))
+      (wrb (u8vector-ref bv i))))
+
+(define p1 (make-binary-input-port rdb brdy? cls))
+
+(assert (u8-ready? p1))
+(assert (= (read-u8 p1) 1))
+(assert (= (peek-u8 p1) 2))
+(assert (= (read-u8 p1) 2))
+(assert (equal? (read-bytevector 4 p1) '#u8(3 4 5)))
+(assert (eof-object? (read-u8 p1)))
+(close-output-port p1)
+
+(set! count 1)
+(define p2 (make-binary-input-port rdb brdy? cls peek-u8: pkb read-bytevector: rbv))
+
+(assert (u8-ready? p2))
+(assert (= (read-u8 p2) 1))
+(assert (= (peek-u8 p2) 2))
+(assert (= (read-u8 p2) 2))
+(assert (equal? (read-bytevector 4 p2) '#u8(3 4 5)))
+(assert (eof-object? (read-u8 p2)))
+(close-output-port p2)
+
+(define p3 (make-binary-output-port wrb cls))
+(write-u8 99 p3)
+(write-bytevector '#u8(10 11 12) p3)
+(close-output-port p3)
+(assert (equal? written '(99 10 11 12)))
+
+(set! written '())
+(define p4 (make-binary-output-port wrb cls force-output: void write-bytevector: wrbv))
+(write-u8 99 p4)
+(write-bytevector '#u8(10 11 12) p4)
+(flush-output-port p4)
+(close-output-port p4)
+(assert (equal? written '(99 10 11 12)))
 
 ;; bytevector I/O, moved here from srf-4-tests.scm:
 ;; Ticket #1124: read-u8vector! w/o length, dest smaller than source.

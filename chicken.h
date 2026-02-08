@@ -1388,6 +1388,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_u_i_char_downcase(x)          C_make_character(C_utf_char_downcase(C_character_code(x)))
 #define C_utf_length(bv)                C_fix(C_utf_count((C_char *)C_data_pointer(bv), C_header_size(bv) - 1))
 #define C_utf_range_length(bv, from, to)    C_fix(C_utf_count((C_char *)C_data_pointer(bv) + C_unfix(from), C_unfix(to) - C_unfix(from)))
+#define C_utf_bytes_needed(b)  			C_fix(C_utf_expect(C_unfix(b)))
 
 #define C_i_list_ref(lst, i)            C_i_car(C_i_list_tail(lst, i))
 #define C_u_i_list_ref(lst, i)          C_u_i_car(C_i_list_tail(lst, i))
