@@ -791,6 +791,7 @@
 			   (#(tmp2) (#(tmp1)))))))
 
 (scheme#char-ready? (#(procedure #:enforce) scheme#char-ready? (#!optional input-port) boolean))
+(scheme#u8-ready? (#(procedure #:enforce) scheme#u8-ready? (#!optional input-port) boolean))
 
 (scheme#make-rectangular (#(procedure #:enforce #:clean) scheme#make-rectangular (number number) number))
 (scheme#make-polar (#(procedure #:enforce #:clean) scheme#make-polar (number number) number))
