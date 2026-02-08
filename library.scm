@@ -260,7 +260,7 @@ EOF
      open-input-string open-output-string open-input-bytevector
      open-output-bytevector get-output-string get-output-bytevector
      features make-list port? call-with-port peek-u8 make-parameter
-     string-map vector-map string-for-each vector-for-each
+     string-map vector-map string-for-each vector-for-each u8-ready?
      make-list list-set! write-string eof-object list-copy
      string->vector vector->string textual-port? binary-port?
      input-port-open? output-port-open? floor/ truncate/
@@ -757,6 +757,7 @@ EOF
 
 (define (eof-object? x) (##core#inline "C_eofp" x))
 (define char-ready?)
+(define u8-ready?)
 (define read-char)
 (define peek-char)
 (define read)
@@ -4532,6 +4533,11 @@ EOF
 (set! scheme#char-ready?
   (lambda (#!optional (port ##sys#standard-input))
     (##sys#check-input-port port #t 'char-ready?)
+    ((##sys#slot (##sys#slot port 2) 6) port) )) ; char-ready?
+    
+(set! scheme#u8-ready? 
+  (lambda (#!optional (port ##sys#standard-input))
+    (##sys#check-input-port port #t 'u8-ready?)
     ((##sys#slot (##sys#slot port 2) 6) port) )) ; char-ready?
 
 (set! scheme#read-char
