@@ -839,7 +839,8 @@
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
 			 `(,@(if custom '("sh") '())
-			   ,cmd ,@(if (eq? mode 'host) '("-host") '())
+			   ,cmd "-setup-mode"
+                           ,@(if (eq? mode 'host) '("-host") '())
 			   "-s" "-c" "-C" ,(conc "-I" srcdir)
 			   ,@opts ,src "-o" ,out)
 			 platform)
