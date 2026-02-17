@@ -242,7 +242,8 @@ EOF
   (lambda (name #!optional recursive)
     (define (rmdir dir)
       (let ((sname (##sys#make-c-string dir)))
-	(unless (fx= 0 (##core#inline "C_rmdir" sname))
+	(when (and (not (fx= 0 (##core#inline "C_rmdir" sname)))
+	           (not (fx= (##sys#update-errno) (foreign-value "ENOENT" int))))
 	  (posix-error #:file-error 'delete-directory "cannot delete directory" dir))))
     (##sys#check-string name 'delete-directory)
     (if recursive
