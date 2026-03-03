@@ -280,12 +280,6 @@
   (let ((exports (module-export-list mod))
 	(mname (module-name mod))
 	(dlist (module-defined-list mod)))
-    (define (indirect? id)
-      (let loop ((exports exports))
-	(and (not (null? exports))
-	     (or (and (pair? (car exports))
-		      (memq id (cdar exports)))
-		 (loop (cdr exports))))))
     (define (warn msg id)
       (##sys#warn
        (string-append msg " in module `" (symbol->string mname) "'")
