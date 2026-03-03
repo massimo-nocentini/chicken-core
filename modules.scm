@@ -203,22 +203,36 @@
     (##sys#warn "redefinition of syntax binding" sym)))
 
 (define (##sys#register-export sym mod)
+  (define (find-dummy dummy xl)
+    (cond ((null? xl) #f)
+          ((and (pair? (car xl)) (eq? dummy (caar xl))) (car xl))
+          (else (find-dummy dummy (cdr xl)))))
   (when mod
-    (let ((exp (or (eq? #t (module-export-list mod))
-		   (find-export sym mod #t)))
-	  (ulist (module-undefined-list mod)))
-      (##sys#toplevel-definition-hook	; in compiler, hides unexported bindings
-       sym (module-rename sym (module-name mod)) exp)
-      (and-let* ((a (assq sym ulist)))
-	(set-module-undefined-list! mod (delete a ulist eq?)))
-      (check-for-redef sym (##sys#current-environment) (##sys#macro-environment))
-      (set-module-exist-list! mod (cons sym (module-exist-list mod)))
-      (when exp
-	(dm "defined: " sym)
-	(set-module-defined-list!
-	 mod
-	 (cons (cons sym #f)
-	       (module-defined-list mod)))))) )
+    (let ((el (module-export-list mod))
+          (name (module-name mod)))
+      ;; add any export to the list of indirect exports for the dummy symbol
+      ;; ("gruesome hack", part 2)
+      (and-let* ((dummy (##sys#get name '##r7rs#module)))
+        (unless (eq? sym dummy)
+          (cond ((memq sym el))
+                ((find-dummy dummy el) =>
+                 (lambda (dummylist)
+                   (set-cdr! dummylist (cons sym (cdr dummylist))))))))
+      (let ((exp (or (eq? #t el)  
+                     (find-export sym mod #t)))
+            (ulist (module-undefined-list mod)))
+        (##sys#toplevel-definition-hook ; in compiler, hides unexported bindings
+         sym (module-rename sym name) exp)
+        (and-let* ((a (assq sym ulist)))
+          (set-module-undefined-list! mod (delete a ulist eq?)))
+        (check-for-redef sym (##sys#current-environment) (##sys#macro-environment))
+        (set-module-exist-list! mod (cons sym (module-exist-list mod)))
+        (when exp
+          (dm "defined: " sym)
+          (set-module-defined-list!
+            mod
+            (cons (cons sym #f)
+                  (module-defined-list mod)))))) ))
 
 (define (##sys#register-syntax-export sym mod val)
   (when mod

@@ -1346,7 +1346,8 @@
                 (else (fail (car decls)))))
        (let ((pd (parse-decls decls)))
          `(##core#module ,real-name ,(if all #t `((,dummy)))
-           ;; gruesome hack: we add a dummy export for adding indirect exports
+           ;; gruesome hack: we add a dummy export for adding indirect exports,
+           ;; see ##sys#register-export, which does the other half.
            ,@(if all
                  '()
                  `((##core#define-syntax ,dummy
