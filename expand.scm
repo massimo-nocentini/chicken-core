@@ -1837,9 +1837,10 @@
  (##sys#er-transformer
   (lambda (form r c)
     (##sys#check-syntax 'delay form '(_ _))
-    `(,(r 'delay-force)
-      (##sys#make-promise
-       (##sys#call-with-values (##core#lambda () ,(cadr form)) ##sys#list))))))
+      `(##sys#make-promise 
+         (##core#lambda () 
+           (##sys#make-promise
+             (##sys#call-with-values (##core#lambda () ,(cadr form)) ##sys#list)))))))
 
 (##sys#extend-macro-environment
  'syntax-error
