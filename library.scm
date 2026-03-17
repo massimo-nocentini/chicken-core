@@ -4597,7 +4597,7 @@ EOF
 (set! chicken.base#keyword-style
   (make-parameter #:suffix (lambda (x) (when x (##sys#check-keyword x 'keyword-style)) x)))
 
-(define ##sys#current-read-table (make-parameter (##sys#make-structure 'read-table #f #f #f)))
+(define ##sys#current-read-table (make-parameter (##sys#make-structure 'read-table '() '() '())))
 
 (define ##sys#read-warning
   (let ([string-append string-append])
@@ -5104,12 +5104,12 @@ EOF
 	  (r-spaces)
 	  (let* ((c (##sys#peek-char-0 port))
 		 (srst (##sys#slot crt 1))
-		 (h (and (not (eof-object? c)) srst
-			 (##sys#slot srst (char->integer c)) ) ) )
-	    (if h
+		 (h (and (not (eof-object? c))
+			 (assq c srst))))
+	    (if (and h (##sys#slot h 1))
                 ;; then handled by read-table entry
 		(##sys#call-with-values
-		 (lambda () (h c port))
+		 (lambda () ((##sys#slot h 1) c port))
 		 (lambda xs (if (null? xs) (readrec) (car xs))))
 		;; otherwise chicken extended r5rs syntax
 		(case c
@@ -5154,12 +5154,12 @@ EOF
                                       (else (##sys#read-error port "undefined datum" n))))
                            			 ;; #<num> handled by parameterized # read-table entry?
                                ((and (char? dchar2)
-                                     spdrst
-                                     (##sys#slot spdrst (char->integer dchar2))) =>
+                                     (let ((a (assq dchar2 spdrst)))
+                                       (and a (##sys#slot a 1) a))) =>
                                 (lambda (h)
-                                  (h (##sys#call-with-values
-                                       (lambda () (h dchar2 port n))
-                                       (lambda xs (if (null? xs) (readrec) (car xs)))))))
+                                  (##sys#call-with-values
+                                    (lambda () ((##sys#slot h 1) dchar2 port n))
+                                    (lambda xs (if (null? xs) (readrec) (car xs))))))
                                ;; #<num>
 			       ((or (eq? dchar2 #\)) (char-whitespace? dchar2))
 				(##sys#sharp-number-hook port n))
@@ -5169,11 +5169,11 @@ EOF
 				      "invalid parameterized read syntax"
 				      c n dchar2) ) ) ))
 		      (else (let* ((sdrst (##sys#slot crt 2))
-				   (h (and sdrst (##sys#slot sdrst (char->integer dchar)) ) ) )
-			      (if h
+				   (h (assq dchar sdrst)))
+			      (if (and h (##sys#slot h 1))
                                   ;; then handled by # read-table entry
 				  (##sys#call-with-values
-				   (lambda () (h dchar port))
+				   (lambda () ((##sys#slot h 1) dchar port))
 				   (lambda xs (if (null? xs) (readrec) (car xs))))
                                   ;; otherwise chicken extended R7RS syntax
 				  (case (char-downcase dchar)

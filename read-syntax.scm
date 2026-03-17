@@ -49,16 +49,16 @@
   (if (symbol? chr)
       (set-read-mark! chr proc)
       (let ((crt (current-read-table)))
-	(unless (##sys#slot crt slot)
-	  (##sys#setslot crt slot (##sys#make-vector 256 #f)))
 	(##sys#check-char chr loc)
-	(let ((i (char->integer chr)))
-	  (##sys#check-range i 0 256 loc)
-	  (cond (proc
-		 (##sys#check-closure proc loc)
-		 (##sys#setslot (##sys#slot crt slot) i (wrap proc)))
-		(else
-		 (##sys#setslot (##sys#slot crt slot) i #f)))))))
+	(let ((i (char->integer chr))
+              (a (assq chr (##sys#slot crt slot))))
+	  (when proc 
+            (##sys#check-closure proc loc)
+            (set! proc (wrap proc)))
+          (if a 
+              (##sys#setslot a 1 proc)
+              (##sys#setslot crt slot 
+                (cons (cons chr proc) (##sys#slot crt slot))))))))
 
 (define set-read-syntax!
   (syntax-setter
@@ -87,15 +87,15 @@
 ;;; Read-table operations:
 
 (define (copy-read-table rt)
+  (define (copy lst)
+    (map (lambda (a) (cons (car a) (cdr a))) lst))
   (##sys#check-structure rt 'read-table 'copy-read-table)
   (##sys#make-structure
    'read-table
-   (let ((t1 (##sys#slot rt 1)))
-     (and t1 (##sys#vector-resize t1 (##sys#size t1) #f)))
-   (let ((t2 (##sys#slot rt 2)))
-     (and t2 (##sys#vector-resize t2 (##sys#size t2) #f)))
-   (let ((t3 (##sys#slot rt 3)))
-     (and t3 (##sys#vector-resize t3 (##sys#size t3) #f)))))
+   (copy (##sys#slot rt 1))
+   (copy (##sys#slot rt 2))
+   (copy (##sys#slot rt 3))))
+
 
 ;;; SRFI-10:
 
