@@ -7800,8 +7800,8 @@ static C_word C_curdir(C_word buf, C_word size) {
 
 (set! scheme#string->vector
  (lambda (s #!optional start end)
+  (##sys#check-string s 'string->vector)
   (let ((s->v (lambda (s start end)
-                (##sys#check-string s 'string->vector)
                 (let* ((len (##sys#slot s 1)))
                   (##sys#check-range/including start 0 end 'string->vector)
                   (##sys#check-range/including end start len 'string->vector)
