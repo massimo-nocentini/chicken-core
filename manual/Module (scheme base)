@@ -3454,7 +3454,7 @@ the elements of the string string between start and end.
 In both procedures, order is preserved.
 
  (string->vector "ABC")   ==>   #(#\A #\B #\C)
- (vector->string #(#\1 #\2 #\3)  ==> "123"
+ (vector->string #(#\1 #\2 #\3))  ==> "123"
 
 <procedure>(vector-copy vector [start [end]])</procedure>
 
