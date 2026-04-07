@@ -20,7 +20,7 @@ computes the natural logarithm of z (not the base ten logarithm) if a single arg
 z if two arguments are given. The asin, acos, and atan procedures compute
 arcsine (sin^−1), arc-cosine (cos^−1), and arctangent (tan^−1),
 respectively. The two-argument variant of atan computes {{(angle (make-rectangular x y))}}
- (see below), even in implementations that don’t support complex numbers.
+(see below), even in implementations that don’t support complex numbers.
 
 In general, the mathematical functions log, arcsine, arc-cosine, and arctangent
 are multiply defined. The value of log z is defined to be the one whose

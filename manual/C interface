@@ -1616,11 +1616,7 @@ The C version of {{(not (pair? x))}}.
   from one thread to another, then the continuation of the current thread
   is captured and saved. Any pending C stack frame still active from a
   callback will remain on the stack until the threads is re-activated
-  again. This means that in a multithreading situation, when C callbacks
-  are involved, the available nursery space can be smaller than expected.
-  So doing many nested Scheme->C->Scheme calls can reduce the available
-  memory up to the point of thrashing. It is advisable to have only a
-  single thread with pending C stack-frames at any given time.
+  again. This means that in a multithreading situation, when C callbacks are involved, the available nursery space can be smaller than expected. So doing many nested Scheme->C->Scheme calls can reduce the available memory up to the point of thrashing. It is advisable to have only a single thread with pending C stack-frames at any given time.
 * Pointers to Scheme data objects should not be stored in local or
   global variables while calling back to Scheme.  Any Scheme object not
   passed back to Scheme will be reclaimed or moved by the garbage collector.
