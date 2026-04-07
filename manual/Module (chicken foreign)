@@ -116,7 +116,7 @@ See that {{define-foreign-variable}} will not generate C declarations
 or memory allocation code; use it to include references to variables
 in external C code. To actually create Scheme variables visible from C,
 use {{define-external}} (see the Manual section on
-[[/manual/Module (chicken foreign)#Callbacks|Callbacks]]).
+[[Module (chicken foreign)#Callbacks|Callbacks]]).
 For example, the following code:
 <enscript lang="scheme">
 (import (chicken foreign))
@@ -165,7 +165,7 @@ commences in the calling code.
 <macro>(foreign-safe-lambda RETURNTYPE NAME ARGTYPE ...)</macro>
 
 This is similar to {{foreign-lambda}}, but also allows the called
-function to call Scheme functions. See [[/manual/Module (chicken foreign)#Callbacks|Callbacks]].
+function to call Scheme functions. See [[Module (chicken foreign)#Callbacks|Callbacks]].
 
 
 === foreign-safe-lambda*
@@ -174,7 +174,7 @@ function to call Scheme functions. See [[/manual/Module (chicken foreign)#Callba
 
 This is similar to {{foreign-lambda*}}, but also allows the called
 function to call Scheme functions and allocate Scheme data-objects.
-See [[/manual/Module (chicken foreign)#Callbacks|Callbacks]].
+See [[Module (chicken foreign)#Callbacks|Callbacks]].
 
 
 
@@ -197,7 +197,7 @@ C_values(N + 2, av);
 
 where {{N}} is the number of values to be returned, and {{X1, ...}}
 are the results, which should be Scheme data objects.
-See [[/manual/C interface#constructors|Constructors]] for the APIs to construct Scheme data objects from C primitives.
+See [[C interface#constructors|Constructors]] for the APIs to construct Scheme data objects from C primitives.
 When returning multiple values, the return-type should be omitted.
 Of course, if you have to dynamically compute the values, you do not have to use C's
 array initialization syntax, but you can just assign them one by one.
@@ -249,7 +249,7 @@ is an optional qualifier for the foreign procedure definition, like
 (define-external (foo (c-string x)) int (string-length x))
 </enscript>
 
-You can use [[/manual/Module (chicken foreign)#location|{{location}}]]
+You can use [[Module (chicken foreign)#location|{{location}}]]
 to get a pointer to the defined C function, which can be passed to a
 C function that takes a callback function pointer argument, for example.
 

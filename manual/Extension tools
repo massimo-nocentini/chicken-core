@@ -58,7 +58,7 @@ or by modifying the {{config.make}} configuration file. If you want to
 override this location after chicken is installed, you can create a
 repository directory, set the
 {{CHICKEN_INSTALL_REPOSITORY}} and/or {{CHICKEN_REPOSITORY_PATH}}
-environment variables to the full path of the new reopsitory and copy all files
+environment variables to the full path of the new repository and copy all files
 from the default repository into the new one.
 
 Note that your binary version can differ from the one given in

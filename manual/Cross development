@@ -196,8 +196,9 @@ To cross compile from Linux to Windows, you will need to use a Linux build of Mi
 As far as the runtime is concerned, the procedure is the same that what have been shown before, using the platform name {{cross-linux-mingw}}.
 
 The procedure to compile the compiler however require some more care:
-* The platform name is {{linux}} because it is where you want your compiler to run.
-* You have to change {{TARGET_LIBRARIES}} to {{-lm -lws2_32}}.
+* The platform name is {{linux}} because it is where you want your compiler to run
+* You have to set the {{TARGET_LIBRARIES}} as this is different between Linux and Windows:
+  For Linux target, this variable contains {{-ldl -lm}}, while for Windows target it should be {{-lm -lws2_32}}.
 * You have to make sure you are pointing to the right toolchain (see next paragraph).
 
 In order to compile the C sources that Chicken will produce you have to make sure that you provide the right toolchain in both runtime and compiler steps.

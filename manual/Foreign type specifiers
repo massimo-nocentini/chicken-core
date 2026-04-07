@@ -249,7 +249,7 @@ e.g. via {{(address->pointer 0)}}.)
 <type>pointer-vector</type><br>
 <type>nonnull-pointer-vector</type>
 
-A vector of foreign pointer objects; see [[/man/5/Module (chicken memory)#pointer-vectors|Pointer vectors]].
+A vector of foreign pointer objects; see [[Module (chicken memory)#pointer-vectors|Pointer vectors]].
 Permitted only as an argument type, not as return type.  This type was introduced in CHICKEN 4.6.3.
 
 A pointer vector contains a C array of void pointers, and the argument

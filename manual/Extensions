@@ -82,11 +82,12 @@ custom script to compile your extension's code. See below for more information.
 
 === Creating eggs
 
-An egg can be created by placing the code and some special
-files in a directory of its own.
-For example, if your egg is called {{foo}}, create a directory called {{foo}}
-and put the egg code there (the directory's name is not actually important).
-
+An egg can be created by placing its code and some special
+files in a directory named after the desired name of the egg. 
+For example, if your
+egg is called {{foo}}, create a directory called {{foo}}
+and put the egg code there.
+ 
 Eggs need an egg description file {{<egg name>.egg}}.  This file
 indicates how the egg is to be compiled and provides some information
 about the egg (author, license, dependencies etc).
