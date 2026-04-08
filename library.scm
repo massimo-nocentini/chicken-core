@@ -682,7 +682,7 @@ EOF
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
          (len (##core#inline "C_utf_string_foldcase" bv buf n)))
-    (##sys#buffer->string buf 0 len)))
+    (##sys#buffer->string! buf len)))
     
 (define (string-downcase str)
   (##sys#check-string str 'string-downcase)
@@ -690,7 +690,7 @@ EOF
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
          (len (##core#inline "C_utf_string_downcase" bv buf n)))
-    (##sys#buffer->string buf 0 len)))
+    (##sys#buffer->string! buf len)))
 
 (define (string-upcase str)
   (##sys#check-string str 'string-upcase)
@@ -698,7 +698,7 @@ EOF
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
          (len (##core#inline "C_utf_string_upcase" bv buf n)))
-    (##sys#buffer->string buf 0 len)))
+    (##sys#buffer->string! buf len)))
 
 ;;; Procedures:
 
@@ -1676,6 +1676,11 @@ EOF
          (bv (##sys#allocate-bytevector (fx+ n 1) 0)))
     (##core#inline "C_utf_fill" bv fill)
     (##core#inline_allocate ("C_a_ustring" 5) bv size)))
+
+(define (##sys#buffer->string! buf len)
+  (##core#inline "C_utf_set_bv_size" buf len)
+  (##core#inline_allocate ("C_a_ustring" 5) buf
+                          (##core#inline "C_utf_range_length" buf 0 len)))
 
 (define (##sys#buffer->string buf start len)
   (let ((bv (##sys#make-bytevector (fx+ len 1))))
@@ -3500,7 +3505,7 @@ EOF
   (let* ((len (##sys#size bv))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" len 2)))
          (n (##core#inline "C_latin_to_utf" bv buf 0 len)))
-    (##sys#buffer->string buf 0 n)))
+    (##sys#buffer->string! buf n)))
 
 (define (bytevector=? b1 b2)
   (##sys#check-bytevector b1 'bytevector=?)
@@ -6579,7 +6584,7 @@ EOF
   (let* ([len (##core#inline "C_fetch_c_strlen" b i)]
 	 [bv (##sys#make-bytevector (fx+ len 1) 0)] )
     (##core#inline "C_peek_c_string" b i bv len)
-    (##sys#buffer->string bv 0 len)))
+    (##sys#buffer->string! bv len)))
 
 (define (##sys#peek-and-free-c-string b i)
   (let ((str (##sys#peek-c-string b i)))
@@ -7825,7 +7830,7 @@ static C_word C_curdir(C_word buf, C_word size) {
                       (let loop ((i 0)
                                  (p start))
                         (if (fx= p end)
-                            (##sys#buffer->string bv 0 i)
+                            (##sys#buffer->string! bv i)
                             (let ((c (##sys#slot v p)))
                               (##sys#check-char c 'vector->string)
                               (loop (##core#inline "C_utf_insert" bv i c)
@@ -7842,7 +7847,7 @@ static C_word C_curdir(C_word buf, C_word size) {
         (let loop ((i 0)
                    (j 0))
           (if (fx>= j len)
-              (##sys#buffer->string ans 0 i)
+              (##sys#buffer->string! ans i)
               (let ((r (proc (string-ref s j))))
                 (##sys#check-char r 'string-map)
                 (loop (##core#inline "C_utf_insert" ans i r)

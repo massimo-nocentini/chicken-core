@@ -1950,6 +1950,7 @@ C_fctexport C_word C_utf_char_foldcase(C_word c) C_regparm;
 C_fctexport C_word C_utf_string_foldcase(C_word from, C_word to, C_word len) C_regparm;
 C_fctexport C_word C_utf_string_downcase(C_word from, C_word to, C_word len) C_regparm;
 C_fctexport C_word C_utf_string_upcase(C_word from, C_word to, C_word len) C_regparm;
+C_fctexport C_word C_utf_set_bv_size(C_word bv, C_word sz) C_regparm;
 #ifdef C_WCHAR_FILENAMES
 C_fctexport C_WCHAR *C_utf16(C_word bv, int cont) C_regparm;
 C_fctexport C_char *C_utf8(C_WCHAR *str) C_regparm;

@@ -755,7 +755,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                   buf)))
         (if (fx< len 0)
             (posix-error #:file-error location "cannot read symbolic link" fname)
-            (##sys#buffer->string buf 0 len))))))
+            (##sys#buffer->string! buf len))))))
 
 (set! chicken.file.posix#read-symbolic-link
   (lambda (fname #!optional canonicalize)

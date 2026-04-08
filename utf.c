@@ -3360,6 +3360,15 @@ C_regparm C_word C_utf_overwrite(C_word s, C_word i, C_word len, C_word bv,
     return C_SCHEME_UNDEFINED;
 }
 
+C_regparm C_word C_utf_set_bv_size(C_word bv, C_word sz)
+{
+    int i = C_unfix(sz);
+    C_block_header_init(bv, C_make_header(C_BYTEVECTOR_TYPE, i + 1));
+    C_char *p = (C_char *)C_data_pointer(bv);
+    p[ i ] = 0;
+    return bv;
+}
+
 C_regparm C_word C_utf_compare(C_word s1, C_word s2, C_word start1, C_word start2,
     C_word len)
 {
