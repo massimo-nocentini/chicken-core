@@ -563,9 +563,9 @@ EOF
            (set! link-options (append link-options (builtin-link-options)))
 	   ;;
 	   (when inquiry-only
-	     (when show-cflags (print* (compiler-options) #\space))
-	     (when show-ldflags (print* (linker-options) #\space))
-	     (when show-libs (print* (linker-libraries) #\space))
+	     (when show-cflags (for-each (cut print* <> #\space) (compiler-options)))
+	     (when show-ldflags (for-each (cut print* <> #\space) (linker-options)))
+	     (when show-libs (for-each (cut print* <> #\space) (linker-libraries)))
 	     (newline)
 	     (exit) )
 	   (when (and compile-only
