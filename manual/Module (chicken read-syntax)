@@ -4,7 +4,11 @@
 == Module (chicken read-syntax)
 
 This module provides procedures which can be used to extend the reader
-with custom read syntax.
+with custom read syntax. When using the interpreter, these procedures
+take immediate effect. During compilation, however, these procedures
+might need to be evaluated before the source code is read for compilation. You can use
+the {{-X}} option when invoking {{csc}} to load source or compiled code
+to make sure your read-syntax extensions are available.
 
 === define-reader-ctor
 
