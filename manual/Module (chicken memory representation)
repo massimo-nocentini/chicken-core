@@ -128,7 +128,7 @@ in static memory are copied back into garbage collected storage.
 
 Returns the bytevector holding the raw data of the numeric vector {{VECTOR}},
 which should be a bytevector or a homogenous number vector as those
-exposed by the {{(chicken numvector)}} and {{srfi-4}} library modules.
+exposed by the {{(chicken number-vector)}} and {{srfi-4}} library modules.
 If {{VECTOR}} is a bytevector, the result will be identical to the argument.
 The returned bytevector shares storage with the original value.
 

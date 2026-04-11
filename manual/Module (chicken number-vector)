@@ -1,7 +1,7 @@
 [[tags: manual]]
 [[toc:]]
 
-== Module (chicken numvector)
+== Module (chicken number-vector)
 
 Homogeneous numeric vector datatypes. This module provides a superset
 of [[http://srfi.schemers.org/srfi-4/srfi-4.html|SRFI-4]]. The
