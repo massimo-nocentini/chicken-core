@@ -55,6 +55,7 @@ POSTINSTALL_PROGRAM_FLAGS = -change lib$(PROGRAM_PREFIX)chicken$(PROGRAM_SUFFIX)
 LIBRARIAN_OPTIONS = scru
 LINKER_LINK_SHARED_DLOADABLE_OPTIONS = -bundle -L.
 ASSEMBLER_OPTIONS =
+LINKER_OPTIONS = -Wl,-headerpad_max_install_names
 
 # file extensions
 
@@ -68,7 +69,7 @@ CHICKEN_CONFIG_H = chicken-config.h
 
 ifeq ($(ARCH),x86-64)
 C_COMPILER_OPTIONS += -m64
-LINKER_OPTIONS += -m64 -Wl,-headerpad_max_install_names
+LINKER_OPTIONS += -m64
 # Avoid bus error in install_name_tool
 LINKER_LINK_SHARED_DLOADABLE_OPTIONS += -Wl,-headerpad -Wl,128
 else
