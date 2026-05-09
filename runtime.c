@@ -13694,7 +13694,7 @@ C_char *C_getenventry(int i)
 #endif
 }
 
-C_long C_current_jiffy(void) {
+C_regparm C_long C_current_jiffy(void) {
 #if defined(_WIN32) && !defined(__CYGWIN__)
 	LARGE_INTEGER ticks;
 	QueryPerformanceCounter(&ticks);
@@ -13706,7 +13706,7 @@ C_long C_current_jiffy(void) {
 #endif
 }
 
-C_long C_jiffies_per_second(void) {
+C_regparm C_long C_jiffies_per_second(void) {
 #if defined(_WIN32) && !defined(__CYGWIN__)
 	LARGE_INTEGER ticks;
 	QueryPerformanceFrequency(&ticks);
