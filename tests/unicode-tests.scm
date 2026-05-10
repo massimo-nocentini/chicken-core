@@ -103,8 +103,9 @@
                           '("列" "字" "文" "→" "ト" "ス" "リ" "逆"))))
 
 (test-error (utf8->string #u8(255 1 2)))
-(test-assert (utf8->string #u8(255 1 2) #f))
-(test-equal (string-length (utf8->string #u8(255 1 2) #f)) 3)
+(test-equal "BC" (utf8->string #u8(65 66 67) 1 3))
+(test-assert (bytes->string #u8(255 1 2)))
+(test-equal (string-length (bytes->string #u8(255 1 2))) 3)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; extras

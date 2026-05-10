@@ -1943,7 +1943,7 @@ C_fctexport int C_utf_isdigit(int c) C_regparm;
 C_fctexport int C_utf_isalpha(int c) C_regparm;
 C_fctexport int C_utf_isupper(int c) C_regparm;
 C_fctexport int C_utf_islower(int c) C_regparm;
-C_fctexport C_word C_utf_validate(C_word bv, C_word blen) C_regparm;
+C_fctexport C_word C_utf_validate(C_word bv, C_word blen, C_word start, C_word end) C_regparm;
 C_fctexport C_word C_latin_to_utf(C_word from, C_word to, C_word start, C_word len) C_regparm;
 C_fctexport C_word C_utf_to_latin(C_word from, C_word to, C_word start, C_word len) C_regparm;
 C_fctexport C_word C_utf_char_foldcase(C_word c) C_regparm;

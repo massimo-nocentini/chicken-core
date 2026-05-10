@@ -47,11 +47,15 @@ should be a fixnum.
 
 === utf8->string
 
-<procedure>(utf8->string BYTEVECTOR [VALIDATE])</procedure>
+<procedure>(utf8->string BYTEVECTOR [START END])</procedure>
 
-Returns a string with the contents of {{BYTEVECTOR}}. if {{VALIDATE}}
-is given and false, then invalidly
-encoded characters do not signal an error - byte-sequences that are not representing
+Returns a string with the contents of {{BYTEVECTOR}}. Invalid encodings
+for characters signal an error.
+
+<procedure>(bytes->string BYTEVECTOR [START END])</procedure>
+
+Similar to {{utf8->string}}, but accepts any byte sequence without
+validating the contents. Byte-sequences that are not representing
 valid UTF-8 characters are retained and, if extracted with {{string-ref}}
 are converted to a trailing surrogate pair half in the range U+DC80 to U+DCFF.
 

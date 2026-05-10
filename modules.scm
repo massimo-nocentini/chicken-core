@@ -1285,6 +1285,7 @@
     (error-object-irritants . scheme#error-object-irritants)
     (string->utf8 . chicken.bytevector#string->utf8)
     (utf8->string . chicken.bytevector#utf8->string)
+    (bytes->string . chicken.bytevector#bytes->string)
     (write-bytevector . chicken.io#write-bytevector)
     (bytevector . chicken.bytevector#bytevector)
     (bytevector-length . chicken.bytevector#bytevector-length)

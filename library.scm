@@ -3453,7 +3453,7 @@ EOF
                make-bytevector bytevector bytevector-u8-ref
                bytevector-u8-set! bytevector-copy bytevector-copy!
                bytevector-append utf8->string string->utf8
-               latin1->string string->latin1)
+               latin1->string string->latin1 bytes->string)
 
 (import scheme (chicken foreign))
 
@@ -3484,12 +3484,24 @@ EOF
     (##core#inline "C_copy_memory" bv sbv n)
     bv) )
 
-(define (utf8->string bv #!optional (validate #t))
+(define (utf8->string bv #!optional (start 0) end)
   (##sys#check-bytevector bv 'utf8->string)
-  (if (and validate (not (##core#inline "C_utf_validate" bv (##sys#size bv))))
-    (##sys#error-hook (foreign-value "C_DECODING_ERROR" int)
-                      'utf8->string bv))
-  (##sys#buffer->string bv 0 (##sys#size bv)))
+  (let* ((n (##sys#size bv))
+         (to (or end n)))
+    (if end
+        (##sys#check-range/including end 0 n 'utf8->string))
+    (if (not (##core#inline "C_utf_validate" bv (##sys#size bv) start to))
+        (##sys#error-hook (foreign-value "C_DECODING_ERROR" int)
+         'utf8->string bv))
+    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" end start))))
+
+(define (bytes->string bv #!optional (start 0) end)
+  (##sys#check-bytevector bv 'bytes->string)
+  (let* ((n (##sys#size bv))
+         (to (or end n)))
+    (if end
+        (##sys#check-range/including end 0 n 'bytes->string))
+    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" end start))))
 
 (define (string->latin1 s)
   (##sys#check-string s 'string->latin1)

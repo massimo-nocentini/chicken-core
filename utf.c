@@ -3509,13 +3509,13 @@ C_regparm int C_utf_count(C_char *s, int len)
 }
 
 /* Count characters - slow variant, detects invalid sequences */
-C_regparm C_word C_utf_validate(C_word bv, C_word blen)
+C_regparm C_word C_utf_validate(C_word bv, C_word blen, C_word start, C_word end)
 {
     int i = 0;
     C_u32 c;
     int e;
-    C_char *s = C_c_string(bv), *s2;
-    int len = C_unfix(blen);
+    C_char *s = C_c_string(bv) + C_unfix(start), *s2;
+    int len = C_unfix(end) - C_unfix(start);
     while (len > 0) {
         s2 = utf8_decode(s, &c, &e);
         if(e) return C_SCHEME_FALSE;
