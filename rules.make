@@ -222,6 +222,7 @@ $(1): $(2)$(O) $$(PRIMARY_LIBCHICKEN) $$($(1)-RC_FILE)
           $$($(1)-RC_FILE) $$(LINKER_OUTPUT) \
           $$(LINKER_LIBRARY_PREFIX)$$(PROGRAM_PREFIX)chicken$$(PROGRAM_SUFFIX)$$(LINKER_LIBRARY_SUFFIX) \
           $$(LINKER_LINK_SHARED_PROGRAM_OPTIONS) $$(LIBRARIES)
+	$(PREINSTALL_PROGRAM_FIXUP) $(1)
 endef
 
 # Unfortunately, we can't loop over INSTALLED_PROGRAMS here because of
