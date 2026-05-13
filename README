@@ -161,18 +161,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     CHICKEN and then use that to build the version from git.
     See the "Bootstrapping" section below.
 
-    2.3. Finishing the installation
-
-    If CHICKEN is built successfully, you can install it on your
-    system by entering
-
-        make install
-
-    To install CHICKEN for a particular prefix on a different
-    location, set the "DESTDIR" variable: It designates the
-    directory where the files are installed into.
-
-    2.4. Verifying your installation is correct
+    2.3. Verifying your installation is correct
 
     You can check whether CHICKEN is functioning correctly by
     running
@@ -185,6 +174,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     with a nonzero status, the failing test's output should be
     the final lines before Make's "error; exit" output.  If the
     check fails on unmodified sources, please file a bugreport.
+
+    2.4. Finishing the installation
+
+    If CHICKEN is built successfully, you can install it on your
+    system by entering
+
+        make install
+
+    To install CHICKEN for a particular prefix on a different
+    location, set the "DESTDIR" variable: It designates the
+    directory where the files are installed into.
 
     2.5. Optional features
 
