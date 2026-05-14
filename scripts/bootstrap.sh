@@ -20,7 +20,7 @@ esac
 
 mkdir -p boot/snapshot
 cd boot
-$getcmd https://code.call-cc.org/dev-snapshots/2024/12/09/chicken-6.0.0pre1.tar.gz
+$getcmd https://code.call-cc.org/dev-snapshots/2026/05/12/chicken-6.0.0rc3.tar.gz
 tar -xzf chicken-6.0.0pre1.tar.gz
 cd chicken-6.0.0pre1
 ./configure --prefix "$(pwd)"/../snapshot
