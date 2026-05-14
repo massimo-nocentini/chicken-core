@@ -3493,7 +3493,7 @@ EOF
     (if (not (##core#inline "C_utf_validate" bv (##sys#size bv) start to))
         (##sys#error-hook (foreign-value "C_DECODING_ERROR" int)
          'utf8->string bv))
-    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" end start))))
+    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
 
 (define (bytes->string bv #!optional (start 0) end)
   (##sys#check-bytevector bv 'bytes->string)
