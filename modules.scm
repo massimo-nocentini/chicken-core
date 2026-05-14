@@ -1184,6 +1184,8 @@
     (odd? . scheme#odd?) (even? . scheme#even?)
     (positive? . scheme#positive?) (negative? . scheme#negative?)
     (exact-integer? . scheme#exact-integer?)
+    (textual-port? . scheme#textual-port?)
+    (binary-port? . scheme#binary-port?)
     (max . scheme#max) (min . scheme#min)
     (+ . scheme#+) (- . scheme#-) (* . scheme#*) (/ . scheme#/)
     (= . scheme#=) (> . scheme#>) (< . scheme#<)
