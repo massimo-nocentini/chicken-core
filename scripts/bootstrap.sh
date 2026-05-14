@@ -2,7 +2,7 @@
 
 set -e
 
-BOOTVERSION=6,.0.0rc3
+BOOTVERSION=6.0.0rc3
 BOOTURL=2026/05/12/chicken-${BOOTVERSION}.tar.gz
 
 getcmd="wget -c"
