@@ -49,7 +49,7 @@ static int C_wait_status;
 # include <termios.h>
 #endif
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__GLIBC__)
 # include <sys/file.h>
 #endif
 
