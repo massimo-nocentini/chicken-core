@@ -2,7 +2,8 @@
 
 set -e
 
-# build 6.0.0pre1 tarball
+BOOTVERSION=6,.0.0rc3
+BOOTURL=2026/05/12/chicken-${BOOTVERSION}.tar.gz
 
 getcmd="wget -c"
 mkcmd=make
@@ -20,9 +21,9 @@ esac
 
 mkdir -p boot/snapshot
 cd boot
-$getcmd https://code.call-cc.org/dev-snapshots/2026/05/12/chicken-6.0.0rc3.tar.gz
-tar -xzf chicken-6.0.0pre1.tar.gz
-cd chicken-6.0.0pre1
+$getcmd https://code.call-cc.org/dev-snapshots/$BOOTURL
+tar -xzf chicken-${BOOTVERSION}.tar.gz
+cd chicken-${BOOTVERSION}
 ./configure --prefix "$(pwd)"/../snapshot
 $mkcmd "$@"
 $mkcmd "$@" install
@@ -36,8 +37,8 @@ $mkcmd boot-chicken
 
 # remove snapshot installation and tarball
 rm -fr boot/snapshot
-rm -fr boot/chicken-6.0.0pre1
-rm -f  boot/chicken-6.0.0pre1.tar.gz
+rm -fr boot/chicken-${BOOTVERSION}
+rm -f  boot/chicken-${BOOTVERSION}.tar.gz
 
 echo
 echo 'Now, build chicken by passing "--chicken ./chicken-boot" to "configure",'
