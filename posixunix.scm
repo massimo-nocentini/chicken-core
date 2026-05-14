@@ -53,6 +53,10 @@ static int C_wait_status;
 # include <sys/file.h>
 #endif
 
+#ifdef __HAIKU__
+# include <posix/sys/file.h>
+#endif
+
 #include <sys/mman.h>
 #include <poll.h>
 
@@ -161,15 +165,7 @@ static int C_uw;
 
 static C_word C_flock(C_word n, C_word f)
 {
-#ifdef __HAIKU__
-# define LOCK_SH	0
-# define LOCK_EX	0
-# define LOCK_NB 	0
-# define LOCK_UN	0
-	return C_fix(-1);
-#else
     return C_fix(flock(C_unfix(n), C_unfix(f)));
-#endif
 }
 
 static sigset_t C_sigset;
