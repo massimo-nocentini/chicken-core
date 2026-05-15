@@ -566,10 +566,21 @@ EOF
   (##sys#check-char c 'char->integer)
   (##core#inline "C_fix" (##core#inline "C_character_code" c)) )
 
-(define (integer->char n)
-  (##sys#check-fixnum n 'integer->char)
+(define (##sys#check-char-code n loc)
+  (if (or (##core#inline "C_fixnum_lessp" n 0)
+          (##core#inline "C_fixnum_greaterp" n #x10ffff))
+    (##sys#signal-hook
+      #:domain-error loc "character code is out of valid range" n)
+    n))
+
+(define-inline (fast-i->c n)
   (##core#inline "C_make_character" (##core#inline "C_unfix" n)) )
 
+(define (integer->char n)
+  (##sys#check-fixnum n 'integer->char)
+  (##sys#check-char-code n 'integer->char)
+  (fast-i->c n))
+ 
 (define (char=? c1 c2 . more)
   (##sys#check-char c1 'char=?)
   (##sys#check-char c2 'char=?)
@@ -1229,7 +1240,7 @@ EOF
                      #!eof
                      (let ((c (##core#inline "C_i_bytevector_ref" bv index)))
                        (set! index (##core#inline "C_fixnum_plus" index 1))
-                       (integer->char c))))
+                       (fast-i->c c))))
                (lambda (_) ; peek-char
                  (if (eq? index bv-len)
                      #!eof
@@ -3039,9 +3050,9 @@ EOF
     ;; CHICKENs and it just makes more sense.
     (##core#inline_allocate ("C_a_i_flonum_quotient" 4) 0.0 0.0))
   (let* ((len (string-length str))
-         (0..r (integer->char (fx+ (char->integer #\0) (fx- radix 1))))
-         (a..r (integer->char (fx+ (char->integer #\a) (fx- radix 11))))
-         (A..r (integer->char (fx+ (char->integer #\A) (fx- radix 11))))
+         (0..r (fast-i->c (fx+ (char->integer #\0) (fx- radix 1))))
+         (a..r (fast-i->c (fx+ (char->integer #\a) (fx- radix 11))))
+         (A..r (fast-i->c (fx+ (char->integer #\A) (fx- radix 11))))
          ;; Ugly flag which we need (note that "exactness" is mutated too!)
          ;; Since there is (almost) no backtracking we can do this.
          (seen-hashes? #f)
@@ -4645,6 +4656,7 @@ EOF
 	(parentheses-synonyms parentheses-synonyms)
         (case-sensitive case-sensitive)
 	(symbol-escape symbol-escape)
+        (integer->char integer->char)
 	(current-read-table ##sys#current-read-table))
     (lambda (port infohandler)
       (let ((csp (and (case-sensitive) (##sys#slot port 13)))
