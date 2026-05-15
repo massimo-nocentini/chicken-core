@@ -668,7 +668,7 @@
 
 (rewrite 'scheme#vector-length 6 "C_fix" "C_header_size" #f)
 (rewrite 'scheme#char->integer 6 "C_fix" "C_character_code" #t)
-(rewrite 'scheme#integer->char 6 "C_make_character" "C_unfix" #t)
+(rewrite 'scheme#integer->char 6 "C_make_character" "C_unfix" #f)
 
 (rewrite 'scheme#vector-length 2 1 "C_i_vector_length" #t)
 (rewrite '##sys#vector-length 2 1 "C_i_vector_length" #t)
