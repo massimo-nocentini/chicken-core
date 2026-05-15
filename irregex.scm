@@ -59,10 +59,14 @@
      glob->sre sre->string irregex-opt irregex-quote)
 
 
-(import scheme chicken.base chicken.fixnum chicken.syntax chicken.type)
+(import (except scheme integer->char))
+(import chicken.base chicken.fixnum chicken.syntax chicken.type)
 (import (only (scheme base) open-output-string get-output-string))
 
 (import-for-syntax chicken.fixnum)
+
+(define-inline (integer->char n)
+  (##core#inline "C_make_character" (##core#inline "C_unfix" n)) )
 
 (include "common-declarations.scm")
 
