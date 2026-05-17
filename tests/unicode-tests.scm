@@ -160,7 +160,71 @@
 (test-assert (string-ci=? "αβξ" "αβξ"))
 (test-assert (string-ci=? "αβξ" "ΑΒΞ"))
 
+;; Contributed by Anton Idukov:
+
+(import (scheme char))
+
+(test-equal "ru_RU(съешь ещё этих мягких французских булок, да выпей чаю.)"
+            (utf8->string
+              (string->utf8 "ru_RU(съешь ещё этих мягких французских булок, да выпей чаю.)")))
+
+
+(test-equal "Привет, МИР!"
+            (list->string (map integer->char (map char->integer (string->list "Привет, МИР!")))))
+
+
+(test-equal "ПРИВЕТ, МИР!"
+            (symbol->string
+              (string->symbol
+                (list->string
+                  (map char-upcase (string->list "Привет, МИР!"))))))
+
+
+(test-equal "DZIŚ JEST BARDZO GORĄCY DZIEŃ"
+            (list->string
+              (map char-upcase
+                   (string->list
+                     (list->string
+                       (map char-downcase
+                            (string->list "DZIŚ JEST BARDZO GORĄCY DZIEŃ")))))))
+
+
+(test-equal 7
+            (apply + (map digit-value
+                '(#\3 #\x0664 #\x0AE6))))
+
+
+(test-equal "ru_RU(съешь ещё этих мягких французских булок, да выпей чаю.)"
+            (list->string
+              (reverse
+                (string->list
+                  (list->string
+                    (reverse
+                      (string->list "ru_RU(съешь ещё этих мягких французских булок, да выпей чаю.)")))))))
+
+(test-equal #t (string<? "ABCD" "ABCd" "ABcd"))
+(test-equal #f (string-ci<? "ABCD" "ABCd" "ABcd"))
+
+(test-equal #t (string<? "АБВГ" "АБВг" "АБвг"))
+(test-equal #f (string-ci<? "АБВГ" "АБВг" "АБвг"))
+
+(test-equal #t (string>? "АБвг" "АБВг" "АБВГ"))
+(test-equal #f (string-ci>? "АБвг" "АБВг" "АБВГ"))
+
+(test-equal #t (string<=? "ПРИВЕТ" "ПРИВЕТ" "ПРИвет"))
+(test-equal #t (string-ci<=? "ПРИВЕТ" "ПРИВЕТ" "ПРИвет"))
+
+(test-equal #t (string>=? "АБвг" "АБвг" "АБВг"))
+(test-equal #t (string-ci>=? "АБвг" "АБвг" "АБВг"))
+
+(test-equal '("ЭЭЭЭЭЭЭЭ" 8)
+            (let ((s (make-string 8 #\newline)))
+              (string-fill! s #\Э)
+              (list s (string-length s))))
+
+
+(test-error (string-fill "Hello" 4 #\x))
+
 (test-end)
 
 (test-exit)
-
