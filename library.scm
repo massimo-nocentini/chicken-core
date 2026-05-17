@@ -1964,105 +1964,106 @@ EOF
              'substring s start) ) ) )))
 
 (let ((compare
-	  (lambda (s1 s2 more loc cmp)
-	    (##sys#check-string s1 loc)
-	    (##sys#check-string s2 loc)
-	    (let* ((len1 (string-length s1))
-                   (len2 (string-length s2))
-                   (c (##core#inline "C_utf_compare"
-                                     s1 s2 0 0
-                                     (if (fx< len1 len2) len1 len2))))
-              (let loop ((s s2) (len len2) (ss more)
-                         (f (cmp (##core#inline "C_utf_compare"
-                                                s1 s2 0 0
-                                                (if (fx< len1 len2) len1 len2))
-                                 len1 len2)))
-                (if (null? ss)
-                    f
-                    (let* ((s2 (##sys#slot more 0))
-                           (len2 (string-length s2))
-                           (c (##core#inline "C_utf_compare_ci"
-                                             s s2 0 0
-                                             (if (fx< len len2) len len2))))
-                      (loop s2 len2 (##sys#slot more 1)
-                            (and f (cmp c len len2))))))))))
+        (lambda (s1 s2 more loc cmp)
+          (##sys#check-string s1 loc)
+          (##sys#check-string s2 loc)
+          (let* ((len1 (string-length s1))
+                 (len2 (string-length s2))
+                 (c (##core#inline "C_utf_compare"
+                     s1 s2 0 0
+                     (if (fx< len1 len2) len1 len2))))
+            (let loop ((s s2) 
+                       (len len2) 
+                       (ss more)
+                       (f (cmp c len1 len2)))
+              (and f 
+                   (or (null? ss)
+                       (let* ((s2 (##sys#slot ss 0))
+                              (len2 (string-length s2))
+                              (c (##core#inline "C_utf_compare"
+                                  s s2 0 0
+                                  (if (fx< len len2) len len2))))
+                         (loop s2 len2 (##sys#slot ss 1)
+                               (cmp c len len2))))))))))
   (set! scheme#string<? (lambda (s1 s2 . more)
-			  (compare
-			   s1 s2 more 'string<?
-			   (lambda (cmp len1 len2)
-			     (or (fx< cmp 0)
-				 (and (fx< len1 len2)
-				      (eq? cmp 0) ) ) ) ) ) )
+                          (compare
+                            s1 s2 more 'string<?
+                            (lambda (cmp len1 len2)
+                              (or (fx< cmp 0)
+                                  (and (fx< len1 len2)
+                                       (eq? cmp 0) ) ) ) ) ) )
   (set! scheme#string>? (lambda (s1 s2 . more)
-			  (compare
-			   s1 s2 more 'string>?
-			   (lambda (cmp len1 len2)
-			     (or (fx> cmp 0)
-				 (and (fx< len2 len1)
-				      (eq? cmp 0) ) ) ) ) ) )
+                          (compare
+                            s1 s2 more 'string>?
+                            (lambda (cmp len1 len2)
+                              (or (fx> cmp 0)
+                                  (and (fx> len1 len2)
+                                       (eq? cmp 0) ) ) ) ) ) )
   (set! scheme#string<=? (lambda (s1 s2 . more)
-			   (compare
-			    s1 s2 more 'string<=?
-			    (lambda (cmp len1 len2)
-			      (if (eq? cmp 0)
-				  (fx<= len1 len2)
-				  (fx< cmp 0) ) ) ) ) )
+                           (compare
+                             s1 s2 more 'string<=?
+                             (lambda (cmp len1 len2)
+                               (if (eq? cmp 0)
+                                   (fx<= len1 len2)
+                                   (fx< cmp 0) ) ) ) ) )
   (set! scheme#string>=? (lambda (s1 s2 . more)
-			   (compare
-			    s1 s2 more 'string>=?
-			    (lambda (cmp len1 len2)
-			      (if (eq? cmp 0)
-				  (fx>= len1 len2)
-				  (fx> cmp 0) ) ) ) ) ) )
+                           (compare
+                             s1 s2 more 'string>=?
+                             (lambda (cmp len1 len2)
+                               (if (eq? cmp 0)
+                                   (fx>= len1 len2)
+                                   (fx> cmp 0) ) ) ) ) ) )
 
 (let ((compare
-	  (lambda (s1 s2 more loc cmp)
-            (##sys#check-string s1 loc)
-            (##sys#check-string s2 loc)
-	    (let* ((len1 (string-length s1))
-                   (len2 (string-length s2))
-                   (c (##core#inline "C_utf_compare_ci"
-                                     s1 s2 0 0
-                                     (if (fx< len1 len2) len1 len2))))
-              (let loop ((s s2) (len len2) (ss more)
-                         (f (cmp c len1 len2)))
-                (if (null? ss)
-                    f
-                    (let* ((s2 (##sys#slot ss 0))
-                           (len2 (string-length s2))
-                           (c (##core#inline "C_utf_compare_ci"
-                                             s s2 0 0
-                                             (if (fx< len len2) len len2))))
-                      (loop s2 len2 (##sys#slot ss 1)
-                            (and f (cmp c len len2))))))))))
+        (lambda (s1 s2 more loc cmp)
+          (##sys#check-string s1 loc)
+          (##sys#check-string s2 loc)
+          (let* ((len1 (string-length s1))
+                 (len2 (string-length s2))
+                 (c (##core#inline "C_utf_compare_ci"
+                     s1 s2 0 0
+                     (if (fx< len1 len2) len1 len2))))
+            (let loop ((s s2)
+                       (len len2)
+                       (ss more)
+                       (f (cmp c len1 len2)))
+              (and f
+                   (or (null? ss)
+                       (let* ((s2 (##sys#slot ss 0))
+                              (len2 (string-length s2))
+                              (c (##core#inline "C_utf_compare_ci"
+                                  s s2 0 0
+                                  (if (fx< len len2) len len2))))
+                         (loop s2 len2 (##sys#slot ss 1)
+                               (cmp c len len2))))))))))
   (set! scheme#string-ci<? (lambda (s1 s2 . more)
-			      (compare
+                             (compare
                                s1 s2 more 'string-ci<?
                                (lambda (cmp len1 len2)
                                  (or (fx< cmp 0)
-                                    (and (fx< len1 len2)
-                                         (eq? cmp 0) ) )))))
+                                     (and (fx< len1 len2)
+                                          (eq? cmp 0) ) )))))
   (set! scheme#string-ci>? (lambda (s1 s2 . more)
-			     (compare
-			      s1 s2 more 'string-ci>?
-			      (lambda (cmp len1 len2)
-				(or (fx> cmp 0)
-				    (and (fx< len2 len1)
-					 (eq? cmp 0) ) ) ) ) ) )
+                             (compare
+                               s1 s2 more 'string-ci>?
+                               (lambda (cmp len1 len2)
+                                 (or (fx> cmp 0)
+                                     (and (fx> len1 len2)
+                                          (eq? cmp 0) ) ) ) ) ) )
   (set! scheme#string-ci<=? (lambda (s1 s2 . more)
-			      (compare
-			       s1 s2 more 'string-ci<=?
-			       (lambda (cmp len1 len2)
-				 (if (eq? cmp 0)
-				     (fx<= len1 len2)
-				     (fx< cmp 0) ) ) ) ) )
+                              (compare
+                                s1 s2 more 'string-ci<=?
+                                (lambda (cmp len1 len2)
+                                  (if (eq? cmp 0)
+                                      (fx<= len1 len2)
+                                      (fx< cmp 0) ) ) ) ) )
   (set! scheme#string-ci>=? (lambda (s1 s2 . more)
-			      (compare
-			       s1 s2 more 'string-ci>=?
-			       (lambda (cmp len1 len2)
-				 (if (eq? cmp 0)
-				     (fx>= len1 len2)
-				     (fx> cmp 0) ) ) ) ) ) )
+                              (compare
+                                s1 s2 more 'string-ci>=?
+                                (lambda (cmp len1 len2)
+                                  (if (eq? cmp 0)
+                                      (fx>= len1 len2)
+                                      (fx> cmp 0) ) ) ) ) ) )
 
 (define (##sys#string-append x y)
   (let* ((bv1 (##sys#slot x 0))
