@@ -3163,6 +3163,10 @@ static int fold2[][ 4 ] = {
  * occurs, this pointer will be a guess that depends on the particular
  * error, but it will always advance at least one byte.
  */
+
+/* (flw) quite modified and doubtlessly less branchless and optimized
+   as the original. */
+
 static const char lengths[] = {
     1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 2, 3, 3, 4, 0
@@ -3514,9 +3518,10 @@ C_regparm C_word C_utf_validate(C_word bv, C_word blen, C_word start, C_word end
     int i = 0;
     C_u32 c;
     int e;
-    C_char *s = C_c_string(bv) + C_unfix(start), *s2;
+    unsigned char *s = C_c_string(bv) + C_unfix(start), *s2;
     int len = C_unfix(end) - C_unfix(start);
     while (len > 0) {
+        if(lengths[*s >> 3] > len) return C_SCHEME_FALSE;
         s2 = utf8_decode(s, &c, &e);
         if(e) return C_SCHEME_FALSE;
         len -= (s2 - s);
