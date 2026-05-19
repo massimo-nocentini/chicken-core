@@ -126,10 +126,10 @@ not provided or {{#f}}, {{READ-CHAR}}/{{READ-U8}} will be used instead and the
 created port object handles peeking automatically (by calling the reader procedure
 and buffering the character).
 * {{read-bytevector}} is called when {{read-bytevector}} or {{read-string!}} is called (or the
-higher-level non-mutating {{read-string}} and {{read-bytevector}}).  It will be invoked with 4
-arguments: the port created by {{make-input-port}}, the number of
-bytes to read, a bytevector to read into (which may be
-assumed to be big enough to hold the data) and the offset into the
+higher-level non-mutating {{read-string}} and {{read-bytevector}}).  It will be invoked with 3
+arguments: a bytevector to read into (which may be
+assumed to be big enough to hold the data) and the offsets of the
+starting and ending position into the
 buffer at which to put the data to read.  It should return the number
 of bytes that have successfully been read, which should always be
 equal to the requested bytes unless EOF was hit, in which case it can
@@ -166,7 +166,7 @@ a string (or bytevector for binary ports).  {{CLOSE}} is called when the port is
 be a procedure of no arguments. {{force-output}} (if provided) is called
 for flushing the output port. The optional {{write-bytevector}} allows
 more optimized writing of partial buffers and takes 3 arguments: a
-bytevector, a starting position and an endong position.
+bytevector, a starting position and an ending position.
 
 
 ==== with-error-output-to-port
