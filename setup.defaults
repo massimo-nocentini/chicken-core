@@ -31,6 +31,7 @@
 
 (map (srfi-4 ->))
 (map (r7rs ->))
+(map (utf8 ->))
 
 
 ;; aliases for servers
