@@ -1201,7 +1201,6 @@
     (rationalize . scheme#rationalize)
     (inexact . scheme#exact->inexact)
     (exact . scheme#inexact->exact)
-    (sqrt . scheme#sqrt)
     (square . scheme#square)
     (exact-integer-sqrt . scheme#exact-integer-sqrt)
     (expt . scheme#expt)
@@ -1250,8 +1249,6 @@
     (current-input-port . scheme#current-input-port)
     (current-output-port . scheme#current-output-port)
     (current-error-port . chicken.base#current-error-port)
-    (open-input-file . scheme#open-input-file)
-    (open-output-file . scheme#open-output-file)
     (close-input-port . scheme#close-input-port)
     (close-output-port . scheme#close-output-port)
     (read-char . scheme#read-char) (peek-char . scheme#peek-char)
@@ -1262,15 +1259,11 @@
     (eof-object? . scheme#eof-object?)
     (eof-object . scheme#eof-object)
     (flush-output-port . chicken.base#flush-output)
-    (with-input-from-file . scheme#with-input-from-file)
-    (with-output-to-file . scheme#with-output-to-file)
     (close-port . scheme#close-port)
     (char-ready? . scheme#char-ready?)
     (u8-ready? . scheme#u8-ready?)
     (numerator . scheme#numerator)
     (denominator . scheme#denominator)
-    (scheme-report-environment . scheme#scheme-report-environment)
-    (null-environment . scheme#null-environment)
     (open-input-string . scheme#open-input-string)
     (open-output-string . scheme#open-output-string)
     (open-output-bytevector . scheme#open-output-bytevector)
@@ -1306,7 +1299,7 @@
                 parameterize when unless do define define-syntax case cond guard
                 define-record-type include include-ci set! syntax-rules cond-expand
                 import export begin import-for-syntax and or lambda if quote
-                case-lambda quasiquote syntax-error let-syntax letrec-syntax)
+                quasiquote syntax-error let-syntax letrec-syntax)
              (##sys#macro-environment)))
 
 ;; Hack for library.scm to use macros from modules it defines itself.
