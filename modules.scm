@@ -1306,7 +1306,7 @@
                 parameterize when unless do define define-syntax case cond guard
                 define-record-type include include-ci set! syntax-rules cond-expand
                 import export begin import-for-syntax and or lambda if quote
-                case-lambda quasiquote syntax-error)
+                case-lambda quasiquote syntax-error let-syntax letrec-syntax)
              (##sys#macro-environment)))
 
 ;; Hack for library.scm to use macros from modules it defines itself.
