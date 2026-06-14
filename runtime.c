@@ -13155,33 +13155,33 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
     key = (C_word)(h & C_HEADER_BITS_MASK);
     p = sbp->data;
 
-    if(key == C_STRUCTURE_TYPE) key = *p;
+    if(key == C_STRUCTURE_TYPE && !C_immediatep(*p) && C_block_header(*p) == C_SYMBOL_TYPE) 
+        key = *p;
 
     hdump_count(key, 1, bytes);
 
     if(n > 0 && (h & C_BYTEBLOCK_BIT) == 0) {
       if((h & C_SPECIALBLOCK_BIT) != 0) {
-	--n;
-	++p;
+        --n;
+        ++p;
       }
 
       while(n--) {
-	x = *(p++);
+        x = *(p++);
+        if(C_immediatep(x)) {
+          ++imm;
 
-	if(C_immediatep(x)) {
-	  ++imm;
+          if((x & C_FIXNUM_BIT) != 0) key = C_fix(1);
+          else {
+            switch(x & C_IMMEDIATE_TYPE_BITS) {
+            case C_BOOLEAN_BITS: key = C_SCHEME_TRUE; break;
+            case C_CHARACTER_BITS: key = C_make_character('A'); break;
+            default: key = x;
+            }
+          }
 
-	  if((x & C_FIXNUM_BIT) != 0) key = C_fix(1);
-	  else {
-	    switch(x & C_IMMEDIATE_TYPE_BITS) {
-	    case C_BOOLEAN_BITS: key = C_SCHEME_TRUE; break;
-	    case C_CHARACTER_BITS: key = C_make_character('A'); break;
-	    default: key = x;
-	    }
-	  }
-
-	  hdump_count(key, 1, 0);
-	}
+          hdump_count(key, 1, 0);
+        }
       }
     }
 
@@ -13197,46 +13197,48 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
       b2 = b->next;
 
       switch(b->key) {
-      case C_fix(1): C_fprintf(C_stderr,                 C_text("fixnum         ")); break;
-      case C_SCHEME_TRUE: C_fprintf(C_stderr,            C_text("boolean        ")); break;
-      case C_SCHEME_END_OF_LIST: C_fprintf(C_stderr,     C_text("null           ")); break;
-      case C_SCHEME_UNDEFINED  : C_fprintf(C_stderr,     C_text("void           ")); break;
+      case C_fix(1): C_fprintf(C_stderr,                 C_text("fixnum")); break;
+      case C_SCHEME_TRUE: C_fprintf(C_stderr,            C_text("boolean\t")); break;
+      case C_SCHEME_END_OF_LIST: C_fprintf(C_stderr,     C_text("null\t")); break;
+      case C_SCHEME_UNDEFINED  : C_fprintf(C_stderr,     C_text("void\t")); break;
       case C_SCHEME_BROKEN_WEAK_PTR: C_fprintf(C_stderr, C_text("broken weak ptr")); break;
-      case C_make_character('A'): C_fprintf(C_stderr,    C_text("character      ")); break;
-      case C_SCHEME_END_OF_FILE: C_fprintf(C_stderr,     C_text("eof            ")); break;
-      case C_SCHEME_UNBOUND: C_fprintf(C_stderr,         C_text("unbound        ")); break;
-      case C_SYMBOL_TYPE: C_fprintf(C_stderr,            C_text("symbol         ")); break;
-      case C_STRING_TYPE: C_fprintf(C_stderr,            C_text("string         ")); break;
-      case C_PAIR_TYPE: C_fprintf(C_stderr,              C_text("pair           ")); break;
-      case C_CLOSURE_TYPE: C_fprintf(C_stderr,           C_text("closure        ")); break;
-      case C_FLONUM_TYPE: C_fprintf(C_stderr,            C_text("flonum         ")); break;
-      case C_PORT_TYPE: C_fprintf(C_stderr,              C_text("port           ")); break;
-      case C_POINTER_TYPE: C_fprintf(C_stderr,           C_text("pointer        ")); break;
-      case C_LOCATIVE_TYPE: C_fprintf(C_stderr,          C_text("locative       ")); break;
-      case C_TAGGED_POINTER_TYPE: C_fprintf(C_stderr,    C_text("tagged pointer ")); break;
-      case C_LAMBDA_INFO_TYPE: C_fprintf(C_stderr,       C_text("lambda info    ")); break;
-      case C_WEAK_PAIR_TYPE: C_fprintf(C_stderr,         C_text("weak pair      ")); break;
-      case C_VECTOR_TYPE: C_fprintf(C_stderr,            C_text("vector         ")); break;
-      case C_BYTEVECTOR_TYPE: C_fprintf(C_stderr,        C_text("bytevector     ")); break;
-      case C_BIGNUM_TYPE: C_fprintf(C_stderr,            C_text("bignum         ")); break;
-      case C_CPLXNUM_TYPE: C_fprintf(C_stderr,           C_text("cplxnum        ")); break;
-      case C_RATNUM_TYPE: C_fprintf(C_stderr,            C_text("ratnum         ")); break;
+      case C_make_character('A'): C_fprintf(C_stderr,    C_text("character\t")); break;
+      case C_SCHEME_END_OF_FILE: C_fprintf(C_stderr,     C_text("eof\t")); break;
+      case C_SCHEME_UNBOUND: C_fprintf(C_stderr,         C_text("unbound\t")); break;
+      case C_SYMBOL_TYPE: C_fprintf(C_stderr,            C_text("symbol\t")); break;
+      case C_STRING_TYPE: C_fprintf(C_stderr,            C_text("string\t")); break;
+      case C_PAIR_TYPE: C_fprintf(C_stderr,              C_text("pair\t")); break;
+      case C_CLOSURE_TYPE: C_fprintf(C_stderr,           C_text("closure\t")); break;
+      case C_FLONUM_TYPE: C_fprintf(C_stderr,            C_text("flonum\t")); break;
+      case C_PORT_TYPE: C_fprintf(C_stderr,              C_text("port\t")); break;
+      case C_POINTER_TYPE: C_fprintf(C_stderr,           C_text("pointer\t")); break;
+      case C_LOCATIVE_TYPE: C_fprintf(C_stderr,          C_text("locative\t")); break;
+      case C_TAGGED_POINTER_TYPE: C_fprintf(C_stderr,    C_text("tagged pointer\t")); break;
+      case C_LAMBDA_INFO_TYPE: C_fprintf(C_stderr,       C_text("lambda info\t")); break;
+      case C_WEAK_PAIR_TYPE: C_fprintf(C_stderr,         C_text("weak pair\t")); break;
+      case C_VECTOR_TYPE: C_fprintf(C_stderr,            C_text("vector\t")); break;
+      case C_BYTEVECTOR_TYPE: C_fprintf(C_stderr,        C_text("bytevector\t")); break;
+      case C_BIGNUM_TYPE: C_fprintf(C_stderr,            C_text("bignum\t")); break;
+      case C_CPLXNUM_TYPE: C_fprintf(C_stderr,           C_text("cplxnum\t")); break;
+      case C_RATNUM_TYPE: C_fprintf(C_stderr,            C_text("ratnum\t")); break;
+      case C_STRUCTURE_TYPE: C_fprintf(C_stderr, C_text("generated structure type\t")); break;
 	/* XXX this is sort of funny: */
-      case C_BYTEBLOCK_BIT: C_fprintf(C_stderr,        C_text("bytevector           ")); break;
+      case C_BYTEBLOCK_BIT: C_fprintf(C_stderr,        C_text("bytevector\t")); break;
       default:
-	x = b->key;
+        x = b->key;
 
-	if(!C_immediatep(x) && C_header_bits(x) == C_SYMBOL_TYPE) {
-	  x = C_block_item(x, 1);
-	  C_fprintf(C_stderr, C_text("`%.*s'"), (int)C_header_size(x), C_c_string(x));
-	}
-	else C_fprintf(C_stderr, C_text("unknown key " UWORD_FORMAT_STRING), (C_uword)b->key);
+        if(!C_immediatep(x) && C_header_bits(x) == C_SYMBOL_TYPE) {
+          x = C_block_item(x, 1);
+          C_fprintf(C_stderr, C_text("`%.*s'"), (int)C_header_size(x), C_c_string(x));
+        }
+        else 
+            C_fprintf(C_stderr, C_text("unknown key " UWORD_FORMAT_STRING), (C_uword)b->key);
       }
 
       C_fprintf(C_stderr, C_text("\t%d"), b->count);
 
       if(b->total > 0)
-	C_fprintf(C_stderr, C_text("\t%d bytes"), b->total);
+        C_fprintf(C_stderr, C_text("\t%d bytes"), b->total);
 
       C_fputc('\n', C_stderr);
       C_free(b);
