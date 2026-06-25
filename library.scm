@@ -1793,7 +1793,7 @@ EOF
   (##sys#encoding-hook
     enc
     (lambda (dec _ scan)
-      (let ((buf (##sys#make-bytevector 4))
+      (let ((buf (##sys#make-bytevector 5))
             (rbv! (##sys#slot (##sys#slot p 2) 7))) ; read-bytevector!
         (let loop ((state #f) (i 0))
           (let ((rn (rbv! p 1 buf i)))
@@ -4076,7 +4076,7 @@ EOF
                   (##sys#read-char/encoding
                    p enc
                    (lambda (buf start len dec)
-                     (let ((pb (##sys#make-bytevector len)))
+                     (let ((pb (##sys#make-bytevector (fx+ len 1))))
                        (##core#inline "C_copy_memory_with_offset" pb buf 0 start len)
                        (##sys#setslot p 10 pb)
                        (dec buf start len
