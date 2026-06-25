@@ -4076,7 +4076,7 @@ EOF
                   (##sys#read-char/encoding
                    p enc
                    (lambda (buf start len dec)
-                     (let ((pb (##sys#make-bytevector (fx+ len 1))))
+                     (let ((pb (##sys#make-bytevector len 1)))
                        (##core#inline "C_copy_memory_with_offset" pb buf 0 start len)
                        (##sys#setslot p 10 pb)
                        (dec buf start len
