@@ -3518,12 +3518,12 @@ C_regparm C_word C_utf_validate(C_word bv, C_word blen, C_word start, C_word end
     int i = 0;
     C_u32 c;
     int e;
-    unsigned char *s = C_c_string(bv) + C_unfix(start), *s2;
+    unsigned char *s = (unsigned char *)C_c_string(bv) + C_unfix(start), *s2;
     int len = C_unfix(end) - C_unfix(start);
     while (len > 0) {
         if(*s >= 0x80 && *s <= 0xbf) return C_SCHEME_FALSE;
         if(lengths[*s >> 3] > len) return C_SCHEME_FALSE;
-        s2 = utf8_decode(s, &c, &e);
+        s2 = (unsigned char *)utf8_decode((C_char *)s, &c, &e);
         if(e) return C_SCHEME_FALSE;
         len -= (s2 - s);
         s = s2;
