@@ -20,9 +20,7 @@
 ;
 ; URL may be an alias (see below) or a real URL.
 
-; TEMPORARY DISABLED
-;(server "kitten-technologies")
-(server "call-cc")
+(server "egg-server-1")
 
 
 ;; extension-mappings
@@ -38,8 +36,7 @@
 ; (alias (NAME REALNAME) ...)
 
 (alias
- ("call-cc" "http://code.call-cc.org/cgi-bin/henrietta.cgi")
- ("kitten-technologies" "http://chicken.kitten-technologies.co.uk/henrietta.cgi"))
+ ("egg-server-1" "http://egg-server-1.call-cc.org/cgi-bin/henrietta.cgi"))
 
 
 ;; overrides
