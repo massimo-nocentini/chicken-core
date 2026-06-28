@@ -10,6 +10,7 @@
     now fully equivalent to SRFI-4 u8vectors.
   - The read-syntax for blobs (`#${...}') has been removed. Bytevectors
     can be read using `#u8(...)' or `#u8"..."'.
+  - `char-name' now allows removing a named character definition.
   - `open-input-file' and `open-output-file' accept a file encoding,
     supported are currently UTF-8 (the default) and Latin-1 (ISO-8859-1).
   - `file-read', `file-write', 'set-pseudo-random-seed!' and `random-bytes'

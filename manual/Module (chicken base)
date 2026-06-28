@@ -615,7 +615,7 @@ to {{identity}}.
 
 ==== char-name
 
-<procedure>(char-name SYMBOL-OR-CHAR [CHAR])</procedure>
+<procedure>(char-name SYMBOL-OR-CHAR [CHAR-OR-FALSE])</procedure>
 
 This procedure can be used to inquire about character names or to
 define new ones. With a single argument the behavior is as follows:
@@ -625,10 +625,13 @@ under this name. If {{SYMBOL-OR-CHAR}} is a character, then the
 name of the character is returned as a symbol, or {{#f}} if the
 character has no associated name.
 
-If the optional argument {{CHAR}} is provided, then
+If the optional argument {{CHAR-OR-FALSE}} is provided and a character, then
 {{SYMBOL-OR-CHAR}} should be a symbol that will be the new name of
 the given character. If multiple names designate the same character,
-then the {{write}} will use the character name that was defined last.
+then {{write}} will use the character name that was defined last.
+If {{CHAR-OR-FALSE}} is {{#f}} instead, then {{SYMBOL-OR-CHAR}}
+may designate a symbol naming a character or a character and any
+defined character name for it will be removed.
 
 <enscript highlight=scheme>
 (char-name 'space)                  ==> #\space
@@ -638,6 +641,8 @@ then the {{write}} will use the character name that was defined last.
 (char-name 'bell (integer->char 7))
 (char-name 'bell)                   ==> #\bell
 (char->integer (char-name 'bell))   ==> 7
+(char-name 'bell #f)
+(char-name 'bell)                   ==> #f
 </enscript>
 
 

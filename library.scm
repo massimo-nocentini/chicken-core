@@ -3818,42 +3818,54 @@ EOF
 
 (set! chicken.base#char-name
   (let ((chars-to-names (make-vector char-name-table-size '()))
-	(names-to-chars '()))
+        (names-to-chars '()))
     (define (lookup-char c)
-      (let* ([code (char->integer c)]
-	     [key (##core#inline "C_fixnum_modulo" code char-name-table-size)] )
-	(let loop ([b (##sys#slot chars-to-names key)])
-	  (and (pair? b)
-	       (let ([a (##sys#slot b 0)])
-		 (if (eq? (##sys#slot a 0) c)
-		     a
-		     (loop (##sys#slot b 1)) ) ) ) ) ) )
-    (lambda (x . y)
-      (let ([chr (if (pair? y) (car y) #f)])
-	(cond [(char? x)
-	       (and-let* ([a (lookup-char x)])
-		 (##sys#slot a 1) ) ]
-	      [chr
-	       (##sys#check-symbol x 'char-name)
-	       (##sys#check-char chr 'char-name)
-	       (when (fx< (##sys#size (##sys#slot x 1)) 2)
-		 (##sys#signal-hook #:type-error 'char-name "invalid character name" x) )
-	       (let ([a (lookup-char chr)])
-		 (if a
-		     (let ([b (assq x names-to-chars)])
-		       (##sys#setslot a 1 x)
-		       (if b
-			   (##sys#setislot b 1 chr)
-			   (set! names-to-chars (cons (cons x chr) names-to-chars)) ) )
-		     (let ([key (##core#inline "C_fixnum_modulo" (char->integer chr) char-name-table-size)])
-		       (set! names-to-chars (cons (cons x chr) names-to-chars))
-		       (##sys#setslot
-			chars-to-names key
-			(cons (cons chr x) (##sys#slot chars-to-names key))) ) ) ) ]
-	      [else
-	       (##sys#check-symbol x 'char-name)
-	       (and-let* ([a (assq x names-to-chars)])
-		 (##sys#slot a 1) ) ] ) ) ) ) )
+      (let* ((code (char->integer c))
+             (key (##core#inline "C_fixnum_modulo" code char-name-table-size)) )
+        (let loop ((b (##sys#slot chars-to-names key)))
+          (and (pair? b)
+               (let ((a (##sys#slot b 0)))
+                 (if (eq? (##sys#slot a 0) c)
+                     a
+                     (loop (##sys#slot b 1)) ) ) ) ) ) )
+    (lambda (x #!optional (chr #:none))
+      (cond ((char? x)
+             (and-let* ((a (lookup-char x)))
+               (case chr
+                 ((#:none)
+                  (##sys#slot a 1) )
+                 ((#f)
+                  (##sys#setslot a 0 #f)
+                  (##sys#setslot (assq (##sys#slot a 1) names-to-chars) 0 #f)
+                  (##core#undefined))
+                 (else
+                   (##sys#signal-hook #:type-error 'char-name 
+                    "expected second boolean argument" chr) ))))
+            ((symbol? x)
+             (let ((a (assq x names-to-chars)))
+               (case chr
+                 ((#:none) (and a (##sys#slot a 1)))
+                 ((#f) 
+                  (when a (##sys#setslot a 0 #f))
+                  (##core#undefined))
+                 (else
+                   (##sys#check-char chr 'char-name)
+                   (when (fx< (##sys#size (##sys#slot x 1)) 2)
+                     (##sys#signal-hook #:type-error 'char-name "invalid character name" x) )
+                   (let ((a (lookup-char chr)))
+                     (if a
+                         (let ((b (assq x names-to-chars)))
+                           (##sys#setslot a 1 x)
+                           (if b
+                               (##sys#setislot b 1 chr)
+                               (set! names-to-chars (cons (cons x chr) names-to-chars)) ) )
+                         (let ((key (##core#inline "C_fixnum_modulo" (char->integer chr) 
+                                     char-name-table-size)))
+                           (set! names-to-chars (cons (cons x chr) names-to-chars))
+                           (##sys#setslot
+                            chars-to-names key
+                            (cons (cons chr x) (##sys#slot chars-to-names key))) ) ) ) ))))
+            (else (##sys#signal-hook #:type-error 'char-name "invalid argument type" x))))))
 
 ;; TODO: Use the character names here in the next release?  Or just
 ;; use the numbers everywhere, for clarity?
