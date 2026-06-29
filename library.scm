@@ -3846,7 +3846,9 @@ EOF
                (case chr
                  ((#:none) (and a (##sys#slot a 1)))
                  ((#f) 
-                  (when a (##sys#setslot a 0 #f))
+                  (when a 
+                    (##sys#setslot a 0 #f)
+                    (##sys#setslot (lookup-char (##sys#slot a 1)) 0 #f))
                   (##core#undefined))
                  (else
                    (##sys#check-char chr 'char-name)
