@@ -609,7 +609,7 @@ EOF
   (let ((tm-size (foreign-value "sizeof(struct tm)" int)))
     (lambda (tm)
       (check-time-vector 'local-time->seconds tm)
-      (let ((t (##core#inline_allocate ("C_a_mktime" 7) tm (##sys#make-string tm-size #\nul))))
+      (let ((t (##core#inline_allocate ("C_a_mktime" 7) tm (##sys#make-bytevector tm-size 0))))
         (if (= -1 t)
             (##sys#error 'local-time->seconds "cannot convert time vector to seconds" tm)
             t)))))
@@ -623,9 +623,9 @@ EOF
       (if fmt
           (begin
             (##sys#check-string fmt 'time->string)
-            (or (strftime tm (##sys#make-c-string fmt 'time->string) (##sys#make-string tm-size #\nul))
+            (or (strftime tm (##sys#make-c-string fmt 'time->string) (##sys#make-bytevector tm-size 0))
                 (##sys#error 'time->string "time formatting overflows buffer" tm)) )
-          (let ([str (asctime tm (##sys#make-string tm-size #\nul))])
+          (let ([str (asctime tm (##sys#make-bytevector tm-size 0))])
             (if str
                 (##sys#substring str 0 (fx- (string-length str) 1))
                 (##sys#error 'time->string "cannot convert time vector to string" tm) ) ) ) ) ) )

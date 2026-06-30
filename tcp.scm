@@ -301,7 +301,7 @@ EOF
     "addr->sin_addr.s_addr = htonl(INADDR_ANY);") )
 
 (define (bind-socket style host port)
-  (let ((addr (make-string _sockaddr_in_size)))
+  (let ((addr (##sys#make-bytevector _sockaddr_in_size)))
     (if host
 	(unless (gethostaddr addr host port)
 	  (##sys#signal-hook 
@@ -627,7 +627,7 @@ EOF
 (define (tcp-connect host #!optional port (enc 'utf-8))
   (let* ((tmc (tcp-connect-timeout))
 	 (dlc (and tmc (+ (current-process-milliseconds) tmc)))
-	 (addr (make-string _sockaddr_in_size)))
+	 (addr (##sys#make-bytevector _sockaddr_in_size)))
     (##sys#check-string host)
     (unless port
       (set!-values (host port) (parse-host host "tcp"))
