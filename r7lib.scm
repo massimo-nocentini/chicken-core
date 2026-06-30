@@ -182,7 +182,7 @@
           (only scheme + define inexact->exact))
 
   ;; As of 2012-06-30.
-  (define-constant tai-offset 35.)
+  (define-constant tai-offset 37.)
 
   (define (current-second) (+ (current-seconds) tai-offset))
 
