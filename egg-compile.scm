@@ -357,8 +357,8 @@
           (fluid-let ((target (check-target (cadr info) scminc))
                       (dest #f)
                       (files '()))
-            (checkfiles files target)
             (for-each compile-data/include (cddr info))
+            (checkfiles files target)
             (let* ((dest (or (and dest (normalize-destination dest mode))
                              (if (eq? mode 'target)
                                  default-sharedir
