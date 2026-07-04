@@ -114,8 +114,7 @@
 				 (out "\\"
 				      (out (##sys#substring obj i j)
 					   col))))
-			  ((or (char<? c #\x20)
-			       (char>=? c #\x7f))
+			  ((char<? c #\x20)
 			   (loop (fx+ j 1)
 				 (fx+ j 1)
 				 (let ((col2
