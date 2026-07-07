@@ -1114,7 +1114,8 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
               ((fx= 0 pid)              ; child process
                (set! children '())
                (when killothers
-                 (call-with-current-continuation (lambda (continue) (##sys#kill-other-threads (lambda () (continue #f))))))
+                 (call-with-current-continuation 
+                   (lambda (continue) (##sys#kill-other-threads (lambda () (continue #f))))))
                (if thunk
                    (##sys#call-with-cthulhu
                     (lambda ()
@@ -1251,7 +1252,11 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		     (connect-child loc opipe stdinf chicken.file.posix#fileno/stdin)
 		     (connect-child loc (swapped-ends ipipe) stdoutf chicken.file.posix#fileno/stdout)
 		     (connect-child loc (swapped-ends epipe) stderrf chicken.file.posix#fileno/stderr)
-		     (chicken.process#process-execute cmd args env)))) ) ) ))
+		     (handle-exceptions ex
+                        (begin
+                          (print-error-message ex ##sys#standard-error)
+                          (##core#inline "C_exit_runtime" 126))
+                        (chicken.process#process-execute cmd args env)))) ) ) )))
           [input-port
             (lambda (loc cmd pipe stdf stdfd on-close enc)
               (and-let* ([fd (connect-parent loc pipe stdf stdfd)])
