@@ -21,6 +21,8 @@
 ; URL may be an alias (see below) or a real URL.
 
 (server "egg-server-1")
+(server "egg-server-2")
+(server "egg-server-3")
 
 
 ;; extension-mappings
@@ -36,7 +38,9 @@
 ; (alias (NAME REALNAME) ...)
 
 (alias
- ("egg-server-1" "http://egg-server-1.call-cc.org/cgi-bin/henrietta.cgi"))
+ ("egg-server-1" "http://egg-server-1.call-cc.org/cgi-bin/henrietta.cgi")
+ ("egg-server-2" "http://egg-server-2.call-cc.org/cgi-bin/henrietta.cgi")
+ ("egg-server-3" "http://egg-server-3.call-cc.org/cgi-bin/henrietta.cgi"))
 
 
 ;; overrides
