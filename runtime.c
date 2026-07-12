@@ -4762,7 +4762,6 @@ void C_ccall C_stop_timer(C_word c, C_word *av)
 
 C_word C_exit_runtime(C_word code)
 {
-  C_fflush(NULL);
   C__exit(C_unfix(code));
 }
 
