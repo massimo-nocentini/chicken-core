@@ -1629,6 +1629,7 @@ void C_ccall termination_continuation(C_word c, C_word *av)
     C_dbg(C_text("debug"), C_text("application terminated normally\n"));
   }
 
+  C_fflush(NULL);
   C_exit_runtime(C_fix(0));
 }
 
@@ -2759,8 +2760,9 @@ void C_div_by_zero_error(C_char *loc)
 
 void C_unimplemented(C_char *msg)
 {
-	C_fprintf(C_stderr, C_text("Error: unimplemented feature: %s\n"), msg);
-  	C_exit_runtime(C_fix(EX_SOFTWARE));
+    C_fprintf(C_stderr, C_text("Error: unimplemented feature: %s\n"), msg);
+    C_fflush(NULL);
+    C_exit_runtime(C_fix(EX_SOFTWARE));
 }
 
 void C_not_an_integer_error(C_char *loc, C_word x)
@@ -4625,6 +4627,7 @@ C_word C_halt(C_word msg)
   if(dmp != NULL)
     C_dbg("", C_text("\n%s"), dmp);
 
+  C_fflush(NULL);
   C_exit_runtime(C_fix(EX_SOFTWARE));
   return 0;
 }

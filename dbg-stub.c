@@ -210,6 +210,7 @@ terminate(char *msg)
 {
   fprintf(stderr, "%s\n", msg);
   socket_close();
+  C_fflush(NULL);
   C_exit_runtime(C_fix(1));
 }
 

@@ -69,6 +69,8 @@
 #define C_a_get_current_seconds(ptr, c, dummy)  C_int64_to_num(ptr, time(NULL))
 #define C_peek_c_string_at(ptr, i)    ((C_char *)(((C_char **)ptr)[ i ]))
 
+#define C_flush_all_files(dummy)    (C_fflush(NULL), C_SCHEME_UNDEFINED)
+
 static C_word
 fast_read_line_from_file(C_word str, C_word port, C_word size) {
   int n = C_unfix(size);
@@ -6001,6 +6003,7 @@ EOF
 
 (define (cleanup-before-exit)
   (set! exit-in-progress #t)
+  (##core#inline "C_flush_all_files" #f)
   (when (##core#inline "C_i_dump_heap_on_exitp")
     (##sys#print "\n" #f ##sys#standard-error)
     (##sys#dump-heap-state))
