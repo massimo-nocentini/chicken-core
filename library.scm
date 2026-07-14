@@ -2322,7 +2322,7 @@ EOF
 (define-inline (%cplxnum-imag c) (##core#inline "C_u_i_cplxnum_imag" c))
 
 (define (make-complex r i)
-  (if (or (eq? i 0) (and (##core#inline "C_i_flonump" i) (fp= i 0.0)))
+  (if (eq? i 0)
       r
       (##core#inline_allocate ("C_a_i_cplxnum" 3)
 			      (if (inexact? i) (exact->inexact r) r)
