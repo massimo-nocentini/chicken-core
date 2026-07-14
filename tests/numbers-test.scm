@@ -835,7 +835,7 @@
  (test-equal "complex?" (complex? c1) #t)
  (test-equal "complex?" (complex? 3) #t)
  (test-equal "real?" (real? 3) #t)
- (test-equal "real?" (real? (make-rectangular -2.5 0.0)) #t)
+ (test-equal "real?" (real? (make-rectangular -2.5 0.0)) #f)
  (test-equal "real?" (real? -2+1i) #f)
  (test-equal "real?" (real? 1e0) #t)
  (test-equal "rational?" (rational? (/ 6 10)) #t)

@@ -460,11 +460,11 @@
 (test-equal "complex reader" (decompose-complex '-1.i) '(0.0 -1.0))
 (test-equal "complex reader" (decompose-complex '+1.0i) '(0.0 1.0))
 (test-equal "complex reader" (decompose-complex '-1.0i) '(0.0 -1.0))
-(test-equal "complex reader" (decompose-complex '1+0.0i) 1.0)
-(test-equal "complex reader" (decompose-complex '1+.0i) 1.0)
-(test-equal "complex reader" (decompose-complex '1+0.i) 1.0)
-(test-equal "complex reader" (decompose-complex '1+0.0e-43i) 1.0)
-(test-equal "complex reader" (decompose-complex '1e2+0.0e-43i) 100.0)
+(test-equal "complex reader" (decompose-complex '1+0.0i) '(1.0 0.0))
+(test-equal "complex reader" (decompose-complex '1+.0i) '(1.0 0.0))
+(test-equal "complex reader" (decompose-complex '1+0.i) '(1.0 0.0))
+(test-equal "complex reader" (decompose-complex '1+0.0e-43i) '(1.0 0.0))
+(test-equal "complex reader" (decompose-complex '1e2+0.0e-43i) '(100.0 0.0))
 
 (test-equal "complex reader" (decompose-complex 'i) 'i)
 (test-equal "complex reader" (decompose-complex (string->number ".i")) #f)
@@ -478,7 +478,7 @@
 (test-equal "complex reader" (decompose-complex 1/2+1/2i) '(1/2 1/2))
 (test-equal "complex reader" (decompose-complex 0+1/2i) '(0 1/2))
 (test-equal "complex reader" (decompose-complex -1/2i) '(0 -1/2))
-(test-equal "complex reader" (decompose-complex 1/2-0/2i) 1/2)
+(test-equal "complex reader" (decompose-complex 1/2-0/2i) '1/2)
 ;; The following is also invalid R5RS syntax, so it's commented out
 #;(test-equal "complex reader" (decompose-complex (string->number "1/2-1/0i")) '(0.5 -inf.0))
 

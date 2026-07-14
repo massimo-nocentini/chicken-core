@@ -86,12 +86,16 @@
   - Added `expand1' to (chicken syntax) module for expanding a macro
     only once, also added the ",x1" command to "csi" for this.
   - Added the (chicken version) module.
-  - "delete-file*" and "delete-file" now behave consistently with
+  - `delete-file*' and `delete-file' now behave consistently with
     broken symlinks.
-  - number->string now accepts bases up to 36, where before it only accepted
+  - `number->string' now accepts bases up to 36, where before it only accepted
     bases up to 16 (thanks to Diego A. Mundo)
-  - string->number now handles ambiguous cases involving the character "i"
+  - `string->number' now handles ambiguous cases involving the character "i"
     in bases higher than 18 more consistently.
+  - `make-rectangular' returns a complex number if the imaginary part
+    is inexact zero.
+  - `string->number' and the reader accept and handle correctly complex 
+    numbers with a negative inexact zero as the imaginary part.
 
 - Syntax expander:
   - `syntax-rules' attempts to better support tail patterns with ellipses
