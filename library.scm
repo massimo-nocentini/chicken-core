@@ -2988,7 +2988,7 @@ EOF
                        (string-append
                         (number->string r base)
                         ;; The infinities and NaN always print their sign
-                        (if (and (finite? i) (positive? i)) "+" "")
+                        (if (and (finite? i) (>= i 0) (not (eqv? i -0.0))) "+" "")
                         (number->string i base) "i") ))
        (else (##sys#error-bad-number n 'number->string)))  ) ) )
 
