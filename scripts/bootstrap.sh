@@ -2,6 +2,13 @@
 
 set -e
 
+# When cd is given as argument a directory that cannot be found in the
+# paths yielded by CDPATH on OpenBSD's ksh (same binary as sh), it
+# fails with
+#     `sh: cd: <the dir>: bad directory'
+# So, we unset CDPATH to avoid such problems.
+unset CDPATH
+
 BOOTVERSION=6.0.0rc3
 BOOTURL=2026/05/12/chicken-${BOOTVERSION}.tar.gz
 
