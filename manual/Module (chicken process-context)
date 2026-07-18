@@ -37,7 +37,7 @@ library.
 
 <parameter>(command-line-arguments)</parameter>
 
-Contains the list of arguments passed to this program.
+Contains a list of strings holding the arguments passed to this program.
 
 This ''excludes'' the name of the program, as well as any runtime
 options (options starting with {{-:}}) up until the first empty
