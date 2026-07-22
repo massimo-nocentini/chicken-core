@@ -90,6 +90,8 @@ $compile compiler-tests.scm
 echo "======================================== FFI tests ..."
 $compile ffi-tests.scm
 ./a.out
+$compile -d3 ffi-tests-2.scm
+./a.out
 
 echo "======================================== csc tests ..."
 $interpret -s csc-tests.scm

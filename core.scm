@@ -1174,9 +1174,8 @@
 				     (mark-variable var '##compiler#always-bound))
 				   (when emit-debug-info
 				     (set! val
-				       `(##core#let ((,var ,val))
-					  (##core#debug-event C_DEBUG_GLOBAL_ASSIGN (##core#quote ,var))
-					  ,var)))
+				       `(##core#let ((,(gensym) (##core#debug-event C_DEBUG_GLOBAL_ASSIGN (##core#quote ,var))))
+					  ,val)))
 				   ;; We use `var0` instead of `var` because the {macro,current}-environment
 				   ;; are keyed by the raw and unqualified name
 				   (cond ((##sys#macro? var0 (##sys#current-environment))

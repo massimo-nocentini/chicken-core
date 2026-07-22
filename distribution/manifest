@@ -269,6 +269,7 @@ tests/life.scm
 tests/include.scm
 tests/include-ci.scm
 tests/ffi-tests.scm
+tests/ffi-tests-2.scm
 tweaks.scm
 Makefile
 Makefile.android
