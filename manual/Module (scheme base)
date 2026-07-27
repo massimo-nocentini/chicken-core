@@ -454,7 +454,7 @@ The last clause can be an "else clause," which has the form
 (else <expression> ...)
 }}]
 
-A ⟨feature requirement⟩ takes one of the following forms:
+A feature requirement takes one of the following forms:
 
 <feature identifier>
 
@@ -471,7 +471,7 @@ feature identifiers which are present, as well as a list
 of libraries which can be imported.
 The value of a <feature requirement> is determined by replacing each
 <feature identifier> and {{(library <library name>)}} on the
-implementation’s lists with {{#t}}, and all other feature identifiers and library names with {{#f}}, then evaluating the resulting expression as a Scheme boolean expression under
+implementation's lists with {{#t}}, and all other feature identifiers and library names with {{#f}}, then evaluating the resulting expression as a Scheme boolean expression under
 the normal interpretation of {{and}}, {{or}}, and {{not}}.
 
 A {{cond-expand}} is then expanded by evaluating the
@@ -1108,7 +1108,7 @@ and so cannot be used to refer to those elements. If an underscore appears in
 the <pattern literal>s list, then that takes precedence and underscores in the
 <pattern> match as literals. Multiple underscores can appear in a <pattern>.
 
-Identifiers that appear in (<pattern literal> …) are interpreted as literal
+Identifiers that appear in (<pattern literal> ...) are interpreted as literal
 identifiers to be matched against corresponding elements of the input. An
 element in the input matches a literal identifier if and only if it is an
 identifier and either both its occurrence in the macro expression and its
@@ -1135,9 +1135,9 @@ More formally, an input form F matches a pattern P if and only if:
     or improper list of n or more forms that match P[1] through P[n],
     respectively, and whose nth "cdr" matches P[n+1]; or
 
-*   P is of the form (P[1] … P[k] P[e] <ellipsis> P[m+1] ... P[n] . P[x]) where E
+*   P is of the form (P[1] ... P[k] P[e] <ellipsis> P[m+1] ... P[n] . P[x]) where E
     is a list or improper list of n elements, the first k of which match P[1]
-    through P[k], whose next m−k elements each match P[e], whose remaining n−m
+    through P[k], whose next m--k elements each match P[e], whose remaining n--m
     elements match P[m+1] through P[n], and whose nth and final cdr matches P[x
     ]; or
 
@@ -1146,7 +1146,7 @@ More formally, an input form F matches a pattern P if and only if:
 
 *   P is of the form #(P[1] ... P[k] P[e] <ellipsis> P[m+1] ... P[n]) where E is a
     vector of n elements the first k of which match P[1] through P[k], whose
-    next m−k elements each match P[e], and whose remaining n−m elements match P
+    next m--k elements each match P[e], and whose remaining n--m elements match P
     [m+1] through P[n]; or
 
 *   P is a datum and F is equal to P in the sense of the equal?
@@ -1285,7 +1285,7 @@ forms:
 
 * {{(rename <import set> (<identifier[1]> <identifier[2]>) ...)}}
 
-In the first form, all of the identifiers in the named library’s export clauses
+In the first form, all of the identifiers in the named library's export clauses
 are imported with the same names (or the exported names if exported with rename
 ). The additional <import set> forms modify this set as follows:
 
@@ -1545,7 +1545,7 @@ as a field name. It is also an error for the same identifier to occur more than
 once as an accessor or mutator name.
 
 The define-record-type construct is generative: each use creates a new record
-type that is distinct from all existing types, including Scheme’s predefined
+type that is distinct from all existing types, including Scheme's predefined
 types and other record types — even record types of the same name or structure.
 
 An instance of define-record-type is equivalent to the following definitions:
@@ -1679,7 +1679,7 @@ the processing of other declarations, with the environment growing as imported
 bindings are added to it by each import declaration.
 
 When a library is loaded, its expressions are executed in textual order. If a
-library’s definitions are referenced in the expanded form of a program or
+library's definitions are referenced in the expanded form of a program or
 library body, then that library must be loaded before the expanded program or
 library body is evaluated. This rule applies transitively. If a library is
 imported by more than one program or library, it may possibly be loaded
@@ -2056,7 +2056,7 @@ representable as an exact integer within the implementation:
 CHICKEN follows the IEEE 32-bit and 64-bit floating point
 standards on all supported platforms.
 
-It is the programmer’s responsibility to avoid using inexact number objects
+It is the programmer's responsibility to avoid using inexact number objects
 with magnitude or significand too large to be represented in the
 implementation.
 
@@ -2093,7 +2093,7 @@ negative zero. If it does, however, the behavior of the transcendental
 functions is sensitive to the distinction in accordance with IEEE 754.
 Specifically, in a Scheme implementing both complex numbers and negative zero,
 the branch cut of the complex logarithm function is such that (imag-part (log
--1.0-0.0i)) is −π rather than π.
+-1.0-0.0i)) is --π rather than π.
 
 Furthermore, the negation of negative zero is ordinary zero and vice versa.
 This implies that the sum of two or more negative zeros is negative, and the
@@ -2312,7 +2312,7 @@ follows:
  (<operator>-quotient n[1] n[2]) ==> n[q]
  (<operator>-remainder n[1] n[2]) ==> n[r]
 
-The remainder n[r] is determined by the choice of integer n[q]: n[r] = n[1] − n[2] * n[q]. Each set of operators uses a different choice of n[q]:
+The remainder n[r] is determined by the choice of integer n[q]: n[r] = n[1] -- n[2] * n[q]. Each set of operators uses a different choice of n[q]:
 
  floor    n[q] = ⌊n[1] / n[2]⌋
  truncate n[q] = runcate(n[1] / n[2])
@@ -3865,7 +3865,7 @@ dynamic context of the {{dynamic-wind}} form.
 
 === Exceptions
 
-This section describes Scheme’s exception-handling and exception-raising
+This section describes Scheme's exception-handling and exception-raising
 procedures.
 
 Exception handlers are one-argument procedures that determine the action the
@@ -4052,7 +4052,7 @@ proc does not return, then the port must not be closed automatically unless it
 is possible to prove that the port will never again be used for a read or write
 operation.
 
-    Rationale: Because Scheme’s escape procedures have unlimited extent, it is
+    Rationale: Because Scheme's escape procedures have unlimited extent, it is
     possible to escape from the current continuation but later to resume it. If
     implementations were permitted to close the port on any escape from the
     current continuation, then it would be impossible to write portable code
