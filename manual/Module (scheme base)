@@ -3487,7 +3487,7 @@ elements of the given vectors.
 
  (vector-append #(a b c) #(d e f)) ==> #(a b c d e f)
 
-<procedure>(vector-fill! vector fill [start [end]]])</procedure>
+<procedure>(vector-fill! vector fill [start [end]])</procedure>
 
 The vector-fill! procedure stores fill in the elements of vector between start and
 end.
