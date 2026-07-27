@@ -2829,7 +2829,7 @@ lists have finite length and are terminated by the empty list.
    (set-cdr! x x)
    (list? x))                 ===>  #f
 
-<procedure>(make-list k [fill]}</procedure>
+<procedure>(make-list k [fill])</procedure>
 
 Returns a newly allocated list of k elements. If a second argument is given, then each element is initialized to {{fill}}. Otherwise the initial contents of each element is unspecified.
 
@@ -3437,13 +3437,8 @@ initialized to the elements of the list list.
  (list->vector '(dididit dah))
                  ===>  #(dididit dah)
 
-<procedure>(vector-fill! vector fill)</procedure><br>
-
-Stores fill in every element of vector. The value returned by
-vector-fill! is unspecified.
-
 <procedure>(vector->string vector [start [end]])</procedure><br>
-<procedure(string->vector string [start [end]])</procedure>
+<procedure>(string->vector string [start [end]])</procedure>
 
 It is an error if any element of vector between start and end is not a character.
 
@@ -3492,7 +3487,7 @@ elements of the given vectors.
 
  (vector-append #(a b c) #(d e f)) ==> #(a b c d e f)
 
-<procedure>(vector-fill! vector fill [start [end)]])</procedure>
+<procedure>(vector-fill! vector fill [start [end]]])</procedure>
 
 The vector-fill! procedure stores fill in the elements of vector between start and
 end.
