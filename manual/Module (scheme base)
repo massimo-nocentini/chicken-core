@@ -688,7 +688,7 @@ the first set of bindings is visible and initialized, and so on.
   (let ((a 'a) (b 'b) (x 'x) (y 'y))
     (let*-values (((a b) (values x y))
                   ((x y) (values a b)))
-      (list a b x y)))      ⟹ (x y x y)
+      (list a b x y)))      ===>     (x y x y)
 
 ==== Sequencing
 
@@ -1586,13 +1586,13 @@ For instance, the following record-type definition
 defines kons to be a constructor, kar and kdr to be accessors, set-kar! to be a
 modifier, and pare? to be a predicate for instances of <pare>.
 
-    (pare? (kons 1 2))         ⟹ #t
-      (pare? (cons 1 2))         ⟹ #f
-      (kar (kons 1 2))           ⟹ 1
-      (kdr (kons 1 2))           ⟹ 2
+    (pare? (kons 1 2))         ===> #t
+      (pare? (cons 1 2))         ===> #f
+      (kar (kons 1 2))           ===> 1
+      (kdr (kons 1 2))           ===> 2
       (let ((k (kons 1 2)))
         (set-kar! k 3)
-        (kar k))                 ⟹ 3
+        (kar k))                 ===> 3
 
 === Libraries
 
