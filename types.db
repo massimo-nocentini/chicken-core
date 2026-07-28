@@ -801,8 +801,7 @@
 	   ((cplxnum) (##core#inline "C_u_i_cplxnum_real" #(1))))
 
 (scheme#imag-part (#(procedure #:clean #:enforce #:foldable) scheme#imag-part (number) (or integer float ratnum))
-		  (((or fixnum bignum ratnum)) (let ((#(tmp) #(1))) '0))
-		  ((float) (let ((#(tmp) #(1))) '0.0))
+		  (((or fixnum float bignum ratnum)) (let ((#(tmp) #(1))) '0))
 		  ((cplxnum) (##core#inline "C_u_i_cplxnum_imag" #(1))))
 
 (scheme#magnitude (#(procedure #:clean #:enforce #:foldable) scheme#magnitude (number) number)
