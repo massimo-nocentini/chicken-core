@@ -2352,7 +2352,6 @@ EOF
 (set! scheme#imag-part
   (lambda (x)
     (cond ((cplxnum? x) (%cplxnum-imag x))
-	  ((##core#inline "C_i_flonump" x) 0.0)
 	  ((number? x) 0)
 	  (else (##sys#error-bad-number x 'imag-part)) )))
 

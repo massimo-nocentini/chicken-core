@@ -649,7 +649,7 @@
  (test-equal "real-part of negative ratnum" (real-part -1/2) -1/2)
  (test-equal "real-part of negative bignum" (real-part (- b1)) (- b1))
  (test-equal "imag-part" (imag-part c1) 44)
- (test-equal "imag-part of flonum" (imag-part 1.23) 0.0)
+ (test-equal "imag-part of flonum" (imag-part 1.23) 0)
  (test-equal "imag-part of fixnum" (imag-part 123) 0)
  (test-equal "imag-part of ratnum" (imag-part 1/2) 0)
  (test-equal "imag-part of bignum" (imag-part b1) 0)
