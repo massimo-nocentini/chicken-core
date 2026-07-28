@@ -95,7 +95,7 @@
     is inexact zero.
   - `string->number' and the reader accept and handle correctly complex 
     numbers with a negative inexact zero as the imaginary part.
-  - `imag-part' returns exact zero when given a on-complex number.
+  - `imag-part' returns exact zero when given a non-complex number.
 
 - Syntax expander:
   - `syntax-rules' attempts to better support tail patterns with ellipses
