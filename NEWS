@@ -73,8 +73,7 @@
     `#![no-]fold-case'
     markers instead.
   - `include' and `include-relative' accept multiple filenames,
-    `include-ci'
-    has been added.
+    `include-ci' has been added.
   - Added `include-path' to (chicken platform) module.
   - Added `number-vector-data' to (chicken memory representation) module.
   - `define-library' has been extended to support the `export-all'
