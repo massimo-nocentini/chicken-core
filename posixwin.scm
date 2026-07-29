@@ -96,6 +96,7 @@ static HANDLE C_rd0, C_wr0, C_wr0_, C_rd1, C_wr1, C_rd1_;
 static HANDLE C_save0, C_save1; /* saved I/O handles */
 static char C_rdbuf; /* one-char buffer for read */
 static int C_exstatus;
+static HANDLE C_pid;
 
 /* platform information; initialized for cached testing */
 static char C_shlcmd[255 + 1] = "";
@@ -251,15 +252,22 @@ static C_word C_fchdir(C_word fd)
 static int
 process_wait(C_word h, C_word t)
 {
-    if (WaitForSingleObject((HANDLE)h, (t ? 0 : INFINITE)) == WAIT_OBJECT_0)
+    DWORD wait_result = WaitForSingleObject((HANDLE)h, (t ? 0 : INFINITE));
+    DWORD ret;
+    switch (wait_result)
     {
-	DWORD ret;
-	if (GetExitCodeProcess((HANDLE)h, &ret))
-	{
-	    CloseHandle((HANDLE)h);
-	    C_exstatus = ret;
-	    return 1;
-	}
+        case WAIT_OBJECT_0:
+            if (GetExitCodeProcess((HANDLE)h, &ret))
+            {
+                CloseHandle((HANDLE)h);
+                C_exstatus = ret;
+                C_pid = (HANDLE)h;
+                return 1;
+            }
+            break;
+        case WAIT_TIMEOUT:
+            C_pid = 0;
+            return 1;
     }
     return set_last_errno();
 }
@@ -873,10 +881,11 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (%process 'process* #t cmd args env exactf enc) )) )
 
 (define-foreign-variable _exstatus int "C_exstatus")
+(define-foreign-variable _pid int "C_pid")
 
 (define (process-wait-impl pid nohang)
   (cond ((##core#inline "C_process_wait" pid nohang)
-          (values pid #t _exstatus))
+          (values _pid #t _exstatus))
         (else (values -1 #f #f) ) ))
 
 
