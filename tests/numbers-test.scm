@@ -213,6 +213,9 @@
  (test-equal "/: div fixnum by 0.0" (/ 33 0.0) +inf.0)
  (test-equal "/: div flonum by 0.0" (/ 33.0 0.0) +inf.0)
  (test-equal "/: div by 0 (inexact)" (/ 33 0.0) +inf.0)
+ (test-equal "/: (/ 0 z) => 0 for any z" (/ 0 10.0) 0)
+ (test-equal "/: (/ 0 +inf.0) => 0" (/ 0 +inf.0) 0)
+ (test-equal "/: (/ 0 -inf.0) => 0" (/ 0 -inf.0) 0)
  (test-assert "/: big result" (show (/ b1 2)))
 )
 
