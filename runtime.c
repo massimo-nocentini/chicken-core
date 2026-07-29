@@ -8045,7 +8045,10 @@ cplx_times(C_word **ptr, C_word rx, C_word ix, C_word ry, C_word iy)
 C_regparm C_word
 C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
 {
-  if (x & C_FIXNUM_BIT) {
+  /* (* 0 z) => 0 for any z, including NaN and infinity. */
+  if (x == C_fix(0) || y == C_fix(0)) {
+    return C_fix(0);
+  } else if (x & C_FIXNUM_BIT) {
     if (y & C_FIXNUM_BIT) {
       return C_a_i_fixnum_times(ptr, 2, x, y);
     } else if (C_immediatep(y)) {

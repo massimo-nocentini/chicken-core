@@ -2709,6 +2709,9 @@ EOF
 	(##sys#/-2 (sin n) (cos n))
 	(##core#inline_allocate ("C_a_i_tan" 4) (exact->inexact n)) ) ))
 
+(define (##sys#conjugate z)
+  (make-rectangular (real-part z) (- (imag-part z))))
+
 ;; General case: sin^{-1}(z) = -i\ln(iz + \sqrt{1-z^2})
 (set! scheme#asin
   (lambda (n)
@@ -2720,9 +2723,13 @@ EOF
 				   (##core#inline_allocate
 				    ("C_a_i_fix_to_flo" 4) n)))
 	  ;; General definition can return compnums
-	  (else (* -i (##sys#log-1
-		       (+ (* +i n)
-			  (##sys#sqrt/loc 'asin (- 1 (* n n))))) )) ) ))
+	  (else
+	    (let ((x (real-part n))
+	          (s:1-n (##sys#csqrt (- 1 n)))
+	          (s:1+n (##sys#csqrt (+ 1 n))))
+	      (make-rectangular (atan x (real-part (* s:1-n s:1+n)))
+	                        (fpasinh (imag-part (* (conjugate s:1-n)
+	                                               s:1+n)))))))))
 
 ;; General case:
 ;; cos^{-1}(z) = 1/2\pi + i\ln(iz + \sqrt{1-z^2}) = 1/2\pi - sin^{-1}(z) = sin(1) - sin(z)
@@ -2790,13 +2797,65 @@ EOF
     (##sys#check-exact-uinteger x 'exact-integer-sqrt)
     (##sys#exact-integer-sqrt x)))
 
+;; Complex square root according to Kahan's algorithm.
+
+(define logb (foreign-lambda double "logb" double))
+
+(define (##sys#cssqs z)
+  (let* ((x (real-part z))
+         (y (imag-part z))
+         (x^2 (* x x))
+         (y^2 (* y y))
+         (rho (+ x^2 y^2)))
+    (if (and (or (nan? rho) (infinite? rho))
+             (or (infinite? x) (infinite? y)))
+        (values +inf.0 0)
+        (let ((underflowed? (or (< x^2 minimum-flonum)
+                                (< y^2 minimum-flonum)))
+              (overflowed? (or (infinite? rho)
+                               (infinite? x^2)
+                               (infinite? y^2))))
+          (if (or overflowed?
+                  (and underflowed? (< rho (/ minimum-flonum
+                                              flonum-epsilon))))
+              (let ((k (flexponent (inexact (max (abs x) (abs y))))))
+                (values (+ (square (ldexp x (- k)))
+                           (square (ldexp y (- k))))
+                        k))
+              (values rho 0))))))
+
+(define (##sys#csqrt z)
+   (define (even*? k)
+     (and (integer? k) (not (infinite? k)) (even? k)))
+   (define (odd*? k)
+     (and (integer? k) (not (infinite? k)) (odd? k)))
+   (let*-values (((x) (real-part z))
+                 ((y) (imag-part z))
+                 ((rho k) (##sys#cssqs z))
+                 ((rho) (if (not (nan? x))
+                            (+ (ldexp (abs x) (- k))
+                               (sqrt rho))))
+                 ((rho) (if (even*? k)
+                            (+ rho rho)
+                            rho))
+                 ((k) (if (odd*? k)
+                          (/ (- k 1) 2)
+                          (- (/ k 2) 1)))
+                 ((rho) (ldexp (sqrt rho) k))
+                 ((zeta) rho)
+                 ((eta) y)
+                 ((eta) (if (and (not (zero? rho)) (not (infinite? eta)))
+                            (/ eta rho 2.0)
+                            eta)))
+     (if (and (not (zero? rho)) (negative? x))
+         (make-rectangular (abs eta) (* rho (sign y)))
+         (make-rectangular zeta eta))))
+
 ;; This procedure is so large because it tries very hard to compute
 ;; exact results if at all possible.
 (define (##sys#sqrt/loc loc n)
   (cond ((cplxnum? n)     ; Must be checked before we call "negative?"
-         (let ((p (##sys#/-2 (angle n) 2))
-               (m (##core#inline_allocate ("C_a_i_sqrt" 4) (magnitude n))) )
-           (make-complex (* m (cos p)) (* m (sin p)) ) ))
+         (##sys#csqrt n))
         ((negative? n)
          (make-complex .0 (##core#inline_allocate
 			   ("C_a_i_sqrt" 4) (exact->inexact (- n)))))
