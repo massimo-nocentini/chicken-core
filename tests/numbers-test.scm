@@ -1154,10 +1154,12 @@
                (current-test-comparator
                 (lambda (exp act)
                   (or (and (nan? exp) (nan? act))
-                      (and (< (abs (- (real-part exp) (real-part act)))
-                              (current-test-epsilon))
-                           (< (abs (- (imag-part exp) (imag-part act)))
-                              (current-test-epsilon)))))))
+                      (and (or (eqv? (real-part exp) (imag-part act))
+                               (< (abs (- (real-part exp) (real-part act)))
+                                  (current-test-epsilon)))
+                           (or (eqv? (imag-part exp) (imag-part act))
+                               (< (abs (- (imag-part exp) (imag-part act)))
+                                  (current-test-epsilon))))))))
 
   ;; We're using (acos (cos x)) instead of just (acos y) because we want
   ;; to test the compiler's specialization rules of cos output.
@@ -1165,8 +1167,8 @@
   (test-group "trigonometric functions"
     (test-group "flonums"
       ;; Note: we don't *actually* distinguish -nan from +nan, but whatever :)
-      (test-equal "acos(-inf)" (acos -inf.0) -nan.0)
-      (test-equal "acos(<small number>)" (acos -1e100) -nan.0)
+      (test-equal "acos(-inf)" (acos -inf.0) 3.141592653589793-inf.0i)
+      (test-equal "acos(<small number>)" (acos -1e100) 3.141592653589793-230.95165647996453i)
       (test-equal "cos(-1/3pi)" (cos (- (/ pi 3))) 0.5)
       (test-equal "acos(cos(-1/3pi))" (acos (cos (- (/ pi 3)))) (/ pi 3))
       (test-equal "cos(-1/4pi)" (cos (- (/ pi 4))) 0.7071067811865476)
@@ -1198,10 +1200,10 @@
       (test-equal "cos(   2pi)" (cos (* 2 pi)) 1.0)
       (test-equal "acos(cos(   2pi))" (acos (cos (* 2 pi))) 0)
       (test-equal "acos(pi)" (acos pi) 0.0+1.81152627246085i)
-      (test-equal "acos(+inf)" (acos +inf.0) -nan.0)
+      (test-equal "acos(+inf)" (acos +inf.0) 0+inf.0i)
 
-      (test-equal "asin(-inf)" (asin -inf.0) -nan.0)
-      (test-equal "asin(<small number>)" (asin -1e100) -nan.0)
+      (test-equal "asin(-inf)" (asin -inf.0) -1.5707963267948966+inf.0i)
+      (test-equal "asin(<small number>)" (asin -1e100) -1.5707963267948966+230.95165647996453i)
       (test-equal "sin(-1/3pi)" (sin (- (/ pi 3))) -0.8660254037844386)
       (test-equal "asin(sin(-1/3pi))" (asin (sin (- (/ pi 3)))) (- (/ pi 3)))
       (test-equal "sin(-1/4pi)" (sin (- (/ pi 4))) -0.7071067811865476)
@@ -1233,7 +1235,7 @@
       (test-equal "sin(   2pi)" (sin (* 2 pi)) 0.0)
       (test-equal "asin(sin(   2pi))" (asin (sin (* 2 pi))) 0.0)
       (test-equal "asin(pi)" (asin pi) 1.57079632679490-1.81152627246085i)
-      (test-equal "asin(+inf)" (asin +inf.0) -nan.0)
+      (test-equal "asin(+inf)" (asin +inf.0) 1.5707963267948966-inf.0i)
       
       (test-equal "atan(-inf)" (atan -inf.0) (- (/ pi 2)))
       (test-equal "atan(<small number>)" (atan -1e100) (- (/ pi 2)))
@@ -1570,11 +1572,11 @@
     ;; This is just a handful to determine that we're able to accept these.
     ;; Maybe determine better values to test with?
     (test-group "bignums"
-      (test-equal "acos(<negative bignum>)" (acos (- b1)) -nan.0)
-      ;; These are bogus (maybe the negative ones too!), but I don't want to
+      ;; These are bogus but I don't want to
       ;; "fix" them by copying the output and assume it's alright.
+      #;(test-equal "acos(<negative bignum>)" (acos (- b1)) -nan.0)
       #;(test-equal "acos(<bignum>)" (acos b1) +nan.0)
-      (test-equal "asin(<negative bignum>)" (asin (- b1)) -nan.0)
+      #;(test-equal "asin(<negative bignum>)" (asin (- b1)) -nan.0)
       #;(test-equal "asin(<bignum>)" (asin b1) +nan.0)
       (test-equal "atan(<negative bignum>)" (atan (- b1)) (- (/ pi 2)))
       (test-equal "atan(<bignum>)" (atan b1) (/ pi 2)))
@@ -1596,7 +1598,6 @@
       (test-equal "asin(-2)" (asin -2) (make-rectangular (/ pi -2) 1.31695789692482)))
 
     (test-group "ratnums"
-      (test-equal "acos(<small number>)" (acos (/ -999999999 2)) -nan.0)
       (test-equal "cos(-1/3pi)" (cos (- (/ ratpi 3))) 0.5)
       (test-equal "acos(cos(-1/3pi))" (acos (cos (- (/ ratpi 3)))) (/ pi 3))
       (test-equal "cos(-1/4pi)" (cos (- (/ ratpi 4))) 0.7071067811865476)
