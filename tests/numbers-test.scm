@@ -161,6 +161,10 @@
  (test-equal "*: comp*comp" (* c1 c1) (make-rectangular -847 2904))
  (test-equal "*: comp*comp (inexact)" (* c1 c2) (make-rectangular -1975.6 1399.2))
  (test-equal "*: multiarg" (* 33 44 55) 79860)
+ (test-equal "*: (* 0 z) => 0 for all z" (* 0 1.0) 0)
+ (test-equal "*: (* 0 +inf.0) => 0" (* 0 +inf.0) 0)
+ (test-equal "*: (* 0 -inf.0) => 0" (* 0 -inf.0) 0)
+ (test-equal "*: (* 0 +nan.0) => 0" (* 0 +nan.0) 0)
 )
 
 (test-group "division"
