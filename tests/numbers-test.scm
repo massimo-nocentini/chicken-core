@@ -778,7 +778,8 @@
  (test-equal "exact expt with complex number" (expt 0+1i 5) 0+1i)
  (test-equal "exact expt with complex number, real result" (expt 0+1i 6) -1)
  (test-equal "inexact expt with complex number" (expt 0.0+1.0i 5.0) 0.0+1.0i)
- (test-equal "inexact expt with complex number, real result" (expt 0.0+1.0i 6.0) -1.0)
+ (test-equal "inexact expt with complex number, real result"
+             (expt 0.0+1.0i 6.0) -1.0+0.0i)
  (parameterize ((current-test-epsilon 1e-10))
    (test-equal "inexact noninteger expt with complex number"
          (expt 0.0+4.0i 0.5) 1.4142135623731+1.41421356237309i)
