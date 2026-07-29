@@ -37,7 +37,10 @@
 	exit-in-progress cleanup-before-exit chicken.base#cleanup-tasks
         maximal-string-length find-ratio-between find-ratio
 	make-complex flonum->ratnum ratnum
-	+maximum-allowed-exponent+ mantexp->dbl ldexp round-quotient
+	+maximum-allowed-exponent+ mantexp->dbl ldexp ldexp*
+	round-quotient
+	fllog1+ ##sys#sign ##sys#atanh ##sys#internal-atanh
+	##sys#sign-bit ##sys#tanh
 	##sys#string->compnum ##sys#internal-gcd)
   (not inline chicken.base#sleep-hook ##sys#change-directory-hook
        ##sys#user-read-hook ##sys#error-hook ##sys#signal-hook ##sys#signal-hook/errno
@@ -2702,11 +2705,57 @@ EOF
 	  (##sys#/-2 (+ (exp in) (exp (- in))) 2) )
 	(##core#inline_allocate ("C_a_i_cos" 4) (exact->inexact n)) ) ))
 
+(define (##sys#tanh z)
+  (let* ((x (real-part z))
+         (y (imag-part z))
+         (tanh-overflow-treshold (/ (fpasinh maximum-flonum) 2))
+         (tanh-overflow-low-treshold (/ (fpasinh maximum-flonum) 4))
+         (ax (abs x)))
+    (cond
+      ((eqv? z 0) 0)
+      ((> ax tanh-overflow-treshold)
+       (if (real? z)
+           (* 1.0 (##sys#sign-bit x))
+           (make-rectangular (* 1.0 (##sys#sign-bit x))
+                             (* 0.0 (##sys#sign-bit y)))))
+      ((> ax tanh-overflow-low-treshold)
+       (if (real? z)
+           (* 1.0 (##sys#sign-bit x))
+           (let ((y*2 (* y 2.0))
+                 (cosh-x*2 (fpcosh (* 2.0 x))))
+             (cond
+               ((finite? y*2)
+                (make-rectangular (* 1.0 (##sys#sign-bit x))
+                                  (/ (sin y*2)
+                                     cosh-x*2)))
+               ((finite? y)
+                (make-rectangular (* 1.0 (##sys#sign-bit x))
+                                  (/ (* 2.0 (sin y) (cos y))
+                                     cosh-x*2)))
+               (else (make-rectangular (* 1.0 (##sys#sign-bit sign x))
+                                       (* 0.0 (##sys#sign-bit sign y))))))))
+      (else
+       (let* ((t (tan y))
+              (beta (+ 1.0 (* t t)))
+              (s (if (eqv? x 0)
+                     0.0              ; Avoid divide-by-exact-zero errors
+                     (fpsinh x)))
+              (rho (sqrt (+ 1.0 (* s s)))))
+         (if (infinite? t)
+             (make-rectangular (/ rho s) (/ t))
+             (let ((ret (if (real? z)
+                            (* beta rho s)
+                            (make-rectangular (* beta rho s)
+                                              t))))
+               (/ ret (+ 1.0 (* beta (* s s)))))))))))
+
+
+
 (set! scheme#tan
   (lambda (n)
     (##sys#check-number n 'tan)
     (if (cplxnum? n)
-	(##sys#/-2 (sin n) (cos n))
+        (* -i (##sys#tanh (* +i n)))   ; Kahan's version
 	(##core#inline_allocate ("C_a_i_tan" 4) (exact->inexact n)) ) ))
 
 (define (##sys#conjugate z)
@@ -2724,12 +2773,24 @@ EOF
 				    ("C_a_i_fix_to_flo" 4) n)))
 	  ;; General definition can return compnums
 	  (else
-	    (let ((x (real-part n))
-	          (s:1-n (##sys#csqrt (- 1 n)))
-	          (s:1+n (##sys#csqrt (+ 1 n))))
-	      (make-rectangular (atan x (real-part (* s:1-n s:1+n)))
-	                        (fpasinh (imag-part (* (conjugate s:1-n)
-	                                               s:1+n)))))))))
+	    (cond
+	      ;; These should fall out of the algorithm below,
+	      ;; but inexactness-promotion rules end up generating
+	      ;; a NaN somewhere.
+	      ((eqv? n -inf.0)
+	       -1.5707963267948966+inf.0i)
+	      ((eqv? n +inf.0)
+	       1.5707963267948966-inf.0i)
+	      (else
+	       (let* ((x (real-part n))
+	              (s:1-n (sqrt (- 1 n)))
+	              (s:1+n (sqrt (+ 1 n)))
+	              (ipart (imag-part (* (##sys#conjugate s:1-n)
+	                                   s:1+n))))
+	         (make-rectangular (atan x (real-part (* s:1-n s:1+n)))
+	                           (if (and (exact? ipart) (zero? ipart))
+	                               0
+	                               (fpasinh ipart))))))))))
 
 ;; General case:
 ;; cos^{-1}(z) = 1/2\pi + i\ln(iz + \sqrt{1-z^2}) = 1/2\pi - sin^{-1}(z) = sin(1) - sin(z)
@@ -2744,7 +2805,76 @@ EOF
                                      (##core#inline_allocate
                                       ("C_a_i_fix_to_flo" 4) n)))
             ;; General definition can return compnums
-            (else (- asin1 (asin n)))))))
+            (else
+              (let* ((s:1-n (sqrt (- 1 n)))
+                     (s:1+n (sqrt (+ 1 n)))
+                     (x (* 2 (atan (real-part s:1-n) (real-part s:1+n))))
+                     (w (imag-part (* (##sys#conjugate s:1+n)
+                                      s:1-n)))
+                     (y (if (eq? w 0)
+                            0
+                            (fpasinh w))))
+                (make-rectangular x y)))))))
+
+;;; Start Kahan's atan (with modifications from Gambit)
+
+(define fllog1+
+  (foreign-lambda double "log1p" double))
+
+(define (##sys#sign-bit x)
+  (cond
+    ((eq? x 0) +1)
+    ((eqv? x +0.0) +1.0)
+    ((eqv? x -0.0) -1.0)
+    (else (signum x))))
+
+(define (##sys#internal-atanh z)
+  (let* ((z (* (##sys#sign-bit (real-part z)) (##sys#conjugate z)))
+         (x (real-part z))
+         (y (imag-part z))
+         (theta (/ (sqrt maximum-flonum) 4))
+         (rho (/ theta))
+         (fl-pi/2  1.57079632679489661923132169163975144)
+         (fl-pi/4 0.785398163397448309615660845819875721))
+    (cond
+      ((or (> x theta) (> (abs y) theta))
+       (make-rectangular (real-part (/ z))
+                         (* fl-pi/2 (##sys#sign-bit y))))
+      ((and (= x 1.0) (zero? y))
+       (make-rectangular +inf.0
+                         (* (##sys#sign-bit y) fl-pi/4)))
+      ((= x 1.0)
+       (let ((absy (abs y)))
+         (make-rectangular (log (/ (sqrt (sqrt (+ 4.0 (* y y))))
+                                   (sqrt absy)))
+                           (* (/ (+ fl-pi/2
+                                    (atan absy 2.0))
+                                 2.0)
+                              (##sys#sign-bit y)))))
+      (else
+       (let ((y^2 (* y y)))
+         (make-rectangular (cond
+                             ((eqv? x 0) 0)
+                             (else
+                              (/ (fllog1+ (/ (* 4.0 x)
+                                             (+ (* (- 1.0 x) (- 1.0 x))
+                                                y^2)))
+                                 4.0)))
+                           (/ (angle (+ (* (- 1.0 x) (+ 1.0 x))
+                                        (- y^2)
+                                        (make-rectangular
+                                         0.0
+                                         (* 2.0 y))))
+                              2.0)))))))
+
+(define (##sys#atanh z)
+  (cond
+    ((eqv? z 0) 0)
+    ((and (real? z) (eqv? (abs z) 1))
+     (error 'atanh "atanh has a singularity at 1 and -1"))
+    ((and (real? z) (< -1.0 z 1.0))
+     (fpatanh (exact->inexact z)))
+    (else (* (##sys#sign-bit (real-part z)) (##sys#conjugate (##sys#internal-atanh z))))))
 
 (set! scheme#atan
   (lambda (n #!optional b)
@@ -2752,15 +2882,15 @@ EOF
     (cond ((cplxnum? n)
 	   (if b
 	       (##sys#error-bad-real n 'atan)
-	       (let ((in (* +i n)))
-		 (##sys#/-2 (- (##sys#log-1 (+ 1 in))
-			       (##sys#log-1 (- 1 in))) +2i))))
+	       (* -i (##sys#atanh (* +i n)))))
 	  (b
 	   (##core#inline_allocate
 	    ("C_a_i_atan2" 4) (exact->inexact n) (exact->inexact b)))
 	  (else
 	   (##core#inline_allocate
 	    ("C_a_i_atan" 4) (exact->inexact n))) ) ))
+
+;;; End kahan algorithm
 
 ;; This is "Karatsuba Square Root" as described by Paul Zimmermann,
 ;; which is 3/2K(n) + O(n log n) for an input of 2n words, where K(n)
@@ -2800,6 +2930,10 @@ EOF
 ;; Complex square root according to Kahan's algorithm.
 
 (define logb (foreign-lambda double "logb" double))
+(define (ldexp* x k)
+  (if (inexact? x)
+      (ldexp x k)
+      (* x (expt 2 k))))
 
 (define (##sys#cssqs z)
   (let* ((x (real-part z))
@@ -2818,37 +2952,38 @@ EOF
           (if (or overflowed?
                   (and underflowed? (< rho (/ minimum-flonum
                                               flonum-epsilon))))
-              (let ((k (flexponent (inexact (max (abs x) (abs y))))))
-                (values (+ (square (ldexp x (- k)))
-                           (square (ldexp y (- k))))
-                        k))
+              (let* ((k (logb (inexact (max (abs x) (abs y)))))
+                     (x* (ldexp* x (- k)))
+                     (y* (ldexp* y (- k))))
+                (values (+ (* x* x*) (* y* y*)) k))
               (values rho 0))))))
 
 (define (##sys#csqrt z)
    (define (even*? k)
-     (and (integer? k) (not (infinite? k)) (even? k)))
+     (and (integer? k) (even? k)))
    (define (odd*? k)
-     (and (integer? k) (not (infinite? k)) (odd? k)))
+     (and (integer? k) (odd? k)))
    (let*-values (((x) (real-part z))
                  ((y) (imag-part z))
                  ((rho k) (##sys#cssqs z))
                  ((rho) (if (not (nan? x))
-                            (+ (ldexp (abs x) (- k))
-                               (sqrt rho))))
+                            (+ (ldexp* (abs x) (- k))
+                               (sqrt rho))
+                            rho))
                  ((rho) (if (even*? k)
                             (+ rho rho)
                             rho))
                  ((k) (if (odd*? k)
                           (/ (- k 1) 2)
                           (- (/ k 2) 1)))
-                 ((rho) (ldexp (sqrt rho) k))
+                 ((rho) (ldexp* (sqrt rho) k))
                  ((zeta) rho)
                  ((eta) y)
                  ((eta) (if (and (not (zero? rho)) (not (infinite? eta)))
                             (/ eta rho 2.0)
                             eta)))
      (if (and (not (zero? rho)) (negative? x))
-         (make-rectangular (abs eta) (* rho (sign y)))
+         (make-rectangular (abs eta) (* rho (##sys#sign-bit y)))
          (make-rectangular zeta eta))))
 
 ;; This procedure is so large because it tries very hard to compute
