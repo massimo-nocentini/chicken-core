@@ -8032,7 +8032,8 @@ cplx_times(C_word **ptr, C_word rx, C_word ix, C_word ry, C_word iy)
   clear_buffer_object(ab, i1);
   clear_buffer_object(ab, i2);
 
-  if (C_truep(C_u_i_zerop2(i))) return r;
+  if (i == C_fix(0))
+    return r;
   else return C_cplxnum(ptr, r, i);
 }
 

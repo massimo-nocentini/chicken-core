@@ -165,6 +165,8 @@
  (test-equal "*: (* 0 +inf.0) => 0" (* 0 +inf.0) 0)
  (test-equal "*: (* 0 -inf.0) => 0" (* 0 -inf.0) 0)
  (test-equal "*: (* 0 +nan.0) => 0" (* 0 +nan.0) 0)
+ (test-equal "*: (* 1 0.0+inf.0i) => 0.0+inf.0i" (* 1 0.0+inf.0i) 0.0+inf.0i)
+ (test-equal "*: (* +i 0.0+inf.0i) => -inf.0+0.0i" (* +i 0.0+inf.0i) -inf.0+0.0i)
 )
 
 (test-group "division"
