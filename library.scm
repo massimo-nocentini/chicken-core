@@ -2778,10 +2778,15 @@ EOF
 	      ;; These should fall out of the algorithm below,
 	      ;; but inexactness-promotion rules end up generating
 	      ;; a NaN somewhere.
-	      ((eqv? n -inf.0)
-	       -1.5707963267948966+inf.0i)
-	      ((eqv? n +inf.0)
-	       1.5707963267948966-inf.0i)
+	      ;;
+	      ;; These are the special cases -inf.0+0.0i and
+	      ;; +inf.0+0.0i from Gambit. Since Gambit has mixed exactness numbers,
+	      ;; this doesn't copy -inf.0+0i and +inf.0+0i. Basically, unsigned
+	      ;; zero is approached counterclockwise, and signed zero from the
+	      ;; side with that sign. So unsigned zero approches from the bottom
+	      ;; and matches -0.0, which is probably not what we want.
+	      ((eqv? n +inf.0)  1.5707963267948966+inf.0i)
+	      ((eqv? n -inf.0) -1.5707963267948966+inf.0i)
 	      (else
 	       (let* ((x (real-part n))
 	              (s:1-n (sqrt (- 1 n)))
