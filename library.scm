@@ -72,18 +72,21 @@
 #define C_flush_all_files(dummy)    (C_fflush(NULL), C_SCHEME_UNDEFINED)
 
 static C_word
-fast_read_line_from_file(C_word str, C_word port, C_word size) {
+fast_read_line_from_file(C_word str, C_word start, C_word port, C_word size) {
   int n = C_unfix(size);
   int i;
   int c;
-  char *buf = C_c_string(str);
+  int p = C_unfix(start);
+  char *buf = C_c_string(str) + p;
   C_FILEPTR fp = C_port_file(port);
 
   if ((c = C_getc(fp)) == EOF) {
     if (ferror(fp)) {
       clearerr(fp);
+      if(p) return p;
       return C_fix(-1);
     } else { /* feof (fp) */
+      if(p) return p;
       return C_SCHEME_END_OF_FILE;
     }
   }
@@ -95,16 +98,17 @@ fast_read_line_from_file(C_word str, C_word port, C_word size) {
 
     if(c == EOF && ferror(fp)) {
       clearerr(fp);
-      return C_fix(-(i + 1));
+      return C_fix(-(i + 1) + p);
     }
 
     switch (c) {
     case '\r':	if ((c = C_getc(fp)) != '\n') C_ungetc(c, fp);
     case EOF:	clearerr(fp);
-    case '\n':	return C_fix(i);
+    case '\n':	return C_fix(i + p);
     }
     buf[i] = c;
   }
+  if(p) return p;
   return C_SCHEME_FALSE;
 }
 
@@ -4155,17 +4159,26 @@ EOF
                         (else (fx+ act len) ) ) ))))
           (lambda (p rlimit)       ; read-line
             (when rlimit (##sys#check-fixnum rlimit 'read-line))
-            (let ((sblen read-line-buffer-initial-size))
-              (unless (##sys#slot p 12)
-                (##sys#setslot p 12 (##sys#make-bytevector sblen)))
+            (let ((sblen read-line-buffer-initial-size)
+                  (pb (##sys#slot p 10))
+                  (buffer (##sys#slot p 12))
+                  (bpos 0))
+              (unless buffer
+                (set! buffer (##sys#make-bytevector sblen))
+                (##sys#setslot p 12 buffer))
+              (when pb
+                (set! bpos (##sys#size pb))
+                (##core#inline "C_copy_memory_with_offset" buffer pb 0 0 bpos)
+                (##sys#setislot p 10 #f))
               (let loop ([len sblen]
                          [limit (or rlimit maximal-string-length)]
-                         [buffer (##sys#slot p 12)]
+                         [buffer buffer]
                          [result ""]
                          [f #f])
                 (let* ((nlimit (fxmin limit len))
-                       (n (##core#inline "fast_read_line_from_file" buffer
+                       (n (##core#inline "fast_read_line_from_file" buffer bpos
                           p nlimit)))
+                  (set! bpos 0)
                   (cond ((eof-object? n) (if f result #!eof))
                         ((not n)
                          (let ((prev (##sys#buffer->string/encoding buffer 0 nlimit
