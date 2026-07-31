@@ -83,10 +83,10 @@ fast_read_line_from_file(C_word str, C_word start, C_word port, C_word size) {
   if ((c = C_getc(fp)) == EOF) {
     if (ferror(fp)) {
       clearerr(fp);
-      if(p) return p;
+      if(p) return start;
       return C_fix(-1);
     } else { /* feof (fp) */
-      if(p) return p;
+      if(p) return start;
       return C_SCHEME_END_OF_FILE;
     }
   }
