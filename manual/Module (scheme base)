@@ -1594,6 +1594,12 @@ modifier, and pare? to be a predicate for instances of <pare>.
         (set-kar! k 3)
         (kar k))                 ===> 3
 
+As an extension the <modifier name> may have the form
+{{(setter PROCEDURE)}}, which will define a SRFI-17 setter-procedure
+for the given {{PROCEDURE}} that sets the field value.
+Usually {{PROCEDURE}} has the same name is <accessor name> (but it
+doesn't have to).
+
 === Libraries
 
 Libraries provide a way to organize Scheme programs into reusable parts with
@@ -2453,44 +2459,6 @@ all.
  (rationalize
    (inexact->exact .3) 1/10)          ===> 1/3    ; exact
  (rationalize .3 1/10)                ===> #i1/3  ; inexact
-
-<procedure>(exp z)</procedure><br>
-<procedure>(log z [z2])</procedure><br>
-<procedure>(sin z)</procedure><br>
-<procedure>(cos z)</procedure><br>
-<procedure>(tan z)</procedure><br>
-<procedure>(asin z)</procedure><br>
-<procedure>(acos z)</procedure><br>
-<procedure>(atan z)</procedure><br>
-<procedure>(atan y x)</procedure><br>
-
-These procedures are part of every implementation that supports general
-real numbers; they compute the usual transcendental functions. The Log
-procedure computes the natural logarithm of z (not the base ten logarithm)
-if a single argument is given, or the base-z2 logarithm of z1 if two arguments are
-given.
-Asin, acos, and atan compute arcsine (sin^-1), arccosine (cos^-1), and
-arctangent (tan^-1), respectively. The two-argument variant of atan
-computes (angle (make-rectangular x y)) (see below), even in
-implementations that don't support general complex numbers.
-
-In general, the mathematical functions log, arcsine, arccosine, and
-arctangent are multiply defined. The value of log z is defined to be
-the one whose imaginary part lies in the range from -pi
-(exclusive) to pi (inclusive). log 0 is undefined. With log
-defined this way, the values of sin^-1 z, cos^-1 z, and tan^-1 z are
-according to the following formulae:
-
- sin^-1 z = - i log (i z + (1 - z^2)^1/2)
- 
- cos^-1 z = pi / 2 - sin^-1 z
- 
- tan^-1 z = (log (1 + i z) - log (1 - i z)) / (2 i)
-
-The above specification follows [27], which in turn cites [19]; refer
-to these sources for more detailed discussion of branch cuts, boundary
-conditions, and implementation of these functions. When it is possible
-these procedures produce a real result from a real argument.
 
 <procedure>(square z)</procedure>
 

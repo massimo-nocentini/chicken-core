@@ -857,18 +857,6 @@ is the same as {{(letrec ((NAME (lambda (VARIABLE ...) BODY ...))) NAME)}}.
 
 [[http://srfi.schemers.org/srfi-26/srfi-26.html|Syntactic sugar for specializing parameters]].
 
-==== define-values
-
-<macro>(define-values (NAME ...) VALUEEXP)</macro>
-<macro>(define-values (NAME1 ... NAMEn . NAMEn+1) VALUEEXP)</macro>
-<macro>(define-values NAME VALUEEXP)</macro>
-
-Defines several variables at once, with the result values of expression
-{{VALUEEXP}}, similar to {{set!-values}}.
-
-This special form is compatible with the definition from the R7RS
-{{(scheme base)}} library.
-
 ==== fluid-let
 
 <macro>(fluid-let ((VAR1 X1) ...) BODY ...)</macro>
@@ -1079,22 +1067,6 @@ the usual {{(NAME-SLOTNAME-set!}} {{STRUCT}} {{VALUE)}}.
 (set! (point-y p1) 99)
 (point-y p1)                     ==> 99
 </enscript>
-
-==== define-record-type
-
-<macro>(define-record-type NAME (CONSTRUCTOR TAG ...) PREDICATE (FIELD ACCESSOR [MODIFIER]) ...)</macro>
-
-SRFI-9 record types. For more information see the documentation for
-[[http://srfi.schemers.org/srfi-9/srfi-9.html|SRFI-9]].
-
-As an extension the {{MODIFIER}} may have the form
-{{(setter PROCEDURE)}}, which will define a SRFI-17 setter-procedure
-for the given {{PROCEDURE}} that sets the field value.
-Usually {{PROCEDURE}} has the same name is {{ACCESSOR}} (but it
-doesn't have to).
-
-This special form is also compatible with the definition from the R7RS
-{{(scheme base)}} library.
 
 ==== record-printer
 
