@@ -8003,16 +8003,16 @@ static C_word C_curdir(C_word buf, C_word size) {
 (set! scheme#eof-object (lambda () #!eof))
 
 (set! scheme#peek-u8
-  (case-lambda
-    (()
-     (let ((c (peek-char ##sys#standard-input)))
-       (if (eof-object? c) c
-           (char->integer c))))
-    ((port)
-     (##sys#check-input-port port #t 'peek-u8)
-     (let ((c (peek-char port)))
-       (if (eof-object? c) c
-           (char->integer c))))))
+  (lambda (#!optional (port ##sys#standard-input))
+    (let ((c (peek-char port)))
+      (if (eof-object? c)
+          c
+          (let ((d (char->integer c)))
+            (if (fx< d 256) 
+                d
+                (let ((bv (##sys#make-bytevector 4)))
+                  (##sys#encode-char c bv (##sys#slot port 15))
+                  (##core#inline "C_subbyte" bv 0))))))))
 
 (set! scheme#write-string
   (lambda (s #!optional (port ##sys#standard-output) start end)
