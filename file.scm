@@ -134,6 +134,7 @@ EOF
 (import scheme
 	chicken.base
 	chicken.condition
+	chicken.errno
 	chicken.fixnum
 	chicken.foreign
 	chicken.io
@@ -273,8 +274,11 @@ EOF
   filename)
 
 (define (delete-file* file)
-  (and (*lstat file 'delete-file*)
-       (delete-file file)))
+  (handle-exceptions exn
+    (if (eq? errno/noent (get-condition-property exn 'exn 'errno #f))
+        #f
+        (signal exn))
+    (delete-file file)))
 
 (define (rename-file oldfile newfile #!optional (clobber #f))
   (##sys#check-string oldfile 'rename-file)
