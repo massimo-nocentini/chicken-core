@@ -108,7 +108,7 @@ fast_read_line_from_file(C_word str, C_word start, C_word port, C_word size) {
     }
     buf[i] = c;
   }
-  if(p) return p;
+  if(p) return start;
   return C_SCHEME_FALSE;
 }
 
