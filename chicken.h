@@ -3201,7 +3201,8 @@ inline static C_word C_i_flonum_min(C_word x, C_word y)
   double
     xf = C_flonum_magnitude(x),
     yf = C_flonum_magnitude(y);
-
+  if(C_isnan(xf)) return y;
+  if(C_isnan(yf)) return x;
   return xf < yf ? x : y;
 }
 
@@ -3211,7 +3212,8 @@ inline static C_word C_i_flonum_max(C_word x, C_word y)
   double
     xf = C_flonum_magnitude(x),
     yf = C_flonum_magnitude(y);
-
+  if(C_isnan(xf)) return y;
+  if(C_isnan(yf)) return x;
   return xf > yf ? x : y;
 }
 

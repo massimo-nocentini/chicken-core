@@ -854,6 +854,23 @@
 
  (test-equal "max" (max 3 4) 4)
  (test-equal "max" (max 3.9 4) 4.0)
+ (test-equal "max" (max +nan.0 1.0 2.0) 2.0)
+ (test-equal "max" (max 1.0 +nan.0 2.0) 2.0)
+ (test-equal "max" (max 1.0 2.0 +nan.0) 2.0)
+ (test-equal "max" (max +nan.0 1.0 2) 2.0)
+ (test-equal "max" (max 1.0 +nan.0 2) 2.0)
+ (test-equal "max" (max 1.0 2 +nan.0) 2.0)
+ (test-assert "max" (nan? (max +nan.0)))
+ (test-assert "max" (nan? (max +nan.0 +nan.0)))
+
+ (test-equal "min" (min +nan.0 1.0 2.0) 1.0)
+ (test-equal "min" (min 1.0 +nan.0 2.0) 1.0)
+ (test-equal "min" (min 1.0 2.0 +nan.0) 1.0)
+ (test-equal "min" (min +nan.0 1 2.0) 1.0)
+ (test-equal "min" (min 1 +nan.0 2.0) 1.0)
+ (test-equal "min" (min 1 2.0 +nan.0) 1.0)
+ (test-assert "min" (nan? (min +nan.0)))
+ (test-assert "min" (nan? (min +nan.0 +nan.0)))
 
  (test-equal "modulo" (modulo 13 4) 1)
  (test-equal "modulo" (modulo 13.0 4) 1.0)
