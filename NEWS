@@ -96,12 +96,13 @@
   - `string->number' and the reader accept and handle correctly complex 
     numbers with a negative inexact zero as the imaginary part.
   - `imag-part' returns exact zero when given a non-complex number.
+  - `max' and `min' ignore nan values when given any non-nan argument.
 
-- Syntax expander:
+- Syntax expander
   - `syntax-rules' attempts to better support tail patterns with ellipses
      (#1736).
 
-- FFI changes:
+- FFI changes
   - Strings and symbols passed to foreign code are not copied, they are
     passed directly, any mutations done by external code will be visible on the
     Scheme side.
