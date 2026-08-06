@@ -429,7 +429,7 @@ Usage: #{csc} [OPTION ...] [FILENAME ...]
     -strict-types                  assume variable do not change their type
     -lfa2                          perform additional lightweight flow-analysis pass
     -unroll-limit LIMIT            specifies inlining limit for self-recursive calls
-    -merge-resuable-closures       enables closure resue
+    -merge-resuable-closures       enables closure reuse
     -merge-shareable-closures      enables closure sharing
 
   Configuration options:

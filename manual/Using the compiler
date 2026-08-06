@@ -117,9 +117,9 @@ the source text should be read from standard input.
 ; -nursery NUMBER :
 ; -stack-size NUMBER : Sets the size of the first heap-generation of the generated executable to {{NUMBER}} bytes. The parameter may be followed by a {{M}} ({{m}}) or {{K}} ({{k}}) suffix.  The default stack-size depends on the target platform.
 
-; -merge-reusable-closures : XXX
+; -merge-reusable-closures : Allows merging of reusable closures.  When multiple procedures close over the exact same set of variables, the outermost procedure's closure gets re-used inside the inner procedures.  This reduces memory usage and saves on copying of variables which should be faster and also less generated code, especially for large closures.
 
-; -merge-shareable-closures : XXX
+; -merge-shareable-closures : Allows merging of shareable closures.  Like the above, except this also allows procedures to share a closure when the set of variables differ.  Currently, this only works for non-escaping closures which strictly grow their containing procedure's set of closed-over variables, and only if there is exactly one sub-closure.  This turns out to be more than you would expect due to many internal procedures introduced during CPS transformation.
 
 ; -optimize-leaf-routines : Enable leaf routine optimization.
 
