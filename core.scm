@@ -308,6 +308,7 @@
      optimize-leaf-routines standalone-executable undefine-shadowed-macros
      verbose-mode local-definitions enable-specialization block-compilation
      inline-locally inline-substitutions-enabled strict-variable-types
+     merge-reusable-closures merge-shareable-closures
      static-extensions emit-link-file types-output-file
 
      ;; These are set by the (batch) driver, and read by the (c) backend
@@ -402,6 +403,8 @@
 (define target-heap-size #f)
 (define target-stack-size #f)
 (define optimize-leaf-routines #f)
+(define merge-reusable-closures #f)
+(define merge-shareable-closures #f)
 (define emit-profile #f)
 (define no-bound-checks #f)
 (define no-argc-checks #f)
@@ -3061,9 +3064,12 @@
     (gather node #f '())
     (when (pair? customizable)
       (debugging 'o "customizable procedures" customizable))
-    (debugging 'p "closure conversion merging of shareables phase...")
-    (merge-shareable node #f)
-    (merge-reusable node #f)
+    (when merge-shareable-closures
+      (debugging 'p "closure conversion merging of shareables phase...")
+      (merge-shareable node #f))
+    (when merge-reusable-closures 
+      (debugging 'p "closure conversion merging of reusables phase...")
+      (merge-reusable node #f))
     (unless (and (zero? sharing-containers)
                  (zero? sharing-users)) ;; Users should always be zero if containers is (but paranoia prevails, helps w/ debugging)
       (debugging 'o "shared closure containers" sharing-containers)

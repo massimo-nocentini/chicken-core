@@ -130,6 +130,12 @@
     computed compiler and linker options.
   - Added scripts/smoke-test.sh to automate basic testing of chicken-core
 
+- Compiler
+  - Added the `-merge-reusable-closures' and `-merge-shareable-closures'
+    options that enable closure reuse and sharing to reduce memory 
+    allocations. These options are enabled automatically by optimization
+    levels 1 (reuse) and 2 (sharing), respectively.
+
 - Build system
   - A "configure" script is now used to prepare the sources for building
     everything. This simplifies the use of "make", allows more elaborate

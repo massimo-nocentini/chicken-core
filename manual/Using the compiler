@@ -117,6 +117,10 @@ the source text should be read from standard input.
 ; -nursery NUMBER :
 ; -stack-size NUMBER : Sets the size of the first heap-generation of the generated executable to {{NUMBER}} bytes. The parameter may be followed by a {{M}} ({{m}}) or {{K}} ({{k}}) suffix.  The default stack-size depends on the target platform.
 
+; -merge-reusable-closures : XXX
+
+; -merge-shareable-closures : XXX
+
 ; -optimize-leaf-routines : Enable leaf routine optimization.
 
 ; -optimize-level LEVEL : Enables certain sets of optimization options. {{LEVEL}} should be an integer.
@@ -130,27 +134,27 @@ the source text should be read from standard input.
 </tr>
 <tr>
 <td>1</td>
-<td>{{-optimize-leaf-routines}}</td>
+<td>{{-optimize-leaf-routines -merge-reusable-closures -merge-shareable-closures}}</td>
 <td>Minimal optimization</td>
 </tr>
 <tr>
 <td>2 '''(Default)'''</td>
-<td>{{-optimize-leaf-routines -inline -lfa2}}</td>
+<td>{{-optimize-leaf-routines -inline -lfa2 -merge-reusable-closures -merge-shareable-closures}}</td>
 <td>Enable optimizations that do not break standard compliance</td>
 </tr>
 <tr>
 <td>3</td>
-<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize}}</td>
+<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -merge-reusable-closures -merge-shareable-closures}}</td>
 <td>Maximal optimization, while still "safe"</td>
 </tr>
 <tr>
 <td>4</td>
-<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -unsafe}}</td>
+<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -unsafe -merge-reusable-closures -merge-shareable-closures}}</td>
 <td>Maximal optimization, "unsafe"</td>
 </tr>
 <tr>
 <td>5 (or higher)</td>
-<td>{{-optimize-leaf-routines -block -inline -lfa2 -inline-global -specialize -unsafe -disable-interrupts -no-trace -no-lambda-info}}</td>
+<td>{{-optimize-leaf-routines -block -inline -lfa2 -inline-global -specialize -unsafe -disable-interrupts -no-trace -no-lambda-info -merge-reusable-closures -merge-shareable-closures}}</td>
 <td>All possible optimizations, "unsafe"</td>
 </tr>
 </table>

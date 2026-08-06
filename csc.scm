@@ -152,7 +152,8 @@
     -no-argc-checks -no-bound-checks -no-procedure-checks -no-compiler-syntax
     -emit-all-import-libraries -no-elevation -module-registration -no-module-registration
     -no-procedure-checks-for-usual-bindings -regenerate-import-libraries
-    -specialize -strict-types -lfa2 -debug-info
+    -specialize -strict-types -lfa2 -debug-info -merge-reusable-closures
+    -merge-shareable-closures
     -no-procedure-checks-for-toplevel-bindings))
 
 (define-constant complex-options
@@ -427,7 +428,9 @@ Usage: #{csc} [OPTION ...] [FILENAME ...]
                                     bindings
     -strict-types                  assume variable do not change their type
     -lfa2                          perform additional lightweight flow-analysis pass
-    -unroll-limit LIMIT          specifies inlining limit for self-recursive calls
+    -unroll-limit LIMIT            specifies inlining limit for self-recursive calls
+    -merge-resuable-closures       enables closure resue
+    -merge-shareable-closures      enables closure sharing
 
   Configuration options:
 

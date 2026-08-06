@@ -97,11 +97,13 @@
 		   ((1)
 		    (set! options
 		      (cons* 'optimize-leaf-routines
+                             'merge-reusable-closures
 			     options)) )
 		   ((2)
 		    (set! options 
 		      (cons* 'optimize-leaf-routines
 			     'inline
+                             'merge-shareable-closures
 			     'lfa2
 			     options)) ) 
 		   ((3)
@@ -110,6 +112,8 @@
 			     'inline
 			     'inline-global
 			     'local
+                             'merge-reusable-closures
+                             'merge-shareable-closures
 			     'lfa2
 			     'specialize
 			     options) ) )
@@ -119,8 +123,11 @@
 			     'inline 
 			     'inline-global
 			     'specialize
+                             'merge-reusable-closures
+                             'merge-shareable-closures
 			     'lfa2
-			     'local 'unsafe
+			     'local 
+                             'unsafe
 			     options) ) )
 		   (else
 		    (when (>= level 5)
@@ -135,6 +142,8 @@
 			       'inline
 			       'inline-global
 			       'lfa2
+                               'merge-reusable-closures
+                               'merge-shareable-closures
 			       options) ) ) ) )
 		 (loop (cdr rest)) ) )
 	      ((eq? 'debug-level o)
