@@ -67,7 +67,7 @@
       (when (interesting? o)
 	(cond ((seen? o) =>
 	       (lambda (p)
-		 (##sys#setslot p 1 (fx+ (cdr p) 1))))
+		 (##sys#setislot p 1 (fx+ (cdr p) 1))))
 	      ((pair? o)
 	       (seen! o)
 	       (walk! (car o))
@@ -84,7 +84,7 @@
 	(when cycles-only?
 	  (let ((p (seen? o)))
 	    (when (fx<= (cdr p) 1)
-	      (##sys#setslot p 1 0))))))
+	      (##sys#setislot p 1 0))))))
 
     ;; Mark shared objects #t, unshared objects #f.
     (foldl (lambda (a p)
