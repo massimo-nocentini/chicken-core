@@ -134,7 +134,6 @@ EOF
 (import scheme
 	chicken.base
 	chicken.condition
-	chicken.errno
 	chicken.fixnum
 	chicken.foreign
 	chicken.io
@@ -275,7 +274,7 @@ EOF
 
 (define (delete-file* file)
   (handle-exceptions exn
-    (if (eq? errno/noent (get-condition-property exn 'exn 'errno #f))
+    (if (eq? (foreign-value "ENOENT" int) (get-condition-property exn 'exn 'errno #f))
         #f
         (signal exn))
     (delete-file file)))
