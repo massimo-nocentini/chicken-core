@@ -757,7 +757,6 @@ repl.c: repl.scm \
 		chicken.eval.import.scm
 file.c: file.scm \
 		chicken.condition.import.scm \
-		chicken.errno.import.scm \
 		chicken.fixnum.import.scm \
 		chicken.io.import.scm \
 		chicken.irregex.import.scm \
