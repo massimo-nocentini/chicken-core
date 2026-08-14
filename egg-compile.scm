@@ -216,6 +216,7 @@
         (ptfile #f)
         (ifile #f)
         (install #t)
+        (custom-egg-build #f)
         (eggfile (locate-egg-file eggfile))
         (objext (object-extension platform))
         (arcext (archive-extension platform))
@@ -488,6 +489,8 @@
         ((synopsis dependencies test-dependencies category version author maintainer
                    license build-dependencies foreign-dependencies platform
                    distribution-files) #f)
+        ((custom-build)
+          (set! custom-egg-build (arg info 1 name?)))
         ((components) (for-each compile-component (cdr info)))
         ((component-options)
          (for-each compile-options (cdr info)))
@@ -531,61 +534,63 @@
       ;; generate + return build/install commands
       (values
         ;; build commands
-        (append-map
-          (lambda (id)
-            (cond ((assq id exts) =>
-                   (lambda (data)
-                     (let ((link (get-keyword linkage: (cdr data)))
-                           (mods (get-keyword modules: (cdr data))))
-                       (append (if (memq 'dynamic link)
-                                   (list (apply compile-dynamic-extension data))
-                                   '())
-                               (if (memq 'static link)
-                                   ;; if compiling both static + dynamic, override
-                                   ;; modules/types-file/inline-file properties to
-                                   ;; avoid generating things twice:
-                                   (list (apply compile-static-extension
-                                                (if (memq 'dynamic link)
-                                                    (cons (car data)
-                                                          (append '(modules: #f
-                                                                    types-file: #f
-                                                                    inline-file: #f)
-                                                                  (cdr data)))
-                                                    data)))
-                                   '())
-                               (if (uses-compiled-import-library? mode)
-                                   (map (lambda (mod)
-                                          (apply compile-import-library
-                                             mod (cdr data))) ; override name
-                                     mods)
-                                   '())))))
-                  ((assq id prgs) =>
-                   (lambda (data)
-                     (let ((link (get-keyword linkage: (cdr data))))
-                       (append (if (memq 'dynamic link)
-                                   (list (apply compile-dynamic-program data))
-                                   '())
-                               (if (memq 'static link)
-                                   (list (apply compile-static-program data))
-                                   '())))))
-                  ((assq id objs) =>
-                   (lambda (data)
-                     (let ((link (get-keyword linkage: (cdr data))))
-                       (append (if (memq 'dynamic link)
-                                   (list (apply compile-dynamic-object data))
-                                   '())
-                               (if (memq 'static link)
-                                   (list (apply compile-static-object data))
-                                   '())))))
-                  ((assq id genfiles) =>
-                   (lambda (data)
-                     (list (apply compile-generated-file data))))
-                  ((or (assq id data)
-                       (assq id cinc)
-                       (assq id scminc))
-                   '()) ;; nothing to build for data components
-                  (else (error "Error in chicken-install, don't know how to build component" id))))
-          order)
+        (if custom-egg-build
+            (list (lambda _ (print "\nsh " (qs* custom-egg-build))))
+            (append-map
+              (lambda (id)
+                (cond ((assq id exts) =>
+                       (lambda (data)
+                         (let ((link (get-keyword linkage: (cdr data)))
+                               (mods (get-keyword modules: (cdr data))))
+                           (append (if (memq 'dynamic link)
+                                       (list (apply compile-dynamic-extension data))
+                                       '())
+                                   (if (memq 'static link)
+                                       ;; if compiling both static + dynamic, override
+                                       ;; modules/types-file/inline-file properties to
+                                       ;; avoid generating things twice:
+                                       (list (apply compile-static-extension
+                                                    (if (memq 'dynamic link)
+                                                        (cons (car data)
+                                                              (append '(modules: #f
+                                                                                 types-file: #f
+                                                                                 inline-file: #f)
+                                                                      (cdr data)))
+                                                        data)))
+                                       '())
+                                   (if (uses-compiled-import-library? mode)
+                                       (map (lambda (mod)
+                                              (apply compile-import-library
+                                                     mod (cdr data))) ; override name
+                                         mods)
+                                       '())))))
+                      ((assq id prgs) =>
+                       (lambda (data)
+                         (let ((link (get-keyword linkage: (cdr data))))
+                           (append (if (memq 'dynamic link)
+                                       (list (apply compile-dynamic-program data))
+                                       '())
+                                   (if (memq 'static link)
+                                       (list (apply compile-static-program data))
+                                       '())))))
+                      ((assq id objs) =>
+                       (lambda (data)
+                         (let ((link (get-keyword linkage: (cdr data))))
+                           (append (if (memq 'dynamic link)
+                                       (list (apply compile-dynamic-object data))
+                                       '())
+                                   (if (memq 'static link)
+                                       (list (apply compile-static-object data))
+                                       '())))))
+                      ((assq id genfiles) =>
+                       (lambda (data)
+                         (list (apply compile-generated-file data))))
+                      ((or (assq id data)
+                           (assq id cinc)
+                           (assq id scminc))
+                       '()) ;; nothing to build for data components
+                      (else (error "Error in chicken-install, don't know how to build component" id))))
+              order))
         ;; installation commands
         (append
           (append-map

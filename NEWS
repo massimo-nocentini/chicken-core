@@ -12,6 +12,9 @@
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
 
+- Tools
+  - Added new global egg property "custom-build" which allows completely
+    overriding the build instructions.
 
 6.0.0
 

@@ -179,6 +179,25 @@ forms for constraining mode and linkage.
 
 Signal an error and abort processing. Mostly useful inside {{cond-expand}} forms.
 
+==== custom-build
+
+ [egg property] (custom-build STRING)
+
+Specifies a custom build script to be invoked for all components of the egg,
+ignoring all component-specific instructions and properties. {{STRING}} should be the
+name of a {{sh(1)}} shell script and thus may be platform
+sensitive.  The path to the file is prepended implicitly, so you
+should '''not''' prefix it with {{./}}.
+
+The script is executed with the location of the CHICKEN
+binaries in the {{PATH}}. Also, the following environment variables
+are set in the execution environment of the script:
+
+* {{CHICKEN_CC}}: name of the C compiler used for building CHICKEN
+* {{CHICKEN_CXX}}: name of the C++ compiler set during the build of CHICKEN
+* {{CHICKEN_CSC}}: path to {{csc}}
+* {{CHICKEN_CSI}}: path to {{csi}}
+
 === Component types
 
 ==== extension
@@ -295,22 +314,17 @@ name of the extensions (with the proper extension).
  [egg property] (custom-build STRING)
 
 Specifies a custom build script that should be executed instead of
-the default build operations. This property is mandatory for
-components of type {{generated-source-file}}. {{STRING}} should be the
-name of a {{sh(1)}} shell command (e.g., a script) and thus may be platform
+the default build operations for this component. This property is mandatory for
+components of type {{generated-source-file}}. 
+{{STRING}} should be the
+name of a {{sh(1)}} shell script and thus may be platform
 sensitive.  The path to the file is prepended implicitly, so you
 should '''not''' prefix it with {{./}}.
 
 The script will be invoked like the {{csc}} program and
 is executed with the location of the CHICKEN
-binaries in the {{PATH}}. Also, the following environment variables
-are set in the execution environment of the script:
-
-* {{CHICKEN_CC}}: name of the C compiler used for building CHICKEN
-* {{CHICKEN_CXX}}: name of the C++ compiler set during the build of CHICKEN
-* {{CHICKEN_CSC}}: path to {{csc}}
-* {{CHICKEN_CSI}}: path to {{csi}}
-
+binaries in the {{PATH}}. Environment variables are set up as
+for the global {{custom-build}} property, as described above.
 
 ==== csc-options
 

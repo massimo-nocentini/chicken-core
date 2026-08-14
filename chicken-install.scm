@@ -181,7 +181,7 @@
     (source #f #f #f)
     (csc-options #f #f #f)
     (link-options #f #f #f)
-    (custom-build #f #f #f)
+    (custom-build * #f #f)
     (linkage #f #f #f)
     (objects #f #f #f)
     (destination #f #f #f ,list?)
