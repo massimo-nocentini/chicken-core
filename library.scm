@@ -3531,8 +3531,7 @@ EOF
     (if end
         (##sys#check-range/including end 0 n 'utf8->string))
     (if (not (##core#inline "C_utf_validate" bv n start to))
-        (##sys#error-hook (foreign-value "C_DECODING_ERROR" int)
-         'utf8->string bv))
+        (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
     (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
 
 (define (bytes->string bv #!optional (start 0) end)
@@ -3541,7 +3540,7 @@ EOF
          (to (or end n)))
     (if end
         (##sys#check-range/including end 0 n 'bytes->string))
-    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" end start))))
+    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
 
 (define (string->latin1 s)
   (##sys#check-string s 'string->latin1)
