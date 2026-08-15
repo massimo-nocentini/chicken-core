@@ -1277,7 +1277,7 @@ EOF
       (let* ((len (##core#inline "C_fixnum_difference" end start))
              (i2 (##core#inline "C_fixnum_plus" index len)))
         (when (##core#inline "C_fixnum_greaterp" i2 size)
-          (let* ((sz2 (##core#inline "C_fixnum_times" size 2))
+          (let* ((sz2 (##core#inline "C_fixnum_plus" size i2))
                  (bv2 (##sys#make-bytevector sz2)))
             (##core#inline "C_copy_memory_with_offset" bv2 buffer 0 0 index)
             (set! size sz2)
