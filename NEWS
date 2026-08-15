@@ -1,3 +1,10 @@
+6.0.1
+
+- Core libraries
+  - Writing to an output bytevector could write beyond allocated range,
+    as the buffer wasn't resized large enough.
+  - The default range used in `bytes->string' was calculated incorrectly.
+
 6.0.0
 
 - Core libraries
