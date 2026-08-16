@@ -5861,7 +5861,7 @@ EOF
 	 (if (fx>= pos len)
 	     ""
 	     (let* ((rest (fx- len pos))
-                    (buffered (##sys#buffer->string buffered pos rest)))
+                    (buffered (##sys#buffer->string buf pos rest)))
 	       (##sys#setislot p 10 len)
 	       buffered))))
      )))
