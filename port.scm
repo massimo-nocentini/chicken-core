@@ -287,8 +287,8 @@ char *ttyname(int fd) {
 		      (loop) )
 		     (else c))))))
      read-bytevector:
-     (lambda (p n dest start)
-       (let loop ((n n) (c 0) (p start))
+     (lambda (dest start end)
+       (let loop ((n (fx- end start)) (c 0) (p start))
 	 (cond ((null? ports) c)
 	       ((fx<= n 0) c)
 	       (else
@@ -354,7 +354,12 @@ char *ttyname(int fd) {
 (define make-input-port
   (lambda (read ready? close #!rest r
                 #!key peek-char read-bytevector read-line read-buffered)
-    ;XXX this is for ensuring old-style calls fail and can be removed at some stage
+    (define (insert dest start c)
+      (let* ((bv (##sys#make-bytevector 4))
+             (m (##core#inline "C_utf_insert" bv 0 c)))
+        (##core#inline "C_copy_memory_with_offset" dest bv 0 start m)
+        m))
+   ;XXX this is for ensuring old-style calls fail and can be removed at some stage
     (when (and (pair? r) (not (##core#inline "C_i_keywordp" (car r))))
       (error 'make-input-port "invalid invocation - use keyword parameters" r))
     (let* ((class
@@ -381,9 +386,32 @@ char *ttyname(int fd) {
 	     #f				; flush-output
 	     (lambda (p)		; char-ready?
 	       (ready?) )
-	     (or read-bytevector	; read-bytevector!
+	     (if read-bytevector	; read-bytevector!
+                 (lambda (p n dest start)
+                  (let ((last (and (not peek-char) (##sys#slot p 10)))
+                        (m 0))
+                    (when last
+                      (set! m (insert dest start last))
+                      (##sys#setislot p 10 #f)
+                      (set! start (fx+ start m))
+                      (set! n (and n (fx- n m))))
+                    (if (and n (fx<= n m))
+                        m
+                        (fx+ m (read-bytevector dest start (and n (fx+ start n)))))))
 	         (lambda (p n dest start)
-	           (error "binary I/O not supported for custom text input port without bytevector-read method" p)))
+	           (let loop ((n n) (c 0))
+                     (cond ((eq? n 0) c)
+                           ((and (not peek-char) (##sys#slot p 10)) =>
+                             (lambda (last)
+                               (let ((m (insert dest start last)))
+                                 (##sys#setislot p 10 #f)
+                                 (loop (and n (fx- n m)) (fx+ c m)))))
+                          (else
+                            (let ((x (read)))
+                              (if (eof-object? x) 
+                                  c
+                                  (let ((m (insert dest start x)))
+                                    (loop (and n (fx- n m)) (fx+ c m))))))))))
 	     read-line			; read-line
 	     read-buffered))
 	   (data (vector #f))

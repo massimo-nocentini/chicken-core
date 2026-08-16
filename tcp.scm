@@ -436,14 +436,13 @@ EOF
                        (lambda (buf start n)
                          (##core#inline "C_utf_decode" buf start)))))
                read-bytevector:
-	       (lambda (p n dest start)	; read-bytevector!
-		 (let loop ((n n) (m 0) (start start))
+	       (lambda (dest start end)	; read-bytevector!
+		 (let loop ((n (fx- end start)) (m 0) (start start))
 		   (cond ((eq? n 0) m)
 			 ((fx< bufindex buflen)
 			  (let* ((rest (fx- buflen bufindex))
 				 (n2 (if (fx< n rest) n rest)))
-			    (##core#inline "C_copy_memory_with_offset" dest buf start 
-                              bufindex n2)
+			    (##core#inline "C_copy_memory_with_offset" dest buf start bufindex n2)
 			    (set! bufindex (fx+ bufindex n2))
 			    (loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) )
 			 (else

@@ -863,16 +863,15 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		       (fetch))
 		     (peek) )
                    read-bytevector:
-		   (lambda (port n dest start) ; read-bytevector!
-		     (let loop ([n (or n (fx- (##sys#size dest) start))]
+		   (lambda (dest start end) ; read-bytevector!
+		     (let loop ([n (fx- end start)]
                                 [m 0]
                                 [start start])
 		       (cond [(eq? 0 n) m]
 			     [(fx< bufpos buflen)
 			      (let* ([rest (fx- buflen bufpos)]
 				     [n2 (if (fx< n rest) n rest)])
-				(##core#inline "C_copy_memory_with_offset"
-                                  dest buf start bufpos n2)
+				(##core#inline "C_copy_memory_with_offset" dest buf start bufpos n2)
 				(set! bufpos (fx+ bufpos n2))
 				(loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) ]
 			     [else
