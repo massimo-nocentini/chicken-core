@@ -125,7 +125,7 @@ called on this port and should return a character/byte or {{#!eof}}. If
 not provided or {{#f}}, {{READ-CHAR}}/{{READ-U8}} will be used instead and the
 created port object handles peeking automatically (by calling the reader procedure
 and buffering the character).
-* {{read-bytevector}} is called when {{read-bytevector}} or {{read-string!}} is called (or the
+* {{read-bytevector}} is called when {{read-bytevector[!]}} or {{read-string[!]}} is called (or the
 higher-level non-mutating {{read-string}} and {{read-bytevector}}).  It will be invoked with 3
 arguments: a bytevector to read into (which may be
 assumed to be big enough to hold the data) and the offsets of the
