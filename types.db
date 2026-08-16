@@ -872,8 +872,8 @@
 (scheme#square (#(procedure #:pure) scheme#square ((or integer ratnum float)) (or integer ratnum float)))
 (scheme#floor/ (#(procedure #:clean #:enforce #:foldable) scheme#floor/ ((or integer float) (or integer float)) (or integer float) (or integer float)))
 (scheme#truncate/ (#(procedure #:clean #:enforce #:foldable) scheme#truncate/ ((or integer float) (or integer float)) (or integer float) (or integer float)))
-(scheme#floor-quotient (#(procedure #:clean #:enforce #:foldable) scheme#floor-quotient ((or integer float) (or integer float))))
-(scheme#floor-remainder (#(procedure #:clean #:enforce #:foldable) scheme#floor-remainder ((or integer float) (or integer float))))
+(scheme#floor-quotient (#(procedure #:clean #:enforce #:foldable) scheme#floor-quotient ((or integer float) (or integer float)) (or integer float)))
+(scheme#floor-remainder (#(procedure #:clean #:enforce #:foldable) scheme#floor-remainder ((or integer float) (or integer float)) (or integer float)))
 
 (scheme#boolean=? (#(procedure #:pure) scheme#boolean=? (boolean boolean #!rest boolean) boolean))
 (scheme#symbol=? (#(procedure #:pure) scheme#symbol=? (symbol symbol #!rest symbol) boolean))
