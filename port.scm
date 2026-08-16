@@ -196,8 +196,7 @@ char *ttyname(int fd) {
       (##sys#check-port dest 'copy-port)
       (let ((buf (##sys#make-bytevector +buf-size+)))
         (let loop ()
-          (let ((n (chicken.io#read-bytevector!/port +buf-size+
-                     buf src 0)))
+          (let ((n (chicken.io#read-bytevector!/port +buf-size+ buf src 0)))
             (unless (eq? n 0)
               (chicken.io#write-bytevector buf dest 0 n)
               (loop))))))

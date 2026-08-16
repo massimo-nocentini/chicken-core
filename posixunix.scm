@@ -882,8 +882,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 				  (loop n m start) ) ] ) ) )
                    read-line:
 		   (lambda (p limit)	; read-line
-		     (when (fx>= bufpos buflen)
-		       (fetch))
+		     (when (fx>= bufpos buflen) (fetch))
 		     (if (fx>= bufpos buflen)
 			 #!eof
 			 (let ((limit (or limit (fx- most-positive-fixnum bufpos))))
