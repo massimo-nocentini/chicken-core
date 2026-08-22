@@ -332,9 +332,7 @@ Usage: #{csc} [OPTION ...] [FILENAME ...]
 
     -h  -help                      display this text and exit
     -v  -verbose                   show compiler notes and tool-invocations
-    -vv                            display information about translation
-                                    progress
-    -vvv                           display information about all compilation
+    -vv                            display information about all compilation
                                     stages
     -version                       display Scheme compiler version and exit
     -release                       display release number and exit
