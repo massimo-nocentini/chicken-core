@@ -152,8 +152,28 @@ Load additional type database.
 .Pp
 Optimization options:
 .Bl -tag -width Ds
-.It Fl O , Fl O0 , Fl O1 , Fl O2 , Fl O3 , Fl O4 , Fl O5 , Fl optimize-level Ar NUMBER
+.It Fl O , Fl optimize-level Ar NUMBER
 Enable certain sets of optimization options.
+.Bd -filled -offset indent
+.It Fl O0
+No optimization
+.Po equivalent to Fl no-usual-integrations Fl no-compiler-syntax Pc .
+.It Fl O1
+Minimal optimization
+.Po equivalent to Fl optimize-leaf-routines Fl merge-reusable-closures Fl merge-shareable-closures Pc .
+.It Fl O2 No (Default)
+Enable optimizations that do not break standard compliance
+.Po equivalent to Fl optimize-leaf-routines Fl inline Fl lfa2 Fl merge-reusable-closures Fl merge-shareable-closures Pc .
+.It Fl O3
+Maximal optimization, while still "safe"
+.Po equivalent to Fl optimize-leaf-routines Fl local Fl inline Fl lfa2 Fl inline-global Fl specialize Fl merge-reusable-closures Fl merge-shareable-closures Pc .
+.It Fl O4
+Maximal optimization, "unsafe"
+.Po equivalent to Fl optimize-leaf-routines Fl local Fl inline Fl lfa2 Fl inline-global Fl specialize Fl unsafe Fl merge-reusable-closures Fl merge-shareable-closures Pc .
+.It Fl O5
+All possible optimizations, "unsafe"
+.Po equivalent to Fl optimize-leaf-routines Fl block Fl inline Fl lfa2 Fl inline-global Fl specialize Fl unsafe Fl disable-interrupts Fl no-trace Fl no-lambda-info Fl merge-reusable-closures Fl merge-shareable-closures Pc .
+.Ed
 .It Fl optimize-leaf-routines
 Enable leaf routine optimization.
 .It Fl no-usual-integrations
