@@ -4,6 +4,9 @@
   - Writing to an output bytevector could write beyond allocated range,
     as the buffer wasn't resized large enough.
   - The default range used in `bytes->string' was calculated incorrectly.
+  - Fixed various bugs in the implementation of the use of explicit port 
+    methods for reading bytevectors in custom input ports.
+  - Fixed implementation of `read-buffered' for string input-ports.
 
 6.0.0
 
