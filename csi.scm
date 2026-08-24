@@ -84,7 +84,8 @@ EOF
 
 (set! ##sys#repl-print-hook
    (lambda (o p)
-     (write/labels o p)
+     (##sys#with-print-length-limit ##sys#repl-print-length-limit 
+       (lambda () (write/labels o p)))
      (newline)))
 
 (define editor-command (make-parameter #f))
