@@ -214,7 +214,8 @@
       ;; ("gruesome hack", part 2)
       (and-let* ((dummy (##sys#get name '##r7rs#module)))
         (unless (eq? sym dummy)
-          (cond ((memq sym el))
+          (cond ((eq? #t el))
+                ((memq sym el))
                 ((find-dummy dummy el) =>
                  (lambda (dummylist)
                    (set-cdr! dummylist (cons sym (cdr dummylist))))))))
