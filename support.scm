@@ -1750,8 +1750,13 @@
 ;;; Print version/usage information:
 
 (define (print-version #!optional b)	; Used only in batch-driver.scm
-  (when b (print* +banner+))
-  (print (chicken-version #t)) )
+  (when b (print-banner)))
+
+(define (print-banner)  ; duplicate of one in csi.scm
+  (let ((v (string-split (chicken-version #t) "\n")))
+    (print (string-translate* +banner+ 
+             `(("XXX" ,@(cadr v)) 
+               ("YYY" ,@(string-translate* (substring (car v) 9) '(("." . " . ")))))))))
 
 ;; Used only in batch-driver.scm, but it seems to me this should be moved
 ;; to chicken.scm, as that's the only place this belongs.

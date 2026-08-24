@@ -148,8 +148,11 @@ EOF
 EOF
 ) ) ;|  <--- for emacs font-lock
 
-(define (print-banner)
-  (print +banner+ (chicken-version #t) "\n"))
+(define (print-banner) ; duplicate of one in support.scm
+  (let ((v (string-split (chicken-version #t) "\n")))
+    (print (string-translate* +banner+ 
+             `(("XXX" ,@(cadr v)) 
+               ("YYY" ,@(string-translate* (substring (car v) 9) '(("." . " . ")))))))))
 
 
 ;;; Chop terminating separator from pathname:
