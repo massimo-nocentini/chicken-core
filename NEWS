@@ -7,6 +7,13 @@
   - Fixed various bugs in the implementation of the use of explicit port 
     methods for reading bytevectors in custom input ports.
   - Fixed implementation of `read-buffered' for string input-ports.
+  - Printing at the REPL didn't implement output-limit handling, this has
+    been added now.
+  - "string-translate*" now properly checks the structure of the string
+    map argument.
+  - The procedures in "(scheme write)" respect any print-length limits
+    imposed by the REPL.
+  - Fixed a bug in "read-string" when reading from a binary port.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
