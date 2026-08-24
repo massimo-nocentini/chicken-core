@@ -31,7 +31,7 @@
   (disable-interrupts)
   (hide ##sys#dynamic-unwind
 	##sys#vector-resize ##sys#default-parameter-vector
-	current-print-length setter-tag
+	setter-tag
 	##sys#print-exit ##sys#r7rs-exn-handlers
 	##sys#format-here-doc-warning
 	exit-in-progress cleanup-before-exit chicken.base#cleanup-tasks
@@ -5472,7 +5472,7 @@ EOF
     (##sys#flush-output ##sys#standard-output)
     (void)))
 
-(define current-print-length (make-parameter 0))
+(define ##sys#current-print-length (make-parameter 0))
 (define ##sys#print-length-limit (make-parameter #f))
 (define ##sys#print-exit (make-parameter #f))
 
@@ -5491,7 +5491,7 @@ EOF
 	(define (outstr port str)
 	  (if length-limit
 	      (let* ((len (string-length str))
-		     (cpp0 (current-print-length))
+		     (cpp0 (##sys#current-print-length))
 		     (cpl (fx+ cpp0 len)) )
 		(if (fx> cpl length-limit)
 		    (let ((n (fx- length-limit cpp0)))
@@ -5499,7 +5499,7 @@ EOF
 		      (outstr0 port "...")
 		      ((##sys#print-exit) (##sys#void)))
 		    (outstr0 port str) )
-		(current-print-length cpl) )
+		(##sys#current-print-length cpl) )
 	      (outstr0 port str) ) )
 
 	(define (outstr0 port str)
@@ -5508,9 +5508,9 @@ EOF
 
 	(define (outchr port chr)
 	  (when length-limit
-	    (let ((cpp0 (current-print-length)))
-	      (current-print-length (fx+ cpp0 1))
-	      (when (fx>= cpp0 length-limit)
+	    (let ((cpp0 (##sys#current-print-length)))
+	      (##sys#current-print-length (fx+ cpp0 1))
+	      (when (fx> cpp0 length-limit)
 		(outstr0 port "...")
 		((##sys#print-exit) (##sys#void)))))
 	  ((##sys#slot (##sys#slot port 2) 2) port chr))  ; write-char
@@ -5758,7 +5758,7 @@ EOF
        (lambda (return)
 	 (parameterize ((##sys#print-length-limit limit)
 			(##sys#print-exit return)
-			(current-print-length 0))
+			(##sys#current-print-length 0))
 	   (thunk)))))))
 
 

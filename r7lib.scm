@@ -35,7 +35,7 @@
 		      write-simple)
   (import (rename scheme (display display-simple) (write write-simple))
 	  (only chicken.base foldl when optional)
-	  (only chicken.fixnum fx+ fx= fx<= fx-))
+	  (only chicken.fixnum fx+ fx- fx= fx<= fx>= fx> fx-))
 
   (define (interesting? o)
     (or (pair? o)
@@ -45,12 +45,34 @@
   (define (uninteresting? o)
     (not (interesting? o)))
 
+  (define (emit str p)
+    (let ((bv (##sys#slot str 0)))
+      ((##sys#slot (##sys#slot p 2) 3) p bv 0 (fx- (##sys#size bv) 1))))  ; write-bytevector
+
   (define (display-char c p)
-    ((##sys#slot (##sys#slot p 2) 2) p c))
+    (let ((n (##sys#print-length-limit)))
+      (when n
+        (let ((p (##sys#current-print-length)))
+          (##sys#current-print-length (fx+ p 1))
+          (when (fx> p n)
+            (emit "..." p)
+            ((##sys#print-exit) (##sys#void)))))
+      ((##sys#slot (##sys#slot p 2) 2) p c)))   ; write-char
 
   (define (display-string s p)
-    (let ((bv (##sys#slot s 0)))
-      ((##sys#slot (##sys#slot p 2) 3) p bv 0 (fx- (##sys#size bv) 1))))
+    (let ((n (##sys#print-length-limit)))
+      (if n
+          (let* ((len (string-length s))
+                 (p (##sys#current-print-length))
+                 (p2 (fx+ p len)))
+            (if (fx> p2 n)
+                (let ((m (fx- n p2)))
+                  (when (fx> m 0) (emit (##sys#substring s 0 m) p))
+                  (emit "..." p)
+                  ((##sys#print-exit) (##sys#void)))
+                (emit s p))
+            (##sys#current-print-length p2))
+          (emit s p))))
 
   ;; Build an alist mapping `interesting?` objects to boolean values
   ;; indicating whether those objects occur shared in `o`.
