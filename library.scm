@@ -8168,7 +8168,7 @@ static C_word C_curdir(C_word buf, C_word size) {
        (define (finish un bytes)
          (##core#inline "C_utf_overwrite" dest start un buf bytes)
          un)
-       (let loop ((p 0) (n n) (un 0) (bn 0))
+       (let loop ((p 0) (n n) (un 0) (bn 0))    ; pos, count, codepoints, rest bytes
          (let ((bytes (readb n buf port p)))
            (cond ((eq? bytes 0) (finish un bn))
                  ((eq? enc 'utf-8)
@@ -8189,10 +8189,9 @@ static C_word C_curdir(C_word buf, C_word size) {
                             ((eq? remain 0) (finish total tbytes))
                             (else (loop (fx+ p bytes) remain total
                                         tbytes))))))
-                 ((fx> bytes n)
+                 (else
                   (loop (fx+ p bytes) (fx- n bytes)
-                        (fx+ un bytes) (fx+ bn bytes)))
-                 (else (finish un bn)))))))))
+                        (fx+ un bytes) (fx+ bn bytes))))))))))
 
 (define (read-string! n dest #!optional (port ##sys#standard-input) (start 0))
   (##sys#check-input-port port #t 'read-string!)
