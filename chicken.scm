@@ -103,6 +103,7 @@
 		    (set! options 
 		      (cons* 'optimize-leaf-routines
 			     'inline
+                             'merge-reusable-closures
                              'merge-shareable-closures
 			     'lfa2
 			     options)) ) 

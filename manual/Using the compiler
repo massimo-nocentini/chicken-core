@@ -134,7 +134,7 @@ the source text should be read from standard input.
 </tr>
 <tr>
 <td>1</td>
-<td>{{-optimize-leaf-routines -merge-reusable-closures -merge-shareable-closures}}</td>
+<td>{{-optimize-leaf-routines -merge-reusable-closures}}</td>
 <td>Minimal optimization</td>
 </tr>
 <tr>
