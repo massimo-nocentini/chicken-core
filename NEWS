@@ -16,6 +16,10 @@
   - Added new global egg property "custom-build" which allows completely
     overriding the build instructions.
 
+- Compiler
+  - Added missing option "-merge-reusable-closures" at optimization level
+    2, making this actually match the documentation.
+
 6.0.0
 
 - Core libraries
