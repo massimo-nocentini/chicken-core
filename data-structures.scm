@@ -330,6 +330,12 @@
 (define (string-translate* str smap)
   (##sys#check-string str 'string-translate*)
   (##sys#check-list smap 'string-translate*)
+  (for-each 
+    (lambda (p) 
+      (##sys#check-pair p 'string-translate*)
+      (##sys#check-string (car p) 'string-translate*)
+      (##sys#check-string (cdr p) 'string-translate*))
+    smap)
   (let ((len (string-length str)))
     (define (collect i from total fs)
       (if (fx>= i len)
