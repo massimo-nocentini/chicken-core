@@ -301,14 +301,13 @@
 (define (find-object-file name)
   (let ((o (make-pathname #f name object-extension))
 	(a (make-pathname #f name library-extension))
-	;; In setup mode, objects in build dir may also end with "static.o"
+	;; objects in build dir may also end with "static.o"
 	(static-a (make-pathname #f name static-library-extension))
 	(static-o (make-pathname #f name static-object-extension)))
     (or (file-exists? a)
 	(file-exists? o)
-	(and (eq? ##sys#setup-mode #t)
-	     (or (file-exists? static-a)
-		 (file-exists? static-o)))
+	(file-exists? static-a)
+	(file-exists? static-o)
 	(and (not ignore-repository)
 	     (or (chicken.load#find-file a (repo-path))
 		 (chicken.load#find-file o (repo-path)))))))
@@ -984,8 +983,8 @@ EOF
 (define (collect-linked-objects ofiles gen-ofiles)
   (define (locate-link-file o)
     (let* ((p (pathname-strip-extension o))
-	   ;; Also strip "static.o" extension when in setup mode:
-	   (f (if ##sys#setup-mode (string-chomp p ".static") p)))
+	   ;; Also strip "static.o" extension when needed:
+	   (f (string-chomp p ".static")))
       (file-exists? (make-pathname #f f "link"))))
   (define (locate-objects libs)
     (map (lambda (id)
