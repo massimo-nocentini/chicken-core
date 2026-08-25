@@ -608,7 +608,8 @@ support.c: support.scm mini-srfi-1.scm \
 		chicken.random.import.scm \
 		chicken.sort.import.scm \
 		chicken.string.import.scm \
-		chicken.time.import.scm
+		chicken.time.import.scm \
+		banner.scm
 modules.c: modules.scm \
 		chicken.internal.import.scm \
 		chicken.format.import.scm \
