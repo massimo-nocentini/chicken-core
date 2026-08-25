@@ -304,6 +304,7 @@
                             options: opts
                             linkage: link custom: cbuild
                             mode: mode
+                            install: install
                             eggfile: eggfile
                             source-dependencies: sdeps
                             output-file: rtarget)
@@ -1044,19 +1045,20 @@
     (print cmd " " out " " ddir destf)
     (print-end-command platform)))
 
-(define ((install-object name #!key mode output-file) srcdir platform)
-  (let* ((cmd (install-file-command platform))
-         (mkdir (mkdir-command platform))
-         (ext (object-extension platform))
-         (sname (prefix srcdir name))
-         (out (qs* (target-file (conc sname ext) mode)))
-         (dest (effective-destination-repository mode))
-         (dfile (qs* dest))
-         (ddir (shell-variable "DESTDIR")))
-    (print "\n" mkdir " " ddir dfile)
-    (print cmd " " out " " ddir
-           (qs* (conc dest "/" output-file ext)))
-    (print-end-command platform)))
+(define ((install-object name #!key mode output-file install) srcdir platform)
+  (when install
+    (let* ((cmd (install-file-command platform))
+           (mkdir (mkdir-command platform))
+           (ext (object-extension platform))
+           (sname (prefix srcdir name))
+           (out (qs* (target-file (conc sname ext) mode)))
+           (dest (effective-destination-repository mode))
+           (dfile (qs* dest))
+           (ddir (shell-variable "DESTDIR")))
+      (print "\n" mkdir " " ddir dfile)
+      (print cmd " " out " " ddir
+             (qs* (conc dest "/" output-file ext)))
+      (print-end-command platform))))
 
 (define (install-random-files dest files mode srcdir platform)
   (let* ((fcmd (install-file-command platform))
