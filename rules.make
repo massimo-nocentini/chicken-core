@@ -349,6 +349,7 @@ endif
 endif
 ifeq ($(CROSS_CHICKEN)$(DESTDIR),0)
 	-$(IBINDIR)$(SEP)$(CHICKEN_INSTALL_PROGRAM) -defaults $(SRCDIR)setup.defaults -update-db
+	$(MAKE_READABLE_COMMAND) "$(DESTDIR)$(IEGGDIR)$(SEP)modules.db"
 else
 	@echo
 	@echo "Warning: cannot run \`$(CHICKEN_INSTALL_PROGRAM) -update-db' when cross-compiling or DESTDIR is set"
