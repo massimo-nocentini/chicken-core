@@ -344,6 +344,43 @@ EOF
  "read-line string port position tests"
  (test-port-position read-string-line/pos))
 
+;; TODO: include the other documented keyword arguments:
+;;       #:peek-u8 #:peek-char and #:read-line
+(test-group "make[-binary]-input-port callbacks"
+  (let ()
+
+    (define (test-sequence in)
+      (test-equal "read-char"        (read-char in)         #\1)
+      (test-equal "read-string"      (read-string 2 in)     "23")
+      (test-equal "read-char again"  (read-char in)         #\4)
+      (test-equal "read-bytevector"  (read-bytevector 2 in) #u8("56"))
+      (test-equal "read-string "     (read-string 2 in)     "78")
+      (test-equal "read-string"      (read-string #f in)    "90"))
+
+    (test-group "make-input-port read sequences"
+     (test-sequence
+      (let* ((p (open-input-string "1234567890")))
+        (make-input-port
+         (lambda () (read-char p))
+         (lambda () (char-ready? p))
+         (lambda () (close-input-port p))
+         #:peek-u8 #f
+         #:read-bytevector
+         (lambda (bv start end)
+           (read-bytevector! bv p start end))))))
+
+    (test-group "make-binary-input-port read sequences"
+     (test-sequence
+      (let* ((p (open-input-string "1234567890")))
+        (make-binary-input-port
+         (lambda () (read-u8 p))
+         (lambda () (char-ready? p))
+         (lambda () (close-input-port p))
+         #:peek-u8 #f
+         #:read-bytevector
+         (lambda (bv start end)
+           (read-bytevector! bv p start end))))))))
+
 (test-group "read-string!"
   (let ((in (open-input-string "1234567890"))
         (buf (make-string 5)))
