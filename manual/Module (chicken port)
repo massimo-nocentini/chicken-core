@@ -162,7 +162,8 @@ currently not ben synthesized from character-input operations.
 Returns a custom output port. Common operations on this port are handled
 by the given parameters, which should be procedures.  {{WRITE}} is
 called when output is sent to the port and receives a single argument,
-a string (or bytevector for binary ports).  {{CLOSE}} is called when the port is closed and should
+a string for {{make-output-port}} or an integer for {{make-binary-output-port}}.  
+{{CLOSE}} is called when the port is closed and should
 be a procedure of no arguments. {{force-output}} (if provided) is called
 for flushing the output port. The optional {{write-bytevector}} allows
 more optimized writing of partial buffers and takes 3 arguments: a
