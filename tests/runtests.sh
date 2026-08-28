@@ -60,7 +60,7 @@ $time true >/dev/null 2>/dev/null
 test $? -eq 127 && time=
 set -e
 
-rm -fr *.exe *.so *.o *.obj *.out *.import.* ../foo.import.* test-repository
+rm -fr *.exe *.so *.o *.out *.import.* ../foo.import.* test-repository
 mkdir -p test-repository
 cp $TYPESDB test-repository/types.db
 

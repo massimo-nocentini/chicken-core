@@ -21,7 +21,7 @@
 (csc "null.scm" "-t")
 (assert (file-exists? "null.c"))
 
-(define obj-file (if (eq? (software-version) 'mingw) "null.obj" "null.o"))
+(define obj-file "null.o")
 
 (csc "null.c" "-c")
 (assert (file-exists? obj-file))

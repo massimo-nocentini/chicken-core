@@ -42,10 +42,6 @@
 
 (define +unix-executable-extension+ "")
 (define +windows-executable-extension+ ".exe")
-(define +unix-object-extension+ ".o")
-(define +unix-archive-extension+ ".a")
-(define +windows-object-extension+ ".obj")
-(define +windows-archive-extension+ ".a")
 (define +link-file-extension+ ".link")
 
 (define keep-generated-files #f)
@@ -61,15 +57,8 @@
           (string-append prefix dir)
           default))))
 
-(define (object-extension platform)
-  (case platform
-    ((unix) +unix-object-extension+)
-    ((windows) +windows-object-extension+)))
-
-(define (archive-extension platform)
-  (case platform
-    ((unix) +unix-archive-extension+)
-    ((windows) +windows-archive-extension+)))
+(define (object-extension platform) ".o")
+(define (archive-extension platform) ".a")
 
 (define (executable-extension platform)
   (case platform

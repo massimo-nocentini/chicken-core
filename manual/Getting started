@@ -514,8 +514,8 @@ name), and that it returns an integer result (the {{int}} before.) Now we can in
 
 If using MinGW on Windows,
 
- > gcc -c fib.c -o fib.obj
- > csc -o fib-user fib.obj fib-user.scm
+ > gcc -c fib.c -o fib.o
+ > csc -o fib-user fib.o fib-user.scm
 
 Then run the executable.
  $ ./fib-user

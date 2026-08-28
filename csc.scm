@@ -101,7 +101,7 @@
 (define rc-compiler (if host-mode INSTALL_RC_COMPILER TARGET_RC_COMPILER))
 (define linker (if host-mode host-cc default-cc))
 (define c++-linker (if host-mode host-cxx default-cxx))
-(define object-extension (if mingw "obj" "o"))
+(define object-extension "o")
 (define library-extension "a")
 (define link-output-flag "-o")
 (define executable-extension "")
@@ -306,8 +306,15 @@
 	(static-o (make-pathname #f name static-object-extension)))
     (or (file-exists? a)
 	(file-exists? o)
+        (cond-expand
+          (windows (file-exists? (make-pathname #f name "obj")))
+          (else #f))
 	(file-exists? static-a)
 	(file-exists? static-o)
+        (cond-expand
+          (windows 
+            (file-exists? (make-pathname #f name "static.obj")))
+          (else #f))
 	(and (not ignore-repository)
 	     (or (chicken.load#find-file a (repo-path))
 		 (chicken.load#find-file o (repo-path)))))))
