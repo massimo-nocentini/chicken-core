@@ -795,15 +795,14 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
   (list "/c" cmdlin) )
 
 (set! chicken.process#process-run
-  (lambda (f . args)
-    (let ((args (if (pair? args) (car args) #f)))
+  (lambda (f #!optional args)
       (if args
           (chicken.process#process-spawn
            chicken.process#spawn/nowait f args)
           (chicken.process#process-spawn
            chicken.process#spawn/nowait
            (shell-command 'process-run)
-           (shell-command-arguments f)) ) ) ) )
+           (shell-command-arguments f)) ) ) )
 
 ;;; Run subprocess connected with pipes:
 (define-foreign-variable _rdbuf char "C_rdbuf")
