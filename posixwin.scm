@@ -730,7 +730,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (define quote-arg-string
   (let ((needs-quoting?
          ;; This is essentially (string-any char-whitespace? s) but we
-         ;; don't want a SRFI-13 dependency. (Do we?)
+         ;; don't want a SRFI-13 dependency. 
          (lambda (s)
            (let ((len (string-length s)))
              (let loop ((i 0))
