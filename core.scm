@@ -1873,7 +1873,9 @@
 	  [head (if cps
 		    `((##core#primitive ,f-id))
 		    `(##core#inline ,f-id) ) ]
-	  [rest (map (lambda (p t) (foreign-type-check (foreign-type-convert-argument p t) t)) params argtypes)] )
+	  [rest (map (lambda (p t) 
+                       (foreign-type-check (foreign-type-convert-argument p t) t)) 
+                     params argtypes)] )
       `(##core#lambda ,params
 	 ;; Do minor GC (if callback) to make room on stack:
 	 ,@(if callback '((##sys#gc #f)) '())
