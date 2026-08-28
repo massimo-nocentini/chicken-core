@@ -1127,6 +1127,7 @@
 	      (if unsafe
 		  `(##sys#slot ,param 1)
 		  `(##sys#slot (##sys#foreign-symbol-argument ,param) 1)) )
+             ((bool void scheme-object) param)
 	     (else
 	      (cond ((and (symbol? t) (lookup-foreign-type t))
 		     => (lambda (t) (next (vector-ref t 0)) ) )
@@ -1171,7 +1172,7 @@
 		       ((nonnull-pointer nonnull-c-pointer)
 			`(##sys#foreign-pointer-argument ,param) )
 		       (else param) ) )
-		    (else param) ) ) ) ) )
+		    (else (quit-compiling "unknown foreign type `~S'" type)) ) ) ) ) )
        (lambda ()
 	 (quit-compiling "foreign type `~S' refers to itself" type)) ) ) ) )
 
