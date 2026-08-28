@@ -268,7 +268,7 @@
                             predefined-types: ptfile eggfile: eggfile
                             modules: (or mods (list rtarget))
                             source-dependencies: sdeps
-                            link-objects: lobjs
+                            link-objects: lobjs custom-egg-build: custom-egg-build
                             output-file: rtarget)
                     exts)))))
         ((installed-c-object c-object)
@@ -294,7 +294,7 @@
                             linkage: link custom: cbuild
                             mode: mode
                             install: install
-                            eggfile: eggfile
+                            eggfile: eggfile custom-egg-build: custom-egg-build
                             source-dependencies: sdeps
                             output-file: rtarget)
                       objs)))))
@@ -326,7 +326,7 @@
             (set! genfiles
               (cons (list target dependencies: cdeps source: src
                           custom: cbuild source-dependencies: sdeps
-                          eggfile: eggfile)
+                          eggfile: eggfile custom-egg-build: custom-egg-build)
                     genfiles))))
         ((c-include)
           (fluid-let ((target (check-target (cadr info) cinc))
@@ -386,7 +386,7 @@
 			    mode: mode output-file: rtarget
                             source-dependencies: sdeps
                             link-objects: lobjs
-                            eggfile: eggfile)
+                            eggfile: eggfile custom-egg-build: custom-egg-build)
 		      prgs)))))
         (else (compile-common info compile-component 'component))))
     (define (compile-extension/program info)
@@ -627,7 +627,7 @@
 (define ((compile-static-extension name #!key mode dependencies
                                    source-dependencies
                                    source (options '())
-                                   predefined-types eggfile
+                                   predefined-types eggfile custom-egg-build
                                    link-objects modules
                                    custom types-file inline-file)
          srcdir platform)
@@ -668,6 +668,7 @@
       (prepare-custom-command cmd platform))
     (print-build-command targets
 			 `(,@(filelist srcdir source-dependencies) ,src ,eggfile
+                           ,@(if custom-egg-build (list custom-egg-build) '())
 			   ,@(if custom (list cmd) '())
                            ,@(get-dependency-targets dependencies))
 			 `(,@(if custom '("sh") '())
@@ -696,7 +697,7 @@
 (define ((compile-dynamic-extension name #!key mode mode dependencies
                                     source (options '())
                                     (link-options '())
-                                    predefined-types eggfile
+                                    predefined-types eggfile custom-egg-build
                                     link-objects
                                     source-dependencies modules
                                     custom types-file inline-file)
@@ -736,6 +737,7 @@
       (prepare-custom-command cmd platform))
     (print-build-command targets
 			 `(,src ,eggfile ,@(if custom (list cmd) '())
+                           ,@(if custom-egg-build (list custom-egg-build) '())
 			   ,@(filelist srcdir lobjs)
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
@@ -781,7 +783,7 @@
 (define ((compile-static-object name #!key mode dependencies
                                 source-dependencies
                                 source (options '())
-                                eggfile custom)
+                                eggfile custom-egg-build custom)
          srcdir platform)
   (let* ((cmd (or (custom-cmd custom srcdir platform)
                   default-csc))
@@ -799,6 +801,7 @@
       (prepare-custom-command cmd platform))
     (print-build-command (list out)
 			 `(,@(filelist srcdir source-dependencies) ,src ,eggfile
+                           ,@(if custom-egg-build (list custom-egg-build) '())
 			   ,@(if custom (list cmd) '())
                            ,@(get-dependency-targets dependencies))
 			 `(,@(if custom '("sh") '())
@@ -811,7 +814,7 @@
 
 (define ((compile-dynamic-object name #!key mode mode dependencies
                                  source (options '())
-                                 eggfile
+                                 eggfile custom-egg-build
                                  source-dependencies
                                  custom)
          srcdir platform)
@@ -831,6 +834,7 @@
       (prepare-custom-command cmd platform))
     (print-build-command (list out)
 			 `(,src ,eggfile ,@(if custom (list cmd) '())
+                           ,@(if custom-egg-build (list custom-egg-build) '())
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
 			 `(,@(if custom '("sh") '())
@@ -843,7 +847,7 @@
 
 (define ((compile-dynamic-program name #!key source mode dependencies
                                   (options '()) (link-options '())
-                                  source-dependencies
+                                  source-dependencies custom-egg-build
                                   custom eggfile link-objects)
          srcdir platform)
   (let* ((cmd (or (custom-cmd custom srcdir platform)
@@ -865,6 +869,7 @@
       (prepare-custom-command cmd platform))
     (print-build-command (list out)
 			 `(,src ,eggfile ,@(if custom (list cmd) '())
+                           ,@(if custom-egg-build (list custom-egg-build) '())
 			   ,@(filelist srcdir source-dependencies)
 			   ,@(filelist srcdir lobjs)
                            ,@(get-dependency-targets dependencies))
@@ -882,7 +887,7 @@
 
 (define ((compile-static-program name #!key source dependencies
                                  (options '()) (link-options '())
-                                 source-dependencies
+                                 source-dependencies custom-egg-build
                                  custom mode eggfile link-objects)
          srcdir platform)
   (let* ((cmd (or (custom-cmd custom srcdir platform)
@@ -904,6 +909,7 @@
       (prepare-custom-command cmd platform))
     (print-build-command (list out)
 			 `(,src ,eggfile ,@(if custom (list cmd) '())
+                           ,@(if custom-egg-build (list custom-egg-build) '())
 			   ,@(filelist srcdir lobjs)
 			   ,@(filelist srcdir source-dependencies)
                            ,@(get-dependency-targets dependencies))
@@ -919,7 +925,7 @@
     (print-end-command platform)))
 
 (define ((compile-generated-file name #!key source custom dependencies
-                                 source-dependencies eggfile)
+                                 source-dependencies eggfile custom-egg-build)
          srcdir platform)
   (let ((cmd (custom-cmd custom srcdir platform))
         (out (or source name)))
@@ -927,6 +933,7 @@
     (prepare-custom-command cmd platform)
     (print-build-command (list out)
 			 (append
+                           (if custom-egg-build (list custom-egg-build) '())
 			   (filelist srcdir source-dependencies)
                            (get-dependency-targets dependencies))
 			 `("sh" ,cmd ,eggfile)
