@@ -998,7 +998,6 @@ testclean:
 	  $(SRCDIR)tests$(SEP)*.inline \
 	  $(SRCDIR)tests$(SEP)*.link \
 	  $(SRCDIR)tests$(SEP)*.o \
-	  $(SRCDIR)tests$(SEP)*.obj \
 	  $(SRCDIR)tests$(SEP)*.out \
 	  $(SRCDIR)tests$(SEP)*.profile \
 	  $(SRCDIR)tests$(SEP)*.redacted \
