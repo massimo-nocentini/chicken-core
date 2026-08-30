@@ -52,9 +52,9 @@
   (define (display-char c p)
     (let ((n (##sys#print-length-limit)))
       (when n
-        (let ((p (##sys#current-print-length)))
-          (##sys#current-print-length (fx+ p 1))
-          (when (fx> p n)
+        (let ((pl (##sys#current-print-length)))
+          (##sys#current-print-length (fx+ pl 1))
+          (when (fx> pl n)
             (emit "..." p)
             ((##sys#print-exit) (##sys#void)))))
       ((##sys#slot (##sys#slot p 2) 2) p c)))   ; write-char
@@ -63,15 +63,15 @@
     (let ((n (##sys#print-length-limit)))
       (if n
           (let* ((len (string-length s))
-                 (p (##sys#current-print-length))
-                 (p2 (fx+ p len)))
-            (if (fx> p2 n)
-                (let ((m (fx- n p2)))
+                 (pl (##sys#current-print-length))
+                 (pl2 (fx+ pl len)))
+            (if (fx> pl2 n)
+                (let ((m (fx- n pl2)))
                   (when (fx> m 0) (emit (##sys#substring s 0 m) p))
                   (emit "..." p)
                   ((##sys#print-exit) (##sys#void)))
                 (emit s p))
-            (##sys#current-print-length p2))
+            (##sys#current-print-length pl2))
           (emit s p))))
 
   ;; Build an alist mapping `interesting?` objects to boolean values
