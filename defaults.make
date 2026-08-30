@@ -184,7 +184,6 @@ LIBCHICKEN_SO_LIBRARIES ?= $(LIBRARIES)
 
 # other settings
 
-SCRIPT_EXT =
 COPY_COMMAND = cp
 echo = echo '$(subst ','\'',$(3))'$(1)$(2)
 #' fix Emacs syntax highlighting
@@ -196,7 +195,6 @@ O ?= .o
 A ?= .a
 # EXE ?=
 SO ?= .so
-ASM ?= .S
 MAN ?= .mdoc
 
 # special files
@@ -290,8 +288,7 @@ TARGETS += $(CHICKEN_INSTALL_PROGRAM)$(EXE) \
 	$(CHICKEN_STATUS_PROGRAM)$(EXE) \
 	$(CHICKEN_PROFILE_PROGRAM)$(EXE) \
 	$(CSC_PROGRAM)$(EXE) \
-	$(CHICKEN_DO_PROGRAM)$(EXE) \
-	$(CHICKEN_DEBUGGER_PROGRAM)
+	$(CHICKEN_DO_PROGRAM)$(EXE)
 
 ifdef WINDOWS
 TARGETS += chicken.rc$(O)
