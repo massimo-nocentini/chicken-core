@@ -5423,7 +5423,11 @@ EOF
              (##core#inline "C_pairp" lst))
         (let retry ((x (##sys#slot lst 0)))
           (cond ((char? x) (retry (string x)))
-                ((null? x) (loop (##sys#slot lst 1) prev))
+                ((null? x) 
+                  (if prev 
+                      (##sys#setslot prev 1 (##sys#slot lst 1))
+                      (set! lst1 (##sys#slot lst 1)))
+                  (loop (##sys#slot lst 1) prev))
                 ((list? x) 
                   (let ((lst (##sys#append x (##sys#slot lst 1))))
                     (if prev
