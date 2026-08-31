@@ -617,7 +617,8 @@
 (assert-fail (with-input-from-string "\"" read))
 (assert-fail (with-input-from-string "#|" read))
 (assert-fail (with-input-from-string "#(" read))
-(assert-fail (with-input-from-string "#${" read))
+(assert-fail (with-input-from-string "#u8(" read))
+(assert-fail (with-input-from-string "#u8{" read))
 (assert-fail (with-input-from-string "\\" read))
 (assert-fail (with-input-from-string "|\\" read))
 (assert-fail (with-input-from-string "\"\\" read))
@@ -676,6 +677,22 @@ A
 (assert (string>? "foo\x00;b" "foo\x00;a"))
 (assert (string-ci<? "foo\x00;a" "foo\x00;B"))
 (assert (string-ci>? "foo\x00;b" "foo\x00;A"))
+
+;; hex bytevector literals
+(assert-fail (with-input-from-string "#u8{f}" read))
+(assert-fail (with-input-from-string "#u8{ff0}" read))
+(assert-fail (with-input-from-string "#u8{1}" read))
+(assert-fail (with-input-from-string "#u8{-1}" read))
+(assert-fail (with-input-from-string "#u8{ -01 }" read))
+(assert-fail (with-input-from-string "#u8{F11223344556677889900}" read))
+
+(assert (equal? '#u8{}   '#u8()))
+(assert (equal? '#u8{01} '#u8(1)))
+(assert (equal? '#u8{00 01 10 11} '#u8(0 1 16 17)))
+(assert (equal? '#u8{af fa FA AF} '#u8(175 250 250 175)))
+(assert (equal? '#u8{0001   0203  0aff} '#u8(0 1 2 3 10 255)))
+(assert (equal? '#u8{0001   0203  0aff} '#u8(0 1 2 3 10 255)))
+(assert (equal? '#u8{000102030aff}      '#u8(0 1 2 3 10 255)))
 
 ;; reported by Nils Holm (#1534)
 ;; https://groups.google.com/group/comp.lang.scheme/t/6b8be06b84b39a7

@@ -5379,10 +5379,42 @@ EOF
              (else (fail sym))))))
     (else (fail char))))
 
+;; returns a (potentially large) list of numbers (bytes) in
+;; order. ignores whitespace.
+(define (##sys#read-hex-literal port) ;; { 00ff11 ff } => #u8(0 255 17 255)
+  (define (hex c)
+    (cond ((and (char>=? c #\a) (char<=? c #\f)) (fx- (char->integer c) 87)) ;; (- (char->integer #\a) 10)
+          ((and (char>=? c #\A) (char<=? c #\F)) (fx- (char->integer c) 55)) ;; (- (char->integer #\A) 10)
+	  ((and (char>=? c #\0) (char<=? c #\9)) (fx- (char->integer c) 48)) ;; (char->integer #\0)
+	  (else (##sys#read-error port "invalid hex-code in bytecode literal" c))))
+
+  (unless (eq? #\{ (##sys#read-char-0 port)) (##sys#read-error port "internal error"))
+  (let ((first #f))
+    (let loop ((h #f) (last #f))
+      (let ((c (##sys#read-char-0 port)))
+        (cond ((eof-object? c)
+	       (##sys#read-error port "unexpected end of hex bytevector literal"))
+	      ((char=? #\} c)
+	       (if h
+		   (##sys#read-error port "odd-numbered hex bytevector literal")
+		   (or first '())))
+	      ((char-whitespace? c)
+	       (if h
+		   (##sys#read-error port "odd-numbered hex bytevector literal")
+		   (loop #f last)))
+	      (h
+               (let ((node (cons (fxior (fxshl h 4) (hex c)) '())))
+                 (if first
+                     (##sys#setslot last 1 node)
+                     (set! first node))
+                 (loop #f node)))
+	      (else (loop (hex c) last)))))))
+
 (define (##sys#read-numvector-data port)
   (let ((c (##sys#peek-char-0 port)))
     (case c
       ((#\( #\") (##sys#read port ##sys#default-read-info-hook))
+      ((#\{) (##sys#read-hex-literal port))
       (else (##sys#read-error port "invalid numeric vector syntax" c)))))
 
 (define (##sys#canonicalize-number-list! lst1)
