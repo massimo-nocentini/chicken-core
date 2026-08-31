@@ -106,7 +106,7 @@
     no-procedure-checks-for-toplevel-bindings
     no-bound-checks no-procedure-checks-for-usual-bindings no-compiler-syntax
     no-parentheses-synonyms r7rs-syntax emit-all-import-libraries
-    strict-types lfa2 debug-info
+    strict-types lfa2 debug-info merge-reusable-closures merge-shareable-closures
     regenerate-import-libraries setup-mode
     module-registration no-module-registration))
 
