@@ -57,6 +57,13 @@ An abbreviation for {{(location EXPRESSION)}}.
 
 String syntax for bytevectors, as an alternative to {{#u8(...)}}. The usual escape sequences for strings are recognized.
 
+<read>#u8{HEX...}</read>
+
+Hexadecimal bytevector syntax. {{HEX...}} should be an even number of hexadecimal characters representing
+the contents of the vector.
+
+ #u8{deadbeef}  ==  #u8(#xde #xad #xbe #xef}
+
 === Keyword
 
 <read>#:</read>
