@@ -5382,8 +5382,7 @@ EOF
 (define (##sys#read-numvector-data port)
   (let ((c (##sys#peek-char-0 port)))
     (case c
-      ((#\() (##sys#read port ##sys#default-read-info-hook))
-      ((#\") (##sys#read port ##sys#default-read-info-hook))
+      ((#\( #\") (##sys#read port ##sys#default-read-info-hook))
       (else (##sys#read-error port "invalid numeric vector syntax" c)))))
 
 ;; This code is too complicated. We try to avoid mapping over
@@ -5411,7 +5410,7 @@ EOF
                                (loop (##sys#slot lst 1) n)
                                (loop2 (##sys#slot ns 1) n)))))))
                 (else (loop (##sys#slot lst 1) lst))))
-        (cond (prev (##sys#setslot prev 1 '())
+        (cond (prev (##sys#setislot prev 1 '())
                     lst1)
               (else '())))))
 
