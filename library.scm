@@ -5385,34 +5385,26 @@ EOF
       ((#\( #\") (##sys#read port ##sys#default-read-info-hook))
       (else (##sys#read-error port "invalid numeric vector syntax" c)))))
 
-;; This code is too complicated. We try to avoid mapping over
-;; a potentially large list and creating lots of garbage in the
-;; process, therefore the final result list is constructed
-;; via destructive updates and thus rather inelegant yet avoids
-;; any re-consing unless elements are non-numeric.
 (define (##sys#canonicalize-number-list! lst1)
   (let loop ((lst lst1) (prev #f))
     (if (and (##core#inline "C_blockp" lst)
              (##core#inline "C_pairp" lst))
         (let retry ((x (##sys#slot lst 0)))
           (cond ((char? x) (retry (string x)))
-                ((string? x)
-                 (if (zero? (string-length x))
-                     (loop (##sys#slot lst 1) prev)
-                     (let loop2 ((ns (string->list x)) (prev prev))
-                       (let ((n (cons (char->integer (##sys#slot ns 0))
-                                      (##sys#slot lst 1))))
-                         (if prev
-                             (##sys#setslot prev 1 n)
-                             (set! lst1 n))
-                         (let ((ns2 (##sys#slot ns 1)))
-                           (if (null? ns2)
-                               (loop (##sys#slot lst 1) n)
-                               (loop2 (##sys#slot ns 1) n)))))))
+                ((null? x) (loop (##sys#slot lst 1) prev))
+                ((list? x) 
+                  (let ((lst (##sys#append x (##sys#slot lst 1))))
+                    (if prev
+                        (##sys#setslot prev 1 lst)
+                        (set! lst1 lst))
+                    (loop lst prev)))
+                ((string? x) (retry (chicken.bytevector#string->utf8 x)))
+                ((and (##core#inline "C_blockp" x)
+                      (##sys#bytevector? x))
+                  (retry (##sys#bytevector->list x)))
+                ((##sys#srfi-4-vector? x) (retry (##sys#slot x 1)))
                 (else (loop (##sys#slot lst 1) lst))))
-        (cond (prev (##sys#setislot prev 1 '())
-                    lst1)
-              (else '())))))
+        lst1)))
 
 ;;; Table for specially-handled read-syntax:
 ;
