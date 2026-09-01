@@ -3496,10 +3496,10 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
   mark_live_objects(tgt_space_start, tgt_space_top, tgt_space_limit);
 
   mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
+  if(gc_mode == GC_MINOR) count = (C_uword)*tgt_space_top - (C_uword)start;
   start = *tgt_space_top;
 
   if(gc_mode == GC_MINOR) {
-    count = (C_uword)C_fromspace_top - (C_uword)start;
     ++gc_count_1;
     ++gc_count_1_total;
     update_locatives(GC_MINOR, start, *tgt_space_top);
