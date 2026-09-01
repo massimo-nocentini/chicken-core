@@ -9777,7 +9777,7 @@ static C_word basic_cmp(C_word x, C_word y, char *loc, int eqp)
     } else if (C_immediatep(y)) {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, loc, y);
     } else if (C_block_header(y) == C_FLONUM_TAG ||
-               C_truep(C_bignump(x)) ||
+               C_truep(C_bignump(y)) ||
                C_block_header(y) == C_RATNUM_TAG) {
       return C_SCHEME_FALSE;
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
