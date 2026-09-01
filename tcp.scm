@@ -178,11 +178,14 @@ EOF
 (define listen (foreign-lambda int "listen" int int))
 (define accept (foreign-lambda int "accept" int c-pointer c-pointer))
 (define close (foreign-lambda int "closesocket" int))
-(define recv (foreign-lambda int "recv" int scheme-pointer int int))
 (define shutdown (foreign-lambda int "shutdown" int int))
 (define connect (foreign-lambda int "connect" int scheme-pointer int))
 (define check-fd-ready (foreign-lambda int "C_check_fd_ready" int))
 (define set-socket-options (foreign-lambda int "C_set_socket_options" int))
+
+(define recv 
+  (foreign-lambda* int ((int s) (scheme-pointer buf) (int offset) (int len))
+    "C_return(recv(s, (char *)buf+offset, len, 0));"))
 
 (define send
   (foreign-lambda* 
@@ -377,9 +380,12 @@ EOF
 	     (read-input
 	      (lambda ()
 		(let* ((tmr (tcp-read-timeout))
+                       (d (fx- buflen bufindex))
 		       (dlr (and tmr (+ (current-process-milliseconds) tmr))))
+                  (when (fx> d 0)
+                    (##core#inline "C_copy_memory_with_offset" buf buf 0 bufindex d))
 		  (let loop ()
-		    (let ((n (recv fd buf +input-buffer-size+ 0)))
+		    (let ((n (recv fd buf d (fx- +input-buffer-size+ d))))
 		      (cond ((eq? _socket_error n)
 			     (cond ((retry?)
 				    (when dlr
@@ -397,21 +403,24 @@ EOF
 				   (else
 				    (network-error #f "cannot read from socket" fd) ) ) )
 			    (else
-			     (set! buflen n)
-			     (##sys#setislot data 4 n)
-			     (set! bufindex 0) ) ) ) )) ) )
+                              (let ((n2 (fx+ d n)))
+  			        (set! buflen n2)
+			        (##sys#setislot data 4 n2)
+			        (set! bufindex 0) ) ) ) )) ) ) )
              (inport #f)
 	     (in
 	      (make-input-port
 	       (lambda () ; read
-		 (when (fx>= bufindex buflen)
+		 (when (fx>= (fx+ bufindex 4) buflen)
 		   (read-input))
 		 (if (fx>= bufindex buflen)
 		     #!eof
-		     (##sys#decode-buffer buf bufindex 1 (##sys#slot inport 15)
-                       (lambda (buf start n)
-                         (set! bufindex (fx+ bufindex n))
-                         (##core#inline "C_utf_decode" buf start)))))
+                     (##sys#read-char/encoding
+                       inport (##sys#slot inport 15)
+                       (lambda (buf start len dec)
+                         (dec buf start len
+                              (lambda (buf start len)
+                                (##core#inline "C_utf_decode" buf start)))))))
 	       (lambda () ; char-ready?
 		 (or (fx< bufindex buflen)
 		     ;; XXX: This "knows" that check_fd_ready is
@@ -428,13 +437,18 @@ EOF
 		     (network-error #f "cannot close socket input port" fd) ) ) )
                peek-char:
 	       (lambda () ; peek-char
-		 (when (fx>= bufindex buflen)
+		 (when (fx>= (fx+ bufindex 4) buflen)
 		   (read-input))
 		 (if (fx>= bufindex buflen)
                      #!eof
-		     (##sys#decode-buffer buf bufindex 1 (##sys#slot inport 15)
-                       (lambda (buf start n)
-                         (##core#inline "C_utf_decode" buf start)))))
+                     (let ((p bufindex))
+                       (##sys#read-char/encoding
+                         inport (##sys#slot inport 15)
+                         (lambda (buf start len dec)
+                           (dec buf start len
+                                (lambda (buf start len)
+                                  (set! bufindex p)
+                                  (##core#inline "C_utf_decode" buf start))))))))
                read-bytevector:
 	       (lambda (dest start end)	; read-bytevector!
 		 (let loop ((n (fx- end start)) (m 0) (start start))
@@ -447,7 +461,7 @@ EOF
 			    (loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) )
 			 (else
 			  (read-input)
-			  (if (eq? buflen 0) 
+			  (if (fx>= bufindex buflen) 
 			      m
 			      (loop n m start) ) ) ) ) )
                read-line:
