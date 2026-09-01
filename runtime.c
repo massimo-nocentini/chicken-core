@@ -651,6 +651,7 @@ void parse_argv(C_char *cmds)
     while(*ptr != '\0') {
       if(*ptr == delim || (C_utf_isspace((int)(*ptr)) && !delim)) break;
       if(delim && *ptr == '\\') ++ptr;
+      if(n >= STRING_BUFFER_SIZE - 1) break;
       *(bptr++) = *(ptr++);
       ++n;
     }
