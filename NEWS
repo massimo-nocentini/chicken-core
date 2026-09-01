@@ -22,6 +22,9 @@
     returning #f instead (reported by "crzcrz").
   - Fixed various potential buffer overflows in runtime system, reported 
     with fixes by "crzcrz".
+  - Fixed several bugs in input decoding from TCP and process ports,
+    special thanks to "crzcrz" for the considerable help in analyzing 
+    and testing the problem and it's solution.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
@@ -29,7 +32,7 @@
 
 - Tools
   - Added new global egg property "custom-build" which allows completely
-    overriding the build instructions.
+    overriding the build instructions for an egg.
 
 - Compiler
   - Added missing option "-merge-reusable-closures" at optimization level
