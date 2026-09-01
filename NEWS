@@ -16,6 +16,8 @@
   - Fixed a bug in "read-string" when reading from a binary port.
   - Fixed a bug in bit->boolean when given negative bignums which would give
     incorrect output or crash due to out of bounds read (reported by crzcrz).
+  - The deprecated "chicken-home" and "define-record-printer" have been 
+    removed.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
@@ -70,6 +72,7 @@
     escaped ("|...|") mode or not.
   - Symbol printing is stricter in deciding when symbols should be escaped
     or not.
+  - The deprecated "current-milliseconds" has been removed.
   - The following primitives have been moved from (chicken base)
     to R7RS modules:
     - `exact-integer?`, `exact-integer-sqrt?', `vector-copy!',
