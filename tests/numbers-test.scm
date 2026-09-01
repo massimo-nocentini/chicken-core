@@ -344,6 +344,7 @@
    (test-equal "=: big/flo" (= b1 (+ 0.0 b1)) #t))
  (test-equal "=: big/big" (= b1 b1) #t)
  (test-equal "=: !big/big" (= b2 b1) #f)
+ (test-equal "=: !big/fix" (= b2 22) #f)
  (test-equal "=: rat/flo" (= r1 (+ r1 0.0)) #t)
  (test-equal "=: rat/rat" (= r1 r1) #t)
  (test-equal "=: !rat/rat" (= r1 r2) #f)
