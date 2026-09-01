@@ -12803,7 +12803,7 @@ C_char *
 C_resolve_executable_pathname(C_char *fname)
 {
   int n;
-  C_WCHAR *buffer = (C_WCHAR *) C_malloc(C_MAX_PATH);
+  C_WCHAR *buffer = (C_WCHAR *) C_malloc(C_MAX_PATH * sizeof(C_WCHAR));
 
   if(buffer == NULL) return NULL;
 
