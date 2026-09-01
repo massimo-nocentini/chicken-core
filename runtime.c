@@ -2790,7 +2790,7 @@ C_regparm C_word C_string(C_word **ptr, int len, C_char *str)
   C_c_bytevector(buf)[ len ] = 0;
   C_block_header_init(s, C_STRING_TAG);
   C_set_block_item(s, 0, buf);
-  n = C_utf_count(str, len);
+  n = C_utf_count((C_char *)C_data_pointer(buf), len);
   C_set_block_item(s, 1, C_fix(n));
   C_set_block_item(s, 2, C_fix(0));
   C_set_block_item(s, 3, C_fix(0));
@@ -2806,7 +2806,7 @@ C_regparm C_word C_static_string(C_word **ptr, int len, C_char *str)
   C_c_bytevector(buf)[ len ] = 0;
   C_block_header_init(s, C_STRING_TAG);
   C_set_block_item(s, 0, buf);
-  n = C_utf_count(str, len);
+  n = C_utf_count((C_char *)C_data_pointer(buf), len);
   C_set_block_item(s, 1, C_fix(n));
   C_set_block_item(s, 2, C_fix(0));
   C_set_block_item(s, 3, C_fix(0));
