@@ -155,8 +155,8 @@ if a signal occurred.
 <procedure>(process COMMANDLINE)</procedure><br>
 <procedure>(process COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST ENCODING])</procedure>
 
-Creates a subprocess and returns a process object, with the input-, output- and
-error ports stored in the object, which can be accessed using accessors described
+Creates a subprocess and returns a process object, with the input- and output
+ports stored in the object, which can be accessed using accessors described
 below.
 
 * The single parameter version passes the string {{COMMANDLINE}} to the host-system's shell that
@@ -184,11 +184,8 @@ if so desired.
 <procedure>(process* COMMANDLINE)</procedure><br>
 <procedure>(process* COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST ENCODING])</procedure>
 
-Like {{process}} but returns 4 values: an input port from
-which data written by the sub-process can be read, an output port from
-which any data written to will be received as input in the sub-process,
-the process-id of the started sub-process, and an input port from
-which data written by the sub-process to {{stderr}} can be read.
+Like {{process}} but connects also to the error-output port ({{stderr}}) of
+the subprocess.
 
 ==== process?
 ==== process-id
