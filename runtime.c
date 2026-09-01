@@ -2531,7 +2531,7 @@ C_regparm C_word C_i_unpersist_symbol(C_word sym)
   }
 
   for(stp = symbol_table_list; stp != NULL; stp = stp->next) {
-    bucket = lookup_bucket(sym, NULL);
+    bucket = lookup_bucket(sym, stp);
 
     if (C_truep(bucket)) {
       /* Turn it into a weak ref */
