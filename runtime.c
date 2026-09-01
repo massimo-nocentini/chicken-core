@@ -3127,7 +3127,7 @@ C_regparm C_word C_scratch_alloc(C_uword size)
 {
   C_word result;
 
-  if (C_scratchspace_top + size + 2 >= C_scratchspace_limit) {
+  if (C_scratchspace_top == NULL || C_scratchspace_top + size + 2 >= C_scratchspace_limit) {
     C_word *new_scratch_start, *new_scratch_top, *new_scratch_limit;
     C_uword needed = C_scratch_usage + size + 2,
             new_size = nmax(scratchspace_size << 1, 2UL << C_ilen(needed));
