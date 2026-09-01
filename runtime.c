@@ -11827,7 +11827,12 @@ int C_do_unregister_finalizer(C_word x)
     if(flist->item == x) {
       if(flist->previous == NULL) finalizer_list = flist->next;
       else flist->previous->next = flist->next;
+      if(flist->next != NULL) flist->next->previous = flist->previous;
 
+      flist->next = finalizer_free_list;
+      flist->previous = NULL;
+      finalizer_free_list = flist;
+      --live_finalizer_count;
       return 1;
     }
   }
