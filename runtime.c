@@ -4524,6 +4524,8 @@ C_word C_fetch_trace(C_word starti, C_word buffer)
     else i = trace_buffer_top - trace_buffer;
 
     ptr = trace_buffer_full ? trace_buffer_top : trace_buffer;
+    if(start < 0) start = 0;
+    if(start > i) start = i;
     ptr += start;
     i -= start;
 
