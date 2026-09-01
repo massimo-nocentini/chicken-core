@@ -6588,8 +6588,7 @@ C_regparm C_word C_i_bit_to_bool(C_word n, C_word i)
       d = i / C_BIGNUM_DIGIT_LENGTH;
       if (d >= C_bignum_size(n)) return C_mk_bool(C_bignum_negativep(n));
 
-      /* TODO: this isn't necessary, is it? */
-      if (C_truep(nn = maybe_negate_bignum_for_bitwise_op(n, d))) n = nn;
+      if (C_truep(nn = maybe_negate_bignum_for_bitwise_op(n, d+1))) n = nn;
 
       i %= C_BIGNUM_DIGIT_LENGTH;
       d = C_mk_bool((C_bignum_digits(n)[d] & (C_uword)1 << i) != 0);
