@@ -18,6 +18,10 @@
     incorrect output or crash due to out of bounds read (reported by crzcrz).
   - The deprecated "chicken-home" and "define-record-printer" have been 
     removed.
+  - Fix "=" raising an error when passed a complex number and a bignum,
+    returning #f instead (reported by "crzcrz").
+  - Fixed various potential buffer overflows in runtime system, reported 
+    with fixes by "crzcrz".
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
