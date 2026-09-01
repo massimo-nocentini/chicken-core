@@ -4,7 +4,10 @@
 == Module (chicken bytevector)
 
 This module contains procedures for dealing with "bytevectors",
-fixed-size sequences of unsigned 8-bit integers.
+fixed-size sequences of unsigned 8-bit integers. Note that they are
+indistinguishable from srfi-4 u8vectors and can be used
+interchangeably. The R7RS literal expressions {{#u8(64 65 ...)}} can
+also be used for construction. See [[Module (chicken number-vector)]].
 
 === bytevector
 
