@@ -63,7 +63,7 @@
      real-name real-name2 display-real-name-table
      source-info->string source-info->line source-info->name
      call-info constant-form-eval maybe-constant-fold-call
-     dump-nodes read/source-info big-fixnum? small-bignum?
+     dump-nodes big-fixnum? small-bignum?
      hide-variable export-variable variable-hidden? variable-visible?
      mark-variable variable-mark intrinsic? predicate? foldable?
      load-identifier-database
@@ -1645,11 +1645,7 @@
 	  (write-char #\]) ) )
       (write-char #\>) ) )
   (newline) )
-
-
-;; DEPRECATED
-(define (read/source-info in)
-  (chicken.syntax#read-with-source-info in) )
+ 
 
 ;;; "#> ... <#" syntax:
 

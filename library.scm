@@ -1521,11 +1521,6 @@ EOF
       (##core#inline "C_i_check_bytevector_2" x (car loc))
       (##core#inline "C_i_check_bytevector" x) ) )
 
-(define (##sys#check-exact x . loc) ;; DEPRECATED
-  (if (pair? loc)
-      (##core#inline "C_i_check_exact_2" x (car loc))
-      (##core#inline "C_i_check_exact" x) ) )
-
 (define (##sys#check-inexact x . loc)
   (if (pair? loc)
       (##core#inline "C_i_check_inexact_2" x (car loc))
@@ -7618,7 +7613,7 @@ static C_word C_curdir(C_word buf, C_word size) {
 ;;; Platform configuration inquiry:
 
 (module chicken.platform
-    (build-platform chicken-version chicken-home
+    (build-platform chicken-version 
      feature? machine-byte-order machine-type
      repository-path installation-repository
      register-feature! unregister-feature! include-path
@@ -7690,9 +7685,6 @@ static C_word C_curdir(C_word buf, C_word size) {
 (define-foreign-variable binary-version int "C_BINARY_VERSION")
 (define-foreign-variable installation-home c-string "C_INSTALL_SHARE_HOME")
 (define-foreign-variable install-egg-home c-string "C_INSTALL_EGG_HOME")
-
-;; DEPRECATED
-(define (chicken-home) installation-home)
 
 (define (include-path #!optional new)
   (when new

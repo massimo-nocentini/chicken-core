@@ -1431,7 +1431,6 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #endif
 
 #define C_i_check_closure(x)            C_i_check_closure_2(x, C_SCHEME_FALSE)
-#define C_i_check_exact(x)              C_i_check_exact_2(x, C_SCHEME_FALSE) /* DEPRECATED */
 #define C_i_check_fixnum(x)             C_i_check_fixnum_2(x, C_SCHEME_FALSE)
 #define C_i_check_inexact(x)            C_i_check_inexact_2(x, C_SCHEME_FALSE)
 #define C_i_check_number(x)             C_i_check_number_2(x, C_SCHEME_FALSE)
@@ -1850,7 +1849,6 @@ C_fctexport void C_not_an_uinteger_error(C_char *loc, C_word x) C_noret;
 C_fctexport void C_rest_arg_out_of_bounds_error(C_word c, C_word n, C_word ka) C_noret;
 C_fctexport void C_rest_arg_out_of_bounds_error_2(C_word c, C_word n, C_word ka, C_word closure) C_noret;
 C_fctexport C_word C_closure(C_word **ptr, int cells, C_word proc, ...);
-C_fctexport C_word C_pair(C_word **ptr, C_word car, C_word cdr) C_regparm;
 C_fctexport C_word C_number(C_word **ptr, double n) C_regparm;
 C_fctexport C_word C_mpointer(C_word **ptr, void *mp) C_regparm;
 C_fctexport C_word C_mpointer_or_false(C_word **ptr, void *mp) C_regparm;
@@ -2064,7 +2062,6 @@ C_fctexport C_word C_i_nanp(C_word x) C_regparm;
 C_fctexport C_word C_i_finitep(C_word x) C_regparm;
 C_fctexport C_word C_i_infinitep(C_word x) C_regparm;
 C_fctexport C_word C_i_zerop(C_word x) C_regparm;
-C_fctexport C_word C_u_i_zerop(C_word x) C_regparm;  /* DEPRECATED */
 C_fctexport C_word C_i_positivep(C_word x) C_regparm;
 C_fctexport C_word C_i_integer_positivep(C_word x) C_regparm;
 C_fctexport C_word C_i_negativep(C_word x) C_regparm;
@@ -2197,7 +2194,6 @@ C_fctexport C_word C_i_persist_symbol(C_word sym) C_regparm;
 C_fctexport C_word C_i_unpersist_symbol(C_word sym) C_regparm;
 C_fctexport C_word C_i_get_keyword(C_word key, C_word args, C_word def) C_regparm;
 C_fctexport C_word C_i_process_sleep(C_word n) C_regparm;
-C_fctexport C_u64 C_milliseconds(void) C_regparm; /* DEPRECATED */
 C_fctexport C_u64 C_current_process_milliseconds(void) C_regparm;
 C_fctexport C_u64 C_cpu_milliseconds(void) C_regparm;
 C_fctexport double C_bignum_to_double(C_word bignum) C_regparm;

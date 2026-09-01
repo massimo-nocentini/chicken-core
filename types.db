@@ -1433,7 +1433,6 @@
 
 (chicken.platform#build-platform (#(procedure #:pure) chicken.platform#build-platform () symbol))
 (chicken.platform#chicken-version (#(procedure #:pure) chicken.platform#chicken-version (#!optional *) string))
-(chicken.platform#chicken-home (#(procedure #:clean) chicken.platform#chicken-home () string))
 (chicken.platform#include-path (#(procedure #:clean) chicken.platform#include-path (#!optional (list-of string)) (list-of string)))
 (chicken.platform#feature? (#(procedure #:clean) chicken.platform#feature? (#!rest (or keyword symbol string)) boolean))
 (chicken.platform#software-type (#(procedure #:pure) chicken.platform#software-type () symbol))
@@ -1525,9 +1524,6 @@
 (##sys#check-bytevector (#(procedure #:clean #:enforce) ##sys#check-bytevector (bytevector #!optional *) *)
 		   ((bytevector) (let ((#(tmp) #(1))) '#t))
 		   ((bytevector *) (let ((#(tmp) #(1))) '#t)))
-(##sys#check-exact (#(procedure #:clean #:enforce) ##sys#check-exact (fixnum #!optional *) *)
-		   ((fixnum) (let ((#(tmp) #(1))) '#t))
-		   ((fixnum *) (let ((#(tmp) #(1))) '#t)))
 (##sys#check-inexact (#(procedure #:clean #:enforce) ##sys#check-inexact (float #!optional *) *)
 		     ((float) (let ((#(tmp) #(1))) '#t))
 		     ((float *) (let ((#(tmp) #(1))) '#t)))
@@ -2469,9 +2465,6 @@
 
 ;; version
 (chicken.version#version>=? (#(procedure #:pure #:foldable) chicken.version#version>=? (* *) boolean))
-
-;; Undocumented internal module, only here to have the deprecation warning because some eggs use it
-(chicken.compiler.support#read/source-info deprecated)
 
 ;; scheme.write
 

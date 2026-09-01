@@ -2060,12 +2060,6 @@ C_word C_dbg_hook(C_word dummy)
 
 /* Timing routines: */
 
-/* DEPRECATED */
-C_regparm C_u64 C_milliseconds(void)
-{
-  return C_current_process_milliseconds();
-}
-
 C_regparm C_u64 C_current_process_milliseconds(void)
 {
 #if defined(__MINGW32__)
@@ -2942,20 +2936,6 @@ C_word C_closure(C_word **ptr, int cells, C_word proc, ...)
 
   va_end(va);
   *ptr = p + 1;
-  return (C_word)p0;
-}
-
-
-/* obsolete: replaced by C_a_pair in chicken.h */
-C_regparm C_word C_pair(C_word **ptr, C_word car, C_word cdr)
-{
-  C_word *p = *ptr,
-         *p0 = p;
-
-  *(p++) = C_PAIR_TYPE | (C_SIZEOF_PAIR - 1);
-  *(p++) = car;
-  *(p++) = cdr;
-  *ptr = p;
   return (C_word)p0;
 }
 
@@ -5354,15 +5334,6 @@ C_regparm C_word C_i_zerop(C_word x)
   }
 }
 
-/* DEPRECATED */
-C_regparm C_word C_u_i_zerop(C_word x)
-{
-  return C_mk_bool(x == C_fix(0) ||
-                   (!C_immediatep(x) &&
-                    C_block_header(x) == C_FLONUM_TAG &&
-                    C_flonum_magnitude(x) == 0.0));
-}
-
 
 C_regparm C_word C_i_positivep(C_word x)
 {
@@ -7215,17 +7186,6 @@ C_regparm C_word C_i_check_fixnum_2(C_word x, C_word loc)
   if(!(x & C_FIXNUM_BIT)) {
     error_location = loc;
     barf(C_BAD_ARGUMENT_TYPE_NO_FIXNUM_ERROR, NULL, x);
-  }
-
-  return C_SCHEME_UNDEFINED;
-}
-
-/* DEPRECATED */
-C_regparm C_word C_i_check_exact_2(C_word x, C_word loc)
-{
-  if(C_u_i_exactp(x) == C_SCHEME_FALSE) {
-    error_location = loc;
-    barf(C_BAD_ARGUMENT_TYPE_NO_EXACT_ERROR, NULL, x);
   }
 
   return C_SCHEME_UNDEFINED;

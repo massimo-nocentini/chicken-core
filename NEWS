@@ -15,7 +15,7 @@
     imposed by the REPL.
   - Fixed a bug in "read-string" when reading from a binary port.
   - Fixed a bug in bit->boolean when given negative bignums which would give
-    incorrect output or crash due to out of bounds read (reported by crzcrz)
+    incorrect output or crash due to out of bounds read (reported by crzcrz).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
