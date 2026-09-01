@@ -13560,7 +13560,7 @@ C_a_i_random_real(C_word **ptr, C_word n) {
   while (C_unlikely((significand = random64()) == 0)) {
     exponent -= 64;
     if (C_unlikely(exponent < -1074))
-      return 0;
+      return C_flonum(ptr, 0.0);
   }
 
   shift = clz64(significand);
