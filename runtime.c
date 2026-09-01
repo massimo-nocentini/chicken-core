@@ -6556,7 +6556,7 @@ C_regparm C_word C_i_bit_to_bool(C_word n, C_word i)
     i = C_unfix(i);
     if (n & C_FIXNUM_BIT) {
       if (i >= C_WORD_SIZE) return C_mk_bool(n & C_INT_SIGN_BIT);
-      else return C_mk_bool((C_unfix(n) & ((C_word)1 << i)) != 0);
+      else return C_mk_bool((C_unfix(n) & ((C_uword)1 << i)) != 0);
     } else {
       C_word nn, d;
       d = i / C_BIGNUM_DIGIT_LENGTH;
