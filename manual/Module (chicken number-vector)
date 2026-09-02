@@ -111,11 +111,11 @@ are interpreted as UTF-8. Embedded bytevectors or numerical vectors are
 spliced directly into the result, without further translation. Lists are
 spliced as well, recursively, so:
 
- '#u8(1 (2) ((3)) #u16(0xabcd))
+ '#u8(1 #;header (2 #;lengths (3 4) #u16(#xABCD)) )
 
 will result in
 
-  #u8(1 2 3 #\xcd #\xab) 
+  #u8(1 2 3 4 #xCD #xAB)
 
 on a little endian machine.
 
