@@ -380,12 +380,9 @@ EOF
 	     (read-input
 	      (lambda ()
 		(let* ((tmr (tcp-read-timeout))
-                       (d (fx- buflen bufindex))
 		       (dlr (and tmr (+ (current-process-milliseconds) tmr))))
-                  (when (fx> d 0)
-                    (##core#inline "C_copy_memory_with_offset" buf buf 0 bufindex d))
 		  (let loop ()
-		    (let ((n (recv fd buf d (fx- +input-buffer-size+ d))))
+		    (let ((n (recv fd buf 0 +input-buffer-size+)))
 		      (cond ((eq? _socket_error n)
 			     (cond ((retry?)
 				    (when dlr
@@ -403,15 +400,14 @@ EOF
 				   (else
 				    (network-error #f "cannot read from socket" fd) ) ) )
 			    (else
-                              (let ((n2 (fx+ d n)))
-  			        (set! buflen n2)
-			        (##sys#setislot data 4 n2)
-			        (set! bufindex 0) ) ) ) )) ) ) )
+  			      (set! buflen n)
+			      (##sys#setislot data 4 n)
+			      (set! bufindex 0) ) ) ) )) ) )
              (inport #f)
 	     (in
 	      (make-input-port
 	       (lambda () ; read
-		 (when (fx>= (fx+ bufindex 4) buflen)
+		 (when (fx>= bufindex buflen)
 		   (read-input))
 		 (if (fx>= bufindex buflen)
 		     #!eof
@@ -437,7 +433,7 @@ EOF
 		     (network-error #f "cannot close socket input port" fd) ) ) )
                peek-char:
 	       (lambda () ; peek-char
-		 (when (fx>= (fx+ bufindex 4) buflen)
+		 (when (fx>= bufindex buflen)
 		   (read-input))
 		 (if (fx>= bufindex buflen)
                      #!eof
