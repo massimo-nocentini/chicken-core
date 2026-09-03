@@ -352,7 +352,7 @@ char *ttyname(int fd) {
 ;   10: last/peeked
 
 (define make-input-port
-  (lambda (read ready? close #!rest r
+  (lambda (read ready? close #!rest r       ; "read-buffered" is deprecated
                 #!key peek-char read-bytevector read-line read-buffered)
     (define (insert dest start c)
       (let* ((bv (##sys#make-bytevector 4))
