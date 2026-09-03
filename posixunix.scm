@@ -339,7 +339,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-fixnum fd 'file-control)
       (##sys#check-fixnum cmd 'file-control)
       (let ([res (fcntl fd cmd arg)])
-        (if (fx= res -1)
+        (if (eq? res -1)
             (posix-error #:file-error 'file-control "cannot control file" fd cmd)
             res ) ) ) ) )
 
@@ -361,7 +361,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
     (let loop ()
       (when (fx< (##core#inline "C_close" fd) 0)
 	(cond
-	  ((fx= _errno _eintr) (##sys#dispatch-interrupt loop))
+	  ((eq? _errno _eintr) (##sys#dispatch-interrupt loop))
 	  (else
 	   (posix-error #:file-error 'file-close "cannot close file" fd)))))))
 
@@ -434,7 +434,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		fds-blob nfds (if tm (inexact->exact (truncate (* (max 0 tm) 1000))) -1))))
 	(cond ((fx< n 0)
 	       (posix-error #:file-error 'file-select "failed" fdsr fdsw) )
-	      ((fx= n 0) (values (if (pair? fdsr) '() #f) (if (pair? fdsw) '() #f)))
+	      ((eq? n 0) (values (if (pair? fdsr) '() #f) (if (pair? fdsw) '() #f)))
 	      (else
 	       (let ((rl (let lp ((i 0) (res '()) (fds fdsrl))
 			   (cond ((null? fds) (##sys#fast-reverse res))
@@ -784,8 +784,8 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (posix-error #:file-error 'hard-link "could not create hard link" old new) ) ) ) )
 
 (define-inline (eagain/ewouldblock? e)
-  (or (fx= e _ewouldblock)
-      (fx= e _eagain)))
+  (or (eq? e _ewouldblock)
+      (eq? e _eagain)))
 
 (define ##sys#custom-input-port
   (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close void) (more? #f) enc)
@@ -798,11 +798,11 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (let ([ready?
 	     (lambda ()
 	       (let ((res (##sys#file-select-one fd)))
-		 (if (fx= -1 res)
+		 (if (eq? -1 res)
 		     (if (eagain/ewouldblock? _errno)
 			 #f
 			 (posix-error #:file-error loc "cannot select" fd nam))
-		     (fx= 1 res))))]
+		     (eq? 1 res))))]
             [peek
              (lambda ()
                (if (fx>= bufpos buflen)
@@ -945,12 +945,12 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	      (lambda (bv start len)
 		(let loop ()
 		  (let ((cnt (##core#inline "C_write" fd bv start len)))
-		    (cond ((fx= -1 cnt)
+		    (cond ((eq? -1 cnt)
 			   (cond
 			    ((eagain/ewouldblock? _errno)
 			     (##sys#thread-yield!)
 			     (poke bv start len) )
-			    ((fx= _errno _eintr)
+			    ((eq? _errno _eintr)
 			     (##sys#dispatch-interrupt loop))
 			    (else
 			     (posix-error loc #:file-error "cannot write" fd nam) ) ) )
@@ -958,7 +958,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 			   (poke bv (fx+ start cnt) (fx- len cnt)) ) ) ) )))
 	     (store
 	      (let ([bufsiz (if (fixnum? bufi) bufi (##sys#size bufi))])
-		(if (fx= 0 bufsiz)
+		(if (eq? 0 bufsiz)
 		    (lambda (str)
 		      (when str
                         (let ((bv (##sys#slot str 0)))
@@ -971,7 +971,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                               (let loop ((rem (fx- bufsiz bufpos))
                                          (start 0)
                                          (len (fx- (##sys#size bv) 1)))
-			      (cond ((fx= 0 rem)
+			      (cond ((eq? 0 rem)
 				     (poke buf 0 bufsiz)
 				     (set! bufpos 0)
 				     (loop bufsiz 0 len))
@@ -1034,7 +1034,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
         (let ((r (##core#inline "C_flock" (fileno port 'file-lock)
                                 (##core#inline "C_fixnum_or" _lock_nb (if shared _lock_sh _lock_ex)))))
           (cond ((eq? r 0) #t)
-                ((fx= _errno _eintr) (loop))
+                ((eq? _errno _eintr) (loop))
                 ((eagain/ewouldblock? _errno) #f)
                 (else (err "locking file failed" port 'file-lock)))))))
   (set! chicken.file.posix#file-lock/blocking
@@ -1043,14 +1043,14 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
         (let ((r (##core#inline "C_flock" (fileno port 'file-lock/blocking)
                                 (if shared _lock_sh _lock_ex))))
           (cond ((eq? r 0) #t)
-                ((fx= _errno _eintr) (loop))
+                ((eq? _errno _eintr) (loop))
                 (else (err "locking file failed" port 'file-lock/blocking)))))))
   (set! chicken.file.posix#file-unlock
     (lambda (port)
       (let loop ()
         (let ((r (##core#inline "C_flock" (fileno port 'file-unlock) _lock_un)))
           (cond ((eq? r 0))
-                ((fx= _errno _eintr) (loop))
+                ((eq? _errno _eintr) (loop))
                 (else (err "unlocking file failed" port 'file-unlock))))))))
 
 
@@ -1118,9 +1118,9 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       ;; flush all stdio streams before fork
       ((foreign-lambda int "C_fflush" c-pointer) #f)
       (let ((pid (fork)))
-        (cond ((fx= -1 pid)             ; error
+        (cond ((eq? -1 pid)             ; error
                (posix-error #:process-error 'process-fork "cannot create child process"))
-              ((fx= 0 pid)              ; child process
+              ((eq? 0 pid)              ; child process
                (set! children '())
                (when killothers
                  (call-with-current-continuation 
@@ -1145,7 +1145,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
        (let ((r (if envbuf
                     (##core#inline "C_u_i_execve" prg argbuf envbuf)
                     (##core#inline "C_u_i_execvp" prg argbuf))))
-         (when (fx= r -1)
+         (when (eq? r -1)
            (posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
 
 (define-foreign-variable _wnohang int "WNOHANG")
@@ -1154,7 +1154,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (define (process-wait-impl pid nohang)
   (let* ((res (##core#inline "C_waitpid" pid (if nohang _wnohang 0)))
          (norm (##core#inline "C_WIFEXITED" _wait-status)) )
-    (if (and (fx= res -1) (fx= _errno _eintr))
+    (if (and (eq? res -1) (eq? _errno _eintr))
         (##sys#dispatch-interrupt
          (lambda () (process-wait-impl pid nohang)))
         (values
@@ -1174,7 +1174,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-fixnum pid 'process-signal)
       (##sys#check-fixnum sig 'process-signal)
       (let ((r (##core#inline "C_kill" pid sig)))
-      (when (fx= r -1)
+      (when (eq? r -1)
         (posix-error #:process-error 'process-signal
           "could not send signal to process" id sig) ) ) ) ) )
 
@@ -1217,7 +1217,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (define process-impl
   (let ((replace-fd
          (lambda (loc fd stdfd)
-           (unless (fx= stdfd fd)
+           (unless (eq? stdfd fd)
              (chicken.file.posix#duplicate-fileno fd stdfd)
              (chicken.file.posix#file-close fd) ) )) )
     (let ((make-on-close
