@@ -192,6 +192,9 @@ endef
 $(foreach obj, $(UTILITY_PROGRAM_OBJECTS_1),\
           $(eval $(call declare-utility-program-object,$(obj))))
 
+# generated Unicode tables
+
+utf$(O) utf-static$(O): utf-tables.c
 
 # resource objects
 
