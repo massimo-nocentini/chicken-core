@@ -1,6 +1,12 @@
 Deprecated functions and variables
 ==================================
 
+6.0.1
+- The procedure "read-buffered" can return a string with incomplete
+  codepoints when a non-binary encoding is used in the port. It
+  will be replaced by a method that returns bytevectors in the
+  future.
+
 6.0.0
 - The foreign type "blob" is obsolete and equivalent to the 
   foreign type "bytevector".

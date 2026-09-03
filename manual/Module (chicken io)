@@ -16,15 +16,6 @@ The reader is called with one argument: {{PORT}}.
 {{READER}} defaults to {{read}}, {{MAX}} to {{#f}} and {{PORT}} to {{current-input-port}}, so if you call it with no arguments, it will read all remaining s-expressions from the current input port.
 
 
-=== read-buffered
-
-<procedure>(read-buffered [PORT])</procedure>
-
-Reads any remaining data buffered after previous read operations on
-{{PORT}}. If no remaining data is currently buffered, an empty string
-is returned. This procedure will never block. Currently only useful
-for string-, process- and tcp ports.
-
 === read-byte
 === write-byte
 

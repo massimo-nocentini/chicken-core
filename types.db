@@ -1630,7 +1630,7 @@
 ;; io
 
 (chicken.io#read-list (#(procedure #:enforce) chicken.io#read-list (#!optional input-port (procedure (input-port) *) fixnum) list))
-(chicken.io#read-buffered (#(procedure #:enforce) chicken.io#read-buffered (#!optional input-port) string))
+(chicken.io#read-buffered deprecated)
 (chicken.io#read-byte (#(procedure #:enforce) chicken.io#read-byte (#!optional input-port) *))
 (chicken.io#read-line (#(procedure #:enforce) chicken.io#read-line (#!optional input-port (or false fixnum)) (or eof string)))
 (chicken.io#read-lines (#(procedure #:enforce) chicken.io#read-lines (#!optional input-port fixnum) (list-of string)))

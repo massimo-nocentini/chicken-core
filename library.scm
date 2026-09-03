@@ -8301,7 +8301,7 @@ static C_word C_curdir(C_word buf, C_word size) {
 (define chicken.io#read-bytevector/port read-bytevector/port)
 (define chicken.io#read-bytevector!/port read-bytevector!/port)
 
-(define (read-buffered #!optional (port ##sys#standard-input))
+(define (read-buffered #!optional (port ##sys#standard-input))  ; DEPRECATED
   (##sys#check-input-port port #t 'read-buffered)
   (let ((rb (##sys#slot (##sys#slot port 2) 9))) ; read-buffered method
     (if rb

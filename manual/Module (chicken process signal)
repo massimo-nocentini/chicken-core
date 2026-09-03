@@ -134,7 +134,7 @@ procedure is unimplemented and will raise an error.
 <constant>signals-list</constant><br>
 
 These variables contain signal codes for use with {{process-signal}},
-{{set-signal-handler!}}, {{signal-handler}}, {{signal-masked?}},
+{{signal-masked?}},
 {{signal-mask!}}, or {{signal-unmask!}}.
 
 '''NOTE''': On native Windows builds (all except cygwin), only

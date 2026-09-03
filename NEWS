@@ -6,7 +6,7 @@
   - The default range used in `bytes->string' was calculated incorrectly.
   - Fixed various bugs in the implementation of the use of explicit port 
     methods for reading bytevectors in custom input ports.
-  - Fixed implementation of `read-buffered' for string input-ports.
+  - `read-buffered' has been deprecated.
   - Printing at the REPL didn't implement output-limit handling, this has
     been added now.
   - "string-translate*" now properly checks the structure of the string
