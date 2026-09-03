@@ -180,7 +180,6 @@ static sigset_t C_sigset;
 
 #define C_open(fn, fl, m)   C_fix(open(C_c_string(fn), C_unfix(fl), C_unfix(m)))
 #define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_c_string(b), C_unfix(n)))
-#define C_read_with_offset(fd, b, o, n)    C_fix(read(C_unfix(fd), C_c_string(b) + C_unfix(o), C_unfix(n)))
 #define C_write(fd, b, start, n)   C_fix(write(C_unfix(fd), C_c_string(b) + C_unfix(start), C_unfix(n)))
 #define C_mkstemp(t)        C_fix(mkstemp(C_c_string(t)))
 
@@ -818,40 +817,37 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
             (fetch
              (lambda ()
                (let loop ()
-                 (let ((d (fx- buflen bufpos)))
-                   (when (fx> d 0)
-                     (##core#inline "C_copy_memory_with_offset" buf buf 0 bufpos d))
-                   (let ((cnt (##core#inline "C_read_with_offset" fd buf d (fx- bufsiz d))))
-                     (cond ((fx= cnt -1)
-                            (cond
-                              ((eagain/ewouldblock? _errno)
-                               (##sys#thread-block-for-i/o! ##sys#current-thread fd #:input)
-                               (##sys#thread-yield!)
-                               (loop) )
-                              ((fx= _errno _eintr)
-                               (##sys#dispatch-interrupt loop))
-                              (else (posix-error #:file-error loc "cannot read" fd nam) )))
-                           ((and more? (fx= cnt 0))
-                            ;; When "more" keep trying, otherwise read once more
-                            ;; to guard against race conditions
-                            (if more?
-                                (begin
-                                  (##sys#thread-yield!)
-                                  (loop) )
-                                (let ([cnt (##core#inline "C_read_with_offset" fd buf d (fx- bufsiz d))])
-                                  (when (fx= cnt -1)
-                                    (if (eagain/ewouldblock? _errno)
-                                        (set! cnt 0)
-                                        (posix-error #:file-error loc "cannot read" fd nam) ) )
-                                  (set! buflen (fx+ cnt d))
-                                  (set! bufpos 0) ) ))
-                           (else
-                             (set! buflen (fx+ cnt d))
-                             (set! bufpos 0))) ) )))) )
+                 (let ((cnt (##core#inline "C_read" fd buf bufsiz)))
+                   (cond ((eq? cnt -1)
+                          (cond
+                            ((eagain/ewouldblock? _errno)
+                             (##sys#thread-block-for-i/o! ##sys#current-thread fd #:input)
+                             (##sys#thread-yield!)
+                             (loop) )
+                            ((eq? _errno _eintr)
+                             (##sys#dispatch-interrupt loop))
+                            (else (posix-error #:file-error loc "cannot read" fd nam) )))
+                         ((and more? (eq? cnt 0))
+                          ;; When "more" keep trying, otherwise read once more
+                          ;; to guard against race conditions
+                          (if more?
+                              (begin
+                                (##sys#thread-yield!)
+                                (loop) )
+                              (let ([cnt (##core#inline "C_read" fd buf (fx- bufsiz d))])
+                                (when (eq? cnt -1)
+                                  (if (eagain/ewouldblock? _errno)
+                                      (set! cnt 0)
+                                      (posix-error #:file-error loc "cannot read" fd nam) ) )
+                                (set! buflen cnt)
+                                (set! bufpos 0) ) ))
+                         (else
+                           (set! buflen cnt)
+                           (set! bufpos 0))) ) )))) 
 	(let ([the-port
 		  (make-input-port
 		   (lambda ()		; read-char
-		     (when (fx>= (fx+ bufpos 4) buflen)
+		     (when (fx>= bufpos buflen)
 		       (fetch))
                      (if (fx>= bufpos buflen)
                          #!eof
@@ -870,7 +866,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		     (on-close))
 		   peek-char:
                    (lambda ()		; peek-char
-		     (when (fx>= (fx+ bufpos 4) buflen)
+		     (when (fx>= bufpos buflen)
 		       (fetch))
 		     (peek) )
                    read-bytevector:
