@@ -401,8 +401,8 @@ EOF
 				   (else
 				    (network-error #f "cannot read from socket" fd) ) ) )
 			    (else
-  			      (set! buflen n)
-			      (##sys#setislot data 4 n)
+  			      (set! buflen (fx+ off n))
+			      (##sys#setislot data 4 (fx+ off n))
 			      (set! bufindex 0) ) ) ) )) ) )
              (inport #f)
 	     (in
@@ -435,11 +435,11 @@ EOF
                peek-char:
 	       (lambda () ; peek-char
                  (let ((enc (##sys#slot inport 15)))
-                   (if (eq? bufindex buflen) 
+                   (if (fx>= bufindex buflen) 
                        (read-input #t 0)
                        (let ((n (##sys#scan-read-ahead enc 
                                   (##core#inline "C_subbyte" buf bufindex))))
-                         (when (and n (fx>= (fx+ n 1) (fx- buflen bufindex)))
+                         (when (and n (fx> (fx+ n 1) (fx- buflen bufindex)))
                            (read-input #f bufindex))))
                    (if (fx< bufindex buflen)
                        (##sys#decode-char buf enc bufindex)
