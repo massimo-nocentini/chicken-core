@@ -450,7 +450,8 @@ EOF
 			 ((fx< bufindex buflen)
 			  (let* ((rest (fx- buflen bufindex))
 				 (n2 (if (fx< n rest) n rest)))
-			    (##core#inline "C_copy_memory_with_offset" dest buf start bufindex n2)
+			    (##core#inline "C_copy_memory_with_offset" 
+                                           dest buf start bufindex n2)
 			    (set! bufindex (fx+ bufindex n2))
 			    (loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) )
 			 (else
