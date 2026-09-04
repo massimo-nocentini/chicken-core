@@ -436,10 +436,10 @@ EOF
 	       (lambda () ; peek-char
                  (let ((enc (##sys#slot inport 15)))
                    (if (eq? bufindex buflen) 
-                       (read-input #t 0))
+                       (read-input #t 0)
                        (let ((n (##sys#scan-read-ahead enc (##core#inline "C_subbyte" buf bufindex))))
                          (when (and n (fx>= n (fx- buflen bufindex)))
-                           (read-input #f bufindex)))
+                           (read-input #f bufindex))))
                    (if (fx< bufindex buflen)
                        (##sys#decode-char buf enc bufindex)
                        #!eof)))
