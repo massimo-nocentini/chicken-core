@@ -382,7 +382,7 @@ EOF
 		(let* ((tmr (tcp-read-timeout))
 		       (dlr (and tmr (+ (current-process-milliseconds) tmr))))
 		  (let loop ()
-		    (let ((n (recv fd buf off +input-buffer-size+)))
+		    (let ((n (recv fd buf off (fx- +input-buffer-size+ off))))
 		      (cond ((eq? _socket_error n)
 			     (cond ((and (retry?) force)
 				    (when dlr
@@ -437,8 +437,9 @@ EOF
                  (let ((enc (##sys#slot inport 15)))
                    (if (eq? bufindex buflen) 
                        (read-input #t 0)
-                       (let ((n (##sys#scan-read-ahead enc (##core#inline "C_subbyte" buf bufindex))))
-                         (when (and n (fx>= n (fx- buflen bufindex)))
+                       (let ((n (##sys#scan-read-ahead enc 
+                                  (##core#inline "C_subbyte" buf bufindex))))
+                         (when (and n (fx>= (fx+ n 1) (fx- buflen bufindex)))
                            (read-input #f bufindex))))
                    (if (fx< bufindex buflen)
                        (##sys#decode-char buf enc bufindex)
