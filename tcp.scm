@@ -440,7 +440,7 @@ EOF
                        (let ((n (##sys#scan-read-ahead enc 
                                   (##core#inline "C_subbyte" buf bufindex))))
                          (when (and n (fx> (fx+ n 1) (fx- buflen bufindex)))
-                           (read-input #f bufindex))))
+                           (read-input #f (fx+ bufindex 1)))))
                    (if (fx< bufindex buflen)
                        (##sys#decode-char buf enc bufindex)
                        #!eof)))
