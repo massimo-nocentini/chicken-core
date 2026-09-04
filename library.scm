@@ -1789,6 +1789,12 @@ EOF
     (lambda (buf start _)
       (##core#inline "C_utf_decode" buf start))))
 
+;; how many extra bytes are needed for a complete codepoint?
+(define (##sys#scan-read-ahead enc byte)
+  (##sys#encoding-hook
+    enc
+    (lambda (_ _ scan) (scan #f byte))))
+
 ;; read char from port with encoding, scanning minimal number of bytes ahead
 (define (##sys#read-char/encoding p enc k)
   (##sys#encoding-hook

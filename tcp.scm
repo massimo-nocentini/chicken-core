@@ -378,13 +378,13 @@ EOF
                           (fx> outbufsize 0) 
                           (##sys#make-bytevector outbufsize)))
 	     (read-input
-	      (lambda ()
+	      (lambda (force off)
 		(let* ((tmr (tcp-read-timeout))
 		       (dlr (and tmr (+ (current-process-milliseconds) tmr))))
 		  (let loop ()
-		    (let ((n (recv fd buf 0 +input-buffer-size+)))
+		    (let ((n (recv fd buf off +input-buffer-size+)))
 		      (cond ((eq? _socket_error n)
-			     (cond ((retry?)
+			     (cond ((and (retry?) force)
 				    (when dlr
 				      (##sys#thread-block-for-timeout!
 				       ##sys#current-thread dlr) )
@@ -395,6 +395,7 @@ EOF
 				       #:network-timeout-error
 				       "read operation timed out" tmr fd) )
 				    (loop) )
+                                   ((retry?))
 				   ((interrupted?)
 				    (##sys#dispatch-interrupt loop))
 				   (else
@@ -408,7 +409,7 @@ EOF
 	      (make-input-port
 	       (lambda () ; read
 		 (when (fx>= bufindex buflen)
-		   (read-input))
+		   (read-input #t 0))
 		 (if (fx>= bufindex buflen)
 		     #!eof
                      (##sys#read-char/encoding
@@ -433,18 +434,15 @@ EOF
 		     (network-error #f "cannot close socket input port" fd) ) ) )
                peek-char:
 	       (lambda () ; peek-char
-		 (when (fx>= bufindex buflen)
-		   (read-input))
-		 (if (fx>= bufindex buflen)
-                     #!eof
-                     (let ((p bufindex))
-                       (##sys#read-char/encoding
-                         inport (##sys#slot inport 15)
-                         (lambda (buf start len dec)
-                           (dec buf start len
-                                (lambda (buf start len)
-                                  (set! bufindex p)
-                                  (##core#inline "C_utf_decode" buf start))))))))
+                 (let ((enc (##sys#slot inport 15)))
+                   (if (eq? bufindex buflen) 
+                       (read-input #t 0))
+                       (let ((n (##sys#scan-read-ahead enc (##core#inline "C_subbyte" buf bufindex))))
+                         (when (and n (fx>= n (fx- buflen bufindex)))
+                           (read-input #f bufindex)))
+                   (if (fx< bufindex buflen)
+                       (##sys#decode-char buf enc bufindex)
+                       #!eof)))
                read-bytevector:
 	       (lambda (dest start end)	; read-bytevector!
 		 (let loop ((n (fx- end start)) (m 0) (start start))
@@ -456,14 +454,14 @@ EOF
 			    (set! bufindex (fx+ bufindex n2))
 			    (loop (fx- n n2) (fx+ m n2) (fx+ start n2)) ) )
 			 (else
-			  (read-input)
+			  (read-input #t 0)
 			  (if (fx>= bufindex buflen) 
 			      m
 			      (loop n m start) ) ) ) ) )
                read-line:
                (lambda (p limit)	; read-line
 		 (when (fx>= bufindex buflen)
-		   (read-input))
+		   (read-input #t 0))
 		 (if (fx>= bufindex buflen)
 		     #!eof
 		     (let ((limit (or limit (fx- most-positive-fixnum bufindex))))
@@ -476,7 +474,7 @@ EOF
 			      (let ((nbytes (fx- pos bufindex)))
 				(cond ((fx>= nbytes limit)
 				       (values #f pos #f))
-				      (else (read-input)
+				      (else (read-input #t 0)
 					    (set! limit (fx- limit nbytes))
 					    (if (fx< bufindex buflen)
 						(values buf bufindex
