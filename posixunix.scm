@@ -857,7 +857,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                              (dec buf start len
                                   (lambda (buf start len)
                                     (##core#inline "C_utf_decode" buf start)))))))
-		   (lambda ()		; char-ready?
+		   (lambda ()		; char-ready? (effectively u8-ready?)
 		     (or (fx< bufpos buflen)
 			 (ready?)) )
 		   (lambda ()		; close

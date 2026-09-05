@@ -1256,15 +1256,16 @@ EOF
                (lambda (_ _) ; close
                  (##sys#setislot port 8 #t))
                #f    ; flush-output
-               (lambda (_) ; char-ready?
-                 (not (eq? index bv-len)))
+               (lambda (_) #t) ; u8-ready?
                (lambda (p n dest start)    ; read-bytevector!
                  (let ((n2 (min n (##core#inline "C_fixnum_difference" bv-len index))))
                    (##core#inline "C_copy_memory_with_offset" dest bv start index n2)
                    (set! index (##core#inline "C_fixnum_plus" index n2))
                    n2))
                #f    ; read-line
-               #f))) ; read-buffered
+               #f    ; read-buffered
+               (lambda (_) #t)  ; char-ready?
+               )))
      port)))
 
 (set! scheme#open-output-bytevector
@@ -1304,10 +1305,12 @@ EOF
              (lambda (_ _) ; close
                (##sys#setislot port 8 #t))
              #f    ; flush-output
-             #f ; char-ready?
+             #f ; u8-ready?
              #f  ; read-bytevector!
              #f    ; read-line
-             #f)) ; read-buffered
+             #f ; read-buffered
+             #f ; char-ready?
+             ))
      port)))
 
 (set! scheme#get-output-bytevector
@@ -4060,10 +4063,11 @@ EOF
 ; 3:  (write-bytevector PORT BYTEVECTOR START END)
 ; 4:  (close PORT DIRECTION)
 ; 5:  (flush-output PORT)
-; 6:  (char-ready? PORT) -> BOOL
+; 6:  (u8-ready? PORT) -> BOOL
 ; 7:  (read-bytevector! PORT COUNT BYTEVECTOR START) -> COUNT'
 ; 8:  (read-line PORT LIMIT) -> STRING | EOF
 ; 9:  (read-buffered PORT) -> STRING
+; [10: (char-ready? PORT) -> BOOL    (optional)]
 
 (define (##sys#make-port i/o class name type)
   (let ((port (##core#inline_allocate ("C_a_i_port" 17))))
@@ -4087,6 +4091,9 @@ EOF
 ;   12: Static buffer for read-line, allocated on-demand
 
 (define ##sys#stream-port-class
+  (define (u8-ready? p)
+    (or (##sys#slot p 10)
+        (##core#inline "C_char_ready_p" p) ))
   (vector (lambda (p)      ; read-char
             (let loop ()
               (let ((peeked (##sys#slot p 10)))
@@ -4141,8 +4148,7 @@ EOF
             (##sys#update-errno) )
           (lambda (p)      ; flush-output
             (##core#inline "C_flush_output" p) )
-          (lambda (p)      ; char-ready?
-            (##core#inline "C_char_ready_p" p) )
+          u8-ready?
           (lambda (p n dest start)           ; read-bytevector!
             (let ((pb (##sys#slot p 10))
                   (nc 0))
@@ -4226,6 +4232,7 @@ EOF
                           (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
                           (##sys#buffer->string/encoding buffer 0 n (##sys#slot p 15))))))))
           #f  ; read-buffered
+          u8-ready?       ; char-ready?
           ) )
 
 (define ##sys#open-file-port (##core#primitive "C_open_file_port"))
@@ -5854,7 +5861,7 @@ EOF
 	   (##sys#setislot p 10 (fx+ position len)) ) ) )
      void ; close
      (lambda (p) #f)			; flush-output
-     (lambda (p) #t)			; char-ready?
+     (lambda (p) #t)			; u8-ready?
      (lambda (p n dest start)		; read-bytevector!
        (let* ((pos (##sys#slot p 10))
               (input (##sys#slot p 12))
@@ -5892,6 +5899,7 @@ EOF
                     (buffered (##sys#buffer->string buf pos rest)))
 	       (##sys#setislot p 10 len)
 	       buffered))))
+     (lambda (p) #t)			; char-ready?
      )))
 
 ;; Invokes the eos handler when EOS is reached to get more data.

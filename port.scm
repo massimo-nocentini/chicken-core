@@ -274,7 +274,7 @@ char *ttyname(int fd) {
 		     (else c) ) ) ) ) )
      (lambda ()
        (and (not (null? ports))
-	    (char-ready? (car ports))))
+	    (char-ready? (car ports))))    ; must this depend on encoding of port?
      void
      peek-char:
      (lambda ()
@@ -384,7 +384,7 @@ char *ttyname(int fd) {
 	     (lambda (p d)		; close
 	       (close))
 	     #f				; flush-output
-	     (lambda (p)		; char-ready?
+	     (lambda (p)		; u8-ready?
 	       (ready?) )
 	     (if read-bytevector	; read-bytevector!
                  (lambda (p n dest start)
@@ -413,7 +413,9 @@ char *ttyname(int fd) {
                                   (let ((m (insert dest start x)))
                                     (loop (and n (fx- n m)) (fx+ c m))))))))))
 	     read-line			; read-line
-	     read-buffered))
+	     read-buffered     ; read-buffered
+             (lambda (p) (ready?))  ; char-ready?
+             )))
 	   (data (vector #f))
 	   (port (##sys#make-port 1 class "(custom)" 'custom)))
       (##sys#setslot port 10 #f)
@@ -438,10 +440,12 @@ char *ttyname(int fd) {
 	       (close))
 	     (lambda (p)		; flush-output
 	       (when force-output (force-output)) )
-	     #f				; char-ready?
+	     #f				; u8-ready?
 	     #f				; read-bytevector!
              #f                         ; read-line
-             #f))                         ; read-buffered
+             #f                        ; read-buffered
+             #f                        ; char-ready?
+             ))
 	   (data (vector #f))
 	   (port (##sys#make-port 2 class "(custom)" 'custom)))
       (##sys#set-port-data! port data)
@@ -507,11 +511,13 @@ char *ttyname(int fd) {
                (lambda (p d)              ; close
                  (close))
                #f                         ; flush-output
-               (lambda (p)                ; char-ready?
+               (lambda (p)                ; u8-ready?
                  (ready?) )
                read-bv        ; read-bytevector!
                #f                  ; read-line
-               #f))
+               #f                  ; read-buffered
+               (lambda (p) (ready?))      ; char-ready?
+               ))
            (data (vector #f))
            (port (##sys#make-port 1 class "(custom binary)" 'custom)))
       (##sys#setslot port 10 #f)
@@ -546,10 +552,12 @@ char *ttyname(int fd) {
                  (close))
                (lambda (p)           ; flush-output
                  (when force-output (force-output)) )
-               #f                      ; char-ready?
+               #f                      ; u8-ready?
                #f                      ; read-bytevector!
                #f                         ; read-line
-               #f))                         ; read-buffered
+               #f                         ; read-buffered
+               #f                         ; char-ready?
+               ))
            (data (vector #f))
            (port (##sys#make-port 2 class "(custom binary)" 'custom)))
       (##sys#set-port-data! port data)
@@ -573,14 +581,16 @@ char *ttyname(int fd) {
 		     ((2) (close-output-port o))))
 		 (lambda (_)             ; flush-output
 		   (flush-output o))
-		 (lambda (_)             ; char-ready?
-		   (char-ready? i))
+		 (lambda (_)             ; u8-ready?
+		   (u8-ready? i))
 		 (lambda (_ n d s)       ; read-bytevector!
 		   (chicken.io#read-bytevector! d i s (fx+ s n)))
 		 (lambda (_ l)           ; read-line
 		   (read-line i l))
-		 (lambda ()              ; read-buffered
-		   (read-buffered i))))
+		 (lambda (_)              ; read-buffered
+		   (read-buffered i))
+                 (lambda (_)            ; char-ready?
+                   (char-ready? i))))
 	 (port (##sys#make-port 3 class "(bidirectional)" 'bidirectional)))
     (##sys#set-port-data! port (vector #f))
     port))
