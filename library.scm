@@ -1730,13 +1730,8 @@ EOF
     (k buf 0 n)))
 
 (define (##sys#latin-scanner state byte) #f)
-
-(define (##sys#binary-decoder bv start len k)
-  (k bv start len) )
-
-(define (##sys#binary-encoder bv start len k)
-  (k bv start len) )
-
+(define ##sys#binary-decoder ##sys#latin-decoder)
+(define ##sys#binary-encoder ##sys#latin-encoder)
 (define (##sys#binary-scanner state byte) #f)
 
 ;; invokes k with encoding and decoding procedures
