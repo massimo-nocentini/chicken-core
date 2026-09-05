@@ -352,16 +352,13 @@ char *ttyname(int fd) {
 ;   10: last/peeked
 
 (define make-input-port
-  (lambda (read ready? close #!rest r       ; "read-buffered" is deprecated
+  (lambda (read ready? close       ; "read-buffered" is deprecated
                 #!key peek-char read-bytevector read-line read-buffered)
     (define (insert dest start c)
       (let* ((bv (##sys#make-bytevector 4))
              (m (##core#inline "C_utf_insert" bv 0 c)))
         (##core#inline "C_copy_memory_with_offset" dest bv 0 start m)
         m))
-   ;XXX this is for ensuring old-style calls fail and can be removed at some stage
-    (when (and (pair? r) (not (##core#inline "C_i_keywordp" (car r))))
-      (error 'make-input-port "invalid invocation - use keyword parameters" r))
     (let* ((class
 	    (vector
 	     (lambda (p)		; read-char
