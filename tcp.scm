@@ -395,7 +395,10 @@ EOF
 				       #:network-timeout-error
 				       "read operation timed out" tmr fd) )
 				    (loop) )
-                                   ((retry?))
+                                   ((retry?)
+                                    (set! bufindex 0)
+                                    (##sys#setislot data 4 off)
+                                    (set! buflen off))
 				   ((interrupted?)
 				    (##sys#dispatch-interrupt loop))
 				   (else
@@ -438,9 +441,12 @@ EOF
                    (if (fx>= bufindex buflen) 
                        (read-input #t 0)
                        (let ((n (##sys#scan-read-ahead enc 
-                                  (##core#inline "C_subbyte" buf bufindex))))
-                         (when (and n (fx> (fx+ n 1) (fx- buflen bufindex)))
-                           (read-input #f (fx+ bufindex 1)))))
+                                  (##core#inline "C_subbyte" buf bufindex)))
+                             (rest (fx- buflen bufindex)))
+                         (when (and n (fx> (fx+ n 1) rest))
+                           (##core#inline "C_copy_memory_with_offset" 
+                                          buf buf 0 bufindex rest)
+                           (read-input #f rest))))
                    (if (fx< bufindex buflen)
                        (##sys#decode-char buf enc bufindex)
                        #!eof)))
