@@ -4086,9 +4086,6 @@ EOF
 ;   12: Static buffer for read-line, allocated on-demand
 
 (define ##sys#stream-port-class
-  (define (u8-ready? p)
-    (or (##sys#slot p 10)
-        (##core#inline "C_char_ready_p" p) ))
   (vector (lambda (p)      ; read-char
             (let loop ()
               (let ((peeked (##sys#slot p 10)))
@@ -4143,7 +4140,9 @@ EOF
             (##sys#update-errno) )
           (lambda (p)      ; flush-output
             (##core#inline "C_flush_output" p) )
-          u8-ready?
+          (lambda (p)      ; u8-ready?
+            (or (##sys#slot p 10)
+                (##core#inline "C_char_ready_p" p) ))
           (lambda (p n dest start)           ; read-bytevector!
             (let ((pb (##sys#slot p 10))
                   (nc 0))
@@ -4227,7 +4226,9 @@ EOF
                           (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
                           (##sys#buffer->string/encoding buffer 0 n (##sys#slot p 15))))))))
           #f  ; read-buffered
-          u8-ready?       ; char-ready?
+          (lambda (p)      ; char-ready? (effectively u8-ready?)
+            (or (##sys#slot p 10)
+                (##core#inline "C_char_ready_p" p) ))
           ) )
 
 (define ##sys#open-file-port (##core#primitive "C_open_file_port"))

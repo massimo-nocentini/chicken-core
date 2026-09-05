@@ -412,7 +412,7 @@ char *ttyname(int fd) {
 	     read-line			; read-line
 	     read-buffered     ; read-buffered
              (lambda (p) (ready?))  ; char-ready?
-             )))
+             ))
 	   (data (vector #f))
 	   (port (##sys#make-port 1 class "(custom)" 'custom)))
       (##sys#setslot port 10 #f)
