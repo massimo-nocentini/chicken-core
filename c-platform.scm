@@ -143,7 +143,7 @@
 	     read-char substring string-fill! vector-copy! vector-fill! make-string make-vector open-input-file
 	     open-output-file call-with-input-file call-with-output-file close-input-port close-output-port
 	     values call-with-values vector procedure? memq memv member assq assv assoc list-tail
-	     list-ref abs char-ready? peek-char list->string string->list
+	     list-ref abs char-ready? u8-ready? peek-char list->string string->list
 	     current-input-port current-output-port call/cc
 	     make-polar make-rectangular real-part imag-part
 	     load eval interaction-environment null-environment
