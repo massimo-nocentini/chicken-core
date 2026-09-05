@@ -4618,7 +4618,7 @@ EOF
     (##sys#check-input-port port #t 'char-ready?)
     (let ((class (##sys#slot port 2)))
       ;; check size - for backwards compatibility we still allow missing method
-      ((if (fx> (##sys#size class) 9)
+      ((if (fx> (##sys#size class) 10)
            (##sys#slot class 10)        ; char-ready?
            (##sys#slot class 6))        ; u8-ready?
        port))))
