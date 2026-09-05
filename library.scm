@@ -4620,12 +4620,17 @@ EOF
 (set! scheme#char-ready?
   (lambda (#!optional (port ##sys#standard-input))
     (##sys#check-input-port port #t 'char-ready?)
-    ((##sys#slot (##sys#slot port 2) 6) port) )) ; char-ready?
+    (let ((class (##sys#slot port 2)))
+      ;; check size - for backwards compatibility we still allow missing method
+      ((if (fx> (##sys#size class) 9)
+           (##sys#slot class 10)        ; char-ready?
+           (##sys#slot class 6))        ; u8-ready?
+       port))))
     
 (set! scheme#u8-ready? 
   (lambda (#!optional (port ##sys#standard-input))
     (##sys#check-input-port port #t 'u8-ready?)
-    ((##sys#slot (##sys#slot port 2) 6) port) )) ; char-ready?
+    ((##sys#slot (##sys#slot port 2) 6) port) )) ; u8-ready?
 
 (set! scheme#read-char
   (lambda (#!optional (port ##sys#standard-input))
