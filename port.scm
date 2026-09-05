@@ -67,7 +67,7 @@
 	chicken.fixnum
 	chicken.foreign
 	chicken.io)
-(import (only (scheme base) open-output-string get-output-string open-input-string))
+(import (only (scheme base) open-output-string get-output-string open-input-string u8-ready?))
 
 (include "common-declarations.scm")
 
@@ -585,7 +585,7 @@ char *ttyname(int fd) {
 		 (lambda (_ l)           ; read-line
 		   (read-line i l))
 		 (lambda (_)              ; read-buffered
-		   (read-buffered i))
+		   (read-buffered i))     ; DEPRECATED
                  (lambda (_)            ; char-ready?
                    (char-ready? i))))
 	 (port (##sys#make-port 3 class "(bidirectional)" 'bidirectional)))
