@@ -8057,8 +8057,9 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_RATNUM_TAG) {
       return rat_times_integer(ptr, y, x);
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
-      return cplx_times(ptr, x, C_fix(0),
-                        C_u_i_cplxnum_real(y), C_u_i_cplxnum_imag(y));
+        C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
+        C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
     }
@@ -8076,9 +8077,9 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_RATNUM_TAG) {
       return C_s_a_i_times(ptr, 2, x, C_a_i_exact_to_inexact(ptr, 1, y));
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
-      C_word ab[C_SIZEOF_FLONUM], *a = ab;
-      return cplx_times(ptr, x, C_flonum(&a, 0.0),
-                        C_u_i_cplxnum_real(y), C_u_i_cplxnum_imag(y));
+        C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
+        C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
     }
@@ -8094,8 +8095,9 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_RATNUM_TAG) {
       return rat_times_integer(ptr, y, x);
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
-      return cplx_times(ptr, x, C_fix(0),
-                        C_u_i_cplxnum_real(y), C_u_i_cplxnum_imag(y));
+        C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
+        C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
     }
@@ -8111,8 +8113,9 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_RATNUM_TAG) {
         return rat_times_rat(ptr, x, y);
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
-      return cplx_times(ptr, x, C_fix(0),
-                        C_u_i_cplxnum_real(y), C_u_i_cplxnum_imag(y));
+        C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
+        C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
     }
@@ -8121,9 +8124,9 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
       return cplx_times(ptr, C_u_i_cplxnum_real(x), C_u_i_cplxnum_imag(x),
                         C_u_i_cplxnum_real(y), C_u_i_cplxnum_imag(y));
     } else {
-      C_word ab[C_SIZEOF_FLONUM], *a = ab, yi;
-      yi = C_truep(C_i_flonump(y)) ? C_flonum(&a,0) : C_fix(0);
-      return cplx_times(ptr, C_u_i_ratnum_num(x), C_u_i_ratnum_denom(x), y, yi);
+        C_word r = C_s_a_i_times(ptr, 2, y, C_u_i_cplxnum_real(x));
+        C_word i = C_s_a_i_times(ptr, 2, y, C_u_i_cplxnum_imag(x));
+        return C_cplxnum(ptr, r, i);
     }
   } else {
     barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", x);

@@ -49,6 +49,7 @@
 
 (define c1 (make-rectangular 33 44))
 (define c2 (make-rectangular -1.2 44))
+(define cinf (make-rectangular +inf.0 1.0))
 
 (define b2 (- min-fix 22))
 (define r1 (/ 33 44))
@@ -144,6 +145,7 @@
  (test-assert "*: multiplying fix/big (-> 47244640212)" (show (* 22 max2)))
  (test-assert "*: multiplying fix/rat" (show (* 33 r1)))
  (test-equal "*: multiplying fix/complex" (* 99 c1) (make-rectangular 3267 4356))
+ (test-equal "*: multiplying fix/complex(inf)" (* 99 cinf) (make-rectangular +inf.0 99.0))
  (test-equal "*: multiplying complex/fix (inexact)" (* c2 99) (make-rectangular -118.8 4356.0))
  (test-equal "*: multiplying most negative fixnum by one (edge case)"
        (list (* most-negative-fixnum 1) (fixnum? (* most-negative-fixnum 1)))
@@ -155,6 +157,7 @@
  (test-assert "*: flo/rat" (show (* 3.4 r1)))
  (test-assert "*: big/rat" (show (* b1 r1)))
  (test-equal "*: flo/comp" (* 3.4 c1) (make-rectangular 112.2 149.6))
+ (test-equal "*: flo/comp(inf)" (* 99.0 cinf) (make-rectangular +inf.0 99.0))
  (test-equal "*: comp*comp" (* c1 c1) (make-rectangular -847 2904))
  (test-equal "*: comp*comp (inexact)" (* c1 c2) (make-rectangular -1975.6 1399.2))
  (test-equal "*: multiarg" (* 33 44 55) 79860)
