@@ -8037,6 +8037,24 @@ cplx_times(C_word **ptr, C_word rx, C_word ix, C_word ry, C_word iy)
   else return C_cplxnum(ptr, r, i);
 }
 
+void C_adjust_complex(C_word **ptr, C_word *r, C_word *i, C_word x, C_word y) {
+    if((*r & C_FIXNUM_BIT) != 0) {
+        if((*i & C_FIXNUM_BIT) != 0) {
+            if(C_truep(C_u_i_inexactp(x)) || C_truep(C_u_i_inexactp(y))) {
+                *r = C_flonum(ptr, C_unfix(*r));
+                *i = C_flonum(ptr, C_unfix(*i));
+            }
+        } else if(C_block_header(*i) == C_FLONUM_TAG)
+            *r = C_flonum(ptr, C_unfix(*r));
+        return;
+    }
+    if((*i & C_FIXNUM_BIT) != 0) {
+        if(C_block_header(*r) == C_FLONUM_TAG) 
+            *i = C_flonum(ptr, C_unfix(*i));
+        return;
+    }
+}
+
 /* The maximum size this needs is that required to store a complex
  * number result, where both real and imag parts consist of ratnums.
  * The maximum size of those ratnums is if they consist of two bignums
@@ -8063,6 +8081,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8083,6 +8102,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8101,6 +8121,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8119,6 +8140,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8130,6 +8152,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else {
         C_word r = C_s_a_i_times(ptr, 2, y, C_u_i_cplxnum_real(x));
         C_word i = C_s_a_i_times(ptr, 2, y, C_u_i_cplxnum_imag(x));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     }
   } else {
