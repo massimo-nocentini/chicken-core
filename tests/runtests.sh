@@ -440,6 +440,9 @@ $compile posix-tests.scm
 echo "======================================== file access tests ..."
 $interpret -s file-access-tests.scm
 
+echo "======================================== file copy tests ..."
+$interpret -s test-copy-file.scm
+
 echo "======================================== find-files tests ..."
 $interpret -bnq test-find-files.scm
 

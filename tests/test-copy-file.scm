@@ -1,0 +1,11 @@
+(import (chicken file)
+        (chicken file posix)
+        (chicken pathname))
+
+(delete-file* "csi.copy")
+(let* ((orig-csi (make-pathname ".." "csi"))
+       (orig-size (file-size orig-csi)))
+  (copy-file orig-csi "csi.copy")
+  (let ((copy-size (file-size "csi.copy")))
+    (delete-file "csi.copy")
+    (assert (= orig-size copy-size))))
