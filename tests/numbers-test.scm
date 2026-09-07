@@ -206,6 +206,7 @@
  (test-equal "/: rat/complex (negative im)" (/ 1/2 1-2i) 1/10+1/5i)
  (test-equal "/: rat/complex (negative real)" (/ 1/2 -1+2i) -1/10-1/5i)
  (test-equal "/: rat/complex (negative real&im)" (/ 1/2 -1-2i) -1/10+1/5i)
+ (test-equal "/: complex/noncomplex" (/ +inf.0+i 1) +inf.0+i)
  
  (test-assert "/: multiarg" (show (/ 66 2 44)))
  (test-error "/: div fixnum by 0" (/ 33 0))
