@@ -26,9 +26,7 @@ modules that export or import the same toplevel binding.
 
 A module is initially empty (has no visible bindings with the exception
 of  {{import}} and {{cond-expand}}). You must at least
-import the {{scheme}} module to do anything useful. To access any
-of the non-standard macros and procedures, import the {{(chicken base)}}
-module.
+import the {{scheme}} or {{(scheme base)}} modules to do anything useful. 
 
 CHICKEN's module system has the following features:
 
