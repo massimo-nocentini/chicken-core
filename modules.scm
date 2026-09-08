@@ -278,13 +278,15 @@
     mod) )
 
 (define (module-indirect-exports mod)
-  (let ((exports (module-export-list mod))
-	(mname (module-name mod))
-	(dlist (module-defined-list mod)))
+  (let* ((exports (module-export-list mod))
+	 (mname (module-name mod))
+         (r7lib (##sys#get mname '##r7rs#module))
+	 (dlist (module-defined-list mod)))
     (define (warn msg id)
-      (##sys#warn
-       (string-append msg " in module `" (symbol->string mname) "'")
-       id))
+      (unless r7lib
+        (##sys#warn
+          (string-append msg " in module `" (symbol->string mname) "'")
+          id)))
     (if (eq? #t exports)
 	'()
 	(let loop ((exports exports))	; walk export list
