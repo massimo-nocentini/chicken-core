@@ -1214,7 +1214,6 @@
             (%apply (r 'apply))
             (%values (r 'values))
             (%condition (r 'condition))
-            (%call-with-values (r 'call-with-values))
             (%guard-k (r 'guard-k))
             (%handler-k (r 'handler-k))
             (%lambda (r 'lambda)))
