@@ -189,43 +189,43 @@
 
     chicken.keyword#get-keyword
 
-    chicken.number-vectoru8vector? chicken.number-vectors8vector?
-    chicken.number-vectoru16vector? chicken.number-vectors16vector?
-    chicken.number-vectoru32vector? chicken.number-vectoru64vector?
-    chicken.number-vectors32vector? chicken.number-vectors64vector?
-    chicken.number-vectorf32vector? chicken.number-vectorf64vector?
-    chicken.number-vectorc64vector? chicken.number-vectorf128vector?
+    chicken.number-vector#u8vector? chicken.number-vector#s8vector?
+    chicken.number-vector#u16vector? chicken.number-vector#s16vector?
+    chicken.number-vector#u32vector? chicken.number-vector#u64vector?
+    chicken.number-vector#s32vector? chicken.number-vector#s64vector?
+    chicken.number-vector#f32vector? chicken.number-vector#f64vector?
+    chicken.number-vector#c64vector? chicken.number-vector#f128vector?
 
-    chicken.number-vectoru8vector-length chicken.number-vectors8vector-length
-    chicken.number-vectoru16vector-length chicken.number-vectors16vector-length
-    chicken.number-vectoru32vector-length chicken.number-vectoru64vector-length
-    chicken.number-vectors32vector-length chicken.number-vectors64vector-length
-    chicken.number-vectorf32vector-length chicken.number-vectorf64vector-length
-    chicken.number-vectorc64vector-length chicken.number-vectorc128vector-length
+    chicken.number-vector#u8vector-length chicken.number-vector#s8vector-length
+    chicken.number-vector#u16vector-length chicken.number-vector#s16vector-length
+    chicken.number-vector#u32vector-length chicken.number-vector#u64vector-length
+    chicken.number-vector#s32vector-length chicken.number-vector#s64vector-length
+    chicken.number-vector#f32vector-length chicken.number-vector#f64vector-length
+    chicken.number-vector#c64vector-length chicken.number-vector#c128vector-length
     
-    chicken.number-vectoru8vector-ref chicken.number-vectors8vector-ref
-    chicken.number-vectoru16vector-ref chicken.number-vectors16vector-ref
-    chicken.number-vectoru32vector-ref chicken.number-vectoru64vector-ref
-    chicken.number-vectors32vector-ref chicken.number-vectors64vector-ref
-    chicken.number-vectorf32vector-ref chicken.number-vectorf64vector-ref
-    chicken.number-vectorc64vector-ref chicken.number-vectorc128vector-ref
+    chicken.number-vector#u8vector-ref chicken.number-vector#s8vector-ref
+    chicken.number-vector#u16vector-ref chicken.number-vector#s16vector-ref
+    chicken.number-vector#u32vector-ref chicken.number-vector#u64vector-ref
+    chicken.number-vector#s32vector-ref chicken.number-vector#s64vector-ref
+    chicken.number-vector#f32vector-ref chicken.number-vector#f64vector-ref
+    chicken.number-vector#c64vector-ref chicken.number-vector#c128vector-ref
 
-    chicken.number-vectoru8vector-set! chicken.number-vectors8vector-set!
-    chicken.number-vectoru16vector-set! chicken.number-vectors16vector-set!
-    chicken.number-vectoru32vector-set! chicken.number-vectoru64vector-set!
-    chicken.number-vectors32vector-set! chicken.number-vectors64vector-set!
-    chicken.number-vectorf32vector-set! chicken.number-vectorf64vector-set!
-    chicken.number-vectorc64vector-set! chicken.number-vectorc128vector-set!
+    chicken.number-vector#u8vector-set! chicken.number-vector#s8vector-set!
+    chicken.number-vector#u16vector-set! chicken.number-vector#s16vector-set!
+    chicken.number-vector#u32vector-set! chicken.number-vector#u64vector-set!
+    chicken.number-vector#s32vector-set! chicken.number-vector#s64vector-set!
+    chicken.number-vector#f32vector-set! chicken.number-vector#f64vector-set!
+    chicken.number-vector#c64vector-set! chicken.number-vector#c128vector-set!
 
-    chicken.number-vectoru16vector->bytevector/shared chicken.number-vectors16vector->bytevector/shared
-    chicken.number-vectoru32vector->bytevector/shared chicken.number-vectors32vector->bytevector/shared
-    chicken.number-vectoru64vector->bytevector/shared chicken.number-vectors64vector->bytevector/shared
-    chicken.number-vectorf32vector->bytevector/shared chicken.number-vectorf64vector->bytevector/shared
-    chicken.number-vectorbytevector->u16vector/shared chicken.number-vectorbytevector->s16vector/shared
-    chicken.number-vectorbytevector->u32vector/shared chicken.number-vectorbytevector->s32vector/shared
-    chicken.number-vectorbytevector->u64vector/shared chicken.number-vectorbytevector->s64vector/shared
-    chicken.number-vectorbytevector->f32vector/shared chicken.number-vectorbytevector->f64vector/shared
-    chicken.number-vectorbytevector->c64vector/shared chicken.number-vectorbytevector->c128vector/shared
+    chicken.number-vector#u16vector->bytevector/shared chicken.number-vector#s16vector->bytevector/shared
+    chicken.number-vector#u32vector->bytevector/shared chicken.number-vector#s32vector->bytevector/shared
+    chicken.number-vector#u64vector->bytevector/shared chicken.number-vector#s64vector->bytevector/shared
+    chicken.number-vector#f32vector->bytevector/shared chicken.number-vector#f64vector->bytevector/shared
+    chicken.number-vector#bytevector->u16vector/shared chicken.number-vector#bytevector->s16vector/shared
+    chicken.number-vector#bytevector->u32vector/shared chicken.number-vector#bytevector->s32vector/shared
+    chicken.number-vector#bytevector->u64vector/shared chicken.number-vector#bytevector->s64vector/shared
+    chicken.number-vector#bytevector->f32vector/shared chicken.number-vector#bytevector->f64vector/shared
+    chicken.number-vector#bytevector->c64vector/shared chicken.number-vector#bytevector->c128vector/shared
 
     chicken.memory.representation#number-of-slots
     chicken.memory.representation#make-record-instance
@@ -526,16 +526,16 @@
 (rewrite 'scheme#symbol? 2 1 "C_i_symbolp" #t)
 (rewrite 'scheme#vector? 2 1 "C_i_vectorp" #t)
 (rewrite '##sys#vector? 2 1 "C_i_vectorp" #t)
-(rewrite 'chicken.number-vectoru8vector? 2 1 "C_bytevectorp" #t)
-(rewrite 'chicken.number-vectors8vector? 2 1 "C_i_s8vectorp" #t)
-(rewrite 'chicken.number-vectoru16vector? 2 1 "C_i_u16vectorp" #t)
-(rewrite 'chicken.number-vectors16vector? 2 1 "C_i_s16vectorp" #t)
-(rewrite 'chicken.number-vectoru32vector? 2 1 "C_i_u32vectorp" #t)
-(rewrite 'chicken.number-vectors32vector? 2 1 "C_i_s32vectorp" #t)
-(rewrite 'chicken.number-vectoru64vector? 2 1 "C_i_u64vectorp" #t)
-(rewrite 'chicken.number-vectors64vector? 2 1 "C_i_s64vectorp" #t)
-(rewrite 'chicken.number-vectorf32vector? 2 1 "C_i_f32vectorp" #t)
-(rewrite 'chicken.number-vectorf64vector? 2 1 "C_i_f64vectorp" #t)
+(rewrite 'chicken.number-vector#u8vector? 2 1 "C_bytevectorp" #t)
+(rewrite 'chicken.number-vector#s8vector? 2 1 "C_i_s8vectorp" #t)
+(rewrite 'chicken.number-vector#u16vector? 2 1 "C_i_u16vectorp" #t)
+(rewrite 'chicken.number-vector#s16vector? 2 1 "C_i_s16vectorp" #t)
+(rewrite 'chicken.number-vector#u32vector? 2 1 "C_i_u32vectorp" #t)
+(rewrite 'chicken.number-vector#s32vector? 2 1 "C_i_s32vectorp" #t)
+(rewrite 'chicken.number-vector#u64vector? 2 1 "C_i_u64vectorp" #t)
+(rewrite 'chicken.number-vector#s64vector? 2 1 "C_i_s64vectorp" #t)
+(rewrite 'chicken.number-vector#f32vector? 2 1 "C_i_f32vectorp" #t)
+(rewrite 'chicken.number-vector#f64vector? 2 1 "C_i_f64vectorp" #t)
 (rewrite 'scheme#pair? 2 1 "C_i_pairp" #t)
 (rewrite '##sys#pair? 2 1 "C_i_pairp" #t)
 (rewrite 'chicken.base#weak-pair? 2 1 "C_i_weak_pairp" #t)
