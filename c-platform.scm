@@ -526,7 +526,12 @@
 (rewrite 'scheme#symbol? 2 1 "C_i_symbolp" #t)
 (rewrite 'scheme#vector? 2 1 "C_i_vectorp" #t)
 (rewrite '##sys#vector? 2 1 "C_i_vectorp" #t)
-(rewrite 'chicken.number-vector#u8vector? 2 1 "C_bytevectorp" #t)
+;; NOTE: no rewrite for u8vector?. The other nine predicates below use
+;; C_i_<t>vectorp -> C_i_structurep (runtime.c:5040ff), which is immediate-safe,
+;; but C_bytevectorp (chicken.h:1160) is a raw C_header_bits() test with no
+;; C_immediatep guard, so it dereferences a fixnum. Inlining it segfaults in
+;; DEFAULT SAFE MODE wherever the argument is not statically known to be a
+;; block. Upstream fix would be an immediate-checking C_i_bytevectorp.
 (rewrite 'chicken.number-vector#s8vector? 2 1 "C_i_s8vectorp" #t)
 (rewrite 'chicken.number-vector#u16vector? 2 1 "C_i_u16vectorp" #t)
 (rewrite 'chicken.number-vector#s16vector? 2 1 "C_i_s16vectorp" #t)
