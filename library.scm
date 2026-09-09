@@ -71,6 +71,48 @@
 
 #define C_flush_all_files(dummy)    (C_fflush(NULL), C_SCHEME_UNDEFINED)
 
+/* Scheme-side read buffering for stream ports (see "Buffered stream port
+   input" below).  A buffer is only installed on ports whose underlying
+   FILE * is seekable, so that operations which cannot deal with the
+   buffer can always put the unread bytes back with fseek(). */
+
+#define C_port_seekable(p) \
+  C_mk_bool(C_port_file(p) != NULL && ftell(C_port_file(p)) >= 0)
+#define C_port_seek_back(p, n) \
+  C_mk_bool(C_port_file(p) == NULL || \
+            fseek(C_port_file(p), -(long)C_unfix(n), SEEK_CUR) == 0)
+
+/* index of the first CR or LF in BV[start,end), or -1 */
+static C_word
+scan_line_terminator(C_word bv, C_word start, C_word end)
+{
+  C_uchar *p = (C_uchar *)C_c_string(bv);
+  int i = C_unfix(start), n = C_unfix(end);
+
+  for(; i < n; ++i)
+    if(p[ i ] == '\n' || p[ i ] == '\r') return C_fix(i);
+
+  return C_fix(-1);
+}
+
+static C_word
+stream_port_fill(C_word bv, C_word port, C_word start, C_word len)
+{
+  C_FILEPTR fp = C_port_file(port);
+  size_t m;
+
+  if(feof(fp)) return C_fix(0);
+
+  m = fread(C_c_string(bv) + C_unfix(start), sizeof(C_char), C_unfix(len), fp);
+
+  if(m == 0 && ferror(fp)) {
+    clearerr(fp);               /* report to Scheme, which may retry */
+    return C_fix(-1);
+  }
+
+  return C_fix(m);
+}
+
 static C_word
 fast_read_line_from_file(C_word str, C_word start, C_word port, C_word size) {
   int n = C_unfix(size);
@@ -4090,94 +4132,181 @@ EOF
 ;   10: peek buffer
 ;   12: Static buffer for read-line, allocated on-demand
 
-(define ##sys#stream-port-class
-  (vector (lambda (p)      ; read-char
-            (let loop ()
-              (let ((peeked (##sys#slot p 10)))
-                (cond (peeked
-                        (##sys#setislot p 10 #f)
-                        (##sys#decode-char peeked (##sys#slot p 15) 0))
-                      ((eq? 'utf-8  (##sys#slot p 15)) ; fast path
-                       (let ((c (##core#inline "C_read_char" p)))
-                         (if (eq? -1 c)
-                             (let ((err (##sys#update-errno)))
-                               (if (eq? err (foreign-value "EINTR" int))
-                                   (##sys#dispatch-interrupt loop)
-                                   (##sys#signal-hook/errno
-                                    #:file-error err 'read-char
-                                    (##sys#string-append "cannot read from port - " strerror)
-                                    p)))
-                             c)))
-                      (else (##sys#read-char/encoding
-                             p (##sys#slot p 15)
-                             (lambda (buf start len dec)
-                               (dec buf start len
-                                    (lambda (buf start len)
-                                      (##core#inline "C_utf_decode" buf start))))))))))
-          (lambda (p)      ; peek-char
-            (let ((pb (##sys#slot p 10))
-                  (enc (##sys#slot p 15)))
-              (if pb
-                  (##sys#decode-char pb enc 0)
-                  (##sys#read-char/encoding
-                   p enc
-                   (lambda (buf start len dec)
-                     (let ((pb (##sys#make-bytevector len 1)))
-                       (##core#inline "C_copy_memory_with_offset" pb buf 0 start len)
-                       (##sys#setslot p 10 pb)
-                       (dec buf start len
-                            (lambda (buf start _)
-                              (##core#inline "C_utf_decode" buf start)))))))))
-          (lambda (p c)                ; write-char
-            (let ((enc (##sys#slot p 15)))
-              (if (eq? enc 'utf-8) ;; fast path
-                  (##core#inline "C_display_char" p c)
-                  (let* ((bv (##sys#make-bytevector 4))
-                         (n (##sys#encode-char c bv enc)))
-                    ((##sys#slot (##sys#slot p 2) 3) p bv 0 n))))) ; write-bytevector
-          (lambda (p bv from to)                     ; write-bytevector
-            (##sys#encode-buffer
-             bv from (fx- to from) (##sys#slot p 15)
-             (lambda (bv start len)
-               (##core#inline "C_display_string" p bv start len))))
-          (lambda (p d)                ; close
-            (##core#inline "C_close_file" p)
-            (##sys#update-errno) )
-          (lambda (p)      ; flush-output
-            (##core#inline "C_flush_output" p) )
-          (lambda (p)      ; u8-ready?
-            (or (##sys#slot p 10)
-                (##core#inline "C_char_ready_p" p) ))
-          (lambda (p n dest start)           ; read-bytevector!
-            (let ((pb (##sys#slot p 10))
-                  (nc 0))
-              (when pb
-                (set! nc (##sys#size pb))
-                (##core#inline "C_copy_memory_with_offset" dest pb start 0 nc)
-                (set! start (fx+ start nc))
-                (set! n (fx- n nc))
-                (##sys#setislot p 10 #f))
-              ;;XXX "n" below always true?
-              (let loop ((rem (or n (fx- (##sys#size dest) start)))
-                         (act nc)
-                         (start start))
-                (let ((len (##core#inline "fast_read_string_from_file" dest p rem start)))
-                  (cond ((eof-object? len) ; EOF returns 0 bytes read
-                         act)
-                        ((fx< len 0)
-                         (let ((err (##sys#update-errno)))
-                           (if (eq? err (foreign-value "EINTR" int))
-                               (##sys#dispatch-interrupt
-                                (lambda () (loop rem act start)))
-                               (##sys#signal-hook/errno
-                                #:file-error err 'read-bytevector!
-                                (##sys#string-append "cannot read from port - " strerror)
-                                p n dest start))))
-                        ((fx< len rem)
-                         (loop (fx- rem len) (fx+ act len) (fx+ start len)))
-                        (else (fx+ act len) ) ) ))))
-          (lambda (p rlimit)       ; read-line
-            (when rlimit (##sys#check-fixnum rlimit 'read-line))
+;;; Buffered stream port input:
+;
+; Slot 11 of a stream port holds one of
+;
+;   #f             - not decided yet (the initial value of every port slot)
+;   #t             - decided: this port is never buffered (output port, tty,
+;                    pipe, or anything else whose FILE * is not seekable)
+;   #(BV POS LIM)  - read buffer; the bytes BV[POS..LIM) have been read from
+;                    the file but not yet consumed by the port
+;
+; A buffer is installed lazily, on the first read-char/peek-char, and only
+; when the underlying FILE * is seekable.  That restriction is what makes
+; the rest of the port class safe: any operation which cannot deal with the
+; buffer (read-line, file-position, close) first calls
+; ##sys#stream-port-unbuffer!, which seeks the FILE * back over the unread
+; bytes and empties the buffer, restoring the invariant "file position ==
+; port position".  Terminals, pipes and sockets are not seekable and are
+; therefore never buffered, so interactive input is unaffected.
+
+(define-constant stream-port-buffer-size 8192)
+
+;; ##sys#make-bytevector'd buffers are 4 bytes longer than the usable size:
+;; "C_utf_decode" always loads 4 bytes, even for a 1-byte codepoint.
+
+(define (##sys#stream-port-buffer p)
+  (let ((b (##sys#slot p 11)))
+    (cond ((eq? b #f)
+           (cond ((and (eq? 1 (##sys#slot p 1)) ; input?
+                       (##core#inline "C_port_seekable" p))
+                  (let ((nb (##sys#make-vector 3 0)))
+                    (##sys#setslot
+                     nb 0
+                     (##sys#make-bytevector (fx+ stream-port-buffer-size 4)))
+                    (##sys#setslot p 11 nb)
+                    nb))
+                 (else
+                  (##sys#setslot p 11 #t)
+                  #f)))
+          ((eq? b #t) #f)
+          (else b))))
+
+;; Move the unconsumed bytes to the front of the buffer and read more.
+;; Returns the number of bytes added (0 at EOF).
+
+(define (##sys#stream-port-fill! p b)
+  (let* ((bv (##sys#slot b 0))
+         (pos (##sys#slot b 1))
+         (rem (fx- (##sys#slot b 2) pos)))
+    (when (fx> pos 0)
+      (do ((i 0 (fx+ i 1)))               ; rem is < 4 in practice
+          ((fx>= i rem))
+        (##core#inline "C_setsubbyte" bv i
+                       (##core#inline "C_subbyte" bv (fx+ pos i))))
+      (##sys#setislot b 1 0)
+      (##sys#setislot b 2 rem))
+    (let loop ()
+      (let ((n (##core#inline "stream_port_fill" bv p rem
+                              (fx- stream-port-buffer-size rem))))
+        (cond ((fx< n 0)
+               (let ((err (##sys#update-errno)))
+                 (if (eq? err (foreign-value "EINTR" int))
+                     (##sys#dispatch-interrupt loop)
+                     (##sys#signal-hook/errno
+                      #:file-error err 'read-char
+                      (##sys#string-append "cannot read from port - " strerror)
+                      p))))
+              (else
+               (##sys#setislot b 2 (fx+ rem n))
+               n))))))
+
+;; Make sure at least 4 bytes (the longest codepoint) are buffered, or that
+;; we are at EOF.  Returns #t when at least one byte is available.
+
+(define (##sys#stream-port-ensure! p b)
+  (let loop ()
+    (cond ((fx>= (fx- (##sys#slot b 2) (##sys#slot b 1)) 4) #t)
+          ((fx> (##sys#stream-port-fill! p b) 0) (loop))
+          (else (fx> (##sys#slot b 2) (##sys#slot b 1))))))
+
+;; Push the unread bytes back into the file and drop the buffer.  After this
+;; the FILE * is positioned exactly at the port's logical position again.
+
+(define (##sys#stream-port-unbuffer! p)
+  (let ((b (and (eq? 'stream (##sys#slot p 7)) (##sys#slot p 11))))
+    (when (and b (not (eq? b #t)))
+      (let ((rem (fx- (##sys#slot b 2) (##sys#slot b 1))))
+        (##sys#setislot b 1 0)
+        (##sys#setislot b 2 0)
+        (when (fx> rem 0)
+          (unless (##core#inline "C_port_seek_back" p rem)
+            (##sys#signal-hook
+             #:file-error 'port "cannot rewind buffered port" p)))))))
+
+;; Return the next line if it lies entirely inside the buffer, else #f.
+;; A CR as the very last buffered byte counts as "not entirely inside",
+;; since we cannot tell yet whether a LF follows it.
+
+(define (##sys#stream-port-read-line p b)
+  (let* ((bv (##sys#slot b 0))
+         (pos (##sys#slot b 1))
+         (lim (##sys#slot b 2))
+         (i (##core#inline "scan_line_terminator" bv pos lim)))
+    (and (fx>= i 0)
+         (let ((end (if (eq? 13 (##core#inline "C_subbyte" bv i)) ; CR
+                        (cond ((fx>= (fx+ i 1) lim) #f)
+                              ((eq? 10 (##core#inline "C_subbyte" bv (fx+ i 1)))
+                               (fx+ i 2))
+                              (else (fx+ i 1)))
+                        (fx+ i 1))))
+           (and end
+                (let ((str (##sys#buffer->string/encoding
+                            bv pos (fx- i pos) (##sys#slot p 15))))
+                  (##sys#setislot b 1 end)
+                  (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
+                  str))))))
+
+;; Decode one character out of the buffer, consuming it or not.
+
+(define (##sys#stream-port-decode p b consume?)
+  (if (##sys#stream-port-ensure! p b)
+      (let* ((bv (##sys#slot b 0))
+             (pos (##sys#slot b 1))
+             (lim (##sys#slot b 2))
+             (enc (##sys#slot p 15)))
+        (if (eq? enc 'utf-8)            ; fast path
+            (let ((need (##core#inline
+                         "C_utf_bytes_needed"
+                         (##core#inline "C_subbyte" bv pos))))
+              (if (fx> need (fx- lim pos))
+                  ;; a sequence truncated by EOF: decode what there is, padded
+                  ;; with 0xff, which is what "C_read_char" ends up doing when
+                  ;; getc() hits EOF in the middle of a sequence -- the result
+                  ;; is the replacement character for the leading byte
+                  (let ((sc (##sys#make-bytevector 5 255)))
+                    (##core#inline "C_copy_memory_with_offset"
+                                   sc bv 0 pos (fx- lim pos))
+                    (when consume? (##sys#setislot b 1 lim))
+                    (##core#inline "C_utf_decode" sc 0))
+                  (begin
+                    (when consume? (##sys#setislot b 1 (fx+ pos need)))
+                    (##core#inline "C_utf_decode" bv pos))))
+            (##sys#encoding-hook
+             enc
+             (lambda (dec _ scan)
+               (let loop ((state #f) (i 0))
+                 (if (fx>= (fx+ pos i) lim)
+                     (##sys#signal-hook
+                      #:file-error 'read-char
+                      "incomplete character sequence while decoding" i)
+                     (let ((s2 (scan state (##core#inline
+                                            "C_subbyte" bv (fx+ pos i)))))
+                       (if s2
+                           (loop s2 (fx+ i 1))
+                           (let ((n (fx+ i 1))
+                                 ;; the codepoint has to be decoded out of a
+                                 ;; scratch buffer holding just its own bytes:
+                                 ;; "C_utf_decode" always loads 4 bytes and
+                                 ;; would otherwise run into the *following*
+                                 ;; character (this matches what
+                                 ;; ##sys#read-char/encoding does)
+                                 (sc (##sys#make-bytevector 5)))
+                             (when consume? (##sys#setislot b 1 (fx+ pos n)))
+                             (##core#inline "C_copy_memory_with_offset"
+                                            sc bv 0 pos n)
+                             (dec sc 0 n
+                                  (lambda (bv2 start2 _)
+                                    (##core#inline
+                                     "C_utf_decode" bv2 start2))))))))))))
+      #!eof))
+
+;; The original, unbuffered read-line: reads straight from the FILE *.
+;; Used for ports that are not buffered, and as the fall-back when a line
+;; is not completely inside the buffer.
+
+(define (##sys#stream-port-read-line/file p rlimit)
             (let ((sblen read-line-buffer-initial-size)
                   (pb (##sys#slot p 10))
                   (buffer (##sys#slot p 12))
@@ -4230,10 +4359,136 @@ EOF
                         (else
                           (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
                           (##sys#buffer->string/encoding buffer 0 n (##sys#slot p 15))))))))
+
+(define ##sys#stream-port-class
+  (vector (lambda (p)      ; read-char
+           (let ((b (##sys#stream-port-buffer p)))
+            (if b
+                (##sys#stream-port-decode p b #t)
+            (let loop ()
+              (let ((peeked (##sys#slot p 10)))
+                (cond (peeked
+                        (##sys#setislot p 10 #f)
+                        (##sys#decode-char peeked (##sys#slot p 15) 0))
+                      ((eq? 'utf-8  (##sys#slot p 15)) ; fast path
+                       (let ((c (##core#inline "C_read_char" p)))
+                         (if (eq? -1 c)
+                             (let ((err (##sys#update-errno)))
+                               (if (eq? err (foreign-value "EINTR" int))
+                                   (##sys#dispatch-interrupt loop)
+                                   (##sys#signal-hook/errno
+                                    #:file-error err 'read-char
+                                    (##sys#string-append "cannot read from port - " strerror)
+                                    p)))
+                             c)))
+                      (else (##sys#read-char/encoding
+                             p (##sys#slot p 15)
+                             (lambda (buf start len dec)
+                               (dec buf start len
+                                    (lambda (buf start len)
+                                      (##core#inline "C_utf_decode" buf start))))))))))))
+          (lambda (p)      ; peek-char
+           (let ((b (##sys#stream-port-buffer p)))
+            (if b
+                (##sys#stream-port-decode p b #f)
+            (let ((pb (##sys#slot p 10))
+                  (enc (##sys#slot p 15)))
+              (if pb
+                  (##sys#decode-char pb enc 0)
+                  (##sys#read-char/encoding
+                   p enc
+                   (lambda (buf start len dec)
+                     (let ((pb (##sys#make-bytevector len 1)))
+                       (##core#inline "C_copy_memory_with_offset" pb buf 0 start len)
+                       (##sys#setslot p 10 pb)
+                       (dec buf start len
+                            (lambda (buf start _)
+                              (##core#inline "C_utf_decode" buf start)))))))))))
+          (lambda (p c)                ; write-char
+            (let ((enc (##sys#slot p 15)))
+              (if (eq? enc 'utf-8) ;; fast path
+                  (##core#inline "C_display_char" p c)
+                  (let* ((bv (##sys#make-bytevector 4))
+                         (n (##sys#encode-char c bv enc)))
+                    ((##sys#slot (##sys#slot p 2) 3) p bv 0 n))))) ; write-bytevector
+          (lambda (p bv from to)                     ; write-bytevector
+            (##sys#encode-buffer
+             bv from (fx- to from) (##sys#slot p 15)
+             (lambda (bv start len)
+               (##core#inline "C_display_string" p bv start len))))
+          (lambda (p d)                ; close
+            (##sys#stream-port-unbuffer! p)
+            (##sys#setslot p 11 #t)     ; no buffering on a closed port
+            (##core#inline "C_close_file" p)
+            (##sys#update-errno) )
+          (lambda (p)      ; flush-output
+            (##core#inline "C_flush_output" p) )
+          (lambda (p)      ; u8-ready?
+            (let ((b (##sys#slot p 11)))
+              (or (and b (not (eq? b #t))
+                       (fx> (##sys#slot b 2) (##sys#slot b 1)))
+                  (##sys#slot p 10)
+                  (##core#inline "C_char_ready_p" p) )))
+          (lambda (p n dest start)           ; read-bytevector!
+            (let ((pb (##sys#slot p 10))
+                  (b (##sys#slot p 11))
+                  (nc 0))
+              (when (and b (not (eq? b #t)))
+                (let* ((pos (##sys#slot b 1))
+                       (avail (fx- (##sys#slot b 2) pos))
+                       (k (if n (fxmin n avail) avail)))
+                  (when (fx> k 0)
+                    (##core#inline "C_copy_memory_with_offset"
+                                   dest (##sys#slot b 0) start pos k)
+                    (##sys#setislot b 1 (fx+ pos k))
+                    (set! nc k)
+                    (set! start (fx+ start k))
+                    (when n (set! n (fx- n k))))))
+              (when pb
+                (let ((pn (##sys#size pb)))
+                  (##core#inline "C_copy_memory_with_offset" dest pb start 0 pn)
+                  (set! nc (fx+ nc pn))
+                  (set! start (fx+ start pn))
+                  (when n (set! n (fx- n pn)))
+                  (##sys#setislot p 10 #f)))
+              ;;XXX "n" below always true?
+              (let loop ((rem (or n (fx- (##sys#size dest) start)))
+                         (act nc)
+                         (start start))
+                (let ((len (##core#inline "fast_read_string_from_file" dest p rem start)))
+                  (cond ((eof-object? len) ; EOF returns 0 bytes read
+                         act)
+                        ((fx< len 0)
+                         (let ((err (##sys#update-errno)))
+                           (if (eq? err (foreign-value "EINTR" int))
+                               (##sys#dispatch-interrupt
+                                (lambda () (loop rem act start)))
+                               (##sys#signal-hook/errno
+                                #:file-error err 'read-bytevector!
+                                (##sys#string-append "cannot read from port - " strerror)
+                                p n dest start))))
+                        ((fx< len rem)
+                         (loop (fx- rem len) (fx+ act len) (fx+ start len)))
+                        (else (fx+ act len) ) ) ))))
+          (lambda (p rlimit)       ; read-line
+            (when rlimit (##sys#check-fixnum rlimit 'read-line))
+            (let ((b (##sys#slot p 11)))
+              (cond ((not (and b (not (eq? b #t))))
+                     (##sys#stream-port-read-line/file p rlimit))
+                    ((and (not rlimit) (##sys#stream-port-read-line p b)))
+                    (else
+                     ;; the line is not completely buffered (or a limit was
+                     ;; given): give the bytes back and read from the file
+                     (##sys#stream-port-unbuffer! p)
+                     (##sys#stream-port-read-line/file p rlimit)))))
+
           #f  ; read-buffered
           (lambda (p)      ; char-ready? (effectively u8-ready?)
-            (or (##sys#slot p 10)
-                (##core#inline "C_char_ready_p" p) ))
+            (let ((b (##sys#slot p 11)))
+              (or (and b (not (eq? b #t))
+                       (fx> (##sys#slot b 2) (##sys#slot b 1)))
+                  (##sys#slot p 10)
+                  (##core#inline "C_char_ready_p" p) )))
           ) )
 
 (define ##sys#open-file-port (##core#primitive "C_open_file_port"))
@@ -4639,6 +4894,43 @@ EOF
     (##sys#read-char-0 port) ))
 
 (define (##sys#read-char-0 p)
+  ;; Fast path: an ASCII byte sitting in the port's read buffer (see
+  ;; "Buffered stream port input").  Restricted to utf-8 because the port's
+  ;; encoding may be changed at any time via "port-encoding"; every other
+  ;; encoding goes through the port class, which decodes from the same
+  ;; buffer.  Note that slot 6 (the pending-EOF flag) can only be set while
+  ;; the buffer is empty, since peek-char only reports EOF after a refill
+  ;; came up empty.
+  (let ((b (and (eq? 'stream (##sys#slot p 7)) (##sys#slot p 11))))
+    (if (and b (not (eq? b #t)) (eq? 'utf-8 (##sys#slot p 15)))
+        (let ((bv (##sys#slot b 0))
+              (pos (##sys#slot b 1))
+              (lim (##sys#slot b 2)))
+          (if (fx< pos lim)
+              (let ((by (##core#inline "C_subbyte" bv pos)))
+                (cond ((fx< by 128)
+                       (##sys#setislot b 1 (fx+ pos 1))
+                       (if (eq? by 10)
+                           (begin
+                             (##sys#setislot p 4 (fx+ (##sys#slot p 4) 1))
+                             (##sys#setislot p 5 0))
+                           (##sys#setislot p 5 (fx+ (##sys#slot p 5) 1)))
+                       (##core#inline "C_fix_to_char" by))
+                      (else
+                       ;; a complete multi-byte sequence in the buffer can be
+                       ;; decoded here as well; anything straddling the end of
+                       ;; the buffer goes through the port class, which refills
+                       (let ((need (##core#inline "C_utf_bytes_needed" by)))
+                         (if (fx<= (fx+ pos need) lim)
+                             (begin
+                               (##sys#setislot b 1 (fx+ pos need))
+                               (##sys#setislot p 5 (fx+ (##sys#slot p 5) 1))
+                               (##core#inline "C_utf_decode" bv pos))
+                             (##sys#read-char-0/slow p))))))
+              (##sys#read-char-0/slow p)))
+        (##sys#read-char-0/slow p))))
+
+(define (##sys#read-char-0/slow p)
   (let ([c (if (##sys#slot p 6)
 	       (begin
 		 (##sys#setislot p 6 #f)
@@ -4656,6 +4948,23 @@ EOF
   (##sys#read-char-0 port) )
 
 (define (##sys#peek-char-0 p)
+  (let ((b (and (eq? 'stream (##sys#slot p 7)) (##sys#slot p 11))))
+    (if (and b (not (eq? b #t)) (eq? 'utf-8 (##sys#slot p 15)))
+        (let ((bv (##sys#slot b 0))
+              (pos (##sys#slot b 1))
+              (lim (##sys#slot b 2)))
+          (if (fx< pos lim)
+              (let ((by (##core#inline "C_subbyte" bv pos)))
+                (if (fx< by 128)
+                    (##core#inline "C_fix_to_char" by)
+                    (if (fx<= (fx+ pos (##core#inline "C_utf_bytes_needed" by))
+                              lim)
+                        (##core#inline "C_utf_decode" bv pos)
+                        (##sys#peek-char-0/slow p))))
+              (##sys#peek-char-0/slow p)))
+        (##sys#peek-char-0/slow p))))
+
+(define (##sys#peek-char-0/slow p)
   (if (##sys#slot p 6)
       #!eof
       (let ((c ((##sys#slot (##sys#slot p 2) 1) p))) ; peek-char

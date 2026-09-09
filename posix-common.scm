@@ -397,6 +397,10 @@ EOF
       (##sys#check-fixnum whence 'set-file-position!)
       (unless (cond ((port? port)
 		     (and-let* ((stream (eq? (##sys#slot port 7) 'stream))
+				;; drop any Scheme-side read buffer first, so
+				;; that a SEEK_CUR is relative to the port's
+				;; logical position (see library.scm)
+				(_ (begin (##sys#stream-port-unbuffer! port) #t))
 				(res (##core#inline "C_fseek" port pos whence)))
 			(##sys#setislot port 6 #f) ;; Reset EOF status
 			res))
@@ -411,7 +415,11 @@ EOF
    (lambda (port)
      (let ((pos (cond ((port? port)
 		       (if (eq? (##sys#slot port 7) 'stream)
-			   (##core#inline_allocate ("C_ftell" 7) port)
+			   (begin
+			     ;; ftell() knows nothing about the Scheme-side
+			     ;; read buffer, so give the bytes back first
+			     (##sys#stream-port-unbuffer! port)
+			     (##core#inline_allocate ("C_ftell" 7) port))
 			   -1) )
 		      ((fixnum? port)
 		       (##core#inline "C_lseek" port 0 _seek_cur) )
