@@ -1110,9 +1110,13 @@
 (rewrite 'chicken.number-vector#u64vector-set! 2 3 "C_i_u64vector_set" #t)
 (rewrite 'chicken.number-vector#s64vector-set! 2 3 "C_u_i_s64vector_set" #f)
 (rewrite 'chicken.number-vector#s64vector-set! 2 3 "C_i_s64vector_set" #t)
-(rewrite 'chicken.number-vector#f32vector-set! 2 3 "C_u_i_f32vector_set" #f)
+;; NOTE: no unsafe (#f) rewrite for f32/f64vector-set!. types.db declares the
+;; value argument as (or integer float), but C_u_i_f{32,64}vector_set applies
+;; C_flonum_magnitude unchecked, which segfaults on a fixnum and writes garbage
+;; for a bignum. The safe C_i_f{32,64}vector_set below coerces and is used in
+;; both modes. (The integer setters are unaffected: u8/s8/u16 take fixnums and
+;; u32/s32/u64/s64 use the coercing C_num_to_* helpers.)
 (rewrite 'chicken.number-vector#f32vector-set! 2 3 "C_i_f32vector_set" #t)
-(rewrite 'chicken.number-vector#f64vector-set! 2 3 "C_u_i_f64vector_set" #f)
 (rewrite 'chicken.number-vector#f64vector-set! 2 3 "C_i_f64vector_set" #t)
 
 (rewrite 'chicken.number-vector#u8vector-length 2 1 "C_u_i_bytevector_length" #f)
