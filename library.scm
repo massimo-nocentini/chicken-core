@@ -3564,13 +3564,17 @@ EOF
     ;; through C_utf_range_length -> C_utf_count, so every call decoded its
     ;; input twice.  Copy the range and label it with the count validate
     ;; already produced instead.
+    ;; The count is now load-bearing -- it becomes the string's length slot --
+    ;; so the error path must not fall through into the success path the way
+    ;; the two-pass version could afford to.  ##sys#error-hook does not
+    ;; return, but nothing here should depend on that.
     (let ((count (##core#inline "C_utf_validate" bv n start to)))
       (if (not count)
-          (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
-      (let* ((len (##core#inline "C_fixnum_difference" to start))
-             (dest (##sys#make-bytevector (##core#inline "C_fixnum_plus" len 1))))
-        (##core#inline "C_copy_memory_with_offset" dest bv 0 start len)
-        (##core#inline_allocate ("C_a_ustring" 5) dest count)))))
+          (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv)
+          (let* ((len (##core#inline "C_fixnum_difference" to start))
+                 (dest (##sys#make-bytevector (##core#inline "C_fixnum_plus" len 1))))
+            (##core#inline "C_copy_memory_with_offset" dest bv 0 start len)
+            (##core#inline_allocate ("C_a_ustring" 5) dest count))))))
 
 (define (bytes->string bv #!optional (start 0) end)
   (##sys#check-bytevector bv 'bytes->string)
@@ -3578,6 +3582,12 @@ EOF
          (to (or end n)))
     (if end
         (##sys#check-range/including end 0 n 'bytes->string))
+    ;; Exactly the hole fixed for utf8->string above, nine lines away: only
+    ;; `end' was checked, so a negative `start' walked backwards out of the
+    ;; bytevector (a start of -1 returned the low byte of the bytevector's
+    ;; own header as the first character).  Checking against `to' also
+    ;; establishes start <= to for the subtraction below.
+    (##sys#check-range/including start 0 to 'bytes->string)
     (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
 
 (define (string->latin1 s)

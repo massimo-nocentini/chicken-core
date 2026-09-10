@@ -134,6 +134,23 @@
 (test-equal "utf8->string still decodes a sub-range of multi-byte input"
             (utf8->string #u8(65 228 184 173 66) 1 4) "\x4e2d;")
 
+;; bytes->string, nine lines below utf8->string in library.scm, had the same
+;; hole: (bytes->string #u8(65 66 67 68 69) -1) answered "PABCDE" too.  A
+;; start past the end already raised there, via a downstream check, so only
+;; the negative side leaked.
+(test-error "bytes->string rejects a negative start"
+            (bytes->string #u8(65 66 67 68 69) -1))
+(test-error "bytes->string rejects a very negative start"
+            (bytes->string #u8(65 66 67 68 69) -3))
+(test-error "bytes->string rejects a start past an explicit end"
+            (bytes->string #u8(65 66 67 68 69) 4 2))
+(test-equal "bytes->string accepts start = length"
+            (bytes->string #u8(65 66 67) 3) "")
+(test-equal "bytes->string accepts start = end"
+            (bytes->string #u8(65 66 67) 2 2) "")
+(test-equal "bytes->string still copies the whole range"
+            (bytes->string #u8(65 66 67) 0 3) "ABC")
+
 ;; utf8->string now labels the copied bytes with the codepoint count that
 ;; C_utf_validate already computed, instead of rescanning them through
 ;; C_utf_range_length.  Pin that count down for every sequence length, for
