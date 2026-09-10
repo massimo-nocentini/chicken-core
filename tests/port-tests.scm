@@ -533,6 +533,38 @@ EOF
 (test-group "line terminators, fd port"
   (test-line-terminators "fd port" fd-port-lines))
 
+;; ##sys#scan-buffer-line accumulates into a 1024-byte bytevector that
+;; `grow' doubled exactly once per call.  But `conc' appends a whole
+;; buffer's worth at a time - a string port hands over everything that is
+;; left in one call - so a single append longer than 1024 bytes was
+;; memcpy'd into a bytevector that had only been doubled to 2048.  Around
+;; 2100 bytes read-line returned silently wrong content; by 3000 it
+;; segfaulted.
+(test-group "lines longer than the scanner's accumulator"
+  (for-each
+   (lambda (n)
+     (let ((line (make-string n #\x)))
+       (test-equal (conc "read-line of " n " bytes, LF-terminated")
+                   (read-line (open-input-string (conc line "\n"))) line)
+       (test-equal (conc "read-line of " n " bytes, CR then more")
+                   (read-line (open-input-string (conc line "\rz"))) line)
+       (test-equal (conc "read-line of " n " bytes, unterminated")
+                   (read-line (open-input-string line)) line)))
+   '(1023 1024 1025 2046 2047 2048 2049 2100 3000 4096 5000 20000 100000))
+  ;; byte length and codepoint length differ here: 3 bytes per character
+  (for-each
+   (lambda (n)
+     (let ((line (make-string n (integer->char #x4e2d))))
+       (test-equal (conc "read-line of " n " 3-byte characters")
+                   (read-line (open-input-string (conc line "\n"))) line)))
+   '(683 684 685 1000 4000))
+  (test-equal "read-lines over many long lines"
+              (let* ((line (make-string 5000 #\y))
+                     (text (conc line "\n" line "\r\n" line "\rz")))
+                (read-lines (open-input-string text)))
+              (list (make-string 5000 #\y) (make-string 5000 #\y)
+                    (make-string 5000 #\y) "z")))
+
 ;; Disabled because it requires `echo -n` for
 ;; the EOF test, and that is not available on all systems.
 ;; Uncomment locally to run.

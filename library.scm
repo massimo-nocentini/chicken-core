@@ -5949,19 +5949,28 @@ EOF
   (let* ((hold 1024)
          (dpos 0)
          (line (##sys#make-bytevector hold)))
-    (define (grow)
-      (let* ((h2 (fx* hold 2))
-             (l2 (##sys#make-bytevector h2)))
-        (##core#inline "C_copy_memory" l2 line dpos)
-        (set! line l2)
-        (set! hold h2)))
+    ;; `need' is the total number of bytes that must fit.  Doubling once is
+    ;; not enough: `conc' appends a whole buffer's worth at a time, so a
+    ;; single call can ask for far more than `hold'.  A string port hands
+    ;; the entire remaining string over in one go, so any line longer than
+    ;; 2048 bytes used to be memcpy'd straight past the end of a 2048-byte
+    ;; bytevector - silently wrong output around 2100 bytes, a segfault by
+    ;; 3000.  Keep doubling until it fits.
+    (define (grow need)
+      (let loop ((h2 (fx* hold 2)))
+        (if (fx> h2 need)
+            (let ((l2 (##sys#make-bytevector h2)))
+              (##core#inline "C_copy_memory" l2 line dpos)
+              (set! line l2)
+              (set! hold h2))
+            (loop (fx* h2 2)))))
     (define (conc buf from to)
       (let ((len (fx- to from)))
-        (when (fx>= (fx+ dpos len) hold) (grow))
+        (when (fx>= (fx+ dpos len) hold) (grow (fx+ dpos len)))
         (##core#inline "C_copy_memory_with_offset" line buf dpos from len)
         (set! dpos (fx+ dpos len))))
     (define (conc1 b)
-      (when (fx>= (fx+ dpos 1) hold) (grow))
+      (when (fx>= (fx+ dpos 1) hold) (grow (fx+ dpos 1)))
       (##core#inline "C_setsubbyte" line dpos b)
       (set! dpos (fx+ dpos 1)))
     (define (getline)
