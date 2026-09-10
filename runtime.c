@@ -10402,6 +10402,28 @@ static void bignum_digits_destructive_negate(C_word result)
   }
 }
 
+/* Wide (double-digit) arithmetic for the bignum kernels.
+ *
+ * A bignum digit is a full C_uword, but the schoolbook multiplication and
+ * the Knuth D division below have always decomposed every digit into two
+ * halfdigits, because C offers no way to get at the high half of a
+ * digit-by-digit product.  Where the C compiler does offer an integer type
+ * twice as wide as a digit, those kernels can work on whole digits
+ * instead, at a quarter of the partial products and half the steps.
+ *
+ * GCC and clang provide "unsigned __int128" on 64-bit targets and announce
+ * it with __SIZEOF_INT128__.  They deliberately do _not_ define it on
+ * 32-bit targets, where C_BIGNUM_DIGIT_LENGTH is 32 and the halfdigit
+ * kernels below are used unchanged.  This is plain portable C behind a
+ * compile-time feature test: no intrinsics, no runtime dispatch, and the
+ * halfdigit code stays compiled in as the fallback for every other
+ * compiler and target.
+ */
+#if defined(__SIZEOF_INT128__) && (C_BIGNUM_DIGIT_LENGTH == 64)
+# define C_BIGNUM_HAVE_WIDE_DIGITS 1
+typedef unsigned __int128 C_u2word;
+#endif
+
 static C_uword
 bignum_digits_destructive_scale_up_with_carry(C_uword *start, C_uword *end, C_uword factor, C_uword carry)
 {
@@ -10486,10 +10508,39 @@ bignum_digits_destructive_shift_left(C_uword *start, C_uword *end, int shift_lef
 static C_regparm void
 bignum_digits_multiply(C_word x, C_word y, C_word result)
 {
-  C_uword product,
-          *xd = C_bignum_digits(x),
+  C_uword *xd = C_bignum_digits(x),
           *yd = C_bignum_digits(y),
           *rd = C_bignum_digits(result);
+#ifdef C_BIGNUM_HAVE_WIDE_DIGITS
+  C_u2word product;
+  C_uword carry, yj;
+  /* Lengths in whole digits */
+  int i, j, length_x = C_bignum_size(x), length_y = C_bignum_size(y);
+
+  /* From Hacker's Delight, Figure 8-1 (top part), but in base
+   * 2^C_BIGNUM_DIGIT_LENGTH instead of the halfdigit base used below, so
+   * that a digit pair which took four halfdigit products takes one.  The
+   * accumulator cannot overflow: its largest possible value is
+   * (B-1)*(B-1) + (B-1) + (B-1) == B*B - 1.
+   *
+   * As in the halfdigit loop, rd is assumed to have been zeroed and to be
+   * length_x + length_y digits long; the plain store of the carry into
+   * rd[j + length_x] is correct because nothing has written above
+   * rd[j + length_x - 1] yet.
+   */
+  for (j = 0; j < length_y; ++j) {
+    yj = yd[j];
+    if (yj == 0) continue;
+    carry = 0;
+    for (i = 0; i < length_x; ++i) {
+      product = (C_u2word)xd[i] * yj + rd[i + j] + carry;
+      rd[i + j] = (C_uword)product;
+      carry = (C_uword)(product >> C_BIGNUM_DIGIT_LENGTH);
+    }
+    rd[j + length_x] = carry;
+  }
+#else
+  C_uword product;
   C_uhword carry, yj;
   /* Lengths in halfwords */
   int i, j, length_x = C_bignum_size(x) * 2, length_y = C_bignum_size(y) * 2;
@@ -10507,6 +10558,7 @@ bignum_digits_multiply(C_word x, C_word y, C_word result)
     }
     C_uhword_set(rd, j + length_x, carry);
   }
+#endif
 }
 
 
