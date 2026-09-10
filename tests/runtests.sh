@@ -418,6 +418,11 @@ $interpret -s numbers-test-gauche.scm
 $compile -specialize numbers-test-gauche.scm
 ./a.out
 
+echo "======================================== bignum division tests ..."
+$interpret -s bignum-division-test.scm
+$compile bignum-division-test.scm
+./a.out
+
 echo "======================================== srfi-4 tests ..."
 $interpret -s srfi-4-tests.scm
 
