@@ -1507,193 +1507,182 @@ its head symbol. Nothing outside `expand.scm` depends on the current shape excep
 `##sys#display-line-number-database`. With (C0) fixed (§9.2), this is now the
 cheapest large win left in this document.
 
-### 9.5 SIMD
+### 9.5 SIMD — surveyed, measured, and declined
 
-SIMD comes last deliberately. The measured wins above are larger and cheaper.
-Of the two prerequisites this section used to name, **(C0) is now discharged** —
-the SRFI-4 rewrites fire on this tree, so float-kernel work can finally be
-measured against a sane baseline (§10.1 B). **(B1) is not**: `libchicken.so` is
-still the shipped `-Os` build, and that is where most of (S1)'s win lives.
+This section used to be a ranked list of proposals (S1–S6). It has been replaced by the
+outcome of actually doing the work: 24 candidates across 8 subsystems, each implemented or
+prototyped and benchmarked, each then attacked by an independent adversary. **Eight
+survived. All eight are scalar. None needs SIMD, and none needs the runtime dispatch
+layer.** The layer was designed, prototyped, cross-compiled for aarch64, measured end to
+end, and is deliberately not built.
 
-CHICKEN contains no SIMD intrinsics: no `immintrin.h`, no `__m128`, no
-`__builtin_ia32`. Some of that is deliberate — the project's portability promise
-is a stated goal, though the README's claim is specifically about *generated*
-code being portable, not a blanket ban on platform-specific code in the runtime.
-Any of the following should be an `#ifdef`-guarded fast path with the current
-scalar code as fallback, dispatched at runtime rather than by `-march` (see B1).
+The negative result is recorded here in detail, because it is expensive to rediscover and
+because two of the reasons it *used to* give for deferring SIMD turn out to be wrong.
 
-**(S1) UTF-8 scanning. [measured]**
+#### Why it fails, and why it is not the reason previously given
 
-The ranking here needed correcting twice over. The function the original notes
-led with, `C_utf_fast_count` (`utf.c:3537`), is **dead code** — the only two
-references in the entire tree are its definition and its prototype
-(`chicken.h:1924`). Vectorising it today buys nothing.
+It is not that SIMD does not work here. It works exactly as advertised. Counting UTF-8
+lead bytes over 1 MB, all four paths compiled at the shipped `-Os -fomit-frame-pointer`
+with no `-march` at all:
 
-The function actually on the hot path is the *slow* one, `C_utf_count`
-(`utf.c:3500`), which `utf8_decode`s every character just to count them. It is
-reached through `C_utf_length` / `C_utf_range_length` (`chicken.h:1389-1390`) and
-directly from `C_string` / `C_static_string` (`runtime.c:2794`, `:2815`) — so
-every string built from bytes pays a full extra pass, including every string
-literal at unit-init time, `##sys#symbol->string`, and `get-output-string`.
+| tier | mechanism | ms/MB | vs shipped scalar | dispatch |
+|---|---|---:|---:|---|
+| 0 | the existing scalar C | 0.64 | 1.0× | — |
+| 1 | SWAR, `uint64_t` + `popcountll` | 0.26 | 2.5× | none |
+| 2 | SSE2 intrinsics (x86-64 psABI baseline) | 0.13 | 4.9× | none, compile-time |
+| 3 | AVX2 under `target("avx2,popcnt")` | 0.04 | **16.0×** | runtime |
 
-So step one is not "write SIMD", it is **route the counting paths through a fast
-counter at all**; SIMD is step two. The catch is that the two are not
-interchangeable on malformed input — the source calls them "slow variant, handles
-invalid sequences" versus "fast, unsafe variant", and a stray continuation byte
-counts as one character under `C_utf_count` and none under a lead-byte count. The
-fast path needs a validated-input precondition or a fused validate-and-count.
+It fails on **Amdahl, measured**. `utf.c` in its entirety is **2.8%** of the CPU of a
+CHICKEN compiler self-compile, and `C_utf_count` — the function that drives 66.6% of all
+`utf8_decode` calls — is **0.33–0.46%**. A 16× on 0.4% is 0.4%. Built and A/B'd
+end to end rather than argued, a bit-exact AVX2 `C_utf_count` measured **1.001×–1.005×**
+on the representative workload, and **0.98–1.00×** — a regression — on ASCII input against
+35 lines of portable C. Every other candidate died the same way or worse.
 
-The other genuinely hot target is `utf_index1` (`utf.c:3247`), which backs
-`string-ref`. Per §2.2 it is guarded by an ASCII short-circuit and a memoised
-forward cursor, so the win is confined to one quadrant: **non-ASCII strings
-accessed non-sequentially**, where it is worth ~2000× (§10.1 D).
+Two corrections to what this section used to claim:
 
-Measured on the counting kernel (§10.1 E), most of the available win is a
-build-flag win, not a SIMD win: recompiling the unchanged scalar source at `-O2`
-is 5.1× over the shipped `-Os`, while a portable SWAR version adds a further
-1.4–1.5× at `-O2`/`-O3` (and 2.6× at `-O3 -march=native`). A pure-C SWAR
-rewrite needing no intrinsics is therefore the right first move.
+* **(B1) is not the prerequisite.** The old text said `libchicken.so` shipping at `-Os` is
+  "where most of (S1)'s win lives". Tier 3 above reaches 0.04 ms/MB *while the translation
+  unit is compiled at plain `-Os` with no `-march`* — essentially the whole
+  `-O3 -march=native` win from §10.1 table E, recovered without touching a build flag.
+  Table E's conclusion that the available win is mostly a build-flag win was an artefact
+  of stopping at SWAR. Runtime-dispatched intrinsics make (B1) moot for this purpose.
+* **Dispatch overhead is not the obstacle.** Measured through the PLT at `-Os`, over
+  100M calls pinned to one core: a predicted branch on a cached feature word costs
+  **0.00 ns**, ifunc after resolution **0.00 ns**, an indirect call through a global
+  function pointer **+0.50 ns**. Every shape is between 0 and ~0.8 ns, at or below
+  inter-build code-layout noise. §11.4's ~79 ns of per-call overhead on the srfi-4 kernels
+  is **not** dispatch — it is the `##core#inline_allocate` argument-marshalling and
+  range-check preamble, and it is what makes short vectors lose, with or without SIMD.
 
-Also worth fusing: `C_utf_validate` (`utf.c:3516`) has exactly one caller,
-`utf8->string` (`library.scm:3537`), which then immediately re-scans the same
-bytes via `##sys#buffer->string` → `C_utf_range_length`.
+So the honest summary is: the mechanism is cheap and effective, and there is nothing hot
+enough to point it at.
 
-**(S2) Bignum arithmetic — use wide multiply first, SIMD second. [proposal]**
+#### What the profile actually says to work on instead
 
-```c
-/* runtime.c:10485 — schoolbook multiply, decomposing digits into halves */
-for (j = 0; j < length_y; ++j) {
-  yj = C_uhword_ref(yd, j);
-  if (yj == 0) continue;
-  carry = 0;
-  for (i = 0; i < length_x; ++i) {
-    product = (C_uword)C_uhword_ref(xd, i) * yj + (C_uword)C_uhword_ref(rd, i + j) + carry;
-    C_uhword_set(rd, i + j, product);
-    carry = C_BIGNUM_DIGIT_HI_HALF(product);
-  }
-  C_uhword_set(rd, j + length_x, carry);
-}
-```
+Method, since `perf` was unavailable (`perf_event_paranoid=4`, empty capability set, no
+`valgrind`, no `gdb`): an `LD_PRELOAD` `SIGPROF` sampler recording `REG_RIP`, plus a
+private `libchicken` rebuilt from the tree's own `.c` at the shipped flags and verified to
+have byte-identical codegen (`nm -S` sizes match for `C_reclaim` 0xb51, `really_mark`
+0x214, `mark_nested_objects` 0xd9, `utf8_decode` 0x113, `C_utf_count` 0x51), plus a third
+build carrying exact per-call-site counters. Cross-validated: a 10-unit self-compile gave
+15,995 samples against 16.09 s of CPU. PC sampling gives self time only; there is no PMU
+data, so no IPC or cache-miss attribution.
 
-Two precisions the original framing got wrong. There is no half-digit
-*representation* — bignum digits are already full `C_uword`s; only the multiply
-*algorithm* decomposes them via `C_uhword_ref`/`C_uhword_set`. And the tree does
-not actually state the "portable C has no 64×64→128 multiply" rationale anywhere;
-that is inference, however plausible.
+On a compiler self-compile:
 
-On GCC/Clang, `unsigned __int128` gives the wide multiply directly; on MSVC,
-`_umul128`. Working in full 64-bit digits quarters the partial-product count —
-though since each surviving product is twice as wide, the *instruction*-count win
-is ~4× only where 64×64→128 is a single instruction. Then carry chains map onto
-ADCX/ADOX, though the commonly cited ~2× for those is a result for
-multiply-accumulate inner loops with two independent carry chains, not for plain
-addition. AVX-512IFMA with 52-bit limbs is how GMP-class code does it, but that
-means changing the limb representation — a much bigger project.
+| | share of CPU |
+|---|---:|
+| `C_i_assq` + `C_u_i_assq` + `C_i_memq` — walking association lists | **16.2%** |
+| GC total | 17.0% |
+| all of `utf.c` | 2.8% |
 
-The Karatsuba threshold and its "generates a bit more garbage and GC overhead
-dominates" rationale should be re-checked and re-tuned after any of this, since
-it interacts with (R2).
+The 16.2% is dependent pointer loads. It is not vectorizable at any width; it is an
+algorithmic problem (hash instead of assq).
 
-**(S3) GC slot scanning. [proposal]** The inner loop of `mark_nested_objects` is
-`while(n--) mark(p++)`, one dependent branch per word. A vectorized *filter* —
-load 4–8 words, AND with 3, compare to zero, movemask, iterate only over set bits
-— turns the common all-immediates case into a handful of instructions per 8
-slots. The `&3` test is correct and `really_mark`'s forwarding-pointer mutation
-does not invalidate a precomputed mask, since the mask is computed from the slot
-*values* before any are updated. But the applicability claim needs defending: it
-helps fixnum-vector and structure-heavy heaps and does nothing for pair-heavy
-ones, where every slot is a pointer. See (R1) — the pair-copy specialization is
-the same change from the other side.
+Larger levers than anything in this survey, in descending order:
 
-**(S5) Byte scanning in string search. [proposal]** There is no `string-search`
-or `string-index` in core CHICKEN 6 — the procedure is `substring-index`
-(`chicken.string`, `data-structures.scm:123`), and it is worse than
-`memchr`-shaped: `traverse` (`:88`) is a naive O(n·m) Scheme loop over
-*codepoint* offsets calling `C_u_i_substring_equal_p` → `C_utf_compare`
-(`utf.c:3376`) at each one, which decodes a codepoint at a time. Delegating to
-`memmem` is a real win but not free: it returns a byte offset and the caller
-needs a codepoint index, so the position must be converted back — free for ASCII,
-an extra `C_utf_count` over the prefix otherwise.
+1. **Compiler choice.** gcc 13's `libchicken` at `-Os` is **1.85× slower** than clang 18's
+   on `fft` boxed (6.34 s vs 3.53 s, identical `.scm` objects). An 85% lever next to a
+   4% one.
+2. **The code generator emits no loops.** Across 714,918 lines of generated C in 93 files
+   there are **16** `for`/`while` constructs, and every one of them is verbatim
+   `foreign-declare` text — `srfi-4.c:62-162` (the `ca7cc4fa` kernels), `library.c:57,126,166`
+   and `file.c:55`, all in the post-`#include` prologue. **Zero** come from the code
+   generator. A `let loop` over an f64vector becomes two
+   mutually tail-calling `C_ccall` functions costing ~19 nursery words, a `C_demand`
+   check, a `C_check_for_interrupt`, a 7-word closure allocation and two indirect calls
+   *per element*: **28.9 ns/element**, against 0.589 ns/element for the equivalent C
+   kernel. Teaching the backend to reconstruct a self-tail-calling CPS lambda into a C
+   `for` is worth **20–50×**, and it is the precondition for any *general* vectorization —
+   there is currently no loop for a vectorizer to touch. This is the real prize, and the
+   SIMD question is downstream of it. It is also hard: returning to the trampoline is how
+   GC happens (§8.1), so a reconstructed loop must prove it allocates nothing or hoist the
+   demand check, and must remain interruptible. The machinery to reason about it partly
+   exists — see §5.4 and `c9463c5b`.
+3. **Every string CHICKEN builds is re-scanned to count its codepoints.** `C_utf_count`
+   is reached from seven `##core#inline` sites, all string *constructors*. Caching the
+   count removes the pass on all inputs, not just ASCII — structural, and strictly better
+   than making the scan faster.
+4. **Flonum boxing in `fft`** — 70% GC boxed, 0.2% with `-D unboxed`. Already solved;
+   a benchmark-invocation question.
 
-Irregex does not fit here at all: it has no literal-prefix scan to delegate.
-Literals expand to one NFA state per character and the subject is walked one
-position at a time; its `string-scan-char` family runs only on the *pattern*, at
-regex-compile time. Adding a first-character `memchr` skip to the search loop
-would be a genuine addition — and probably the larger of the two wins.
+#### The measured record, so it is not re-proposed
 
-**(S6) `hash_string` (`runtime.c:2455`). [proposal]** Low priority, and for a
-different reason than first assumed. The serial dependency
-(`key ^= (key << 6) + (key >> 2) + *(str++)`) does prevent vectorization, but the
-real point is that there is **no `string-hash` in core CHICKEN 6** to call it on,
-and every in-tree caller feeds it identifier-length input. Nor is the hash
-memoized where it would matter: symbols carry no hash slot (`C_SIZEOF_SYMBOL` is
-4) and `C_lookup_symbol` recomputes it on every call. What compiled code avoids
-is one step up — literal symbols are interned once into the unit's literal frame
-at init. A block-parallel hash (xxh3/wyhash) would improve distribution, but the
-win is confined to `string->symbol`-heavy code such as the reader, and it changes
-hash values.
+| candidate | outcome |
+|---|---|
+| `C_utf_count` AVX2 validator | 1.001× representative; **0.98–1.04× on ASCII, a regression** vs portable C |
+| `C_utf_compare` AVX2 | **0.86–0.95× below 32 bytes**; interposed on a real self-compile, 1,894,503 calls of mean **2.14** codepoints, max **7**. `memcmp` is itself 1.5–1.8× *slower* than a two-instruction byte loop at those lengths |
+| `utf_index1` ASCII-run skip | `utf_index` short-circuits when byte length equals codepoint count, so `utf_index1` is **0 calls** on ASCII — the quadrant it wins on does not occur |
+| case-mapping AVX2 | +0.1% of the available win; **0.904×** on 100% non-ASCII. Reached from three sites, none in-tree |
+| GC immediate-filter / batched fptr / prefetch | **0.850×–1.011×**. In `fft`, 0.14 slots marked per block visited and 95.9% byteblocks; the fptr chase the proposal targeted is 0.65% of `really_mark` entries. Immediate share is 1.3% in `fft` and 25.8% in the self-compile — *anti-correlated* with GC cost, so a vector filter has nothing to skip where it matters |
+| symbol hashing SIMD | mean input **8.7 bytes**, modal 6, 78% ≤ 15; serial `key ^= (key<<6)+(key>>2)+*str++` chain. (18.1% of its samples are the `%` at `runtime.c:2462` — a scalar win exists; SIMD does not) |
+| `f32vector-*` AVX2 | **1.5–3.2×** — the only genuine SIMD win found — on an API with **zero in-tree callers** |
+| `f32vector-fill!` AVX2 | **0.93–0.96× past L3**: the scalar store loop already saturates bandwidth |
+| `f64/f32vector-add!/-sub!/-mul!/-div!` | **1.02–1.08× at every size** on cold data — 32 bytes moved per flop is the DRAM roofline. `div!` 1.00× |
+| `f64/f32vector-max/-min/-argmax/-argmin` | the AVX2 argmax is **6.4% wrong** on special-value input, and NEON `vmaxq_f64` lowers to `FMAX`, which propagates NaN where x86 `MAXPD` does not — one source, three answers across ISAs |
+| bytevector popcount / search / `u8vector-sum` | new APIs with no callers and no standard behind them. A population count belongs on exact integers as the missing `chicken.bitwise#bit-count`, and clang already emits the SSE2 `psadbw` kernel and aarch64 `cnt`/`uaddlp` from 15 lines of portable C at `-Os` |
+| `substring-index` / `string-split` / `scan-buffer-line` memchr | cost is real, callers are cold; and `strcspn` is unusable because CHICKEN strings admit NUL (`(string-split "a\x00;b c" " ")` splits correctly today), while `memrchr`/`memmem` are GNU/BSD extensions absent from Darwin, Solaris and Windows |
+| irregex byte-skip | 1.76× on `sgrep`, of which **SIMD contributes 0.99×**; and `irregex-core.scm` is vendored verbatim upstream (BSD), so patching its inner loop buys a permanent merge conflict |
 
-**(S4) SRFI-4 bulk operations. [measured, and mostly a correction]**
+#### If anyone revisits this
 
-`srfi-4.scm` does not "offer only element-at-a-time accessors": it already
-exports `subf64vector`, the `f64vector->bytevector[/shared]` family and
-`f64vector->list` / `list->f64vector`, and `subnvector` already runs through a C
-memcpy kernel (`C_copy_subvector`, declared in the unit's own `foreign-declare`
-at `srfi-4.scm:33-37`, called at `:793`) via exactly the `##core#inline`
-mechanism. What is missing is bulk **arithmetic and reduction**: no
-`f64vector-fill!`, no `-copy!`, no `-scale!`, no `-sum`, no dot product.
+Three infrastructure findings, all measured, that would otherwise be rediscovered:
 
-Two corrections to the proposed kernel, both of which matter because it was
-presented as ready to paste:
+* **`target_clones` is useless here.** At `-Os` the `avx2` clone of a counting loop
+  contains **0 ymm** instructions and is byte-identical to `default` (17 at `-O3`) —
+  multiversioning only multiplies what the auto-vectorizer produced, and `-Os` disables
+  the loop vectorizer. And **you cannot put intrinsics in a `target_clones` body**: it is
+  preprocessed once, so `#ifdef __AVX2__` is false in every clone and gcc 13 hard-errors
+  (`inlining failed in call to 'always_inline' '_mm256_movemask_epi8'`). The
+  ifunc/static-archive hazard, by contrast, is *not* real: verified working in an `ar`
+  archive linked dynamically, fully `-static` under both compilers, in a `.so`, and via
+  `dlopen`. Mach-O emulates it with a lazy-pointer stub rather than a real IFUNC.
+* **`__attribute__((vector_size(32)))` at `-Os` with no `-march` emits 0 ymm** and warns
+  `-Wpsabi`. `vector_size(16)` *is* a legitimate single-source way to get SSE2 + NEON if a
+  baseline tier is ever wanted.
+* **`__builtin_cpu_supports` adds an ELF constructor** — `.init_array` grows 8 → 16 bytes
+  for compiler-rt's `__cpu_indicator_init`. Benign, but it contradicts the observation
+  that the tree currently has no static initializers to order against (verified: there are
+  none).
 
-* A `double`-returning C function **cannot** be reached through `##core#inline`,
-  which emits a bare `Name(args)` into a `C_word`-valued assignment
-  (`c-backend.scm:484-487`); the `double` is silently truncated and handed to the
-  runtime as an object pointer. Compiled and run, that segfaults. A
-  flonum-returning kernel must return a `C_word` built with `C_flonum(ptr, …)`
-  and be bound with `##core#inline_allocate`, which emits `Name(&a,3,…)` and adds
-  the words to the frame's demand.
-* Measured, the reduction kernel does **not** auto-vectorize at `-O3`, at
-  `-O3 -ffp-contract=fast`, or at `-O3 -march=native` — the loop-carried
-  dependence blocks it without explicit reassociation. Elementwise ops
-  (`fill!`, `scale!`, `axpy!`) do vectorize at `-O2` and up.
-
-So:
+Two things nobody looked at, recorded honestly. `runtime.c` is 13,693 lines with roughly 170 loop
+sites; the survey read about nine of them, so **coverage of the runtime's loop surface is
+under 10%**. And the cleanest SIMD shape in the whole tree was
+found only by the completeness critic, after the survey closed:
 
 ```c
-C_regparm C_word C_a_i_f64vector_dot(C_word **ptr, C_word c,
-                                     C_word x, C_word y, C_word n) {
-  double *a = (double *)C_data_pointer(C_block_item(x,1));
-  double *b = (double *)C_data_pointer(C_block_item(y,1));
-  double s = 0.0;
-  C_word i, len = C_unfix(n);
-  for(i = 0; i < len; ++i) s += a[i] * b[i];
-  return C_flonum(ptr, s);
-}
+/* runtime.c:6613, and identically at :6686 (_ior) and :6761 (_xor) */
+while (scans1 < ends1) *scanr++ = *scans1++ & *scans2++;   /* C_s_a_i_bitwise_and */
 ```
 
-bound the way `srfi-4.scm:270` already binds `C_a_i_f64vector_ref`:
+Pure elementwise word ops over three arrays: no carry, no loop-carried dependency, no
+reassociation, no FP, no over-read, no alignment question. `objdump` confirms the shipped
+library has 0 `%[xy]mm` here, and `restrict` changes nothing at `-Os`. Measured AVX2 vs
+shipped, bit-identical at every length 0..300: 1.62× at 4 words, 2.66× at 32, **3.67× at
+128**, 1.93× at 4096. Its hotness is almost certainly as weak as every other bignum
+candidate — bitwise-and on bignums is bit-set code, and there is no bitset in the tree —
+so it would probably die on the same gate. But it should have been *proposed and killed on
+hotness*, not missed.
 
-```scheme
-(define (f64vector-dot x y n)
-  (##core#inline_allocate ("C_a_i_f64vector_dot" 4) x y n))
-```
+Finally, a caveat that conditions every "portable C is enough" conclusion above:
+**the SLP vectorizer that makes portable C sufficient is clang's, and gcc does not do it.**
+At the shipped `-Os` flags:
 
-(The `4` is `words-per-flonum`, `c-platform.scm:84`.) The `C_block_item(v,1)` /
-`C_data_pointer` field access is correct as written — compare `chicken.h:1657`.
-In-place kernels return no flonum and can use plain `##core#inline`; only the
-reductions need the allocating form, and they need a documented reassociation
-policy (pairwise or Kahan) rather than relying on `-ffast-math`.
+| 8-accumulator f64 dot, the `ca7cc4fa` house style, at `-Os -fomit-frame-pointer -fno-strict-aliasing -fwrapv` | clang 18 | gcc 13 |
+|---|---|---|
+| packed multiplies (`mulpd`) | **4** | **0** |
+| packed adds (`addpd`) | **7** | **0** |
+| scalar multiplies (`mulsd`) | 1 | 9 |
+| scalar adds (`addsd`) | 2 | 16 |
 
-(C0) also moves this item's target. The baseline a bulk kernel now has to beat is
-no longer a CPS call per element but an inlined, unboxed loop: 1041 ms for a
-200M-element dot product at `-O3 -unsafe`, against 213 ms for the hand-written C
-that a `C_a_i_f64vector_dot` would essentially *be* (§10.1 B). So the kernel is
-still worth roughly 4.9× on reductions — but it is now a 4.9× over working
-inlined code, not a 34× over a symbol-table call, and the elementwise kernels
-(`fill!`, `scale!`, `axpy!`) claim their win mainly through vectorization that
-CHICKEN cannot reach at all: clang auto-vectorizes `scale` to 65 ms where the
-best CHICKEN gets is 1803 ms.
+(Count packed instructions, not `%xmm` mentions: gcc's object file references `%xmm` *more*
+often than clang's, because x86-64 does all scalar FP in those registers. gcc emits no
+packed FP instruction at all here.)
+
+So the twelve bulk kernels shipped in `ca7cc4fa` are 128-bit vectorized under clang and
+pure scalar under gcc. This tree is configured `C_COMPILER=clang`; distributions build
+with gcc. That, and not SIMD, is the largest single codegen fact in this section.
 
 ---
 
@@ -2358,6 +2347,129 @@ installed `libchicken.so.12` with the half-built one in `.`, and a stock
 like a bug in the change under test. Build with `env -u LD_LIBRARY_PATH make` if
 in doubt; a clean-environment build of the same tree succeeds where the ambient
 one crashes.
+
+### 11.8 The SIMD survey, and what it actually produced
+
+The brief was "introduce SIMD optimizations wherever possible". §9.5 records the
+answer: essentially nowhere, and the reason is Amdahl rather than any defect in
+SIMD. What the survey produced instead was a list of things that were simply
+broken, several of them in code nobody had reason to look at until a SIMD
+candidate led there. That is the honest summary of the exercise, and it is worth
+stating plainly: **the most valuable output of a performance survey here was six
+correctness bugs.**
+
+#### Correctness
+
+All reproduced on this tree before being fixed, and all with a test that fails on
+the unpatched tree and passes after.
+
+* **`string-foldcase` heap overflow** (`library.scm:701`). The buffer was sized
+  `2n`; U+0390 and U+03B0 fold to three codepoints, a 3× byte expansion.
+  `(string-foldcase (make-string 4000 (integer->char #x390)))` wrote 24000 bytes
+  into 16000. It did not crash in `csi` — the nursery absorbed it and corrupted
+  whatever followed, which is worse. The 3× bound was established by replaying
+  the `fold2`/`fold1` lookup over all 0x110000 codepoints, not assumed:
+  `fold2`'s row type is `[4]`, so three outputs is a structural ceiling, and
+  exactly two codepoints reach it. `-upcase`/`-downcase` are 1:1 mappings whose
+  widest growth is 1.5× (U+023A→U+2C65, U+023F→U+2C7E) and stay at `2n`.
+* **`utf8->string` and `bytes->string` unchecked `start`** (`library.scm`).
+  `end` was range-checked, `start` never was, in both.
+  `(utf8->string #u8(65 66 67 68 69) -1)` answered `"PABCDE"` — the `P` is 0x50,
+  the low byte of the bytevector's own header. A `start` past the end reached
+  `##sys#make-bytevector` with a negative size and segfaulted. Two public R7RS
+  entry points nine lines apart; the survey found one and a review found the
+  sibling.
+* **`read-line` non-termination on a trailing CR** (`##sys#scan-buffer-line`).
+  The #568 arm's EOF branch put the `\r` back and returned the caller's position
+  unadvanced, so over `"a\r"` `read-line` answered `"a\r"`, then `"\r"`, forever.
+* **Bare CR at a buffer boundary** (same function, the sibling branch). When the
+  `\r` was the last byte the scanner could see and the refill brought something
+  other than `\n`, the arm did `(conc1 13)` and kept scanning — putting the `\r`
+  in the middle of the line and gluing the next line onto it — while the bare-CR
+  arm three lines below treats an identical `\r` as a terminator. So the same
+  bytes parsed differently depending on where the buffer happened to end. It
+  fails at line lengths of exactly 2^k−1 for k=8..12. String ports cannot reach
+  it (they get the whole string at once, so the eos-handler always reports EOF),
+  which is why it needed a pipe to surface, and why it survived: the test group
+  that was supposed to cover this used `open-input-file*`, which yields a
+  `##sys#stream-port-class` port whose `read-line` is `fast_read_line_from_file`
+  in C and never touches the scanner at all. **Pre-existing** — verified by
+  building `c25e3ce0` in a separate worktree and reproducing it there.
+* **`##sys#scan-buffer-line` accumulator overflow.** `grow` doubled `hold`
+  exactly once per call, but `conc` appends a whole buffer at a time and a
+  string port hands over everything remaining in one go, so the guard
+  `(fx>= (fx+ dpos len) hold)` was satisfied by *a* doubling without the result
+  fitting. Wrong content at 2100 bytes, segfault by 3000. Worth noting how
+  nearly this was missed: an earlier attempt swept lengths 2040–2060 and saw
+  nothing, because up to ~2056 the allocator's slack swallows the overrun.
+* **`tests/gobble.scm` and `tests/sgrep.scm`** died on an unbound
+  `command-line-arguments`, so two of `runbench.sh`'s benchmarks had not run at
+  all. The benchmark suite was 25% dead and `make check` stayed green, because
+  `runtests.sh` never invokes `runbench.sh`.
+
+Reported and **not** fixed: `pathname.scm:311` was suspected of an out-of-bounds
+compare and is not. `C_u_i_substring_equal_p` guarantees nothing about lengths —
+that part is true — but `root-origin` is `(lambda (rt) #f)` on every non-Windows
+platform so the branch is unreachable there; the Windows branch's invariant holds
+(driven over 3920 constructed pathnames, zero candidates); and the compare
+answers correctly anyway, because a CHICKEN string's bytevector carries a NUL
+terminator. A finding from reading, refuted by running.
+
+#### Performance, all of it scalar
+
+Numbers below are re-measured against a `c25e3ce0` worktree built with the same
+flags, not inherited from the agent that wrote the patch — three of the original
+claims did not survive that.
+
+| change | measured here |
+|---|---|
+| `bytevector-u8-ref` / `u8vector-ref` rewrite rules (`c-platform.scm`) | 4.5× safe, 18.8× `-unsafe` on a byte loop |
+| Wide bignum division (`__int128`, Möller–Granlund reciprocal) | `quotient` **3.94×**, `remainder` **4.19×** |
+| Wide bignum multiply | **2.42×** |
+| A modular-exponentiation loop | **3.47×** |
+| `utf8->string` single-pass | 1.84–1.90× |
+| `C_utf_count` decode-free | ASCII `read-line` **1.67×**, non-ASCII **1.25×**, `symbol->string` **1.76×** |
+| `C_utf_compare` ASCII fast path | 1.4–1.5× on `(sort … string<?)`; 0.99× worst case |
+| `C_utf_range` memo restore | **2.0×**, flat |
+| `really_mark` inline small-block copy | gcc self-compile +2.4–3.7%; clang neutral |
+
+The four accessor rewrite lines are the largest multiplier found anywhere in the
+survey, SIMD included. `u8vector-ref` was the only numeric-vector getter without
+a rewrite rule — `s8`, `u16`, `s16`, `u32`, `s32`, `f32`, `f64` all had one, and
+`u8vector-set!` had one — so every byte read compiled to an out-of-line CPS call
+plus a closure allocation at every optimization level including `-O5 -unsafe`.
+A plain oversight, worth 18.8×.
+
+Three claims that did **not** reproduce, recorded because the pattern matters
+more than the individual numbers:
+
+* `C_utf_range`'s cursor restore was reported as turning ascending substring
+  tokenisation from quadratic into linear (4086×, 7287×). It is a flat **2.0×**
+  and both sides are still O(n²) — it removes one of the two head-scans
+  `##sys#substring` performs per call and leaves the other. The reviewer
+  predicted exactly this before measuring.
+* `C_utf_count`'s wins were reported at 2.28×/1.76×/5.71×; independently they are
+  1.67×/1.25×/1.76×. Real, and smaller.
+* `really_mark`'s inline copy was proposed on a predicted 1.036–1.042× on
+  `tests/fft.scm`. `fft.scm` does not move under either compiler. It was kept on
+  a different workload than the one that justified it.
+
+The general lesson, and the reason every number above is quoted with the
+benchmark that produced it: on this machine drift between consecutive blocks of
+runs exceeds most of these effects, so anything under ~5% has to be measured by
+interleaving A and B rather than running all of A then all of B. One such pair
+showed a spurious 2.5% regression that interleaving made vanish.
+
+#### What was deliberately not done
+
+The SIMD dispatch layer (§9.5) — designed, prototyped, measured, not built.
+`C_s_a_i_bitwise_and/ior/xor` (`runtime.c:6613`, `:6686`, `:6761`), the cleanest
+SIMD shape in the tree at 1.6–3.7× under AVX2, because nothing in the tree calls
+it in a loop that matters. And `C_KARATSUBA_THRESHOLD`, which was tuned against
+the half-digit multiply and is now wrong by construction: comparing separate
+builds with different `-DC_KARATSUBA_THRESHOLD` values was tried and abandoned as
+invalid on this machine, and no better method was substituted. That one is a
+loose end, not a decision.
 
 ## Appendix: file map
 

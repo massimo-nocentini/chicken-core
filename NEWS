@@ -1,6 +1,27 @@
 6.0.1
 
 - Core libraries
+  - `string-foldcase' could write past the end of its output buffer: it
+    sized the buffer for a 2x expansion, but U+0390 and U+03B0 fold to
+    three codepoints each, a 3x byte expansion.  `string-upcase' and
+    `string-downcase' are unaffected and stay at 2x.
+  - `utf8->string' and `bytes->string' did not range-check their START
+    argument, so a negative START read outside the bytevector and, for
+    `utf8->string', a START past the end reached ##sys#make-bytevector with
+    a negative size.  Out-of-range arguments now raise instead of returning
+    memory the caller does not own.
+  - `read-line' could fail to terminate on input ending in a bare carriage
+    return: over "a\r" it answered "a\r" and then "\r" forever instead of
+    "a" and then #!eof.
+  - A bare carriage return that landed on a read-buffer boundary was kept
+    in the line and the following line glued onto it, so the same bytes
+    parsed differently depending on where the buffer happened to end.
+    Affected process, pipe and TCP ports; string ports were not affected.
+  - `read-line' could write past the end of its accumulator for lines
+    longer than 2048 bytes arriving in a single chunk, as from a string
+    port: wrong output around 2100 bytes and a crash by 3000.
+  - `utf8->string' decoded its input twice, once to validate and once to
+    count codepoints; it now does one pass and is about 1.9x faster.
   - Writing to an output bytevector could write beyond allocated range,
     as the buffer wasn't resized large enough.
   - The default range used in `bytes->string' was calculated incorrectly.
@@ -37,6 +58,19 @@
 - Compiler
   - Added missing option "-merge-reusable-closures" at optimization level
     2, making this actually match the documentation.
+  - `bytevector-u8-ref' and `u8vector-ref' are now open-coded like the
+    other numeric-vector accessors.  They were the only getters without a
+    rewrite rule, so every byte read compiled to an out-of-line call plus a
+    closure allocation, at every optimization level including -unsafe.
+    Note that, as with every sibling accessor, the -unsafe variants now
+    drop the type and range checks these two used to keep.
+
+- Runtime system
+  - Bignum multiplication and division now work a whole digit at a time
+    where the C compiler provides a 128-bit integer type, instead of
+    decomposing every digit into halves.  Measured on x86-64: multiply
+    2.4x, quotient and remainder about 4x, a modular-exponentiation loop
+    3.5x.  Builds without such a type keep the previous code.
 
 6.0.0
 
