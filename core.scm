@@ -472,9 +472,7 @@
 ;;; Initialize globals:
 
 (define (initialize-compiler)
-  (if line-number-database-2
-      (vector-fill! line-number-database-2 '())
-      (set! line-number-database-2 (make-vector line-number-database-size '())) )
+  (set! line-number-database-2 (##sys#make-line-number-database))
   (if inline-table
       (vector-fill! inline-table '())
       (set! inline-table (make-vector inline-table-size '())) )
@@ -1507,16 +1505,11 @@
 				e #f #f h ln #f) ) ) )
 
 			(else
-			 (let* ((x2 (fluid-let ((##sys#syntax-context
+			 (let ((x2 (fluid-let ((##sys#syntax-context
 						 (cons name ##sys#syntax-context)))
-				      (mapwalk x e h ln tl?)))
-				(head2 (car x2))
-				(old (hash-table-ref line-number-database-2 head2)))
+				     (mapwalk x e h ln tl?))))
 			   (when ln
-			     (hash-table-set!
-			      line-number-database-2
-			      head2
-			      (cons name (alist-cons x2 ln (if old (cdr old) '()))) ) )
+			     (##sys#lndb-set! line-number-database-2 x2 ln name))
 			   x2))))))))
 
 	  ((not (list? x))

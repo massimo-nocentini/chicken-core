@@ -740,8 +740,100 @@
 
 ;;; Hook for source information
 
-(define (alist-weak-cons k v lst)
-  (cons (##core#inline_allocate ("C_a_i_weak_cons" 3) k v) lst))
+;; The line-number database maps a source expression to its source
+;; location.  It is a hash table keyed on a bounded structural hash of
+;; the expression; candidates in a bucket are compared with `eq?', so a
+;; weak hash can only cost time, never correctness.  Buckets are the very
+;; same association lists (expression . line-info), most recent first,
+;; that the head-symbol-keyed table used before, with the same guards.
+;;
+;;   db = #(count buckets names)
+;;   names: symbol-keyed table, head symbol -> name of the most recent
+;;          registration, used only by `##sys#get-line-2'.
+
+(define-constant line-number-database-size 997) ; Copied from core.scm
+(define-constant lndb-hash-budget 32)
+(define-constant lndb-initial-size 1024)	; power of two
+
+(define lndb-budget 0)
+
+(define-inline (lndb-mix h v)
+  (fxand (fx+ (fx* (fxand h #xfffff) 33) (fxand v #xfffff)) #x3ffffff))
+
+(define (lndb-atom-key y)
+  (cond ((symbol? y)
+	 (let ((bv (##sys#slot y 1)))
+	   (##core#inline "C_u_i_bytevector_hash" bv 0 (fx- (##sys#size bv) 1) 0)))
+	((fixnum? y) (fx+ y 1013))
+	((null? y) 7919)
+	((eq? y #t) 104729)
+	((eq? y #f) 15485863)
+	((string? y) (fx+ 3571 (##sys#size y)))
+	((char? y) (fx+ 2237 (char->integer y)))
+	((vector? y) (fx+ 6151 (##sys#size y)))
+	(else 32452843)))
+
+(define (lndb-walk-hash x h)
+  (cond ((fx<= lndb-budget 0) h)
+	(else
+	 (set! lndb-budget (fx- lndb-budget 1))
+	 (if (pair? x)
+	     (lndb-walk-hash (##sys#slot x 1)
+			     (lndb-walk-hash (##sys#slot x 0) (lndb-mix h 5)))
+	     (lndb-mix h (lndb-atom-key x))))))
+
+;; Structural hash of X, looking at no more than `lndb-hash-budget'
+;; sub-objects.  Terminates on circular structure because of the budget.
+(define (##sys#lndb-hash x)
+  (set! lndb-budget lndb-hash-budget)
+  (lndb-walk-hash x 5381))
+
+(define (##sys#make-line-number-database)
+  (vector 0 (make-vector lndb-initial-size '())
+	  (make-hash-table line-number-database-size)))
+
+(define-inline (lndb-bucket db h)
+  (let ((v (##sys#slot db 1)))
+    (##sys#slot v (fxand h (fx- (##sys#size v) 1)))))
+
+(define (lndb-grow! db)
+  (let* ((old (##sys#slot db 1))
+	 (n (##sys#size old))
+	 (n2 (fx* n 4))
+	 (mask (fx- n2 1))
+	 (new (make-vector n2 '()))
+	 (cnt 0))
+    (do ((i 0 (fx+ i 1)))
+	((fx>= i n))
+      ;; reversed, so that the rebuilt bucket is most-recent-first again
+      (let loop ((b (reverse (##sys#slot old i))))
+	(unless (null? b)
+	  (let ((a (##sys#slot b 0)))
+	    (unless (##core#inline "C_bwpp" (##sys#slot a 0))
+	      (let ((j (fxand (##sys#lndb-hash (##sys#slot a 0)) mask)))
+		(##sys#setslot new j (cons a (##sys#slot new j)))
+		(set! cnt (fx+ cnt 1)))))
+	  (loop (##sys#slot b 1)))))
+    (##sys#setslot db 1 new)
+    (##sys#setslot db 0 cnt)))
+
+(define (lndb-push! db h a)
+  (let* ((v (##sys#slot db 1))
+	 (i (fxand h (fx- (##sys#size v) 1)))
+	 (cnt (fx+ (##sys#slot db 0) 1)))
+    (##sys#setslot v i (cons a (##sys#slot v i)))
+    (##sys#setslot db 0 cnt)
+    (when (fx> cnt (fx* 2 (##sys#size v)))
+      (lndb-grow! db))))
+
+;; Register X under LN; NAME, when given, is recorded for `##sys#get-line-2'.
+(define (##sys#lndb-set! db x ln name)
+  (when name
+    (hash-table-set! (##sys#slot db 2) (car x) name))
+  (lndb-push! db (##sys#lndb-hash x) (cons x ln)))
+
+(define-inline (lndb-weak-cons k v)
+  (##core#inline_allocate ("C_a_i_weak_cons" 3) k v))
 
 (define (assq/drop-bwp! x lst)
   (let lp ((lst lst)
@@ -756,22 +848,16 @@
 
 (define (read-with-source-info-hook class data val)
   (when (and (eq? 'list-info class) (symbol? (car data)))
-    (let ((old-value (or (hash-table-ref ##sys#line-number-database (car data)) '())))
-      (assq/drop-bwp! (car data) old-value) ;; Hack to clean out garbage values
-      (hash-table-set!
-       ##sys#line-number-database
-       (car data)
-       (alist-weak-cons
-	data (conc (or ##sys#current-source-filename "<stdin>") ":" val)
-	old-value ) )) )
+    (lndb-push!
+     ##sys#line-number-database (##sys#lndb-hash data)
+     (lndb-weak-cons
+      data (conc (or ##sys#current-source-filename "<stdin>") ":" val))))
   data)
-
-(define-constant line-number-database-size 997) ; Copied from core.scm
 
 (define (read-with-source-info #!optional (in ##sys#standard-input) fname)
   ;; Initialize line number db on first use
   (unless ##sys#line-number-database
-    (set! ##sys#line-number-database (make-vector line-number-database-size '())))
+    (set! ##sys#line-number-database (##sys#make-line-number-database)))
   (##sys#check-input-port in #t 'read-with-source-info)
   (fluid-let ((##sys#current-source-filename (or fname ##sys#current-source-filename)))
     (##sys#read in read-with-source-info-hook) ) )
@@ -780,32 +866,49 @@
 (define (get-line-number sexp)
   (and ##sys#line-number-database
        (pair? sexp)
-       (let ([head (car sexp)])
-	 (and (symbol? head)
-	      (cond ((hash-table-ref ##sys#line-number-database head)
-		     => (lambda (pl)
-			  (let ((a (assq/drop-bwp! sexp pl)))
-			    (and a (cdr a)))))
-		    (else #f))))))
+       (symbol? (##sys#slot sexp 0))
+       (let ((a (assq/drop-bwp!
+		 sexp
+		 (lndb-bucket ##sys#line-number-database
+			      (##sys#lndb-hash sexp)))))
+	 (and a (cdr a)))))
 
 ;; TODO: Needs a better name - it extracts the name(?) and the source expression
 (define (##sys#get-line-2 exp)
   (let* ((name (car exp))
-	 (lst (hash-table-ref ##sys#line-number-database name)))
-    (cond ((and lst (assq/drop-bwp! exp (cdr lst)))
-	   => (lambda (a) (values (car lst) (cdr a))) )
-	  (else (values name #f)) ) ) )
+	 (db ##sys#line-number-database)
+	 (a (and db
+		 (assq/drop-bwp! exp (lndb-bucket db (##sys#lndb-hash exp))))))
+    (if a
+	(values (or (hash-table-ref (##sys#slot db 2) name) name) (cdr a))
+	(values name #f))))
 
 (define (##sys#display-line-number-database)
-  (hash-table-for-each
-   (lambda (key val)
-     (when val
-       (let ((port (current-output-port)))
-	 (##sys#print key #t port)
-	 (##sys#print " " #f port)
-	 (##sys#print (map cdr val) #t port)
-	 (##sys#print "\n" #f port))) )
-   ##sys#line-number-database) )
+  ;; Reconstruct the old head-symbol-keyed grouping for the "-debug n" dump;
+  ;; the database itself is no longer grouped that way.
+  (let* ((buckets (##sys#slot ##sys#line-number-database 1))
+	 (nb (##sys#size buckets))
+	 (ht (make-hash-table line-number-database-size)))
+    (do ((i 0 (fx+ i 1)))
+	((fx>= i nb))
+      (let loop ((b (##sys#slot buckets i)))
+	(unless (null? b)
+	  (let* ((a (##sys#slot b 0))
+		 (k (##sys#slot a 0)))
+	    (unless (##core#inline "C_bwpp" k)
+	      (let ((key (car k)))
+		(hash-table-set!
+		 ht key (cons a (or (hash-table-ref ht key) '()))))))
+	  (loop (##sys#slot b 1)))))
+    (hash-table-for-each
+     (lambda (key val)
+       (when val
+	 (let ((port (current-output-port)))
+	   (##sys#print key #t port)
+	   (##sys#print " " #f port)
+	   (##sys#print (map cdr val) #t port)
+	   (##sys#print "\n" #f port))))
+     ht)))
 
 ;;; Traverse expression and update line-number db with all contained calls:
 
@@ -818,11 +921,10 @@
   (define (walk x)
     (cond ((not (pair? x)))
           ((symbol? (car x))
-           (let* ((name (car x))
-                  (old (or (hash-table-ref ##sys#line-number-database name) '())))
-             (unless (assq x old)
-               (hash-table-set! ##sys#line-number-database name (alist-cons x ln old)))
-             (when (list? x) (mapupdate (cdr x)) )))
+           (let ((h (##sys#lndb-hash x)))
+             (unless (assq x (lndb-bucket ##sys#line-number-database h))
+               (lndb-push! ##sys#line-number-database h (cons x ln))))
+           (when (list? x) (mapupdate (cdr x)) ))
           (else (mapupdate x)) ) )
   (walk exp))
 
@@ -922,11 +1024,11 @@
        (define (inherit-pair-line-numbers old new)
 	 (and-let* ((name (car new))
 		    ((symbol? name))
-		    (ln (get-line-number old))
-		    (cur (or (hash-table-ref ##sys#line-number-database name) '())) )
-	   (unless (assq new cur)
-	     (hash-table-set! ##sys#line-number-database name
-			      (alist-weak-cons new ln cur))))
+		    (ln (get-line-number old)))
+	   (let ((h (##sys#lndb-hash new)))
+	     (unless (assq new (lndb-bucket ##sys#line-number-database h))
+	       (lndb-push! ##sys#line-number-database h
+			   (lndb-weak-cons new ln)))))
 	 new)
        (assert (list? se) "not a list" se) ;XXX remove later
        (define (rename sym)

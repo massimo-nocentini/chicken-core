@@ -598,7 +598,7 @@
 	   (set! start-time (cputime))
 
 	   ;; Read toplevel expressions:
-	   (set! ##sys#line-number-database (make-vector line-number-database-size '()))
+	   (set! ##sys#line-number-database (##sys#make-line-number-database))
 	   (let ([prelude (collect-options 'prelude)]
 		 [postlude (collect-options 'postlude)]
 		 [files (append
