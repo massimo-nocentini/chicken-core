@@ -84,4 +84,34 @@
 (assert (eq? #t (p-generic-structure? (##sys#make-structure 'thing 1 2))))
 (assert (eq? #f (p-generic-structure? (vector 1 2))))
 
+;;; Range checks must not truncate the index.
+;
+; C_i_check_range_2 and C_i_check_range_including_2 held the index in an `int',
+; so on LP64 -- where a fixnum is 63 bits -- an index of 2^32+k was truncated to
+; k and passed a range check it should have failed.  The caller then used the
+; untruncated value.
+
+(define (checked-range i from to)
+  (handle-exceptions e 'rejected
+    (begin (##sys#check-range i from to 'guard-tests) 'accepted)))
+
+(define (checked-range/including i from to)
+  (handle-exceptions e 'rejected
+    (begin (##sys#check-range/including i from to 'guard-tests) 'accepted)))
+
+(assert (eq? 'accepted (checked-range 1 0 3)))
+(assert (eq? 'rejected (checked-range 5 0 3)))
+(assert (eq? 'rejected (checked-range -1 0 3)))
+(assert (eq? 'accepted (checked-range/including 3 0 3)))
+(assert (eq? 'rejected (checked-range/including 4 0 3)))
+
+;; the truncation cases: each of these is congruent to an in-range index mod 2^32
+(let ((two^32 (* 65536 65536)))
+  (assert (eq? 'rejected (checked-range (+ two^32 1) 0 3)))
+  (assert (eq? 'rejected (checked-range (* two^32 2) 0 3)))
+  (assert (eq? 'rejected (checked-range/including (+ two^32 1) 0 3)))
+  ;; and a genuinely in-range large index must still be ACCEPTED -- the fix
+  ;; must widen the comparison, not reject everything above 2^32
+  (assert (eq? 'accepted (checked-range (+ two^32 1) 0 (+ two^32 5)))))
+
 (print "bytevector guard tests passed")

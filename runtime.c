@@ -7375,7 +7375,8 @@ C_regparm C_word C_i_check_range_2(C_word i, C_word f, C_word t, C_word loc)
     barf(C_BAD_ARGUMENT_TYPE_NO_FIXNUM_ERROR, NULL, i);
   }
 
-  int index = C_unfix(i);
+  C_word index = C_unfix(i);   /* NOT int: a fixnum is 63 bits on LP64, and
+                                  truncating it lets an index >= 2^32 pass */
 
   if(index < C_unfix(f)) {
     error_location = loc;
@@ -7398,7 +7399,8 @@ C_regparm C_word C_i_check_range_including_2(C_word i, C_word f, C_word t, C_wor
     barf(C_BAD_ARGUMENT_TYPE_NO_FIXNUM_ERROR, NULL, i);
   }
 
-  int index = C_unfix(i);
+  C_word index = C_unfix(i);   /* NOT int: a fixnum is 63 bits on LP64, and
+                                  truncating it lets an index >= 2^32 pass */
 
   if(index < C_unfix(f)) {
     error_location = loc;
