@@ -695,14 +695,27 @@ EOF
 
 (define (string-foldcase str)
   (##sys#check-string str 'string-foldcase)
+  ;; NOTE: the scratch buffer is 3n bytes, not 2n as for -upcase and
+  ;; -downcase below.  C_utf_string_foldcase consults `fold2', whose rows
+  ;; are {source, r1, r2, r3}, so one input codepoint expands to at most
+  ;; three output codepoints; 16 of the 104 rows do use the third slot.
+  ;; The worst *byte* expansion over the whole table is exactly 3x, and it
+  ;; is reached by U+0390 (GREEK SMALL LETTER IOTA WITH DIALYTIKA AND
+  ;; TONOS) and U+03B0 (GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND
+  ;; TONOS): two bytes in, U+03B9/U+03C5 + U+0308 + U+0301 = six bytes out.
+  ;; With 2n a string of those overran the buffer by half its length.
   (let* ((bv (##sys#slot str 0))
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
-         (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
+         (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 3)))
          (len (##core#inline "C_utf_string_foldcase" bv buf n)))
     (##sys#buffer->string! buf len)))
     
 (define (string-downcase str)
   (##sys#check-string str 'string-downcase)
+  ;; 2n is enough here (do not "tidy" it to match string-foldcase above):
+  ;; C_utf_char_downcase is a 1:1 codepoint mapping, and its widest byte
+  ;; growth over upper1/upper2/upper3 is 1.5x, at U+023A -> U+2C65 (two
+  ;; bytes in, three out).
   (let* ((bv (##sys#slot str 0))
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
@@ -711,6 +724,9 @@ EOF
 
 (define (string-upcase str)
   (##sys#check-string str 'string-upcase)
+  ;; 2n is enough here too: C_utf_char_upcase is a 1:1 codepoint mapping
+  ;; whose widest byte growth over lower1/lower2/lower4 is 1.5x, at
+  ;; U+023F -> U+2C7E (two bytes in, three out).
   (let* ((bv (##sys#slot str 0))
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))

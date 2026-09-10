@@ -4,6 +4,7 @@
 (import (chicken string) (chicken io))
 (import (chicken bytevector))
 (import (only (scheme base) write-string))
+(import (only (scheme char) string-foldcase string-upcase string-downcase))
 
 (include "test.scm")
                            
@@ -106,6 +107,82 @@
 (test-equal "BC" (utf8->string #u8(65 66 67) 1 3))
 (test-assert (bytes->string #u8(255 1 2)))
 (test-equal (string-length (bytes->string #u8(255 1 2))) 3)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; case conversion buffer sizing
+
+;; string-foldcase sized its scratch buffer at 2n bytes like -upcase and
+;; -downcase, but folding is not a 1:1 codepoint mapping: 16 rows of utf.c's
+;; `fold2' table expand one codepoint to three.  U+0390 and U+03B0 are the
+;; two that reach a 3x *byte* expansion (two bytes in, six out), so a string
+;; of them overran the buffer by half its length.
+(test-equal "foldcase U+0390 -> 3 codepoints"
+            (string-foldcase "\x390;") "\x3b9;\x308;\x301;")
+(test-equal "foldcase U+03B0 -> 3 codepoints"
+            (string-foldcase "\x3b0;") "\x3c5;\x308;\x301;")
+(test-equal "foldcase U+1FE7 -> 3 codepoints"
+            (string-foldcase "\x1fe7;") "\x3c5;\x308;\x342;")
+(test-equal "foldcase U+FB03 -> ffi"
+            (string-foldcase "\xfb03;") "ffi")
+(test-equal "foldcase U+00DF -> ss"
+            (string-foldcase "\xdf;") "ss")
+
+(define (repeat-string s n)
+  (with-output-to-string
+    (lambda () (do ((i 0 (+ i 1))) ((= i n)) (write-string s)))))
+
+(define (fold-repeatedly char n reps)   ; keep every result alive
+  (let loop ((i 0) (acc '()))
+    (if (= i reps)
+        acc
+        (loop (+ i 1) (cons (string-foldcase (make-string n char)) acc)))))
+
+(define (all-string=? strings s)
+  (let loop ((l strings))
+    (or (null? l) (and (string=? (car l) s) (loop (cdr l))))))
+
+;; Folding repeatedly and keeping every result alive is what turns the
+;; overrun from latent into observable: each folded string claims 3n bytes
+;; out of a 2n allocation, so the bytes past the allocation are handed out
+;; again and rewritten under it.  Before the fix the 16000-character case
+;; reported #f on every run, and a few thousand characters in a tighter
+;; loop killed the runtime outright.
+(test-assert "20 folds of 2000 x U+0390 kept alive are all intact"
+             (all-string=? (fold-repeatedly (integer->char #x390) 2000 20)
+                           (repeat-string "\x3b9;\x308;\x301;" 2000)))
+(test-assert "10 folds of 8000 x U+0390 kept alive are all intact"
+             (all-string=? (fold-repeatedly (integer->char #x390) 8000 10)
+                           (repeat-string "\x3b9;\x308;\x301;" 8000)))
+(test-assert "10 folds of 16000 x U+03B0 kept alive are all intact"
+             (all-string=? (fold-repeatedly (integer->char #x3b0) 16000 10)
+                           (repeat-string "\x3c5;\x308;\x301;" 16000)))
+
+(test-equal "foldcase 4000 x U+0390 has 12000 codepoints"
+            (string-length (string-foldcase (make-string 4000 (integer->char #x390))))
+            12000)
+(test-equal "foldcase 4000 x U+0390 is not corrupted"
+            (string-foldcase (make-string 4000 (integer->char #x390)))
+            (repeat-string "\x3b9;\x308;\x301;" 4000))
+(test-equal "foldcase 4000 x U+03B0 is not corrupted"
+            (string-foldcase (make-string 4000 (integer->char #x3b0)))
+            (repeat-string "\x3c5;\x308;\x301;" 4000))
+(test-equal "foldcase 4000 x U+FB03 is not corrupted"
+            (string-foldcase (make-string 4000 (integer->char #xfb03)))
+            (repeat-string "ffi" 4000))
+
+;; -upcase and -downcase stay at 2n: both are 1:1 codepoint mappings and
+;; their widest byte growth over the whole codepoint space is 1.5x, reached
+;; by U+023A -> U+2C65 and U+023F -> U+2C7E (two bytes in, three out).
+(test-equal "downcase U+023A grows from 2 to 3 bytes"
+            (string-downcase "\x23a;") "\x2c65;")
+(test-equal "upcase U+023F grows from 2 to 3 bytes"
+            (string-upcase "\x23f;") "\x2c7e;")
+(test-equal "downcase 4000 x U+023A is not corrupted"
+            (string-downcase (make-string 4000 (integer->char #x23a)))
+            (make-string 4000 (integer->char #x2c65)))
+(test-equal "upcase 4000 x U+023F is not corrupted"
+            (string-upcase (make-string 4000 (integer->char #x23f)))
+            (make-string 4000 (integer->char #x2c7e)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; extras
