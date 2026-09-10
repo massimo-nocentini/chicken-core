@@ -383,6 +383,72 @@ Creates a fresh number vector of the same type as the argument vector
 with the elements at the positions {{FROM}} up to but not including
 {{TO}}.
 
+=== Bulk arithmetic on float vectors
+
+<procedure>(f32vector-fill! F32VECTOR X [START [END]])</procedure><br>
+<procedure>(f64vector-fill! F64VECTOR X [START [END]])</procedure><br>
+
+Stores {{X}} into every element of the vector in the range {{START}} (default
+0) up to but not including {{END}} (default the length of the vector).
+
+<procedure>(f32vector-copy! TO AT FROM [START [END]])</procedure><br>
+<procedure>(f64vector-copy! TO AT FROM [START [END]])</procedure><br>
+
+Copies the elements of {{FROM}} in the range {{[START,END)}} into {{TO}}
+starting at index {{AT}}, exactly as R7RS {{bytevector-copy!}} does for
+bytevectors but counting in elements rather than bytes. Overlapping source and
+destination ranges of the same vector are handled correctly.
+
+<procedure>(f32vector-scale! F32VECTOR A [START [END]])</procedure><br>
+<procedure>(f64vector-scale! F64VECTOR A [START [END]])</procedure><br>
+
+Multiplies every element in the range {{[START,END)}} by {{A}} in place.
+
+<procedure>(f32vector-axpy! Y A X [START [END]])</procedure><br>
+<procedure>(f64vector-axpy! Y A X [START [END]])</procedure><br>
+
+Computes {{Y[i] <- A * X[i] + Y[i]}} in place for every {{i}} in the range
+{{[START,END)}}. The range applies to both vectors, and both are range
+checked: a shorter {{X}} is an error, not a silent truncation.
+
+<procedure>(f32vector-sum F32VECTOR [START [END]])</procedure><br>
+<procedure>(f64vector-sum F64VECTOR [START [END]])</procedure><br>
+
+Returns the sum of the elements in the range {{[START,END)}} as a flonum;
+{{0.0}} for an empty range.
+
+<procedure>(f32vector-dot X Y [START [END]])</procedure><br>
+<procedure>(f64vector-dot X Y [START [END]])</procedure><br>
+
+Returns the inner product of {{X}} and {{Y}} over the range {{[START,END)}} as
+a flonum; {{0.0}} for an empty range. As with {{-axpy!}} the range applies to
+both vectors and both are range checked.
+
+Notes common to all of these:
+
+* Every operation takes an optional half-open {{[START,END)}} ''element''
+range, the same convention used by {{subf64vector}} above and by the R7RS
+{{bytevector-copy}} and {{vector-fill!}}.
+* The type and range checks are made once per call rather than once per
+element, so they are always performed; compiling the caller with {{-unsafe}}
+does not remove them.
+* {{f32vector}} operations compute in double precision and round on store,
+which is what an equivalent loop over {{f32vector-ref}} and
+{{f32vector-set!}} does, so the results agree bit for bit.
+* {{-fill!}}, {{-copy!}}, {{-scale!}} and {{-axpy!}} produce exactly the same
+results as the equivalent element-at-a-time loop. {{-sum}} and {{-dot}} do
+not: they accumulate into several independent partial sums which are added
+together at the end, so the result is a reassociation of the left-to-right
+sum. For values whose partial sums stay in range the difference is a few
+units in the last place, and the reassociated form is normally the more
+accurate of the two; it is also what allows the loop to be vectorized at all.
+When intermediate sums overflow the difference can be qualitative rather than
+a matter of ulps -- {{(f64vector-sum (f64vector 1e308 1e308 -1e308 -1e308 0.0
+0.0 0.0 0.0))}} is {{+nan.0}} where the left-to-right loop gives {{+inf.0}},
+because the independent partial sums overflow to {{+inf.0}} and {{-inf.0}}
+and cancel. Code that needs a specific summation order, or that relies on
+overflow behaviour, must still write its own loop.
+
 === Release number vectors allocated in static memory
 
 <procedure>(release-number-vector NVECTOR)</procedure>

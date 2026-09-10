@@ -34,6 +34,160 @@
 #define C_copy_subvector(to, from, start_to, start_from, bytes)   \
   (C_memcpy((C_char *)C_data_pointer(to) + C_unfix(start_to), (C_char *)C_data_pointer(from) + C_unfix(start_from), C_unfix(bytes)), \
     C_SCHEME_UNDEFINED)
+
+/* Bulk arithmetic kernels for the float vector types.
+
+   Each kernel receives the SRFI-4 structure (not the underlying bytevector)
+   and a half-open [start,end) *element* range which the Scheme wrapper has
+   already range-checked, so the kernels themselves do no bounds checking.
+
+   All arithmetic is done in `double'.  That is exactly what an
+   element-at-a-time Scheme loop does -- f32vector-ref widens a float to a
+   flonum, f32vector-set! narrows the flonum again on store -- so the
+   elementwise kernels are bit-identical to the Scheme loops they replace,
+   for f32 as well as f64.
+
+   The loops are unrolled by hand rather than left to the loop vectorizer.
+   The reductions carry a loop-carried FP dependence that clang will not
+   reorder at any -O level without -ffast-math, and a rolled `a[i] *= s' is
+   left scalar at -Os, which is what the stock CHICKEN build uses (the loop
+   vectorizer declines there rather than emit runtime checks).  Written out
+   this way the SLP vectorizer takes _scale, _sum, _dot and both halves of
+   _axpy from -Os upwards; _fill stays scalar stores, which costs nothing
+   because it is store-port bound either way, and _copy is a memmove.
+
+   CONSEQUENCE, and it is a real one: _sum and _dot keep eight independent
+   partial sums and combine them pairwise at the end.  That is a
+   REASSOCIATION of the naive left-to-right sum.  Results may differ from a
+   Scheme accumulator loop in the last ulps (in practice they are more
+   accurate, the error growing like sqrt(n/8) rather than n).  The
+   elementwise kernels reassociate nothing and are exact. */
+
+/* REVIEW AMENDMENT: `d * a[i] + b[i]' is contracted into an FMA by clang/gcc
+   whenever the build enables FMA (-march=native, -march=haswell, -mfma...),
+   which silently breaks the documented bit-identity with the Scheme loop.
+   Turn contraction off for this block. */
+#pragma STDC FP_CONTRACT OFF
+#if defined(__GNUC__) || defined(__clang__)
+# define C_nv_restrict __restrict
+#else
+# define C_nv_restrict
+#endif
+
+#define C_nv_elems(T, v)  ((T *)C_data_pointer(C_block_item((v), 1)))
+
+#define C_nv_define_kernels(T, PFX) \
+static C_word PFX ## _fill(C_word v, C_word x, C_word s, C_word e) \
+{ \
+  T *a = C_nv_elems(T, v); \
+  T d = (T)C_flonum_magnitude(x); \
+  C_word i = C_unfix(s), n = C_unfix(e); \
+  for(; i + 4 <= n; i += 4) { a[i] = d; a[i+1] = d; a[i+2] = d; a[i+3] = d; } \
+  for(; i < n; ++i) a[i] = d; \
+  return C_SCHEME_UNDEFINED; \
+} \
+ \
+static C_word PFX ## _copy(C_word to, C_word at, C_word from, C_word s, C_word e) \
+{ \
+  C_word st = C_unfix(s), n = C_unfix(e) - st; \
+  if(n > 0) \
+    C_memmove(C_nv_elems(T, to) + C_unfix(at), C_nv_elems(T, from) + st, \
+              (size_t)n * sizeof(T)); \
+  return C_SCHEME_UNDEFINED; \
+} \
+ \
+static C_word PFX ## _scale(C_word v, C_word x, C_word s, C_word e) \
+{ \
+  T *a = C_nv_elems(T, v); \
+  double d = C_flonum_magnitude(x); \
+  C_word i = C_unfix(s), n = C_unfix(e); \
+  for(; i + 4 <= n; i += 4) { \
+    a[i]   = (T)(d * (double)a[i]);   a[i+1] = (T)(d * (double)a[i+1]); \
+    a[i+2] = (T)(d * (double)a[i+2]); a[i+3] = (T)(d * (double)a[i+3]); \
+  } \
+  for(; i < n; ++i) a[i] = (T)(d * (double)a[i]); \
+  return C_SCHEME_UNDEFINED; \
+} \
+ \
+static void PFX ## _axpy_same(T *b, double d, C_word i, C_word n) \
+{ \
+  for(; i + 4 <= n; i += 4) { \
+    b[i]   = (T)(d * (double)b[i]   + (double)b[i]); \
+    b[i+1] = (T)(d * (double)b[i+1] + (double)b[i+1]); \
+    b[i+2] = (T)(d * (double)b[i+2] + (double)b[i+2]); \
+    b[i+3] = (T)(d * (double)b[i+3] + (double)b[i+3]); \
+  } \
+  for(; i < n; ++i) b[i] = (T)(d * (double)b[i] + (double)b[i]); \
+} \
+ \
+static void PFX ## _axpy_disjoint(T *C_nv_restrict b, const T *C_nv_restrict a, \
+                                  double d, C_word i, C_word n) \
+{ \
+  for(; i + 4 <= n; i += 4) { \
+    b[i]   = (T)(d * (double)a[i]   + (double)b[i]); \
+    b[i+1] = (T)(d * (double)a[i+1] + (double)b[i+1]); \
+    b[i+2] = (T)(d * (double)a[i+2] + (double)b[i+2]); \
+    b[i+3] = (T)(d * (double)a[i+3] + (double)b[i+3]); \
+  } \
+  for(; i < n; ++i) b[i] = (T)(d * (double)a[i] + (double)b[i]); \
+} \
+ \
+static C_word PFX ## _axpy(C_word y, C_word x, C_word v, C_word s, C_word e) \
+{ \
+  T *b = C_nv_elems(T, y); \
+  T *a = C_nv_elems(T, v); \
+  double d = C_flonum_magnitude(x); \
+  C_word i = C_unfix(s), n = C_unfix(e); \
+  /* The vectorizer will not version this loop for aliasing at -Os, and the \
+     two vectors may legitimately be the same object, so pick the shape by \
+     hand: identical, provably disjoint, or (only reachable through storage \
+     shared at an offset) a plain scalar loop.  All three compute the same \
+     expression in the same order. */ \
+  if(a == b) PFX ## _axpy_same(b, d, i, n); \
+  else if((C_uword)(a + n) <= (C_uword)(b + i) || \
+          (C_uword)(b + n) <= (C_uword)(a + i)) \
+    PFX ## _axpy_disjoint(b, a, d, i, n); \
+  else for(; i < n; ++i) b[i] = (T)(d * (double)a[i] + (double)b[i]); \
+  return C_SCHEME_UNDEFINED; \
+} \
+ \
+static C_word PFX ## _sum(C_word **ptr, C_word c, C_word v, C_word s, C_word e) \
+{ \
+  T *a = C_nv_elems(T, v); \
+  double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0; \
+  double s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0, t; \
+  C_word i = C_unfix(s), n = C_unfix(e); \
+  for(; i + 8 <= n; i += 8) { \
+    s0 += (double)a[i];   s1 += (double)a[i+1]; \
+    s2 += (double)a[i+2]; s3 += (double)a[i+3]; \
+    s4 += (double)a[i+4]; s5 += (double)a[i+5]; \
+    s6 += (double)a[i+6]; s7 += (double)a[i+7]; \
+  } \
+  t = ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7)); \
+  for(; i < n; ++i) t += (double)a[i]; \
+  return C_flonum(ptr, t); \
+} \
+ \
+static C_word PFX ## _dot(C_word **ptr, C_word c, C_word x, C_word y, C_word s, C_word e) \
+{ \
+  T *a = C_nv_elems(T, x); \
+  T *b = C_nv_elems(T, y); \
+  double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0; \
+  double s4 = 0.0, s5 = 0.0, s6 = 0.0, s7 = 0.0, t; \
+  C_word i = C_unfix(s), n = C_unfix(e); \
+  for(; i + 8 <= n; i += 8) { \
+    s0 += (double)a[i]   * (double)b[i];   s1 += (double)a[i+1] * (double)b[i+1]; \
+    s2 += (double)a[i+2] * (double)b[i+2]; s3 += (double)a[i+3] * (double)b[i+3]; \
+    s4 += (double)a[i+4] * (double)b[i+4]; s5 += (double)a[i+5] * (double)b[i+5]; \
+    s6 += (double)a[i+6] * (double)b[i+6]; s7 += (double)a[i+7] * (double)b[i+7]; \
+  } \
+  t = ((s0 + s1) + (s2 + s3)) + ((s4 + s5) + (s6 + s7)); \
+  for(; i < n; ++i) t += (double)a[i] * (double)b[i]; \
+  return C_flonum(ptr, t); \
+}
+
+C_nv_define_kernels(double, C_nv_f64)
+C_nv_define_kernels(float, C_nv_f32)
 EOF
 ) )
 
@@ -82,7 +236,11 @@ EOF
    number-vector? release-number-vector
    subf32vector subf64vector subs16vector subs32vector subs64vector
    subs8vector subu16vector subu8vector subu32vector subu64vector
-   subc64vector subc128vector)
+   subc64vector subc128vector
+   f64vector-fill! f64vector-copy! f64vector-scale! f64vector-axpy!
+   f64vector-sum f64vector-dot
+   f32vector-fill! f32vector-copy! f32vector-scale! f32vector-axpy!
+   f32vector-sum f32vector-dot)
 
 (import scheme
 	chicken.base
@@ -811,6 +969,97 @@ EOF
 (define (subf64vector v from to) (subnvector v 'f64vector 8 from to 'subf64vector))
 (define (subc64vector v from to) (subnvector v 'c64vector 8 from to 'subc64vector))
 (define (subc128vector v from to) (subnvector v 'c128vector 16 from to 'subc128vector))
+
+
+;;; Bulk arithmetic and reduction on float vectors:
+;
+; Range convention.  Every operation takes an optional half-open [START END)
+; *element* range which defaults to the whole vector -- the same convention as
+; `subf64vector' above and as the R7RS `bytevector-copy' / `vector-fill!' in
+; this tree.  `-copy!' additionally takes the destination index AT right after
+; the destination vector, exactly like R7RS `bytevector-copy!', and copies with
+; memmove semantics so overlapping ranges of the same vector are well defined.
+; The two-vector combining operations (`-dot', `-axpy!') apply the SAME index
+; range to both vectors and range-check both: a shorter second vector is an
+; error, never a silent truncation.
+;
+; Checking.  The type and range checks are per call, not per element, so they
+; are amortized to nothing by the kernel they guard and are therefore always
+; performed; compiling the caller with `-unsafe' does not remove them, because
+; these are ordinary out-of-line library procedures and not inlined intrinsics.
+;
+; Accuracy.  The elementwise operations are bit-identical to the equivalent
+; element-at-a-time Scheme loop.  The reductions (`-sum', `-dot') sum into
+; eight independent accumulators combined pairwise; see the C above.
+
+(define-inline (%nvector-elements v es)
+  (##core#inline "C_u_fixnum_divide" (##sys#size (##sys#slot v 1)) es))
+
+(define (%nvector-check-range v tag es start end loc)
+  (##sys#check-structure v tag loc)
+  (let* ((len (%nvector-elements v es))
+         (e (if end end len)))
+    (##sys#check-range/including start 0 len loc)
+    (##sys#check-range/including e start len loc)
+    e))
+
+(define (%nvector-check-covers v tag es end loc)
+  (##sys#check-structure v tag loc)
+  (##sys#check-range/including end 0 (%nvector-elements v es) loc))
+
+(define-syntax define-nvector-bulk-ops
+  (syntax-rules ()
+    ((_ tag es fill! copy! scale! axpy! sum dot
+        c-fill c-copy c-scale c-axpy c-sum c-dot)
+     (begin
+       (define (fill! v x #!optional (start 0) end)
+         (let ((e (%nvector-check-range v 'tag es start end 'fill!)))
+           (check-int/flonum x 'fill!)
+           (##core#inline c-fill v (->f x) start e)))
+       (define (copy! to at from #!optional (start 0) end)
+         (let* ((e (%nvector-check-range from 'tag es start end 'copy!))
+                (n (fx- e start)))
+           (##sys#check-structure to 'tag 'copy!)
+           (let ((tlen (%nvector-elements to es)))
+             ;; REVIEW AMENDMENT: not ##sys#check-range/including -- its C
+             ;; implementation truncates the index to `int', so at >= 2^32
+             ;; slips through and the memmove writes out of bounds.
+             (##sys#check-fixnum at 'copy!)
+             (when (or (fx< at 0) (fx> at tlen) (fx> (fx+ at n) tlen))
+               (##sys#error-hook
+                (foreign-value "C_OUT_OF_BOUNDS_ERROR" int) 'copy! at tlen)))
+           (##core#inline c-copy to at from start e)))
+       (define (scale! v a #!optional (start 0) end)
+         (let ((e (%nvector-check-range v 'tag es start end 'scale!)))
+           (check-int/flonum a 'scale!)
+           (##core#inline c-scale v (->f a) start e)))
+       (define (axpy! y a x #!optional (start 0) end)
+         (let ((e (%nvector-check-range y 'tag es start end 'axpy!)))
+           (%nvector-check-covers x 'tag es e 'axpy!)
+           (check-int/flonum a 'axpy!)
+           (##core#inline c-axpy y (->f a) x start e)))
+       (define (sum v #!optional (start 0) end)
+         (let ((e (%nvector-check-range v 'tag es start end 'sum)))
+           (##core#inline_allocate (c-sum 4) v start e)))
+       (define (dot x y #!optional (start 0) end)
+         (let ((e (%nvector-check-range x 'tag es start end 'dot)))
+           (%nvector-check-covers y 'tag es e 'dot)
+           (##core#inline_allocate (c-dot 4) x y start e)))))))
+
+(define-nvector-bulk-ops
+  f64vector 8
+  f64vector-fill! f64vector-copy! f64vector-scale! f64vector-axpy!
+  f64vector-sum f64vector-dot
+  "C_nv_f64_fill" "C_nv_f64_copy" "C_nv_f64_scale" "C_nv_f64_axpy"
+  "C_nv_f64_sum" "C_nv_f64_dot")
+
+(define-nvector-bulk-ops
+  f32vector 4
+  f32vector-fill! f32vector-copy! f32vector-scale! f32vector-axpy!
+  f32vector-sum f32vector-dot
+  "C_nv_f32_fill" "C_nv_f32_copy" "C_nv_f32_scale" "C_nv_f32_axpy"
+  "C_nv_f32_sum" "C_nv_f32_dot")
+
 
 ) ; module chicken.number-vector
 

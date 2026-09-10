@@ -151,3 +151,96 @@
 (assert
   (= -1-i
      (dot (c128vector 1+i 1-i 0) (c128vector 2+i 1-3i 0+2i) 3 c128vector-ref)))
+
+;; bulk arithmetic on float vectors
+
+(import (chicken condition))
+
+(define (bulk-error? thunk)
+  (condition-case (begin (thunk) #f) ((exn) #t)))
+
+(define (bulk-tests make vec ->list fill! copy! scale! axpy! sum dot)
+  ;; fill!, with and without a range
+  (let ((v (make 5 1.0)))
+    (fill! v 2.5)
+    (assert (equal? '(2.5 2.5 2.5 2.5 2.5) (->list v)))
+    (fill! v -1.0 1 3)
+    (assert (equal? '(2.5 -1.0 -1.0 2.5 2.5) (->list v)))
+    (fill! v 9.0 2 2)                                  ; empty range
+    (assert (equal? '(2.5 -1.0 -1.0 2.5 2.5) (->list v)))
+    (fill! v 3 0 1)                                    ; exact integer argument
+    (assert (equal? '(3.0 -1.0 -1.0 2.5 2.5) (->list v))))
+  ;; copy!
+  (let ((a (vec 1.0 2.0 3.0 4.0 5.0))
+        (b (make 5 0.0)))
+    (copy! b 0 a)
+    (assert (equal? (->list a) (->list b)))
+    (copy! b 1 a 0 3)
+    (assert (equal? '(1.0 1.0 2.0 3.0 5.0) (->list b)))
+    (copy! b 0 b 2 5)                                  ; overlapping, downwards
+    (assert (equal? '(2.0 3.0 5.0 3.0 5.0) (->list b)))
+    (copy! b 2 b 0 3)                                  ; overlapping, upwards
+    (assert (equal? '(2.0 3.0 2.0 3.0 5.0) (->list b))))
+  ;; scale!
+  (let ((v (vec 1.0 2.0 3.0 4.0)))
+    (scale! v 2.0 1 3)
+    (assert (equal? '(1.0 4.0 6.0 4.0) (->list v)))
+    (scale! v 0.5)
+    (assert (equal? '(0.5 2.0 3.0 2.0) (->list v))))
+  ;; axpy!
+  (let ((y (vec 1.0 2.0 3.0 4.0))
+        (x (vec 10.0 20.0 30.0 40.0)))
+    (axpy! y 2.0 x 1 3)
+    (assert (equal? '(1.0 42.0 63.0 4.0) (->list y)))
+    (axpy! y -1.0 y)                                   ; aliasing itself
+    (assert (equal? '(0.0 0.0 0.0 0.0) (->list y))))
+  ;; sum and dot
+  (let ((a (vec 1.0 2.0 3.0 4.0))
+        (b (vec 4.0 3.0 2.0 1.0)))
+    (assert (= 10.0 (sum a)))
+    (assert (= 5.0 (sum a 1 3)))
+    (assert (= 0.0 (sum a 2 2)))
+    (assert (= 20.0 (dot a b)))
+    (assert (= 12.0 (dot a b 1 3)))
+    (assert (= 0.0 (dot a b 2 2)))
+    ;; long enough to exercise the unrolled body and its tail
+    (let* ((n 1000) (u (make n 0.0)))
+      (fill! u 0.5)
+      (assert (= 500.0 (sum u)))
+      (assert (= 250.0 (dot u u)))
+      (assert (= 499.5 (sum u 1 n)))))
+  ;; argument checking, which -unsafe does not remove
+  (let ((v (make 4 1.0))
+        (w (make 8 1.0)))
+    (assert (bulk-error? (lambda () (sum 42))))
+    (assert (bulk-error? (lambda () (sum v 5))))
+    (assert (bulk-error? (lambda () (sum v 0 5))))
+    (assert (bulk-error? (lambda () (sum v 3 1))))
+    (assert (bulk-error? (lambda () (sum v -1))))
+    (assert (bulk-error? (lambda () (sum v 'x))))
+    (assert (bulk-error? (lambda () (dot w v))))
+    (assert (= 4.0 (dot w v 0 4)))
+    (assert (bulk-error? (lambda () (axpy! w 1.0 v))))
+    (assert (bulk-error? (lambda () (copy! v 0 w))))
+    (assert (bulk-error? (lambda () (copy! v 2 w 0 4))))
+    (assert (bulk-error? (lambda () (fill! v "x"))))))
+
+(bulk-tests make-f64vector f64vector f64vector->list
+            f64vector-fill! f64vector-copy! f64vector-scale!
+            f64vector-axpy! f64vector-sum f64vector-dot)
+(bulk-tests make-f32vector f32vector f32vector->list
+            f32vector-fill! f32vector-copy! f32vector-scale!
+            f32vector-axpy! f32vector-sum f32vector-dot)
+
+;; the reductions reassociate, so they need not agree with a left-to-right
+;; loop; they must agree when every partial sum is exact
+(let ((v (make-f64vector 257 0.0)))
+  (do ((i 0 (add1 i))) ((>= i 257))
+    (f64vector-set! v i (exact->inexact i)))
+  (assert (= (f64vector-sum v)
+             (do ((i 0 (add1 i)) (s 0.0 (+ s (f64vector-ref v i))))
+                 ((>= i 257) s))))
+  (assert (= (f64vector-dot v v)
+             (do ((i 0 (add1 i))
+                  (s 0.0 (+ s (* (f64vector-ref v i) (f64vector-ref v i)))))
+                 ((>= i 257) s)))))
