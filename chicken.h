@@ -2849,6 +2849,15 @@ inline static C_word C_i_stringp(C_word x)
 }
 
 
+/* Immediate-safe counterpart of the raw C_structurep macro above.  The
+   two-argument C_i_structurep already guards; this is the one-argument
+   "is it any structure at all" form, for ##sys#generic-structure?. */
+inline static C_word C_i_generic_structurep(C_word x)
+{
+  return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_STRUCTURE_TYPE);
+}
+
+
 /* Immediate-safe counterpart of the raw C_bytevectorp macro above.  Use this
    one whenever the argument's blockness has not already been established --
    in particular from compiler rewrite rules, which fire at call sites where

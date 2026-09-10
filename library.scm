@@ -6639,12 +6639,12 @@ EOF
 ;;; Miscellaneous low-level routines:
 
 (define (##sys#structure? x s) (##core#inline "C_i_structurep" x s))
-(define (##sys#generic-structure? x) (##core#inline "C_structurep" x))
+(define (##sys#generic-structure? x) (##core#inline "C_i_generic_structurep" x))
 (define (##sys#slot x i) (##core#inline "C_slot" x i))
 (define (##sys#size x) (##core#inline "C_block_size" x))
 (define ##sys#make-pointer (##core#primitive "C_make_pointer"))
 (define ##sys#make-tagged-pointer (##core#primitive "C_make_tagged_pointer"))
-(define (##sys#pointer? x) (##core#inline "C_anypointerp" x))
+(define (##sys#pointer? x) (##core#inline "C_i_safe_pointerp" x))
 (define (##sys#set-pointer-address! ptr addr) (##core#inline "C_update_pointer" addr ptr))
 (define (##sys#bytevector? x) (##core#inline "C_i_bytevectorp" x))
 (define (##sys#string->pbytevector s) (##core#inline "C_string_to_pbytevector" s))

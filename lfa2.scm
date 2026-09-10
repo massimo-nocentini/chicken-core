@@ -107,6 +107,7 @@
     ("C_booleanp" boolean)
     ("C_i_vectorp" vector)
     ("C_structurep" struct)
+    ("C_i_generic_structurep" struct)
     ("C_i_structurep" *struct*)		; special case
     ("C_charp" char)
     ("C_i_portp" port)

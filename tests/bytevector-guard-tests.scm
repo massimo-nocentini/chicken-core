@@ -1,9 +1,12 @@
 ;;;; bytevector-guard-tests.scm
 ;
-; The bytevector predicates and accessors must reject immediates instead of
-; dereferencing them.  Every call site here is deliberately POLYMORPHIC: a
-; monomorphic one is folded by the scrutinizer and proves nothing, because the
-; guard under test is exactly what the scrutinizer discharges.
+; Type predicates and accessors must reject immediates instead of dereferencing
+; them.  Every call site here is deliberately POLYMORPHIC: a monomorphic one is
+; folded by the scrutinizer and proves nothing, because the guard under test is
+; exactly what the scrutinizer discharges.
+;
+; Covers the bytevector family, the pointer and generic-structure predicates,
+; and the range checks used by the lolevel accessors.
 
 (import (chicken number-vector) (chicken bytevector) (chicken condition))
 
@@ -55,5 +58,30 @@
   (assert (= 1 (p-bv-u8-ref bv)))
   (p-bv-u8-set! bv)
   (assert (= 1 (p-u8-ref bv))))
+
+;;; Pointer and generic-structure predicates.
+;
+; ##sys#pointer? and ##sys#generic-structure? used to rewrite to the raw
+; C_anypointerp / C_structurep macros, which dereference their argument with no
+; C_immediatep check, and both carried the safe-mode flag -- so these calls
+; segfaulted in DEFAULT SAFE MODE.
+
+(define (p-sys-pointer? x) (##sys#pointer? x))
+(define (p-generic-structure? x) (##sys#generic-structure? x))
+
+(for-each
+ (lambda (x)
+   (assert (eq? #f (p-sys-pointer? x)))
+   (assert (eq? #f (p-generic-structure? x))))
+ immediates)
+
+(for-each
+ (lambda (x)
+   (assert (eq? #f (p-sys-pointer? x))))
+ non-bytevector-blocks)
+
+;; ... and they still say yes to the real thing
+(assert (eq? #t (p-generic-structure? (##sys#make-structure 'thing 1 2))))
+(assert (eq? #f (p-generic-structure? (vector 1 2))))
 
 (print "bytevector guard tests passed")
