@@ -2118,7 +2118,12 @@ executable and the C to read.
 
 Ranked by measured payoff per unit of effort, not by technique.
 
-**Done on this tree: (C0), the `+extended-bindings+` typo.** One missing `#` per
+**Done on this tree (see §11 for the measurements): (P1) linear canonicalization,
+(C0c) the bytevector immediate guards, (C1a) the unboxed float store, and (S4)
+the number-vector bulk kernels. (R4) buffered `read-char` is implemented but held
+back pending fixes — §11.5.**
+
+**Also done: (C0), the `+extended-bindings+` typo.** One missing `#` per
 name, 76 names across 43 lines in two tables, disabled every SRFI-4 rewrite.
 Fixed; measured at 1.4–2.4× safe and 3.3–5.9× at `-unsafe` on f64 kernels, and
 6.0–6.1× on `tests/fft.scm -D unboxed`, with identical output everywhere and a
@@ -2174,6 +2179,148 @@ do not exist in this tree. Also not queued, but worth an upstream report:
 `+extended-bindings+` entry (§9.2, upstream items 6 and 7).
 
 ---
+
+---
+
+## 11. What has been implemented
+
+Four items from the queue are now landed on this branch, each measured before and
+after against a build of the immediately preceding commit, and each gated on the
+full `tests/runtests.sh` suite (102 test groups, 0 failures).
+
+### 11.1 (P1) Canonicalization is linear — `7989824e`
+
+`##sys#line-number-database` is keyed on the expression rather than on the head
+symbol of the call. CHICKEN's GC moves objects, so there is no stable address
+hash for a pair; the table hashes a bounded prefix of the expression's
+*structure* and compares candidates with `eq?`, which makes a weak hash cost
+time but never correctness.
+
+| N forms | before | after | |
+|---|---:|---:|---:|
+| 1000 | 260 ms | 113 ms | 2.3× |
+| 2000 | 1047 ms | 205 ms | 5.1× |
+| 4000 | 4422 ms | 483 ms | 9.2× |
+| 8000 | 18191 ms | 1009 ms | **18.0×** |
+
+The ~4.1×-per-doubling curve collapses to ~2.1×. On hand-written sources the win
+is real but smaller: `library.scm` canonicalization 611 → 301 ms (2.03×), and the
+whole front-end on `library.scm` 4.02 → 3.75 s (6.7%), which is ~1.8% of an
+end-to-end `csc` compile. Every `.scm` in the tree produces byte-identical C.
+
+Two honest limits. N *byte-identical* expressions stay quadratic — a structural
+hash cannot separate them — though even there 4710 → 1994 ms. And a source
+expression destructively modified after registration can no longer be found, so
+`get-line-number` returns `#f` for it; the old `assq` database compared with
+`eq?` and was immune to mutation. A miss can never become a *wrong* location.
+
+### 11.2 (C0c) The bytevector primitives guard against immediates — `91707223`
+
+A correctness fix first and a speedup second. `C_bytevectorp` dereferences its
+argument with no `C_immediatep` check, and several callers used it as a type
+guard, so `(u8vector-set! 42 0 1)` and `(u8vector-ref 42 0)` **segfaulted in
+default safe mode** — reachable with no compiler flags at all. Both now raise a
+proper type error.
+
+With an immediate-safe `C_i_bytevectorp` available, `u8vector?` regains the
+rewrite that had to be deleted for want of one, and `chicken.bytevector#bytevector?`
+— the R7RS spelling of the same predicate — gains one it never had. Measured on
+a polymorphic predicate loop: `u8vector?` **4.3×**, `bytevector?` **5.7×**. That
+is the ceiling, being a pure predicate microbenchmark; the added `C_immediatep`
+costs ≤1% on a ref/set! loop that does nothing else.
+
+`tests/bytevector-guard-tests.scm` covers this, with every call site deliberately
+polymorphic — see §9.2's methodological note.
+
+### 11.3 (C1a) Float stores stop allocating — `c9463c5b`
+
+lfa2 now emits `C_ub_i_f{32,64}vector_set` for a store whose value it has proved
+is a flonum.
+
+| | before | after | |
+|---|---:|---:|---:|
+| `axpy!`, 20M stores, `-O3 -unsafe` | 243 ms | 113 ms | **2.15×** |
+| `scale!`, 20M stores, `-O3 -unsafe` | 222 ms | 129 ms | **1.72×** |
+| minor GCs over 20M stores | 622 | 11 | **56× fewer** |
+
+`C_flonum(&a,…)` and `a=C_alloc(4)` leave the loop body and
+`C_calculate_demand(4,0,2)` becomes `(0,0,2)`. Safe mode is unchanged, the
+rewrite being gated on `unsafe` as well as on the proof.
+
+The dead macros it wires up returned the literal `0`, whose low two bits are the
+POINTER tag — a NULL masquerading as a heap object. That fix is load-bearing, not
+hypothetical: `srfi-4.scm` has 16 hand-written call sites that `perform-unboxing`
+also rewrites, one of which passes the result to a continuation, and reverting
+only that hunk turns `(write (c64vector-set! v 0 1.5))` into a segfault.
+
+This does not reintroduce the unsound store deleted in `8aa2f5b8`: that one
+applied `C_flonum_magnitude` to a value `types.db` declares `(or integer float)`,
+whereas this fires only where the value is *proved* a flonum.
+
+### 11.4 (S4) Bulk kernels for `chicken.number-vector` — `ca7cc4fa`
+
+Twelve operations — `f64vector-fill!/-copy!/-scale!/-axpy!/-sum/-dot` and the f32
+equivalents — as C kernels in the unit's own `foreign-declare`.
+
+| vs the element-at-a-time Scheme loop | L3-resident (1.6 MB) | DRAM-resident (160 MB) |
+|---|---:|---:|
+| `fill!` | 15.6× | 2.4× |
+| `scale!` | 87.6× | 9.0× |
+| `axpy!` | 50.9× | 8.4× |
+| `sum` | 80.4× | 31.5× |
+| `dot` | 46.6× | 20.1× |
+
+Out of cache the elementwise kernels become bandwidth-bound and the win
+collapses; the load-only reductions keep most of theirs. Each lands within a few
+percent of hand-written C at `clang -O3`.
+
+Three deliberate honesty constraints. `-copy!` is **not** claimed as a speedup —
+`->bytevector/shared` plus `bytevector-copy!` is already a memcpy and measures
+the same; its value is ergonomic. Per-call overhead is ~79 ns, so the kernels
+*lose* to an inlined `-unsafe` loop on very short vectors (n=8 `sum` is 0.90×).
+And the reductions genuinely do not auto-vectorize, so they use eight explicit
+accumulators combined pairwise — a documented reassociation that is more accurate
+than the naive loop, and that lets the SLP vectorizer take them. A
+`#pragma STDC FP_CONTRACT OFF` keeps `-axpy!` bit-identical to the Scheme loop,
+which it otherwise would not be on any FMA-capable target.
+
+### 11.5 Held back: (R4) buffered `read-char`
+
+Implemented and measured — `read-char` 1.5×, `peek-char`+`read-char` 4.6×,
+`(read)` over 8 MB of s-expressions 2.4× — and it fixes a genuine pre-existing
+bug: `peek-char` followed by `read-line` merges lines today (894 lines where 900
+is correct). It is **not landed**, because adversarial review found a heap
+overflow in `read-bytevector!` when `COUNT` is `#f`, plus three regressions on
+documented APIs: `file-position` becomes destructive (**5.6× slower**), limited
+`read-line` after a char-level read is **2.2× slower**, and
+`set-buffering-mode! #:none` is silently neutered. End-to-end payoff on the
+flagship consumer is ~nil (compiling `library.scm`, 1.02×). Fixes for all four
+exist; it needs another pass.
+
+### 11.6 Further upstream bugs found while implementing
+
+Neither is fixed here; both are live on master.
+
+1. **`##sys#pointer?` and `##sys#generic-structure?` have exactly the (C0c) bug**
+   — `c-platform.scm:565` and `:567` rewrite them to `C_anypointerp` and
+   `C_structurep`, raw header-dereferencing macros with no `C_immediatep`, both
+   carrying the safe-mode flag. `(##sys#pointer? 42)` at a polymorphic call site
+   segfaults today. Note `pointer?` sitting *between* them already uses the
+   guarded `C_i_safe_pointerp`, so the fix pattern is in the tree.
+2. **`int index = C_unfix(i)` in `C_i_check_range_2` / `C_i_check_range_including_2`**
+   truncates a 63-bit fixnum to 32 bits, so an index ≥ 2³² passes the range check
+   and the subsequent `memmove` writes out of bounds. Reachable today through
+   `bytevector-copy!`.
+
+### 11.7 An environment hazard worth knowing
+
+`LD_LIBRARY_PATH` ending in a colon makes the *current directory* a library
+search path. Building CHICKEN inside a worktree then silently shadows the
+installed `libchicken.so.12` with the half-built one in `.`, and a stock
+`chicken` binary loaded against a modified library segfaults in ways that look
+like a bug in the change under test. Build with `env -u LD_LIBRARY_PATH make` if
+in doubt; a clean-environment build of the same tree succeeds where the ambient
+one crashes.
 
 ## Appendix: file map
 
