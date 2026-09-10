@@ -2297,20 +2297,47 @@ documented APIs: `file-position` becomes destructive (**5.6× slower**), limited
 flagship consumer is ~nil (compiling `library.scm`, 1.02×). Fixes for all four
 exist; it needs another pass.
 
-### 11.6 Further upstream bugs found while implementing
+### 11.6 Further upstream bugs found while implementing — now fixed
 
-Neither is fixed here; both are live on master.
+Two of these were found by reviewing the (C0c) fix outward, and are the same
+class of defect. Both are fixed on this branch; the third is a build-system gap,
+left alone.
 
-1. **`##sys#pointer?` and `##sys#generic-structure?` have exactly the (C0c) bug**
-   — `c-platform.scm:565` and `:567` rewrite them to `C_anypointerp` and
+1. **`##sys#pointer?` and `##sys#generic-structure?` had exactly the (C0c) bug**
+   — `a401727f`. `c-platform.scm` rewrote them to `C_anypointerp` and
    `C_structurep`, raw header-dereferencing macros with no `C_immediatep`, both
-   carrying the safe-mode flag. `(##sys#pointer? 42)` at a polymorphic call site
-   segfaults today. Note `pointer?` sitting *between* them already uses the
-   guarded `C_i_safe_pointerp`, so the fix pattern is in the tree.
-2. **`int index = C_unfix(i)` in `C_i_check_range_2` / `C_i_check_range_including_2`**
-   truncates a 63-bit fixnum to 32 bits, so an index ≥ 2³² passes the range check
-   and the subsequent `memmove` writes out of bounds. Reachable today through
-   `bytevector-copy!`.
+   carrying the safe-mode flag; the out-of-line definitions in `library.scm`
+   were unguarded too. A polymorphic `(##sys#pointer? 42)` segfaulted in default
+   safe mode. For pointers the guarded equivalent already existed one line below
+   — `pointer?` uses `C_i_safe_pointerp`, which has identical semantics plus the
+   check — so `##sys#pointer?` now points at it. For structures there was no
+   one-argument guarded form (`C_i_structurep` takes a tag), so
+   `C_i_generic_structurep` was added, mirroring `C_i_bytevectorp`. Both stay
+   inlined. The remaining users of the raw macros are safe because they
+   establish blockness first (`lolevel.scm:76` and `library.scm:6658` test
+   `C_blockp`, `extras.scm:155` tests `C_immp`, and the two print paths sit
+   after a `C_blockp` arm in the same `cond`).
+
+2. **`C_i_check_range_2` / `C_i_check_range_including_2` truncated the index**
+   — `1aa47250`. Both held it in an `int`, so on LP64 — where a fixnum is 63
+   bits — an index of 2³²+k was truncated to k, passed a range check it should
+   have failed, and the caller then used the untruncated value:
+
+   ```scheme
+   (##sys#check-range (+ (expt 2 32) 1) 0 3)   ; => accepted (should reject)
+   (##sys#check-range 5 0 3)                   ; => rejected (correct)
+   ```
+
+   Reachable from Scheme through `##sys#check-range` and
+   `##sys#check-range/including`, which the lolevel record accessors and the
+   string operations use to validate an index before indexing without further
+   checks. The bounds were already `C_word`s, so holding the index in one only
+   removes a narrowing. The regression test also asserts that a genuinely
+   in-range index *above* 2³² is still accepted — the fix has to widen the
+   comparison, not reject everything large.
+
+   Both fixes are covered by `tests/bytevector-guard-tests.scm`, whose call
+   sites are deliberately polymorphic for the reason given in §9.2.
 
 3. **`make` does not rebuild a module's import library when its export list
    changes.** `chicken.<mod>.import.c` has no dependency on the
