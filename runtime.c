@@ -10424,6 +10424,60 @@ static void bignum_digits_destructive_negate(C_word result)
 typedef unsigned __int128 C_u2word;
 #endif
 
+#ifdef C_BIGNUM_HAVE_WIDE_DIGITS
+
+/* Reciprocal of a *normalised* digit d (one with its high bit set):
+ *
+ *   v = floor((B^2 - 1) / d) - B,   where B = 2^C_BIGNUM_DIGIT_LENGTH
+ *
+ * Because B/2 <= d < B the quotient lies in [B, 2B-1], so subtracting B is
+ * the same as truncating it to a single digit.  This is the compiler's own
+ * 128/64 division, but it happens once per division operation, and the
+ * inner loops then need nothing but multiplications.
+ *
+ * [Moeller & Granlund, "Improved division by invariant integers", IEEE
+ *  Transactions on Computers 60(2), 2011; algorithms 2 and 4.]
+ */
+static C_uword
+bignum_digit_reciprocal(C_uword d)
+{
+  assert(d & ((C_uword)1 << (C_BIGNUM_DIGIT_LENGTH - 1)));
+  return (C_uword)(~(C_u2word)0 / d);
+}
+
+/* Divide the two-digit value (u1:u0) by the normalised digit d, whose
+ * reciprocal is v, storing the remainder through rem.  Requires u1 < d,
+ * which is exactly the condition under which the quotient fits one digit.
+ * Moeller & Granlund algorithm 4, better known as GMP's udiv_qrnnd_preinv.
+ *
+ * The first correction is written branchlessly with a mask because it is
+ * taken about half the time; the second one is genuinely rare.
+ */
+static C_uword
+bignum_divide_2_by_1(C_uword u1, C_uword u0, C_uword d, C_uword v, C_uword *rem)
+{
+  C_u2word t;
+  C_uword q1, q0, r, mask;
+
+  assert(u1 < d);
+
+  t = (C_u2word)v * u1;
+  t += ((C_u2word)(u1 + 1) << C_BIGNUM_DIGIT_LENGTH) | u0;
+  q1 = (C_uword)(t >> C_BIGNUM_DIGIT_LENGTH);
+  q0 = (C_uword)t;
+
+  r = u0 - q1 * d;
+  mask = -(C_uword)(r > q0);      /* all ones when the estimate was one too big */
+  q1 += mask;
+  r += mask & d;
+
+  if (C_unlikely(r >= d)) { q1++; r -= d; }
+
+  *rem = r;
+  return q1;
+}
+#endif /* C_BIGNUM_HAVE_WIDE_DIGITS */
+
 static C_uword
 bignum_digits_destructive_scale_up_with_carry(C_uword *start, C_uword *end, C_uword factor, C_uword carry)
 {
@@ -10451,6 +10505,49 @@ bignum_digits_destructive_scale_up_with_carry(C_uword *start, C_uword *end, C_uw
 static C_uword
 bignum_digits_destructive_scale_down(C_uword *start, C_uword *end, C_uword denominator)
 {
+#ifdef C_BIGNUM_HAVE_WIDE_DIGITS
+  C_uword *scan = end, d, v, r, hi, lo;
+  int cnt = C_BIGNUM_DIGIT_LENGTH - C_ilen(denominator);
+
+  assert(denominator != 0);
+  assert(start < end);
+
+  /* Divide by an invariant single digit through its reciprocal, instead of
+   * the two hardware divisions per digit the halfdigit loop below needs.
+   * The reciprocal requires a normalised divisor, so we divide u << cnt by
+   * denominator << cnt: that leaves the quotient alone and scales the
+   * remainder by 2^cnt, which the final shift undoes.  The numerator is
+   * shifted on the fly, one digit at a time, so no scratch space is needed.
+   */
+  d = denominator << cnt;
+  v = bignum_digit_reciprocal(d);
+
+  if (cnt == 0) {               /* already normalised: nothing to shift */
+    r = 0;
+    while (scan > start) {
+      --scan;
+      *scan = bignum_divide_2_by_1(r, *scan, d, v, &r);
+    }
+    return r;
+  }
+
+  /* The first digit of the shifted numerator is what the shift pushes out
+   * of the top.  It is below 2^cnt <= 2^(C_BIGNUM_DIGIT_LENGTH-1) <= d, so
+   * the first quotient digit fits, as every later one does.
+   */
+  hi = *(--scan);
+  r = hi >> (C_BIGNUM_DIGIT_LENGTH - cnt);
+  while (scan > start) {
+    lo = *(scan - 1);
+    *scan = bignum_divide_2_by_1(r, (hi << cnt) |
+                                 (lo >> (C_BIGNUM_DIGIT_LENGTH - cnt)),
+                                 d, v, &r);
+    hi = lo;
+    --scan;
+  }
+  *scan = bignum_divide_2_by_1(r, hi << cnt, d, v, &r);
+  return r >> cnt;
+#else
   C_uword digit, k = 0;
   C_uhword q_j_hi, q_j_lo;
 
@@ -10471,6 +10568,7 @@ bignum_digits_destructive_scale_down(C_uword *start, C_uword *end, C_uword denom
     *end = C_BIGNUM_DIGIT_COMBINE(q_j_hi, q_j_lo);
   }
   return k;
+#endif
 }
 
 static C_uword
@@ -10607,6 +10705,7 @@ bignum_destructive_divide_full(C_word numerator, C_word denominator, C_word quot
 
   shift = C_BIGNUM_DIGIT_LENGTH - C_ilen(d1); /* nlz */
 
+#ifndef C_BIGNUM_HAVE_WIDE_DIGITS
   /* We have to work on halfdigits, so we shift out only the necessary
    * amount in order fill out that halfdigit (base is halved).
    * This trick is shamelessly stolen from Gauche :)
@@ -10614,6 +10713,7 @@ bignum_destructive_divide_full(C_word numerator, C_word denominator, C_word quot
    */
   if (shift >= C_BIGNUM_HALF_DIGIT_LENGTH)
     shift -= C_BIGNUM_HALF_DIGIT_LENGTH;
+#endif
 
   /* Code below won't always set high halfdigit of quotient, so do it here. */
   if (quotient != C_SCHEME_UNDEFINED)
@@ -10645,6 +10745,123 @@ bignum_destructive_divide_full(C_word numerator, C_word denominator, C_word quot
 static C_regparm void
 bignum_destructive_divide_normalized(C_word big_u, C_word big_v, C_word big_q)
 {
+#ifdef C_BIGNUM_HAVE_WIDE_DIGITS
+  C_uword *v = C_bignum_digits(big_v),
+          *u = C_bignum_digits(big_u),
+          *q = big_q == C_SCHEME_UNDEFINED ? NULL : C_bignum_digits(big_q),
+           qhat, rhat,      /* estimated quotient and remainder digit */
+           vn_1, vn_2,      /* "cached" values v[n-1], v[n-2] */
+           recip,           /* reciprocal of v[n-1], see above */
+           carry, ujn, ujn1, ul, rl;
+  C_u2word p;
+  int refine;
+  /* We use plain ints here, which theoretically may not be enough on
+   * 64-bit for an insanely huge number, but it is a _lot_ faster.
+   */
+  int n = C_bignum_size(big_v),           /* in digits */
+      m = C_bignum_size(big_u) - 1;       /* Correct for extra digit */
+  int i, j;		   /* loop  vars */
+
+  /* big_v is fully normalised here: v[n-1] has its high bit set, which is
+   * what the reciprocal needs and what bounds the quotient estimate.
+   */
+  vn_1 = v[n-1];
+  recip = bignum_digit_reciprocal(vn_1);
+
+  if (n == 1) {
+    /* Single-digit divisor: the estimate is exact, so there is no
+     * refinement and no add-back.  u[m] < v[0] because the quotient is
+     * known to fit in m digits, so every 2-by-1 step is well-defined.
+     */
+    rhat = u[m];
+    u[m] = 0;
+    for (j = m - 1; j >= 0; j--) {
+      qhat = bignum_divide_2_by_1(rhat, u[j], vn_1, recip, &rhat);
+      if (q != NULL) q[j] = qhat;
+      u[j] = 0;
+    }
+    u[0] = rhat;
+    return;
+  }
+
+  vn_2 = v[n-2];
+
+  /* See also Hacker's Delight, Figure 9-1, in base 2^C_BIGNUM_DIGIT_LENGTH
+   * instead of the halfdigit base used below.
+   */
+  for (j = m - n; j >= 0; j--) {
+    ujn = u[j+n];
+    ujn1 = u[j+n-1];
+
+    if (ujn == 0 && ujn1 == 0) { /* qhat would be zero: nothing to subtract */
+      if (q != NULL) q[j] = 0;
+      continue;
+    }
+
+    refine = 1;
+    if (ujn >= vn_1) {
+      /* (ujn:ujn1) / vn_1 would not fit a digit, so clamp it to B-1.  The
+       * matching remainder is (ujn:ujn1) - (B-1)*vn_1, that is
+       * ((ujn - vn_1):ujn1) + vn_1, which may itself reach B.  When it
+       * does, the refinement below cannot fire -- qhat*vn_2 <= (B-1)^2 is
+       * then always below rhat*B -- so it is skipped, exactly as the
+       * halfdigit loop skips it on rhat >= b.
+       */
+      C_uword hi = ujn - vn_1;
+      qhat = ~(C_uword)0;
+      rhat = ujn1 + vn_1;
+      hi += (rhat < ujn1);
+      refine = (hi == 0);
+    } else {
+      qhat = bignum_divide_2_by_1(ujn, ujn1, vn_1, recip, &rhat);
+    }
+
+    /* Refine the estimate with the next divisor digit.  Knuth guarantees
+     * this leaves qhat at most one too large, so a single add-back below
+     * is enough.
+     */
+    while (refine) {
+      if ((C_u2word)qhat * vn_2 <=
+          (((C_u2word)rhat << C_BIGNUM_DIGIT_LENGTH) | u[j+n-2]))
+        break;
+      qhat--;
+      rhat += vn_1;
+      if (rhat < vn_1) break; /* rhat reached B: the test cannot fire again */
+    }
+
+    /* Multiply and subtract.  "carry" holds the high digit of the running
+     * product plus the borrow, which cannot overflow: the product's high
+     * digit can only be B-1 when its low digit is 0, and a zero low digit
+     * never borrows.
+     */
+    carry = 0;
+    for (i = 0; i < n; i++) {
+      p = (C_u2word)qhat * v[i] + carry;
+      carry = (C_uword)(p >> C_BIGNUM_DIGIT_LENGTH);
+      ul = u[i+j];
+      rl = ul - (C_uword)p;
+      carry += (rl > ul);
+      u[i+j] = rl;
+    }
+    ul = u[j+n];
+    rl = ul - carry;
+    u[j+n] = rl;
+
+    if (rl > ul) {		/* Subtracted too much?  Add the divisor back */
+      qhat--;
+      carry = 0;
+      for (i = 0; i < n; i++) {
+        C_uword t = u[i+j] + v[i], t2;
+        C_uword c = (t < v[i]);
+        t2 = t + carry;
+        carry = c + (t2 < t);
+        u[i+j] = t2;
+      }
+      u[j+n] += carry;	/* Deliberately wraps to zero, cancelling the borrow */
+    }
+    if (q != NULL) q[j] = qhat;
+  } /* end j */
+#else
   C_uword *v = C_bignum_digits(big_v),
           *u = C_bignum_digits(big_u),
           *q = big_q == C_SCHEME_UNDEFINED ? NULL : C_bignum_digits(big_q),
@@ -10707,6 +10924,7 @@ bignum_destructive_divide_normalized(C_word big_u, C_word big_v, C_word big_q)
     }
     if (q != NULL) C_uhword_set(q, j, qhat);
   } /* end j */
+#endif
 }
 
 
