@@ -3903,11 +3903,14 @@ static C_regparm void really_mark(C_word *x, C_byte *tgt_space_start, C_byte **t
   *x = (C_word)p2;
   p2->header = h;
   p->header = ptr_to_fptr((C_uword)p2);
-  /* Nearly everything the GC copies is tiny -- pairs, closures, flonums,
-   * two-slot structures -- and for those the call to C_memcpy costs more
-   * than the copy.  Word blocks of up to four slots are copied inline.
-   * Byte blocks are excluded because their size is not a whole number of
-   * words, so "bytes" is not n * sizeof(C_word) for them.
+  /* Nearly everything the GC copies is tiny -- pairs, closures over one or
+   * two variables, two-slot structures -- and for those the call to
+   * C_memcpy costs more than the copy.  Word blocks of up to four slots are
+   * copied inline.  Byte blocks are excluded because their size is not a
+   * whole number of words, so "bytes" is not n * sizeof(C_word) for them.
+   * Note that flonums are byte blocks (C_FLONUM_TYPE carries
+   * C_BYTEBLOCK_BIT, chicken.h:421 and :448/:450), so despite being tiny
+   * they take the C_memcpy path like every other byte block.
    */
   if (!(h & C_BYTEBLOCK_BIT) && n <= 4) {
     C_word *dst = p2->data, *src = p->data;
@@ -10476,6 +10479,11 @@ bignum_divide_2_by_1(C_uword u1, C_uword u0, C_uword d, C_uword v, C_uword *rem)
   C_u2word t;
   C_uword q1, q0, r, mask;
 
+  /* Deliberately shipped: there is no -DNDEBUG in this build, so this runs
+   * once per quotient digit.  Measured at about 1% of the division kernel
+   * (quotient of 7^40000 by 3^20000, 400 reps: 285 ms with, 281 ms without),
+   * which is worth paying to guard the precondition the whole 2-by-1 step
+   * rests on.  runtime.c ships some 60 other asserts on the same terms. */
   assert(u1 < d);
 
   t = (C_u2word)v * u1;
