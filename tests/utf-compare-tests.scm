@@ -163,3 +163,155 @@
       (loop (cdr l)))))
 
 (print "utf-compare tests passed")
+
+;;; --------------------------------------------------------------------
+;;; The memoised index cursor (slots 2 and 3 of a string) that utf_index1
+;;; maintains, as seen through substring / string-ref / string-set!.
+;;;
+;;; C_utf_range now puts the cursor back on `start' before returning, so that
+;;; the C_utf_copy which follows it inside ##sys#substring finds it there.
+;;; Everything below checks that the cursor still tells the truth: for
+;;; ascending, descending and random access, across mutation that changes a
+;;; character's byte length, and when the cursor has been parked past the
+;;; mutation.
+
+;; a mostly-ASCII string with one 2-byte character at the front: the shape
+;; where the cursor matters, because the byte-index == character-index
+;; shortcut in utf_index cannot be taken and every index has to be walked
+(define (make-mixed n)
+  (list->string
+   (cons (integer->char #xe9)
+         (let loop ((i (fx- n 1)) (acc (list)))
+           (if (fx< i 0)
+               acc
+               (loop (fx- i 1) (cons (integer->char (fx+ 97 (fxmod i 26))) acc)))))))
+
+(define mixed (make-mixed 600))
+(define mixed-chars (list->vector (string->list mixed)))
+
+(define (ref-substring v from to)
+  (let loop ((i (fx- to 1)) (acc (list)))
+    (if (fx< i from)
+        (list->string acc)
+        (loop (fx- i 1) (cons (vector-ref v i) acc)))))
+
+(assert (fx= (string-length mixed) 601) "mixed string length")
+
+;; ascending tokenisation - the access pattern that was quadratic
+(let loop ((i 0))
+  (when (fx< i (string-length mixed))
+    (let ((e (fxmin (string-length mixed) (fx+ i 7))))
+      (assert (string=? (substring mixed i e) (ref-substring mixed-chars i e))
+              "ascending substring" i e)
+      (loop e))))
+
+;; descending tokenisation
+(let loop ((e (string-length mixed)))
+  (when (fx> e 0)
+    (let ((i (fxmax 0 (fx- e 7))))
+      (assert (string=? (substring mixed i e) (ref-substring mixed-chars i e))
+              "descending substring" i e)
+      (loop i))))
+
+;; random access, interleaved with string-ref so that both users of the
+;; cursor take turns moving it
+(define seed 12345)
+(define (rnd n)
+  (set! seed (fxmod (fx+ (fx* seed 1103515) 12345) 1048576))
+  (fxmod seed n))
+
+(let loop ((k 0))
+  (when (fx< k 400)
+    (let* ((n (string-length mixed))
+           (a (rnd n))
+           (b (rnd n))
+           (from (fxmin a b))
+           (to (fxmax a b)))
+      (assert (string=? (substring mixed from to) (ref-substring mixed-chars from to))
+              "random substring" from to)
+      (assert (char=? (string-ref mixed from) (vector-ref mixed-chars from))
+              "string-ref after substring" from)
+      (loop (fx+ k 1)))))
+
+;; mutation: string-set! can change a character's byte length, which moves
+;; every byte offset after it, so no cursor may survive as a stale answer
+(let ((s (make-mixed 200))
+      (v (list->vector (string->list (make-mixed 200)))))
+  (define (check tag)
+    (assert (string=? s (list->string (vector->list v))) "mutated string" tag)
+    (let loop ((i 0))
+      (when (fx< i (string-length s))
+        (assert (char=? (string-ref s i) (vector-ref v i)) "mutated string-ref" tag i)
+        (loop (fx+ i 1)))))
+  (define (put! i c)
+    (string-set! s i c)
+    (vector-set! v i c))
+  (assert (char=? (string-ref s 150) (vector-ref v 150)) "move the cursor right")
+  (put! 3 (integer->char #x4e2d))       ; 1 byte -> 3 bytes, left of the cursor
+  (check 'grow-left)
+  (assert (string=? (substring s 100 120) (ref-substring v 100 120)) "substring after grow")
+  (put! 3 #\x)                          ; 3 bytes -> 1 byte
+  (check 'shrink-left)
+  (put! 199 (integer->char #x1f600))    ; 1 byte -> 4 bytes, at the end
+  (check 'grow-right)
+  (put! 0 #\a)                          ; 2 bytes -> 1 byte, at the very front
+  (check 'shrink-front)
+  (assert (string=? (substring s 0 10) (ref-substring v 0 10)) "substring at head")
+  (assert (string=? (substring s 190 201) (ref-substring v 190 201)) "substring at tail")
+  (assert (string=? (substring s 0 (string-length s)) (list->string (vector->list v)))
+          "whole substring"))
+
+;; the same, with the cursor deliberately parked past the mutation by a
+;; substring call made before the string-set!
+(let ((s (make-mixed 100))
+      (v (list->vector (string->list (make-mixed 100)))))
+  (assert (string=? (substring s 80 100) (ref-substring v 80 100)) "park the cursor")
+  (string-set! s 5 (integer->char #x4e2d))
+  (vector-set! v 5 (integer->char #x4e2d))
+  (assert (string=? (substring s 80 100) (ref-substring v 80 100)) "cursor past mutation")
+  (assert (char=? (string-ref s 5) (vector-ref v 5)) "read the mutated character")
+  (assert (string=? (substring s 0 20) (ref-substring v 0 20)) "substring across mutation")
+  (assert (string=? s (list->string (vector->list v))) "string after parked mutation"))
+
+;; ASCII-only strings take the other branch of utf_index (byte index ==
+;; character index, no cursor walk) and must be unaffected
+(let* ((a (make-string 500 #\q))
+       (b (string-append (substring a 0 100) (substring a 100 500))))
+  (assert (string=? a b) "ascii shortcut path")
+  (assert (char=? (string-ref a 499) #\q) "ascii shortcut string-ref"))
+
+;;; --------------------------------------------------------------------
+;;; Ascending substring tokenisation must be linear, not quadratic.
+;;;
+;;; This is a timing check because the defect it guards is a complexity
+;;; defect and nothing else: the answers were always right, they just took
+;;; O(n^2) to produce.  Quadrupling the input quadruples the work when the
+;;; cursor survives and multiplies it by sixteen when it does not, so the
+;;; bound below - eight, plus 50 ms of slack for timer granularity and
+;;; scheduling - sits well clear of either.  Best of three runs each way.
+
+(define (tokenise str)
+  (let ((n (string-length str)))
+    (let loop ((i 0) (acc 0))
+      (if (fx>= i n)
+          acc
+          (let ((e (fxmin n (fx+ i 5))))
+            (loop e (fx+ acc (string-length (substring str i e)))))))))
+
+(define (best-of-3 thunk)
+  (let loop ((k 0) (b 1000000000))
+    (if (fx>= k 3)
+        b
+        (let* ((t0 (current-process-milliseconds))
+               (ignored (thunk))
+               (d (fx- (current-process-milliseconds) t0)))
+          (loop (fx+ k 1) (fxmin b d))))))
+
+(let* ((small (make-mixed 40000))
+       (big (make-mixed 160000))
+       (ts (best-of-3 (lambda () (tokenise small))))
+       (tb (best-of-3 (lambda () (tokenise big)))))
+  (assert (fx< tb (fx+ (fx* ts 8) 50))
+          "ascending substring tokenisation is not quadratic" ts tb))
+
+(print "utf index/memo tests passed")

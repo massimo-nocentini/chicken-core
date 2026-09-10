@@ -3517,7 +3517,20 @@ C_regparm int C_utf_char_position(C_word bv, int pos)
 C_regparm C_word C_utf_range(C_word str, C_word start, C_word end)
 {
     C_char *p1 = utf_index(str, C_unfix(start));
+    /* utf_index() has just memoised (start, byte-offset-of-start) in slots
+     * 2 and 3.  Indexing `end' below overwrites that with (end, ...), which
+     * throws away the only cursor a caller can use.  ##sys#substring is
+     * exactly such a caller: it calls this and then C_utf_copy, which
+     * indexes `start' again - and `start' < `end' means utf_index1() cannot
+     * use the memo and rescans from the head of the string.  Ascending
+     * tokenisation of a string with even one non-ASCII character therefore
+     * costs O(n^2).  Save the cursor and put it back, so the memo still
+     * describes `start' when this returns.
+     */
+    C_word i0 = C_block_item(str, 2), off = C_block_item(str, 3);
     C_char *p2 = utf_index(str, C_unfix(end));
+    C_set_block_item(str, 2, i0);
+    C_set_block_item(str, 3, off);
     return C_fix(p2 - p1);
 }
 
