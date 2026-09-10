@@ -240,7 +240,26 @@
     ("C_a_i_flonum_round" "C_round" op)
     ("C_a_i_flonum_abs" "C_fabs" op)
     ("C_a_u_i_f32vector_ref" "C_ub_i_f32vector_ref" acc)
-    ("C_a_u_i_f64vector_ref" "C_ub_i_f64vector_ref" acc)))
+    ("C_a_u_i_f64vector_ref" "C_ub_i_f64vector_ref" acc)
+    ("C_u_i_f32vector_set" "C_ub_i_f32vector_set" set)
+    ("C_u_i_f64vector_set" "C_ub_i_f64vector_set" set)))
+
+;; Maps type-dispatching float setters to the ones taking a flonum directly.
+;;
+;; The replacement is only done when the value argument has been shown to be a
+;; float (and only in unsafe mode, as the unchecked setters check neither the
+;; vector nor the index).  Without that proof this would be unsound:
+;; C_u_i_f{32,64}vector_set applies C_flonum_magnitude to its value argument,
+;; which segfaults on a fixnum, while types.db permits (or integer float).
+;;
+;; The result is well-typed on its own: C_u_i_f{32,64}vector_set still takes a
+;; *boxed* flonum, so the marked node is correct even if the unboxing pass does
+;; not run afterwards (it only runs when there is at least one float variable).
+;; Once unboxing does run, +unboxed-map+ above turns it into a raw store.
+
+(define +float-setter-map+
+  '(("C_i_f32vector_set" "C_u_i_f32vector_set")
+    ("C_i_f64vector_set" "C_u_i_f64vector_set")))
 
 
 ;;; Walk nodes and perform simplified type-analysis
@@ -418,12 +437,35 @@
 	  ((##core#undefined) 'undefined)
 	  ((##core#primitive) 'procedure)
 	  ((##core#inline ##core#inline_allocate)
-           (let ((ubop (assoc (first params) +unboxed-map+)))
-             (for-each
-               (lambda (arg)
-                 (walk arg te ae)
-                 (when ubop (add-unboxed arg)))
-               subs))
+           (let* ((ubop (assoc (first params) +unboxed-map+))
+                  (setop (and unsafe
+                              (not ubop)
+                              (= 3 (length subs))
+                              (assoc (first params) +float-setter-map+))))
+             ;; NOTE: walking a node counts a boxed use of every variable in
+             ;; it, so an argument must not be walked twice - that would make
+             ;; the variable look as if it had a boxed use that can not be
+             ;; unboxed, and prevent its unboxing.  In the setter case the
+             ;; result of the third argument is needed below, so it is kept
+             ;; here rather than re-walked.
+             (if setop
+                 (let ((r3 (begin (walk (first subs) te ae)
+                                  (walk (second subs) te ae)
+                                  (walk (third subs) te ae))))
+                   ;; a float store whose value is known to be a flonum:
+                   ;; replace it with the setter that takes the flonum
+                   ;; directly, which unboxing can then turn into a raw store
+                   ;; (see +float-setter-map+).  Only the operator name is
+                   ;; replaced: ##core#inline_allocate carries its allocation
+                   ;; size in the second parameter and must keep it.
+                   (when (eq? 'float r3)
+                     (add-unboxed (third subs))
+                     (node-parameters-set! n (cons (second setop) (cdr params)))))
+                 (for-each
+                   (lambda (arg)
+                     (walk arg te ae)
+                     (when ubop (add-unboxed arg)))
+                   subs)))
 	   (cond ((assoc (first params) +type-check-map+) =>
 		  (lambda (a)
 		    (let ((r1 (walk (first subs) te ae)))
@@ -544,8 +586,12 @@
 		 (make-node '##core#float-variable (cons i params) '())
 		 (make-node '##core#unbox_float '() (list n)))))
 	  ((##core#inline ##core#inline_allocate)
-	   (cond ((assoc (first params) +unboxed-map+) =>
-		  (lambda (a)
+	   (let ((a (assoc (first params) +unboxed-map+)))
+	     ;; a setter yields no value, so it can never legitimately appear
+	     ;; in a context where an unboxed float is expected.
+	     (when (and a (eq? 'set (third a)))
+	       (bomb "float setter in unboxed-float context" (first params)))
+	     (cond (a
 		    (let ((ub (second a))
 			  (type (third a)))
 		      (set! count (add1 count))
@@ -554,12 +600,25 @@
 				 (map (if (eq? type 'op)
 					  walk/unbox
 					  walk)
-				   subs)))))
-		 (else
-		   (make-node '##core#unbox_float '()
-			      (list (make-node class params
-					       (map walk subs)))))))
+				   subs))))
+		   (else
+		     (make-node '##core#unbox_float '()
+				(list (make-node class params
+						 (map walk subs))))))))
 	  (else (make-node '##core#unbox_float '() (list (walk n)))))))
+
+    ;; how the arguments of an unboxed operation are walked, by kind:
+    ;;   op   - all arguments are floats and are unboxed
+    ;;   pred - all arguments are floats and are unboxed
+    ;;   acc  - the arguments are a vector and an index and stay boxed
+    ;;   set  - vector and index stay boxed, the value (3rd) is unboxed
+    (define (unbox-arguments type subs)
+      (case type
+	((set) (list (walk (first subs))
+		     (walk (second subs))
+		     (walk/unbox (third subs))))
+	((acc) (map walk subs))
+	(else (map walk/unbox subs))))
 
     (define (walk n)
       (let ((class (node-class n))
@@ -590,12 +649,9 @@
 		      (set! count (add1 count))
 		      (let ((n (make-node '##core#inline
 					  (list ub)
-					  (map (if (eq? type 'acc)
-						   walk
-						   walk/unbox)
-					       subs))))
+					  (unbox-arguments type subs))))
 			(case type
-			  ((pred) n)
+			  ((pred set) n)
 			  (else (make-node '##core#box_float '()
 					   (list n))))))))
 		 (else (make-node class params (map walk subs)))))
