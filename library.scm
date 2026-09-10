@@ -3507,8 +3507,7 @@ EOF
   (##sys#make-bytevector size fill) )
 
 (define (bytevector? x)
-  (and (##core#inline "C_blockp" x)
-       (##core#inline "C_bytevectorp" x) ) )
+  (##core#inline "C_i_bytevectorp" x) )
 
 (define (bytevector-length bv)
   (##sys#check-bytevector bv 'bytevector-size)
@@ -6647,7 +6646,7 @@ EOF
 (define ##sys#make-tagged-pointer (##core#primitive "C_make_tagged_pointer"))
 (define (##sys#pointer? x) (##core#inline "C_anypointerp" x))
 (define (##sys#set-pointer-address! ptr addr) (##core#inline "C_update_pointer" addr ptr))
-(define (##sys#bytevector? x) (##core#inline "C_bytevectorp" x))
+(define (##sys#bytevector? x) (##core#inline "C_i_bytevectorp" x))
 (define (##sys#string->pbytevector s) (##core#inline "C_string_to_pbytevector" s))
 (define (##sys#permanent? x) (##core#inline "C_permanentp" x))
 (define (##sys#block-address x) (##core#inline_allocate ("C_block_address" 6) x))

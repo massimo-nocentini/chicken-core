@@ -2849,6 +2849,16 @@ inline static C_word C_i_stringp(C_word x)
 }
 
 
+/* Immediate-safe counterpart of the raw C_bytevectorp macro above.  Use this
+   one whenever the argument's blockness has not already been established --
+   in particular from compiler rewrite rules, which fire at call sites where
+   the argument type is unknown. */
+inline static C_word C_i_bytevectorp(C_word x)
+{
+  return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_BYTEVECTOR_TYPE);
+}
+
+
 inline static C_word C_i_locativep(C_word x)
 {
   return C_mk_bool(!C_immediatep(x) && C_block_header(x) == C_LOCATIVE_TAG);

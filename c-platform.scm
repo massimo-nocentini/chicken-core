@@ -186,6 +186,7 @@
     chicken.bitwise#arithmetic-shift chicken.bitwise#bit->boolean
 
     chicken.bytevector#bytevector-length chicken.bytevector#bytevector=?
+    chicken.bytevector#bytevector?
 
     chicken.keyword#get-keyword
 
@@ -526,12 +527,8 @@
 (rewrite 'scheme#symbol? 2 1 "C_i_symbolp" #t)
 (rewrite 'scheme#vector? 2 1 "C_i_vectorp" #t)
 (rewrite '##sys#vector? 2 1 "C_i_vectorp" #t)
-;; NOTE: no rewrite for u8vector?. The other nine predicates below use
-;; C_i_<t>vectorp -> C_i_structurep (runtime.c:5040ff), which is immediate-safe,
-;; but C_bytevectorp (chicken.h:1160) is a raw C_header_bits() test with no
-;; C_immediatep guard, so it dereferences a fixnum. Inlining it segfaults in
-;; DEFAULT SAFE MODE wherever the argument is not statically known to be a
-;; block. Upstream fix would be an immediate-checking C_i_bytevectorp.
+(rewrite 'chicken.bytevector#bytevector? 2 1 "C_i_bytevectorp" #t)
+(rewrite 'chicken.number-vector#u8vector? 2 1 "C_i_bytevectorp" #t)
 (rewrite 'chicken.number-vector#s8vector? 2 1 "C_i_s8vectorp" #t)
 (rewrite 'chicken.number-vector#u16vector? 2 1 "C_i_u16vectorp" #t)
 (rewrite 'chicken.number-vector#s16vector? 2 1 "C_i_s16vectorp" #t)
@@ -622,7 +619,7 @@
 (rewrite 'scheme#char-downcase 2 1 "C_u_i_char_downcase" #t)
 (rewrite 'scheme#list-tail 2 2 "C_i_list_tail" #t)
 (rewrite '##sys#structure? 2 2 "C_i_structurep" #t)
-(rewrite '##sys#bytevector? 2 2 "C_bytevectorp" #t)
+(rewrite '##sys#bytevector? 2 1 "C_i_bytevectorp" #t)
 (rewrite 'chicken.memory.representation#block-ref 2 2 "C_slot" #f)	; ok to be unsafe, lolevel is anyway
 (rewrite 'chicken.memory.representation#number-of-slots 2 1 "C_block_size" #f)
 

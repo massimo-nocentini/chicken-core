@@ -421,6 +421,11 @@ $compile -specialize numbers-test-gauche.scm
 echo "======================================== srfi-4 tests ..."
 $interpret -s srfi-4-tests.scm
 
+echo "======================================== bytevector guard tests ..."
+$interpret -s bytevector-guard-tests.scm
+$compile bytevector-guard-tests.scm
+./a.out
+
 echo "======================================== condition tests ..."
 $interpret -s condition-tests.scm
 

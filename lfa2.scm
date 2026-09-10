@@ -98,6 +98,7 @@
     ("C_i_cplxnump" cplxnum)
     ("C_stringp" string)
     ("C_bytevectorp" bytevector)
+    ("C_i_bytevectorp" bytevector)
     ("C_i_keywordp" keyword)
     ("C_i_symbolp" symbol)
     ("C_i_listp" list)
