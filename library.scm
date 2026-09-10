@@ -3549,6 +3549,15 @@ EOF
          (to (or end n)))
     (if end
         (##sys#check-range/including end 0 n 'utf8->string))
+    ;; `start' was never checked: a negative one made C_utf_validate and
+    ;; C_copy_memory_with_offset read behind the bytevector's data (a
+    ;; start of -1 returned the low byte of the bytevector's own header
+    ;; as the first character), and one past `to' produced a negative
+    ;; length that reached ##sys#make-bytevector.  Checking against `to'
+    ;; rather than `n' also establishes start <= to for the subtraction
+    ;; below.  This deliberately turns garbage-or-crash into a raised
+    ;; condition.
+    (##sys#check-range/including start 0 to 'utf8->string)
     (if (not (##core#inline "C_utf_validate" bv n start to))
         (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
     (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))

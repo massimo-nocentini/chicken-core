@@ -108,6 +108,32 @@
 (test-assert (bytes->string #u8(255 1 2)))
 (test-equal (string-length (bytes->string #u8(255 1 2))) 3)
 
+;; `end' was range-checked here but `start' never was.  A negative start
+;; read behind the bytevector's data - (utf8->string #u8(65 66 67 68 69) -1)
+;; used to answer "PABCDE", the P being the low byte of the bytevector's own
+;; header - and a start past the end produced a negative length that reached
+;; ##sys#make-bytevector, which segfaulted.  A non-fixnum start segfaulted too.
+(test-error "utf8->string rejects a negative start"
+            (utf8->string #u8(65 66 67 68 69) -1))
+(test-error "utf8->string rejects a very negative start"
+            (utf8->string #u8(65 66 67 68 69) -3))
+(test-error "utf8->string rejects a start past the end"
+            (utf8->string #u8(65 66 67 68 69) 6))
+(test-error "utf8->string rejects a start past an explicit end"
+            (utf8->string #u8(65 66 67 68 69) 4 2))
+(test-error "utf8->string rejects a non-fixnum start"
+            (utf8->string #u8(65 66 67) 'x))
+(test-equal "utf8->string accepts start = length"
+            (utf8->string #u8(65 66 67) 3) "")
+(test-equal "utf8->string accepts start = end"
+            (utf8->string #u8(65 66 67) 2 2) "")
+(test-equal "utf8->string still decodes the whole range"
+            (utf8->string #u8(65 66 67) 0 3) "ABC")
+(test-equal "utf8->string still decodes multi-byte sequences"
+            (utf8->string #u8(228 184 173 230 150 135)) "\x4e2d;\x6587;")
+(test-equal "utf8->string still decodes a sub-range of multi-byte input"
+            (utf8->string #u8(65 228 184 173 66) 1 4) "\x4e2d;")
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; case conversion buffer sizing
 
