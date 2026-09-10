@@ -3526,6 +3526,25 @@ C_regparm C_word C_utf_range(C_word str, C_word start, C_word end)
      * tokenisation of a string with even one non-ASCII character therefore
      * costs O(n^2).  Save the cursor and put it back, so the memo still
      * describes `start' when this returns.
+     *
+     * MEASURED, and less than was first claimed for it: this removes ONE of
+     * the two head-scans ##sys#substring performs per call, so it is worth a
+     * flat 2.0x and NOT the complexity fix it was originally reported as.
+     * Ascending (substring s i (+ i 5)) over a string whose first character
+     * is non-ASCII, best of 3, identical -O3 binaries against each library:
+     *
+     *     n         before      after
+     *     10001      648 ms     324 ms
+     *     20001     2570       1294
+     *     40001    10289       5175
+     *     80001    41138      20704
+     *    160001   164513      82765
+     *
+     * Both columns still quadruple per doubling, i.e. both are still O(n^2);
+     * only the constant halves.  The remaining scan is the utf_index(start)
+     * on the line above, which still misses the memo across calls.  Making
+     * that one hit as well is the change that would actually make ascending
+     * tokenisation linear, and it has not been made.
      */
     C_word i0 = C_block_item(str, 2), off = C_block_item(str, 3);
     C_char *p2 = utf_index(str, C_unfix(end));
