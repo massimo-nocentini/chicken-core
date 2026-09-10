@@ -460,21 +460,48 @@ EOF
 
 ;;; ##sys#scan-buffer-line: terminators at and across buffer boundaries.
 ;;;
-;;; This is the scanner behind read-line for string ports (library.scm),
-;;; fd and process ports (posixunix.scm) and TCP ports (tcp.scm); the
-;;; buffered file ports go through fast_read_line_from_file in C instead,
-;;; so they do not exercise it.
+;;; ##sys#scan-buffer-line has exactly three callers: library.scm:5931
+;;; (string ports), posixunix.scm:896 (the ##sys#custom-input-port class,
+;;; which is what process and pipe ports use) and tcp.scm:477.  Buffered
+;;; file ports do NOT reach it -- ##sys#stream-port-class (library.scm:4137)
+;;; answers read-line with fast_read_line_from_file (library.scm:4242), which
+;;; handles \r, \r\n and EOF entirely in C.  open-input-file* goes through
+;;; C_fdopen (posix-common.scm:505-508) and so yields a stream port: the
+;;; "buffered file port" group below therefore does not exercise the scanner
+;;; either.  It is kept because it usefully pins that the C path and the
+;;; scanner agree, and the process-port group is what covers the scanner's
+;;; own refill path.
 
 ;; Bounded so that a scanner which fails to advance the port position
 ;; produces a wrong answer instead of hanging the test run.
 (define (string-port-lines s) (read-lines (open-input-string s) 6))
 
-(define (fd-port-lines s)
+(define (file-port-lines s)
   (let ((file "scan-buffer-line-test"))
     (with-output-to-file file (lambda () (display s)))
     (let* ((p (open-input-file* (file-open file open/rdonly)))
            (ls (read-lines p 6)))
       (close-input-port p)
+      (delete-file* file)
+      ls)))
+
+;; A process output port is the one route from Scheme to the
+;; ##sys#custom-input-port class, and hence to the scanner's refill path --
+;; the branch the #568 arm exists for.  `cat' of a temporary file rather
+;; than `echo -n', because the suite already notes above that `echo -n' is
+;; not available everywhere; `cat' needs no flag and reproduces the bytes
+;; exactly.  `process' returns a process object here, and
+;; process-output-port is the child's stdout.
+(define (process-port-lines s)
+  (let ((file "scan-buffer-line-proc-test"))
+    (with-output-to-file file (lambda () (display s)))
+    (let* ((pr (process "cat" (list file)))
+           (p (process-output-port pr))
+           (ls (read-lines p 6)))
+      ;; Closing the ports reaps the child; an explicit process-wait here
+      ;; fails with ECHILD.
+      (close-input-port p)
+      (close-output-port (process-input-port pr))
       (delete-file* file)
       ls)))
 
@@ -530,8 +557,11 @@ EOF
 (test-group "line terminators, string port"
   (test-line-terminators "string port" string-port-lines))
 
-(test-group "line terminators, fd port"
-  (test-line-terminators "fd port" fd-port-lines))
+(test-group "line terminators, buffered file port"
+  (test-line-terminators "buffered file port" file-port-lines))
+
+(test-group "line terminators, process port"
+  (test-line-terminators "process port" process-port-lines))
 
 ;; ##sys#scan-buffer-line accumulates into a 1024-byte bytevector that
 ;; `grow' doubled exactly once per call.  But `conc' appends a whole

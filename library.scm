@@ -6014,10 +6014,18 @@ EOF
                          (if buf
                              (if (eq? (##core#inline "C_subbyte" buf offset) 10)
                                  (values (fx+ offset 1) (getline) #t)
-                                 ;; "Restore" \r we didn't copy, loop w/ new string
-                                 (begin
-                                   (conc1 13)
-                                   (loop buf offset offset limit)))
+                                 ;; More input, and it is not \n, so the \r
+                                 ;; was a bare-\r terminator -- exactly the
+                                 ;; case the arm below handles when the \r
+                                 ;; is not the last byte the scanner may
+                                 ;; look at.  This branch used to "restore"
+                                 ;; it with conc1 and keep scanning, which
+                                 ;; left the \r in the middle of the line
+                                 ;; and glued the next line onto it, so the
+                                 ;; same bytes parsed differently depending
+                                 ;; on where the buffer happened to end.
+                                 ;; `offset' already points past the \r.
+                                 (values offset (getline) #t))
                              ;; No more input: the \r we did not copy was
                              ;; the whole terminator, exactly as in the
                              ;; bare-\r arm just below, so drop it from the
