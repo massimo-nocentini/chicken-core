@@ -2312,6 +2312,16 @@ Neither is fixed here; both are live on master.
    and the subsequent `memmove` writes out of bounds. Reachable today through
    `bytevector-copy!`.
 
+3. **`make` does not rebuild a module's import library when its export list
+   changes.** `chicken.<mod>.import.c` has no dependency on the
+   `chicken.<mod>.import.scm` the compiler regenerates, so after adding an export
+   the stale `.import.so` survives and the new binding is invisible to `csi` and
+   to anything resolving through the build tree's repository — while compiled
+   code that imports the unit directly works fine, which makes it look like a
+   module-visibility bug in the change. `tests/srfi-4-tests.scm` fails this way.
+   Force it with `rm -f chicken.<mod>.import.[co] chicken.<mod>.import.so` before
+   rebuilding. This cost real debugging time twice while landing §11.4.
+
 ### 11.7 An environment hazard worth knowing
 
 `LD_LIBRARY_PATH` ending in a colon makes the *current directory* a library
