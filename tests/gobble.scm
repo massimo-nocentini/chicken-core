@@ -3,6 +3,9 @@
 ; usage: csi -s gobble.scm [COUNT]
 
 
+(import chicken.process-context)
+
+
 (define (run n)
   (print "allocating " n " bytes ...")
   (let loop ((k 0))
