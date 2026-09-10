@@ -115,6 +115,55 @@
 (test '(#f "a.." "b") (receive (decompose-pathname "a...b")))
 (test '("a." ".b" #f) (receive (decompose-pathname "a./.b")))
 
+;; Multi-byte UTF-8: every position these return is a CODEPOINT index, so a
+;; byte-oriented scan or compare would land inside a character and split it.
+;; "é" is 2 bytes, "中" 3, "😀" 4, so byte length and codepoint
+;; length differ by 1x, 2x and 3x here.
+
+(test '(#f "é" #f) (receive (decompose-pathname "é")))
+(test '(#f "é" "é") (receive (decompose-pathname "é.é")))
+(test '(#f "ééé" "é") (receive (decompose-pathname "ééé.é")))
+(test '(#f "é" "ééé") (receive (decompose-pathname "é.ééé")))
+(test '("中" "文" "txt") (receive (decompose-pathname "中/文.txt")))
+(test '("中文" "日本語" "拡張子") (receive (decompose-pathname "中文/日本語.拡張子")))
+(test '("/é" "é" "é") (receive (decompose-pathname "/é/é.é")))
+(test '("/путь" "файл" "текст") (receive (decompose-pathname "/путь/файл.текст")))
+(test '("😀" "😀" "😀") (receive (decompose-pathname "😀/😀.😀")))
+(test '("aéb" "céd" "eéf") (receive (decompose-pathname "aéb/céd.eéf")))
+
+(test '(#f #f ("é")) (receive (decompose-directory "é")))
+(test '(#f "/" ("éé")) (receive (decompose-directory "//éé//")))
+(test '(#f #f ("中" "文")) (receive (decompose-directory "中/文")))
+(test '(#f "/" ("😀" "x")) (receive (decompose-directory "/😀/x")))
+(test '(#f #f ("é" "é")) (receive (decompose-directory "é//é/")))
+(test '(#f "/" ("путь" "к" "файлу")) (receive (decompose-directory "/путь//к//файлу")))
+
+(test "éé" (pathname-file "é/éé.あああ"))
+(test "あああ" (pathname-extension "é/éé.あああ"))
+(test "é" (pathname-directory "é/éé.あああ"))
+(test "éé.あああ" (pathname-strip-directory "é/éé.あああ"))
+(test "é/éé" (pathname-strip-extension "é/éé.あああ"))
+(test "😀" (pathname-file "😀/😀.😀"))
+(test "😀" (pathname-extension "😀/😀.😀"))
+(test "😀" (pathname-directory "😀/😀.😀"))
+(test "😀.😀" (pathname-strip-directory "😀/😀.😀"))
+(test "😀/😀" (pathname-strip-extension "😀/😀.😀"))
+(test "файл" (pathname-file "путь/файл.тек"))
+(test "тек" (pathname-extension "путь/файл.тек"))
+(test "путь" (pathname-directory "путь/файл.тек"))
+(test "файл.тек" (pathname-strip-directory "путь/файл.тек"))
+(test "путь/файл" (pathname-strip-extension "путь/файл.тек"))
+
+;; The replace-* family rebuilds the pathname around one decomposed component;
+;; a byte/codepoint mix-up shows up here as a truncated or mangled result.
+(test "é/éé.х" (pathname-replace-extension "é/éé.あああ" "х"))
+(test "😀/😀.тек" (pathname-replace-extension "😀/😀.😀" "тек"))
+(test "中/文.日本語" (pathname-replace-extension "中/文.txt" "日本語"))
+(test "é/х.あああ" (pathname-replace-file "é/éé.あああ" "х"))
+(test "😀/тек.😀" (pathname-replace-file "😀/😀.😀" "тек"))
+(test "путь/éé.あああ" (pathname-replace-directory "é/éé.あああ" "путь"))
+(test "中文/😀.😀" (pathname-replace-directory "😀/😀.😀" "中文"))
+
        (test "x/y/z.q" (make-pathname "x/y" "z" "q"))
        (test "x/y/z.q" (make-pathname "x/y" "z.q"))
        (test "x/y/z.q" (make-pathname "x/y/" "z.q"))
