@@ -1,6 +1,6 @@
 (import chicken.condition chicken.file chicken.file.posix
 	chicken.flonum chicken.format chicken.io chicken.port
-        chicken.bytevector
+        chicken.bytevector chicken.string
 	chicken.process chicken.process.signal chicken.tcp chicken.number-vector)
 
 (import (only (scheme base) input-port-open? output-port-open? open-input-string
@@ -457,6 +457,81 @@ EOF
 				  (lambda () (char-ready? p))
 				  (lambda () (close-input-port p)))))
 	(with-input-from-port p* f)))))
+
+;;; ##sys#scan-buffer-line: terminators at and across buffer boundaries.
+;;;
+;;; This is the scanner behind read-line for string ports (library.scm),
+;;; fd and process ports (posixunix.scm) and TCP ports (tcp.scm); the
+;;; buffered file ports go through fast_read_line_from_file in C instead,
+;;; so they do not exercise it.
+
+;; Bounded so that a scanner which fails to advance the port position
+;; produces a wrong answer instead of hanging the test run.
+(define (string-port-lines s) (read-lines (open-input-string s) 6))
+
+(define (fd-port-lines s)
+  (let ((file "scan-buffer-line-test"))
+    (with-output-to-file file (lambda () (display s)))
+    (let* ((p (open-input-file* (file-open file open/rdonly)))
+           (ls (read-lines p 6)))
+      (close-input-port p)
+      (delete-file* file)
+      ls)))
+
+(define (test-line-terminators what lines-of)
+  ;; The #568 arm of ##sys#scan-buffer-line handles a \r that is the last
+  ;; byte the scanner may look at, which is where a CRLF can be split by a
+  ;; refill.  Its EOF branch used to put the \r back into the line and
+  ;; return the caller's position unadvanced, so over "a\r" a string port
+  ;; answered "a\r" and then "\r" forever: read-lines never terminated.
+  ;; A bare \r at EOF is a terminator exactly like a bare \r anywhere else.
+  (test-equal (conc what ": trailing CR terminates the last line")
+              (lines-of "a\r") '("a"))
+  (test-equal (conc what ": a lone CR is one empty line")
+              (lines-of "\r") '(""))
+  (test-equal (conc what ": trailing CR after a CR")
+              (lines-of "a\r\r") '("a" ""))
+  (test-equal (conc what ": trailing CR after a CRLF")
+              (lines-of "a\r\n\r") '("a" ""))
+  (test-equal (conc what ": trailing CR after a LF")
+              (lines-of "a\n\r") '("a" ""))
+  (test-equal (conc what ": bare CR mid-stream")
+              (lines-of "a\rb") '("a" "b"))
+  (test-equal (conc what ": CRLF mid-stream")
+              (lines-of "a\r\nb") '("a" "b"))
+  (test-equal (conc what ": trailing CRLF")
+              (lines-of "a\r\n") '("a"))
+  (test-equal (conc what ": bare LF mid-stream")
+              (lines-of "a\nb") '("a" "b"))
+  (test-equal (conc what ": trailing LF")
+              (lines-of "a\n") '("a"))
+  (test-equal (conc what ": no terminator at EOF")
+              (lines-of "a") '("a"))
+  (test-equal (conc what ": empty input")
+              (lines-of "") '())
+  (test-equal (conc what ": CR, LF and CRLF mixed")
+              (lines-of "a\rb\nc\r\nd") '("a" "b" "c" "d"))
+  ;; Walk the terminator across the scanner's buffer boundaries: the
+  ;; interesting offsets are the ones where the refill splits a CRLF or
+  ;; leaves the CR as the very last readable byte.
+  (for-each
+   (lambda (n)
+     (let ((pad (make-string n #\x)))
+       (test-equal (conc what ": CR at offset " n)
+                   (lines-of (conc pad "\r")) (list pad))
+       (test-equal (conc what ": CRLF at offset " n)
+                   (lines-of (conc pad "\r\n")) (list pad))
+       (test-equal (conc what ": CRLF then more, at offset " n)
+                   (lines-of (conc pad "\r\ny")) (list pad "y"))
+       (test-equal (conc what ": CR then more, at offset " n)
+                   (lines-of (conc pad "\ry")) (list pad "y"))))
+   '(0 1 2 255 256 257 511 512 513 1023 1024 1025 2046 2047 2048 2049 4095 4096 4097)))
+
+(test-group "line terminators, string port"
+  (test-line-terminators "string port" string-port-lines))
+
+(test-group "line terminators, fd port"
+  (test-line-terminators "fd port" fd-port-lines))
 
 ;; Disabled because it requires `echo -n` for
 ;; the EOF test, and that is not available on all systems.

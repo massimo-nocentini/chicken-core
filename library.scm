@@ -5999,10 +5999,17 @@ EOF
                                  (begin
                                    (conc1 13)
                                    (loop buf offset offset limit)))
-                             ;; Restore \r here, too (when we reached EOF)
-                             (begin
-                               (conc1 13)
-                               (values offset (getline) #t)))))
+                             ;; No more input: the \r we did not copy was
+                             ;; the whole terminator, exactly as in the
+                             ;; bare-\r arm just below, so drop it from the
+                             ;; line and step over it.  Restoring it (conc1
+                             ;; 13) put a \r into the returned line that no
+                             ;; other arm produces, and returning `offset'
+                             ;; unadvanced left the caller's position pinned
+                             ;; on the \r: (read-line) over "a\r" answered
+                             ;; "a\r" and then "\r" forever instead of
+                             ;; "a" and #!eof.
+                             (values (fx+ offset 1) (getline) #t))))
                       ((eq? c 13)
                        (conc buf offset pos)
                        (values (fx+ pos 1) (getline) #t))
