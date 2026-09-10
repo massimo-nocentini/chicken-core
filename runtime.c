@@ -3903,7 +3903,24 @@ static C_regparm void really_mark(C_word *x, C_byte *tgt_space_start, C_byte **t
   *x = (C_word)p2;
   p2->header = h;
   p->header = ptr_to_fptr((C_uword)p2);
-  C_memcpy(p2->data, p->data, bytes);
+  /* Nearly everything the GC copies is tiny -- pairs, closures, flonums,
+   * two-slot structures -- and for those the call to C_memcpy costs more
+   * than the copy.  Word blocks of up to four slots are copied inline.
+   * Byte blocks are excluded because their size is not a whole number of
+   * words, so "bytes" is not n * sizeof(C_word) for them.
+   */
+  if (!(h & C_BYTEBLOCK_BIT) && n <= 4) {
+    C_word *dst = p2->data, *src = p->data;
+    switch(n) {
+    case 4: dst[3] = src[3]; /* fall through */
+    case 3: dst[2] = src[2]; /* fall through */
+    case 2: dst[1] = src[1]; /* fall through */
+    case 1: dst[0] = src[0]; /* fall through */
+    default: break;
+    }
+  } else {
+    C_memcpy(p2->data, p->data, bytes);
+  }
   if (h == C_WEAK_PAIR_TAG && !C_immediatep(p2->data[0])) {
     p->data[0] = weak_pair_chain; /* "Recycle" the weak pair's CAR to point to prev head */
     weak_pair_chain = (C_word)p;  /* Make this fwd ptr the new head of the weak pair chain */
