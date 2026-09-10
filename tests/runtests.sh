@@ -426,6 +426,11 @@ $interpret -s bytevector-guard-tests.scm
 $compile bytevector-guard-tests.scm
 ./a.out
 
+echo "======================================== utf compare tests ..."
+$interpret -s utf-compare-tests.scm
+$compile utf-compare-tests.scm
+./a.out
+
 echo "======================================== condition tests ..."
 $interpret -s condition-tests.scm
 
