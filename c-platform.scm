@@ -186,7 +186,7 @@
     chicken.bitwise#arithmetic-shift chicken.bitwise#bit->boolean
 
     chicken.bytevector#bytevector-length chicken.bytevector#bytevector=?
-    chicken.bytevector#bytevector?
+    chicken.bytevector#bytevector? chicken.bytevector#bytevector-u8-ref
 
     chicken.keyword#get-keyword
 
@@ -1081,6 +1081,10 @@
 (rewrite 'chicken.bytevector#bytevector-length 2 1 "C_block_size" #f)
 
 ;; TODO: Move this stuff to types.db
+(rewrite 'chicken.bytevector#bytevector-u8-ref 2 2 "C_u_i_bytevector_ref" #f)
+(rewrite 'chicken.bytevector#bytevector-u8-ref 2 2 "C_i_bytevector_ref" #t)
+(rewrite 'chicken.number-vector#u8vector-ref 2 2 "C_u_i_u8vector_ref" #f)
+(rewrite 'chicken.number-vector#u8vector-ref 2 2 "C_i_u8vector_ref" #t)
 (rewrite 'chicken.number-vector#s8vector-ref 2 2 "C_u_i_s8vector_ref" #f)
 (rewrite 'chicken.number-vector#s8vector-ref 2 2 "C_i_s8vector_ref" #t)
 (rewrite 'chicken.number-vector#u16vector-ref 2 2 "C_u_i_u16vector_ref" #f)

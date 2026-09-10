@@ -1469,6 +1469,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 
 #define C_u_i_bytevector_ref(x, i)      C_fix(((unsigned char *)C_data_pointer(x))[ C_unfix(i) ])
 #define C_u_i_u8vector_ref              C_u_i_bytevector_ref
+#define C_i_u8vector_ref                C_i_bytevector_ref
 #define C_u_i_s8vector_ref(x, i)        C_fix(((signed char *)C_data_pointer(C_block_item((x), 1)))[ C_unfix(i) ])
 #define C_u_i_u16vector_ref(x, i)       C_fix(((unsigned short *)C_data_pointer(C_block_item((x), 1)))[ C_unfix(i) ])
 #define C_u_i_s16vector_ref(x, i)       C_fix(((short *)C_data_pointer(C_block_item((x), 1)))[ C_unfix(i) ])
