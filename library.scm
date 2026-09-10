@@ -3558,9 +3558,19 @@ EOF
     ;; below.  This deliberately turns garbage-or-crash into a raised
     ;; condition.
     (##sys#check-range/including start 0 to 'utf8->string)
-    (if (not (##core#inline "C_utf_validate" bv n start to))
-        (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
-    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
+    ;; C_utf_validate does not merely say yes or no: it returns the number
+    ;; of codepoints it decoded.  Handing the same bytes to
+    ;; ##sys#buffer->string threw that away and walked them a second time
+    ;; through C_utf_range_length -> C_utf_count, so every call decoded its
+    ;; input twice.  Copy the range and label it with the count validate
+    ;; already produced instead.
+    (let ((count (##core#inline "C_utf_validate" bv n start to)))
+      (if (not count)
+          (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
+      (let* ((len (##core#inline "C_fixnum_difference" to start))
+             (dest (##sys#make-bytevector (##core#inline "C_fixnum_plus" len 1))))
+        (##core#inline "C_copy_memory_with_offset" dest bv 0 start len)
+        (##core#inline_allocate ("C_a_ustring" 5) dest count)))))
 
 (define (bytes->string bv #!optional (start 0) end)
   (##sys#check-bytevector bv 'bytes->string)

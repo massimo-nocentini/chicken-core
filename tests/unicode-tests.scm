@@ -134,6 +134,33 @@
 (test-equal "utf8->string still decodes a sub-range of multi-byte input"
             (utf8->string #u8(65 228 184 173 66) 1 4) "\x4e2d;")
 
+;; utf8->string now labels the copied bytes with the codepoint count that
+;; C_utf_validate already computed, instead of rescanning them through
+;; C_utf_range_length.  Pin that count down for every sequence length, for
+;; sub-ranges, and for the empty range.
+(test-equal "utf8->string counts 1-byte sequences"
+            (string-length (utf8->string #u8(65 66 67))) 3)
+(test-equal "utf8->string counts 2-byte sequences"
+            (string-length (utf8->string #u8(195 169 195 168))) 2)
+(test-equal "utf8->string counts 3-byte sequences"
+            (string-length (utf8->string #u8(228 184 173 230 150 135))) 2)
+(test-equal "utf8->string counts 4-byte sequences"
+            (string-length (utf8->string #u8(240 159 152 128))) 1)
+(test-equal "utf8->string counts mixed sequence lengths"
+            (string-length (utf8->string #u8(65 195 169 228 184 173 240 159 152 128))) 4)
+(test-equal "utf8->string counts a sub-range"
+            (string-length (utf8->string #u8(65 195 169 228 184 173 240 159 152 128) 1 6)) 2)
+(test-equal "utf8->string counts an empty sub-range"
+            (string-length (utf8->string #u8(65 66 67) 1 1)) 0)
+(test-equal "utf8->string counts an empty bytevector"
+            (string-length (utf8->string #u8())) 0)
+(test-equal "utf8->string round-trips 2000 4-byte characters"
+            (utf8->string (string->utf8 (make-string 2000 (integer->char #x1f600))))
+            (make-string 2000 (integer->char #x1f600)))
+(test-equal "utf8->string round-trips a long ASCII string"
+            (utf8->string (string->utf8 (make-string 20000 #\z)))
+            (make-string 20000 #\z))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; case conversion buffer sizing
 
