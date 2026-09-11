@@ -2417,21 +2417,30 @@ terminator. A finding from reading, refuted by running.
 
 #### Performance, all of it scalar
 
-Numbers below are re-measured against a `c25e3ce0` worktree built with the same
-flags, not inherited from the agent that wrote the patch — three of the original
-claims did not survive that.
+**The aggregate first, because it is the number that frames the rest.** On a
+compiler self-compile — `chicken core.scm` with the real `make` flags, six
+interleaved A/B pairs against a `c25e3ce0` worktree built identically — this is
+worth **+2.5%**: 2.053 s → 2.003 s, with the branch faster in 6 of 6 pairs.
+That is the whole of it on the workload that best represents CHICKEN. Everything
+in the table below is a win on one specific operation, and most programs touch
+few of them. A reader who takes "18.8×" away from this section and not "+2.5%"
+has taken away the wrong thing.
 
-| change | measured here |
-|---|---|
-| `bytevector-u8-ref` / `u8vector-ref` rewrite rules (`c-platform.scm`) | 4.5× safe, 18.8× `-unsafe` on a byte loop |
-| Wide bignum division (`__int128`, Möller–Granlund reciprocal) | `quotient` **3.94×**, `remainder` **4.19×** |
-| Wide bignum multiply | **2.42×** |
-| A modular-exponentiation loop | **3.47×** |
-| `utf8->string` single-pass | 1.84–1.90× |
-| `C_utf_count` decode-free | ASCII `read-line` **1.67×**, non-ASCII **1.25×**, `symbol->string` **1.76×** |
-| `C_utf_compare` ASCII fast path | 1.4–1.5× on `(sort … string<?)`; 0.99× worst case |
-| `C_utf_range` memo restore | **2.0×**, flat |
-| `really_mark` inline small-block copy | gcc self-compile +2.4–3.7%; clang neutral |
+| change | gain | measured by |
+|---|---|---|
+| Wide bignum division (`__int128`, Möller–Granlund reciprocal) | `quotient` **3.94×**, `remainder` **4.19×** | re-measured here |
+| A modular-exponentiation loop | **3.47×** | re-measured here |
+| Wide bignum multiply | **2.42×** | re-measured here |
+| `C_utf_range` memo restore | **2.0×**, flat | re-measured here |
+| `C_utf_count` decode-free | `symbol->string` **1.76×**, ASCII `read-line` **1.67×**, non-ASCII **1.25×** | re-measured here |
+| `bytevector-u8-ref` / `u8vector-ref` rewrite rules (`c-platform.scm`) | 4.5× safe, 18.8× `-unsafe` on a byte loop | patch author; rule verified to fire, timing not re-run |
+| `utf8->string` single-pass | 1.84–1.90× | patch author |
+| `C_utf_compare` ASCII fast path | 1.4–1.5× on `(sort … string<?)`; 0.99× worst case | patch author |
+| `really_mark` inline small-block copy | gcc self-compile +2.4–3.7%; clang neutral | patch author and reviewer, independently |
+
+The provenance column is not decoration. Of the claims that *were* independently
+re-measured, three came back materially different (below), so a number in this
+table carrying only its author's word should be read as provisional.
 
 The four accessor rewrite lines are the largest multiplier found anywhere in the
 survey, SIMD included. `u8vector-ref` was the only numeric-vector getter without
@@ -2459,6 +2468,42 @@ benchmark that produced it: on this machine drift between consecutive blocks of
 runs exceeds most of these effects, so anything under ~5% has to be measured by
 interleaving A and B rather than running all of A then all of B. One such pair
 showed a spurious 2.5% regression that interleaving made vanish.
+
+#### Scope and cost
+
+Twenty commits, 16 files, +1919/−220, which splits as:
+
+| | files | added | removed |
+|---|---:|---:|---:|
+| source (`c-platform.scm`, `chicken.h`, `library.scm`, `runtime.c`, `utf.c`) | 5 | 534 | 34 |
+| tests | 9 | 1060 | 7 |
+| docs (`NEWS`, this file) | 2 | 325 | 179 |
+
+Twice as much test as source, which is the right ratio for a change set that is
+mostly memory-safety fixes in string and port code.
+
+What it does **not** cost, and this is the point of §9.5 being a negative
+result: **zero SIMD intrinsics, zero ISA dispatch, zero CPU feature detection,
+zero `configure` or `chicken-config.h` change, zero change to any of the twelve
+`Makefile.<platform>` files, and no new link dependency.** The only conditional
+compilation added anywhere is fifteen directives, all of them guarding one
+feature test:
+
+```c
+#if defined(__SIZEOF_INT128__) && (C_BIGNUM_DIGIT_LENGTH == 64)
+```
+
+with the previous half-digit code retained, still compiled, as the `#else`. A
+build whose compiler has no 128-bit integer type gets exactly what it got
+before. (The four mentions of `_mm256_*`, `immintrin.h` and `target_clones` in
+this diff are all prose in §9.5, describing what was rejected; there are none in
+any `.c`, `.h` or `.scm`.)
+
+Verified building clean and passing `make check` under **both** clang 18.1.3 and
+gcc 13.3.0, which matters more than usual here: §9.5 records that the SLP
+vectorization the `ca7cc4fa` kernels rely on is clang's alone, so "it builds"
+and "it builds under the compiler distributions actually use" are different
+claims and both were checked.
 
 #### What was deliberately not done
 
