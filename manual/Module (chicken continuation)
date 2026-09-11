@@ -54,6 +54,61 @@ be implemented like this:
 </enscript>
 
 
+=== Delimited continuations
+
+{{shift}} and {{reset}} are Danvy and Filinski's delimited control
+operators, described in
+[[https://doi.org/10.1145/91556.91622|Abstracting Control]].
+Unlike {{call/cc}}, which captures the whole rest of the computation,
+{{shift}} captures only the part of it that is enclosed by a {{reset}},
+and hands it over as an ordinary procedure that ''returns'' a value to
+its caller, so that it composes.
+
+==== reset
+
+<macro>(reset BODY ...)</macro>
+
+Evaluates {{BODY}} with a delimiter installed around it. The value of the
+{{reset}} expression is the value of {{BODY}}, unless a {{shift}} in its
+dynamic extent returns some other value to the delimiter.
+
+==== shift
+
+<macro>(shift VARIABLE BODY ...)</macro>
+
+Captures the continuation of the {{shift}} expression up to, but not
+including, the nearest enclosing {{reset}}, binds {{VARIABLE}} to it as a
+one-argument procedure, and evaluates {{BODY}} with the {{reset}} itself
+as its continuation. Calling the captured procedure runs the captured
+piece of computation and ''returns'' its value, so it can be called zero,
+one or many times, and its results composed:
+
+<enscript highlight=scheme>
+(+ 1 (reset (+ 2 (shift f (f (f 3))))))    ; => 8
+(reset (+ 1 (shift f 10)))                 ; => 10
+(reset (begin (shift k (cons 1 (k #f)))
+              (shift k (cons 2 (k #f)))
+              '()))                        ; => (1 2)
+</enscript>
+
+The delimiter is the innermost {{reset}} on the ''dynamic'' extent, not
+the lexically enclosing one, so a procedure containing a {{shift}} is
+delimited by whatever {{reset}} its caller has installed. It is an error
+to evaluate a {{shift}} with no enclosing {{reset}}.
+
+Leaving a delimited segment runs the {{after}} thunks of any
+{{dynamic-wind}} between the {{shift}} and its delimiter, and resuming
+one runs the corresponding {{before}} thunks again, so a segment that is
+resumed twice is wound twice.
+
+Two things are worth knowing about the implementation. First, the
+compiler recognises {{shift}} and {{reset}} and compiles them directly
+through its CPS conversion, which is where the continuation they need
+already exists; capturing it costs nothing at run time. Interpreted code
+uses equivalent library procedures and interoperates with compiled code.
+Second, a delimiter passes exactly one value, so {{(reset (values 1 2))}}
+yields {{1}}.
+
 ----
 Previous: [[Module (chicken condition)]]
 

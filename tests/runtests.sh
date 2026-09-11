@@ -229,6 +229,18 @@ $compile dwindtst.scm
 ./a.out >dwindtst.out
 diff $DIFF_OPTS dwindtst.expected dwindtst.out
 
+echo "======================================== delimited continuation tests ..."
+# The test is self-checking, but run it both ways and diff: interpreted, every
+# shift/reset goes through the library procedures in library.scm; compiled, the
+# CPS pass emits the rewriting rules directly.  The two must agree exactly.
+$interpret -s delimited-continuation-tests.scm >delimcc.out
+$compile delimited-continuation-tests.scm
+./a.out >delimcc-compiled.out
+diff $DIFF_OPTS delimcc.out delimcc-compiled.out
+$compile -O3 delimited-continuation-tests.scm
+./a.out >delimcc-compiled.out
+diff $DIFF_OPTS delimcc.out delimcc-compiled.out
+
 echo "======================================== lolevel tests ..."
 $interpret -s lolevel-tests.scm
 $compile -specialize lolevel-tests.scm

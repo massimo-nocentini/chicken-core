@@ -267,7 +267,8 @@ EOF
     (##sys#setslot buf 2 ##sys#standard-output)
     (##sys#setslot buf 3 ##sys#standard-error)
     (##sys#setslot buf 4 ##sys#current-exception-handler)
-    (##sys#setslot buf 5 ##sys#current-parameter-vector) ) )
+    (##sys#setslot buf 5 ##sys#current-parameter-vector)
+    (##sys#setslot buf 6 ##sys#dc-stack) ) )
 
 (define (##sys#restore-thread-state-buffer thread)
   (let ([buf (##sys#slot thread 5)])
@@ -276,7 +277,8 @@ EOF
     (set! ##sys#standard-output (##sys#slot buf 2))
     (set! ##sys#standard-error (##sys#slot buf 3)) 
     (set! ##sys#current-exception-handler (##sys#slot buf 4))
-    (set! ##sys#current-parameter-vector (##sys#slot buf 5)) ) )
+    (set! ##sys#current-parameter-vector (##sys#slot buf 5))
+    (set! ##sys#dc-stack (##sys#slot buf 6)) ) )
 
 (set! ##sys#interrupt-hook
   (let ([oldhook ##sys#interrupt-hook])

@@ -1979,7 +1979,9 @@
 	((##core#inline ##core#inline_allocate ##core#inline_ref ##core#inline_update ##core#inline_loc_ref
 			##core#inline_loc_update ##core#debug-event)
 	 (walk-inline-call class params subs k) )
-	((##core#call) (walk-call (car subs) (cdr subs) params k))
+	((##core#call)
+	 (or (walk-dc-call (car subs) (cdr subs) k)
+	     (walk-call (car subs) (cdr subs) params k)))
 	((##core#callunit)
 	 (let ((unit (first params)))
 	   (if (memq unit called-units)
@@ -2017,6 +2019,167 @@
 			(list (k (varnode t3))) )
 	     (make-node '##core#callunit (list unitname)
 			(list (varnode t0)) ) ) ) ) )
+
+  ;;; Delimited control: `shift' and `reset'
+  ;;
+  ;; The surface syntax in continuation.scm expands to
+  ;;
+  ;;    (##sys#reset (lambda ()  BODY))
+  ;;    (##sys#shift (lambda (F) BODY))
+  ;;
+  ;; and those two shapes are compiled here into Danvy and Filinski's rules
+  ;;
+  ;;    (reset E)   = (lambda (c) (c (E (lambda (v) v))))
+  ;;    (shift f E) = (lambda (c)
+  ;;                    (let ((f (lambda (x) (lambda (c2) (c2 (c x))))))
+  ;;                      (E (lambda (v) v))))
+  ;;
+  ;; Doing it here is what makes it cheap: this pass is already building the
+  ;; continuation of every expression it walks, so `c' is just the `k' in
+  ;; hand, reified exactly the way `walk-call' reifies the continuation of a
+  ;; call.  Nothing is captured at run time.
+  ;;
+  ;; The one part of rules 4 and 5 that cannot be written here is the
+  ;; meta-level "(E (lambda (v) v))": it has to RETURN a value, and compiled
+  ;; CHICKEN code never returns.  That identity continuation is therefore
+  ;; realised as "pop the metacontinuation and invoke what was there" -
+  ;; ##sys#dc-abort in library.scm, which is also where the dynamic-wind and
+  ;; per-thread bookkeeping lives, rather than inlined into every delimiter.
+  ;; Anything this matcher does not recognise falls through to `walk-call'
+  ;; and reaches the equivalent library procedures, which agree with the
+  ;; code emitted here.
+
+  (define (dc-strip-the n)
+    (if (memq (node-class n) '(##core#the ##core#the/result))
+	(dc-strip-the (car (node-subexpressions n)))
+	n))
+
+  ;; Match `(NAME (lambda <NARGS arguments> BODY))' and return the lambda.
+  (define (dc-match fn args name nargs)
+    (and (eq? '##core#variable (node-class fn))
+	 (eq? name (first (node-parameters fn)))
+	 (intrinsic? name)
+	 (pair? args)
+	 (null? (cdr args))
+	 (let ((lam (dc-strip-the (car args))))
+	   (and (memq (node-class lam) '(lambda ##core#lambda))
+		(let ((llist (first (node-parameters lam))))
+		  (and (list? llist)
+		       (= nargs (length llist))
+		       lam))))))
+
+  ;; Reify the meta-continuation KK as an ordinary one-argument procedure:
+  ;; mode #t, so its first parameter is its own continuation, which it
+  ;; ignores - which is precisely what runtime.c's `call_cc_wrapper' does.
+  ;; It must be an ordinary procedure and not a raw continuation, because
+  ;; library.scm stores it on ##sys#dc-stack and applies it, and because the
+  ;; fallback path pushes call/cc's wrapper, which is one of these.
+  (define (dc-reify kk)
+    (let ((kd (gensym 'k))
+	  (r (gensym 'r)))
+      (make-node '##core#lambda (list (gensym-f-id) #t (list kd r) 0)
+		 (list (kk (varnode r))))))
+
+  ;; "(lambda (v) v)": give the value to the innermost delimiter.
+  ;;
+  ;; ##sys#dc-abort never returns, but a call node still needs a continuation
+  ;; argument and a continuation lambda has none of its own to give.  DEADK
+  ;; names one that is in scope at every abort site by construction - the
+  ;; reified `c' - and is a real closure rather than a placeholder, so the
+  ;; node graph stays well formed for every later pass.  It is not invoked:
+  ;; the frame ##sys#dc-abort pops ignores its continuation slot, exactly as
+  ;; runtime.c's `call_cc_wrapper' does.
+  (define (dc-abort-k deadk)
+    (lambda (r)
+      (let ((v (gensym 'v)))
+	(make-node
+	 'let (list v)
+	 (list r
+	       (make-node '##core#call (list #t)
+			  (list (varnode '##sys#dc-abort)
+				(varnode deadk)
+				(varnode v))))))))
+
+  ;; (reset E) = (lambda (c) (c (E (lambda (v) v))))
+  ;;
+  ;;    (let ((c <k reified>))
+  ;;      (##sys#dc-push! c)
+  ;;      <E, with the abort above as its continuation>)
+  (define (walk-reset lam k)
+    (let ((c (gensym 'dc))
+	  (d (gensym 'r)))
+      (make-node
+       'let (list c)
+       (list (dc-reify k)
+	     (make-node
+	      '##core#call (list #t)
+	      (list (varnode '##sys#dc-push!)
+		    (make-node '##core#lambda
+			       (list (gensym-f-id) #f (list d) 0)
+			       (list (walk (car (node-subexpressions lam))
+					   (dc-abort-k c))))
+		    (varnode c)))))))
+
+  ;; (shift f E) = (lambda (c)
+  ;;                 (let ((f (lambda (x) (lambda (c2) (c2 (c x))))))
+  ;;                   (E (lambda (v) v))))
+  ;;
+  ;;    (let ((c <k reified>))                  ; the delimited segment
+  ;;      (##sys#dc-shift-enter)                ; leave it, keeping its winds
+  ;;      (let ((f (lambda (k2 x)               ; k2 is rule 5's c2
+  ;;                 (##sys#dc-resume <k2 reified> c x w))))
+  ;;        <E, with the abort above as its continuation>))
+  (define (walk-shift lam k)
+    (let ((fvar (first (first (node-parameters lam))))
+	  (body (car (node-subexpressions lam)))
+	  (c (gensym 'dc))
+	  (w (gensym 'dcw))
+	  (k2 (gensym 'k))
+	  (x (gensym 'x))
+	  (k2p (gensym 'dc)))
+      (make-node
+       'let (list c)
+       (list
+	(dc-reify k)
+	(make-node
+	 '##core#call (list #t)
+	 (list
+	  (varnode '##sys#dc-shift-enter)
+	  (make-node
+	   '##core#lambda (list (gensym-f-id) #f (list w) 0)
+	   (list
+	    (make-node
+	     'let (list fvar)
+	     (list
+	      (make-node
+	       '##core#lambda (list (gensym-f-id) #t (list k2 x) 0)
+	       (list
+		(make-node
+		 'let (list k2p)
+		 (list
+		  (dc-reify
+		   (lambda (r)
+		     (make-node '##core#call (list #t)
+				(list (varnode k2) r))))
+		  ;; k2 is passed as ##sys#dc-resume's continuation only
+		  ;; because a call node needs one; dc-resume never returns.
+		  (make-node '##core#call (list #t)
+			     (list (varnode '##sys#dc-resume)
+				   (varnode k2)
+				   (varnode k2p)
+				   (varnode c)
+				   (varnode x)
+				   (varnode w)))))))
+	      (walk body (dc-abort-k c))))))))))))
+
+  ;; Returns a node, or #f when this is not a delimited-control form.
+  (define (walk-dc-call fn args k)
+    (let ((fn (dc-strip-the fn)))
+      (cond ((dc-match fn args '##sys#reset 0)
+	     => (lambda (lam) (walk-reset lam k)))
+	    ((dc-match fn args '##sys#shift 1)
+	     => (lambda (lam) (walk-shift lam k)))
+	    (else #f))))
 
   (define (walk-inline-call class op args k)
     (walk-arguments

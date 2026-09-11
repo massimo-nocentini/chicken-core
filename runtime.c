@@ -411,6 +411,7 @@ static C_word
   error_hook_symbol,
   pending_finalizers_symbol,
   callback_continuation_stack_symbol,
+  dc_stack_symbol,
   core_provided_symbol,
   s8vector_symbol,
   u16vector_symbol,
@@ -1120,6 +1121,7 @@ void initialize_symbol_table(void)
   interrupt_hook_symbol = C_intern2(C_heaptop, C_text("##sys#interrupt-hook"));
   error_hook_symbol = C_intern2(C_heaptop, C_text("##sys#error-hook"));
   callback_continuation_stack_symbol = C_intern3(C_heaptop, C_text("##sys#callback-continuation-stack"), C_SCHEME_END_OF_LIST);
+  dc_stack_symbol = C_intern3(C_heaptop, C_text("##sys#dc-stack"), C_SCHEME_END_OF_LIST);
   pending_finalizers_symbol = C_intern2(C_heaptop, C_text("##sys#pending-finalizers"));
   current_thread_symbol = C_intern3(C_heaptop, C_text("##sys#current-thread"), C_SCHEME_FALSE);
 
@@ -3779,6 +3781,7 @@ static C_regparm void mark_live_heap_only_objects(C_byte *tgt_space_start, C_byt
   mark(&interrupt_hook_symbol);
   mark(&error_hook_symbol);
   mark(&callback_continuation_stack_symbol);
+  mark(&dc_stack_symbol);
   mark(&pending_finalizers_symbol);
   mark(&current_thread_symbol);
 
@@ -7770,6 +7773,14 @@ void C_ccall C_continuation_graft(C_word c, C_word *av)
     /* k = av[ 1 ] */
     kk = av[ 2 ],
     proc = av[ 3 ];
+
+  /* Restore the metacontinuation the continuation was captured under, so
+     that escaping the body of a `reset' this way leaves it balanced.  It
+     is done here rather than in `continuation-graft' because a compiled
+     call to that is rewritten straight to this primitive (see the rewrite
+     in c-platform.scm), which would otherwise bypass it. */
+  if(C_header_size(kk) > 3)
+    C_mutate(&C_block_item(dc_stack_symbol, 0), C_block_item(kk, 3));
 
   av[ 0 ] = proc;               /* reuse av */
   av[ 1 ] = C_block_item(kk, 1);

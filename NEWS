@@ -51,6 +51,26 @@
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
 
+- Core libraries
+  - `chicken.continuation' now exports the delimited control operators
+    `shift' and `reset' (Danvy and Filinski).  `shift' captures the
+    continuation up to the nearest enclosing `reset' and hands it over as
+    an ordinary procedure that returns a value to its caller, so it
+    composes and may be resumed zero, one or many times.  Leaving a
+    delimited segment runs the `after' thunks of any enclosed
+    `dynamic-wind', and resuming one runs the `before' thunks again.  Note
+    that a delimiter passes a single value: `(reset (values 1 2))' is 1.
+  - The per-thread state buffer has grown a seventh slot, holding the
+    metacontinuation stack.  Code that constructs such a buffer itself,
+    rather than through `##sys#make-thread', must be updated.
+  - `continuation-capture' now records the metacontinuation in the
+    continuation object it hands out, and `continuation-graft' and
+    `continuation-return' restore it, so escaping the body of a `reset'
+    through them leaves the metacontinuation balanced.  The restore is done
+    in `C_continuation_graft' itself, because a compiled call to
+    `continuation-graft' is rewritten straight to that primitive.  The
+    `continuation' structure therefore has a fourth slot.
+
 - Tools
   - Added new global egg property "custom-build" which allows completely
     overriding the build instructions for an egg.
@@ -58,6 +78,11 @@
 - Compiler
   - Added missing option "-merge-reusable-closures" at optimization level
     2, making this actually match the documentation.
+  - `shift' and `reset' are compiled directly by the CPS conversion pass,
+    which already has the continuation they need in hand, so capturing a
+    delimited continuation costs no run-time capture at all.  Uses the
+    pass does not recognise fall back to equivalent library procedures,
+    which is also what the interpreter uses; the two interoperate.
   - `bytevector-u8-ref' and `u8vector-ref' are now open-coded like the
     other numeric-vector accessors.  They were the only getters without a
     rewrite rule, so every byte read compiled to an out-of-line call plus a

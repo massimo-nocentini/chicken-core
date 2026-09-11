@@ -34,16 +34,47 @@
   (continuation?
    continuation-capture
    continuation-graft
-   continuation-return)
+   continuation-return
+   reset
+   shift)
 
 (import scheme chicken.base chicken.fixnum)
 
 (include "common-declarations.scm")
 
+;;; Delimited continuations.
+;
+; (reset E)   delimits E: the value of E is the value of the `reset'.
+; (shift F E) captures the continuation of the `shift' up to - and not
+;             including - the nearest enclosing `reset', binds F to it as
+;             an ordinary one-argument procedure, and evaluates E with the
+;             `reset' itself as its continuation.
+;
+; These expand to the calls that `perform-cps-conversion' (core.scm)
+; recognises and compiles into Danvy and Filinski's rules
+;
+;   (reset E)   = (lambda (c) (c (E (lambda (v) v))))
+;   (shift f E) = (lambda (c)
+;                   (let ((f (lambda (x) (lambda (c2) (c2 (c x))))))
+;                     (E (lambda (v) v))))
+;
+; directly, reifying `c' from the continuation the CPS pass already holds.
+; Interpreted code, and any use the compiler's pattern match does not
+; recognise, reaches the equivalent library procedures in library.scm.
+
+(define-syntax reset
+  (syntax-rules ()
+    ((_ body ...) (##sys#reset (lambda () body ...)))))
+
+(define-syntax shift
+  (syntax-rules ()
+    ((_ var body ...) (##sys#shift (lambda (var) body ...)))))
+
 (define (continuation-capture proc)
   (let ((winds ##sys#dynamic-winds)
+	(dcs ##sys#dc-stack)
 	(k (##core#inline "C_direct_continuation" #f)))
-    (proc (##sys#make-structure 'continuation k winds))))
+    (proc (##sys#make-structure 'continuation k winds dcs))))
 
 (define (continuation? x)
   (##sys#structure? x 'continuation))
@@ -53,6 +84,9 @@
   (let ([winds (##sys#slot k 2)])
     (unless (eq? ##sys#dynamic-winds winds)
       (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))))
+    ;; the metacontinuation stored in slot 3 is restored by
+    ;; C_continuation_graft itself, because a compiled call to this
+    ;; procedure is rewritten straight to that primitive
     ((##core#primitive "C_continuation_graft") k thunk)))
 
 (define continuation-return

@@ -58,7 +58,7 @@
 (define default-declarations
   '((always-bound
      ##sys#standard-input ##sys#standard-output ##sys#standard-error
-     ##sys#undefined-value)
+     ##sys#undefined-value ##sys#dc-stack)
     (bound-to-procedure
      ##sys#for-each ##sys#map ##sys#print ##sys#setter
      ##sys#setslot ##sys#dynamic-wind ##sys#call-with-values
@@ -69,7 +69,9 @@
      ##sys#peek-and-free-c-string ##sys#peek-and-free-nonnull-c-string
      ##sys#foreign-block-argument ##sys#foreign-string-argument
      ##sys#foreign-symbol-argument
-     ##sys#foreign-pointer-argument ##sys#call-with-current-continuation)))
+     ##sys#foreign-pointer-argument ##sys#call-with-current-continuation
+     ##sys#reset ##sys#shift
+     ##sys#dc-push! ##sys#dc-abort ##sys#dc-shift-enter ##sys#dc-resume)))
 
 (define default-profiling-declarations
   '((##core#declare
@@ -285,7 +287,11 @@
     ##sys#foreign-symbol-argument ##sys#buffer->string!
     ##sys#symbol->string/shared ##sys#buffer->string ##sys#string->symbol-name
     ##sys#bytevector->list ##sys#list->bytevector ##sys#make-bytevector
-    ##sys#file-exists? ##sys#substring-index ##sys#substring-index-ci ##sys#lcm ##sys#gcd))
+    ##sys#file-exists? ##sys#substring-index ##sys#substring-index-ci ##sys#lcm ##sys#gcd
+    ;; `perform-cps-conversion' recognises calls to these two and compiles
+    ;; the delimited-control rules directly; marking them intrinsic is what
+    ;; tells it the names still mean what library.scm says they mean.
+    ##sys#reset ##sys#shift))
 
 (for-each
  (cut mark-variable <> '##compiler#pure '#t)

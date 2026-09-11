@@ -4034,6 +4034,8 @@ EOF
 
 (define ##sys#dynamic-winds '())
 
+(define ##sys#dc-stack '())		; metacontinuation; see "Delimited continuations" below
+
 (set! scheme#dynamic-wind
   (lambda (before thunk after)
     (before)
@@ -4049,12 +4051,14 @@ EOF
 
 (set! scheme#call-with-current-continuation
   (lambda (proc)
-    (let ((winds ##sys#dynamic-winds))
+    (let ((winds ##sys#dynamic-winds)
+	  (dcs ##sys#dc-stack))
       (##sys#call-with-current-continuation
        (lambda (cont)
 	 (define (continuation . results)
 	   (unless (eq? ##sys#dynamic-winds winds)
 	     (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))) )
+	   (set! ##sys#dc-stack dcs)
 	   (apply cont results) )
 	 (proc continuation) ))) ))
 
@@ -4071,6 +4075,126 @@ EOF
 	   (set! ##sys#dynamic-winds (##sys#slot ##sys#dynamic-winds 1))
 	   (after)
 	   (##sys#dynamic-unwind winds (fx- n 1)) ) ] ) )
+
+
+;;; Delimited continuations (Danvy/Filinski `shift' and `reset'):
+;
+; ##sys#dc-stack is the metacontinuation: a list of frames
+;
+;     ( <k> . <winds> )
+;
+; <k> is an ordinary ONE-ARGUMENT procedure that never returns.  It is
+; either a continuation reified by the compiler's CPS conversion (see
+; `walk-reset' and `walk-shift' in core.scm, which emit the Danvy/Filinski
+; rules directly) or one obtained below from the raw
+; ##sys#call-with-current-continuation primitive.  Both obey the ordinary
+; procedure calling convention, which is what lets compiled code that took
+; the direct path and code that went through the fallback procedures share
+; a single stack.
+;
+; <winds> is ##sys#dynamic-winds as it was when the frame was pushed - the
+; delimiter's own wind context.  A captured segment records only what lies
+; ABOVE that, so leaving and re-entering it runs the "after" and "before"
+; thunks of the `dynamic-wind's it encloses, and touches nothing outside.
+;
+; Popping a frame and invoking its <k> is what realises the meta-level
+; "(E (lambda (v) v))" of the rewriting rules: it is the only operation
+; that can give a value back to a delimiter.
+;
+; The stack is part of the per-thread state buffer (scheduler.scm) and is
+; saved and restored by `call-with-current-continuation' above, so that a
+; non-local exit out of a `reset' body leaves it balanced.
+
+; Unwind ##sys#dynamic-winds down to BASE - which must be a tail of it -
+; running the "after" thunk of every frame left behind, innermost first.
+; The list is re-read on each step because a thunk may itself wind.
+(define (##sys#dc-unwind-to base)
+  (let loop ()
+    (let ((ws ##sys#dynamic-winds))
+      (unless (eq? ws base)
+	(if (eq? ws '())
+	    (##sys#error
+	     "delimited continuation left the dynamic extent of its delimiter")
+	    (begin
+	      (set! ##sys#dynamic-winds (##sys#slot ws 1))
+	      ((##sys#slot (##sys#slot ws 0) 1))
+	      (loop)))))))
+
+; The frames of WS above BASE, in the same innermost-first order.  This is
+; the dynamic-wind context a delimited continuation carries: the part
+; BETWEEN the `shift' and its delimiter, and nothing else.  Recording the
+; whole of ##sys#dynamic-winds instead would drag in frames outside the
+; `reset', and would tear down the frames of whatever context the segment
+; is later resumed in.
+(define (##sys#dc-segment ws base)
+  (cond ((eq? ws base) '())
+	((eq? ws '())
+	 (##sys#error "`shift' is not inside the extent of its delimiter"))
+	(else (cons (##sys#slot ws 0)
+		    (##sys#dc-segment (##sys#slot ws 1) base)))))
+
+; Re-enter the segment SEG on top of the wind context we are resuming in,
+; running its "before" thunks outermost first.
+(define (##sys#dc-rewind seg)
+  (unless (eq? seg '())
+    (##sys#dc-rewind (##sys#slot seg 1))
+    ((##sys#slot (##sys#slot seg 0) 0))
+    (set! ##sys#dynamic-winds (cons (##sys#slot seg 0) ##sys#dynamic-winds))))
+
+; Install a new delimiter.  K is the continuation of the `reset' expression,
+; or - when a delimited continuation is resumed - the continuation of the
+; call to it.
+(define (##sys#dc-push! k)
+  (set! ##sys#dc-stack (cons (cons k ##sys#dynamic-winds) ##sys#dc-stack))
+  (##core#undefined))
+
+; "(lambda (v) v)": return V to the innermost delimiter.  Never returns.
+(define (##sys#dc-abort v)
+  (let ((s ##sys#dc-stack))
+    (if (eq? s '())
+	(##sys#error "no enclosing `reset' for `shift'")
+	(let ((frame (##sys#slot s 0)))
+	  (set! ##sys#dc-stack (##sys#slot s 1))
+	  (##sys#dc-unwind-to (##sys#slot frame 1))
+	  ((##sys#slot frame 0) v)))))
+
+; Entering a `shift': leave the delimited segment, running the "after"
+; thunks of any `dynamic-wind' between the delimiter and here, and return
+; that segment so it can be re-entered if the continuation is resumed.
+(define (##sys#dc-shift-enter)
+  (let ((s ##sys#dc-stack))
+    (if (eq? s '())
+	(##sys#error "no enclosing `reset' for `shift'")
+	(let* ((base (##sys#slot (##sys#slot s 0) 1))
+	       (seg (##sys#dc-segment ##sys#dynamic-winds base)))
+	  (##sys#dc-unwind-to base)
+	  seg))))
+
+; Resume a captured delimited continuation - rule 5's
+;    f = (lambda (x) (lambda (c2) (c2 (c x))))
+; K2 is f's own return continuation, rule 5's c2; it becomes the delimiter
+; the resumed segment will return to.  SEG is the segment's own
+; dynamic-wind context, spliced on top of the one we are resuming in.
+; Never returns.
+(define (##sys#dc-resume k2 c x seg)
+  (##sys#dc-push! k2)
+  (##sys#dc-rewind seg)
+  (c x))
+
+(define (##sys#reset thunk)
+  (##sys#call-with-current-continuation
+   (lambda (c)
+     (##sys#dc-push! c)
+     (##sys#dc-abort (thunk)))))
+
+(define (##sys#shift proc)
+  (##sys#call-with-current-continuation
+   (lambda (c)
+     (let ((w (##sys#dc-shift-enter)))
+       (##sys#dc-abort
+	(proc (lambda (x)
+		(##sys#call-with-current-continuation
+		 (lambda (k2) (##sys#dc-resume k2 c x w))))))))))
 
 
 ;;; Ports:
@@ -6879,8 +7003,10 @@ EOF
     ##sys#standard-error
     ##sys#default-exception-handler
     (##sys#vector-resize ##sys#current-parameter-vector
-			 (##sys#size ##sys#current-parameter-vector) #f) )
-   name					; #6 name
+			 (##sys#size ##sys#current-parameter-vector) #f)
+    '() )				; metacontinuation: a new thread is
+   name					;  inside no delimiter of its own
+					; #6 name
    (##core#undefined)			; #7 end-exception
    '()					; #8 owned mutexes
    q					; #9 quantum
