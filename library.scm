@@ -4143,7 +4143,8 @@ EOF
 
 ; Install a new delimiter.  K is the continuation of the `reset' expression,
 ; or - when a delimited continuation is resumed - the continuation of the
-; call to it.
+; call to it.  It must be a continuation that never returns: compiled
+; callers of ##sys#dc-abort keep no live continuation of their own.
 (define (##sys#dc-push! k)
   (set! ##sys#dc-stack (cons (cons k ##sys#dynamic-winds) ##sys#dc-stack))
   (##core#undefined))
@@ -4157,6 +4158,20 @@ EOF
 	  (set! ##sys#dc-stack (##sys#slot s 1))
 	  (##sys#dc-unwind-to (##sys#slot frame 1))
 	  ((##sys#slot frame 0) v)))))
+
+; The continuation the compiler passes to ##sys#dc-abort, which never
+; returns.  A closed global rather than the caller's own continuation, so
+; that the abort continuation of a `reset' body - and with it every segment
+; captured inside that body - holds nothing of the delimiter's outer
+; continuation: the "dead meta-continuation" of Gasbichler and Sperber.
+;
+; It sits in a continuation slot, so if a corrupted frame ever returns
+; into it, it is entered with the continuation calling convention: (self,
+; value), one argument fewer than a procedure call.  Hence the rest list,
+; which lets it through the argument-count check, and hence it must never
+; try to return - what it holds as its own continuation is that value.
+(define (##sys#dc-dead-k . _)
+  (##sys#error "delimited-control frame returned into its dead continuation"))
 
 ; Entering a `shift': leave the delimited segment, running the "after"
 ; thunks of any `dynamic-wind' between the delimiter and here, and return

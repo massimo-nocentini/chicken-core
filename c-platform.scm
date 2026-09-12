@@ -71,7 +71,8 @@
      ##sys#foreign-symbol-argument
      ##sys#foreign-pointer-argument ##sys#call-with-current-continuation
      ##sys#reset ##sys#shift
-     ##sys#dc-push! ##sys#dc-abort ##sys#dc-shift-enter ##sys#dc-resume)))
+     ##sys#dc-push! ##sys#dc-abort ##sys#dc-shift-enter ##sys#dc-resume
+     ##sys#dc-dead-k)))
 
 (define default-profiling-declarations
   '((##core#declare
@@ -291,7 +292,7 @@
     ;; `perform-cps-conversion' recognises calls to these two and compiles
     ;; the delimited-control rules directly; marking them intrinsic is what
     ;; tells it the names still mean what library.scm says they mean.
-    ##sys#reset ##sys#shift))
+    ##sys#reset ##sys#shift ##sys#dc-abort ##sys#dc-dead-k))
 
 (for-each
  (cut mark-variable <> '##compiler#pure '#t)

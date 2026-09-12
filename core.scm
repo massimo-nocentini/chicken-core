@@ -1996,9 +1996,25 @@
 	 (walk (last subs) k))
 	(else (bomb "bad node (cps)")) ) ) )
 
+  (define (dc-noreturn-call? fn)
+    (let ((fn (dc-strip-the fn)))
+      (and (eq? '##core#variable (node-class fn))
+	   (eq? '##sys#dc-abort (first (node-parameters fn)))
+	   (intrinsic? '##sys#dc-abort))))
+
   (define (walk-call fn args params k)
-    (let ((t0 (gensym 'k))
-	  (t3 (gensym 'r)) )
+    (let* ((t0 (gensym 'k))
+	   (t3 (gensym 'r))
+	   ;; ##sys#dc-abort never returns.  Its call is still given the
+	   ;; continuation lambda below - walking k is what emits everything
+	   ;; sequenced after the call, define-external stubs included - but
+	   ;; the call itself receives ##sys#dc-dead-k, so that lambda is
+	   ;; unreferenced and the caller's k is not captured.  This is what
+	   ;; keeps library.scm's ##sys#reset from retaining the reset's outer
+	   ;; continuation through every segment captured inside it.
+	   (kvar (if (dc-noreturn-call? fn)
+		     (varnode '##sys#dc-dead-k)
+		     (varnode t0))))
       (make-node
        'let (list t0)
        (list (make-node '##core#lambda (list (gensym-f-id) #f (list t3) 0)
@@ -2008,7 +2024,7 @@
 	      (lambda (vars)
 		(walk fn
 		      (lambda (r)
-			(make-node '##core#call params (cons* r (varnode t0) vars) ) ) ) ) ) ) ) ) )
+			(make-node '##core#call params (cons* r kvar vars) ) ) ) ) ) ) ) ) )
 
   (define (walk-call-unit unitname k)
     (let ((t0 (gensym 'k))
@@ -2083,13 +2099,13 @@
   ;; "(lambda (v) v)": give the value to the innermost delimiter.
   ;;
   ;; ##sys#dc-abort never returns, but a call node still needs a continuation
-  ;; argument and a continuation lambda has none of its own to give.  DEADK
-  ;; names one that is in scope at every abort site by construction - the
-  ;; reified `c' - and is a real closure rather than a placeholder, so the
-  ;; node graph stays well formed for every later pass.  It is not invoked:
-  ;; the frame ##sys#dc-abort pops ignores its continuation slot, exactly as
-  ;; runtime.c's `call_cc_wrapper' does.
-  (define (dc-abort-k deadk)
+  ;; argument.  It is given ##sys#dc-dead-k, a closed global procedure that
+  ;; raises if ever invoked, so that the abort continuation - and with it
+  ;; every segment captured inside the body - closes over nothing of the
+  ;; delimiter's own continuation.  (Passing the reset's reified `c' here
+  ;; retained the whole outer continuation: the dead meta-continuation of
+  ;; Gasbichler & Sperber, sections 2 and 7.1.)
+  (define (dc-abort-k)
     (lambda (r)
       (let ((v (gensym 'v)))
 	(make-node
@@ -2097,7 +2113,7 @@
 	 (list r
 	       (make-node '##core#call (list #t)
 			  (list (varnode '##sys#dc-abort)
-				(varnode deadk)
+				(varnode '##sys#dc-dead-k)
 				(varnode v))))))))
 
   ;; (reset E) = (lambda (c) (c (E (lambda (v) v))))
@@ -2117,7 +2133,7 @@
 		    (make-node '##core#lambda
 			       (list (gensym-f-id) #f (list d) 0)
 			       (list (walk (car (node-subexpressions lam))
-					   (dc-abort-k c))))
+					   (dc-abort-k))))
 		    (varnode c)))))))
 
   ;; (shift f E) = (lambda (c)
@@ -2170,7 +2186,7 @@
 				   (varnode c)
 				   (varnode x)
 				   (varnode w)))))))
-	      (walk body (dc-abort-k c))))))))))))
+	      (walk body (dc-abort-k))))))))))))
 
   ;; Returns a node, or #f when this is not a delimited-control form.
   (define (walk-dc-call fn args k)
