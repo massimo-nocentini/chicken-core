@@ -240,6 +240,11 @@ diff $DIFF_OPTS delimcc.out delimcc-compiled.out
 $compile -O3 delimited-continuation-tests.scm
 ./a.out >delimcc-compiled.out
 diff $DIFF_OPTS delimcc.out delimcc-compiled.out
+# What a captured segment keeps alive.  Compiled only: see the file's header.
+$compile delimcc-retention.scm
+./a.out
+$compile -O3 delimcc-retention.scm
+./a.out
 
 echo "======================================== lolevel tests ..."
 $interpret -s lolevel-tests.scm

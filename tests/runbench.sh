@@ -70,3 +70,7 @@ run 1000000000
 
 echo "======================================== irregex ... "
 /usr/bin/time "$timeopts" $interpret -bnq test-irregex.scm >/dev/null
+
+echo "======================================== delimited continuations ... "
+$compile delimcc-bench.scm
+./a.out
