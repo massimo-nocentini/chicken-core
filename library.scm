@@ -6170,10 +6170,7 @@ EOF
                                  (begin
                                    (conc1 13)
                                    (loop buf offset offset limit)))
-                             ;; Restore \r here, too (when we reached EOF)
-                             (begin
-                               (conc1 13)
-                               (values offset (getline) #t)))))
+                             (values (fx+ offset 1) (getline) #t))))
                       ((eq? c 13)
                        (conc buf offset pos)
                        (values (fx+ pos 1) (getline) #t))
