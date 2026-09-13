@@ -1116,9 +1116,7 @@
 (rewrite 'chicken.number-vector#u64vector-set! 2 3 "C_i_u64vector_set" #t)
 (rewrite 'chicken.number-vector#s64vector-set! 2 3 "C_u_i_s64vector_set" #f)
 (rewrite 'chicken.number-vector#s64vector-set! 2 3 "C_i_s64vector_set" #t)
-(rewrite 'chicken.number-vector#f32vector-set! 2 3 "C_u_i_f32vector_set" #f)
 (rewrite 'chicken.number-vector#f32vector-set! 2 3 "C_i_f32vector_set" #t)
-(rewrite 'chicken.number-vector#f64vector-set! 2 3 "C_u_i_f64vector_set" #f)
 (rewrite 'chicken.number-vector#f64vector-set! 2 3 "C_i_f64vector_set" #t)
 
 (rewrite 'chicken.number-vector#u8vector-length 2 1 "C_u_i_bytevector_length" #f)
