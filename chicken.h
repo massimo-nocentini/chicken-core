@@ -2838,6 +2838,11 @@ inline static C_word C_i_pairp(C_word x)
   return C_mk_bool(!C_immediatep(x) && C_header_type(x) == C_PAIR_TYPE);
 }
 
+inline static C_word C_i_bytevectorp(C_word x)
+{
+  return C_mk_bool(!C_immediatep(x) && C_bytevectorp(x));
+}
+
 inline static C_word C_i_weak_pairp(C_word x)
 {
   return C_mk_bool(!C_immediatep(x) && C_block_header(x) == C_WEAK_PAIR_TAG);
