@@ -3712,8 +3712,7 @@ EOF
   (##sys#make-bytevector size fill) )
 
 (define (bytevector? x)
-  (and (##core#inline "C_blockp" x)
-       (##core#inline "C_bytevectorp" x) ) )
+  (##core#inline "C_i_bytevectorp" x) )
 
 (define (bytevector-length bv)
   (##sys#check-bytevector bv 'bytevector-size)

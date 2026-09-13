@@ -678,7 +678,7 @@ EOF
 
 ;;; Predicates:
 
-(define (u8vector? x) (and (##core#inline "C_blockp" x) (##core#inline "C_bytevectorp" x)))
+(define (u8vector? x) (##core#inline "C_i_bytevectorp" x))
 (define (s8vector? x) (and (##core#inline "C_blockp" x) (##core#inline "C_i_s8vectorp" x)))
 (define (u16vector? x) (and (##core#inline "C_blockp" x) (##core#inline "C_i_u16vectorp" x)))
 (define (s16vector? x) (and (##core#inline "C_blockp" x) (##core#inline "C_i_s16vectorp" x)))
