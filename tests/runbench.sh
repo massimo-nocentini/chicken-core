@@ -74,3 +74,11 @@ echo "======================================== irregex ... "
 echo "======================================== delimited continuations ... "
 $compile delimcc-bench.scm
 ./a.out
+
+echo "======================================== delimited continuations, paper workloads ... "
+# The same workloads twice: native shift/reset, then Filinski's
+# meta-continuation cell over call/cc (the indirect implementation).
+$compile delimcc-paper-bench.scm
+./a.out
+$compile -D filinski delimcc-paper-bench.scm
+./a.out
