@@ -1021,13 +1021,6 @@ export PROGRAM_SUFFIX
 check: $(TARGETS)
 	cd tests; sh runtests.sh
 
-# benchmark
-
-.PHONY: bench
-
-bench: $(CHICKEN_SHARED_EXECUTABLE) $(CSI_SHARED_EXECUTABLE) $(CSC_PROGRAM)$(EXE)
-	cd tests; echo >>bench.log; date >>bench.log; sh runbench.sh 2>&1 | tee -a bench.log
-
 
 # build static bootstrapping chicken
 
