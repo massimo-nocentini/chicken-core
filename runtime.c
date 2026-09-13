@@ -5634,7 +5634,7 @@ C_regparm C_word C_i_bytevector_ref(C_word v, C_word i)
 {
   int j;
 
-  if(!C_truep(C_bytevectorp(v)))
+  if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-u8-ref", v);
 
   if(i & C_FIXNUM_BIT) {
@@ -5910,7 +5910,7 @@ C_regparm C_word C_i_vector_length(C_word v)
 
 C_regparm C_word C_i_bytevector_length(C_word v)
 {
-  if(C_immediatep(v) || !C_truep(C_bytevectorp(v)))
+  if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-length", v);
 
   return C_fix(C_header_size(v));
@@ -6089,7 +6089,7 @@ C_regparm C_word C_i_bytevector_set(C_word v, C_word i, C_word x)
   int j;
   C_word n;
 
-  if(!C_truep(C_bytevectorp(v)))
+  if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-set!", v);
 
   if(i & C_FIXNUM_BIT) {
