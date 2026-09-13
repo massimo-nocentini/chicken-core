@@ -116,7 +116,6 @@ tests/csc-tests.scm
 tests/c-id-valid.scm
 tests/data-structures-tests.scm
 tests/environment-tests.scm
-tests/gobble.scm
 tests/heap-literal-stress-test.scm
 tests/test-optional.scm
 tests/arithmetic-test.scm
@@ -139,7 +138,6 @@ tests/null.scm
 tests/sgrep.scm
 tests/r7rs-tests.scm
 tests/runtests.sh
-tests/runbench.sh
 tests/srfi-4-tests.scm
 tests/srfi-45-tests.scm
 tests/apply-test.scm
@@ -223,9 +221,6 @@ tests/lolevel-tests.scm
 tests/compiler-syntax-tests.scm
 tests/compiler.scm
 tests/fft.scm
-tests/slatex.scm
-tests/test.tex
-tests/slatex.sty
 tests/symbolgc-tests.scm
 tests/private-repository-test.scm
 tests/records-and-setters-test.scm
