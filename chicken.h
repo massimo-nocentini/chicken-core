@@ -2840,7 +2840,7 @@ inline static C_word C_i_pairp(C_word x)
 
 inline static C_word C_i_bytevectorp(C_word x)
 {
-  return C_mk_bool(!C_immediatep(x) && C_bytevectorp(x));
+  return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_BYTEVECTOR_TYPE);
 }
 
 inline static C_word C_i_weak_pairp(C_word x)
