@@ -621,7 +621,7 @@
 (rewrite 'scheme#char-downcase 2 1 "C_u_i_char_downcase" #t)
 (rewrite 'scheme#list-tail 2 2 "C_i_list_tail" #t)
 (rewrite '##sys#structure? 2 2 "C_i_structurep" #t)
-(rewrite '##sys#bytevector? 2 1 "C_i_bytevectorp" #t)
+(rewrite '##sys#bytevector? 2 1 "C_bytevectorp" #t)
 (rewrite 'chicken.memory.representation#block-ref 2 2 "C_slot" #f)	; ok to be unsafe, lolevel is anyway
 (rewrite 'chicken.memory.representation#number-of-slots 2 1 "C_block_size" #f)
 
