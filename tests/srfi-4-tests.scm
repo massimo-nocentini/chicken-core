@@ -343,3 +343,34 @@
   (assert (bulk-error? (lambda () (s32vector-ref (s32vector 1 2 3) big))))
   (assert (bulk-error? (lambda () (vector-ref (vector 1 2 3) big))))
   (assert (bulk-error? (lambda () (string-ref "abc" big)))))
+
+;; The setters tested integer-length <= N for signed N-bit types, where the
+;; representable range needs <= N-1, and u8/u32/u64 never tested the sign at
+;; all, so out-of-range values wrapped silently instead of erroring.
+(define-syntax test-element-range
+  (er-macro-transformer
+   (lambda (x r c)
+     (let* ((name (symbol->string (strip-syntax (cadr x))))
+            (lo (caddr x))
+            (hi (cadddr x)))
+       (define (conc op) (string->symbol (string-append name op)))
+       `(let ((v (,(conc "vector") 0)))
+          (,(conc "vector-set!") v 0 ,lo)
+          (assert (= ,lo (,(conc "vector-ref") v 0)))
+          (,(conc "vector-set!") v 0 ,hi)
+          (assert (= ,hi (,(conc "vector-ref") v 0)))
+          (assert (bulk-error? (lambda () (,(conc "vector-set!") v 0 (- ,lo 1)))))
+          (assert (bulk-error? (lambda () (,(conc "vector-set!") v 0 (+ ,hi 1))))))))))
+
+(test-element-range u8 0 255)
+(test-element-range s8 -128 127)
+(test-element-range u16 0 65535)
+(test-element-range s16 -32768 32767)
+(test-element-range u32 0 4294967295)
+(test-element-range s32 -2147483648 2147483647)
+(test-element-range u64 0 18446744073709551615)
+(test-element-range s64 -9223372036854775808 9223372036854775807)
+
+;; make-s8vector validated its fill with the unsigned checker
+(assert (= -1 (s8vector-ref (make-s8vector 2 -1) 1)))
+(assert (bulk-error? (lambda () (make-s8vector 2 200))))

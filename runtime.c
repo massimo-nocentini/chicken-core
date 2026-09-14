@@ -6124,7 +6124,7 @@ C_regparm C_word C_i_bytevector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "bytevector-u8-set!", v, i);
 
     if(x & C_FIXNUM_BIT) {
-      if (C_unfix(C_i_fixnum_length(x)) <= 8) n = C_unfix(x);
+      if (!(x & C_INT_SIGN_BIT) && C_ilen(C_unfix(x)) <= 8) n = C_unfix(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "bytevector-u8-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-u8-set!", x);
@@ -6150,7 +6150,7 @@ C_regparm C_word C_i_s8vector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "s8vector-set!", v, i);
 
     if(x & C_FIXNUM_BIT) {
-      if (C_unfix(C_i_fixnum_length(x)) <= 8) n = C_unfix(x);
+      if (C_unfix(C_i_fixnum_length(x)) <= 7) n = C_unfix(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "s8vector-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "s8vector-set!", x);
@@ -6202,7 +6202,7 @@ C_regparm C_word C_i_s16vector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "u16vector-set!", v, i);
 
     if(x & C_FIXNUM_BIT) {
-      if (C_unfix(C_i_fixnum_length(x)) <= 16) n = C_unfix(x);
+      if (C_unfix(C_i_fixnum_length(x)) <= 15) n = C_unfix(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "s16vector-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "s16vector-set!", x);
@@ -6228,7 +6228,8 @@ C_regparm C_word C_i_u32vector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "u32vector-set!", v, i);
 
     if(C_truep(C_i_exact_integerp(x))) {
-      if (C_unfix(C_i_integer_length(x)) <= 32) n = C_num_to_unsigned_int(x);
+      if (!C_truep(C_i_integer_negativep(x)) &&
+          C_unfix(C_i_integer_length(x)) <= 32) n = C_num_to_unsigned_int(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "u32vector-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "u32vector-set!", x);
@@ -6254,7 +6255,7 @@ C_regparm C_word C_i_s32vector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "s32vector-set!", v, i);
 
     if(C_truep(C_i_exact_integerp(x))) {
-      if (C_unfix(C_i_integer_length(x)) <= 32) n = C_num_to_int(x);
+      if (C_unfix(C_i_integer_length(x)) <= 31) n = C_num_to_int(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "s32vector-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "s32vector-set!", x);
@@ -6280,7 +6281,8 @@ C_regparm C_word C_i_u64vector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "u64vector-set!", v, i);
 
     if(C_truep(C_i_exact_integerp(x))) {
-      if (C_unfix(C_i_integer_length(x)) <= 64) n = C_num_to_uint64(x);
+      if (!C_truep(C_i_integer_negativep(x)) &&
+          C_unfix(C_i_integer_length(x)) <= 64) n = C_num_to_uint64(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "u64vector-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "u64vector-set!", x);
@@ -6306,7 +6308,7 @@ C_regparm C_word C_i_s64vector_set(C_word v, C_word i, C_word x)
     	barf(C_OUT_OF_BOUNDS_ERROR, "s64vector-set!", v, i);
 
     if(C_truep(C_i_exact_integerp(x))) {
-      if (C_unfix(C_i_integer_length(x)) <= 64) n = C_num_to_int64(x);
+      if (C_unfix(C_i_integer_length(x)) <= 63) n = C_num_to_int64(x);
       else barf(C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR, "s64vector-set!", x);
     }
     else barf(C_BAD_ARGUMENT_TYPE_ERROR, "s64vector-set!", x);

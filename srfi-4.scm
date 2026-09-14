@@ -549,7 +549,7 @@ EOF
         (if (not init)
             v
             (begin
-              (check-uint-length init 8 'make-s8vector)
+              (check-int-length init 8 'make-s8vector)
               (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
                   ((##core#inline "C_fixnum_greater_or_equal_p" i len) v)
                 (##core#inline "C_u_i_s8vector_set" v i init) ) ) ) ) ) )
