@@ -266,3 +266,14 @@
 (assert (= 1+2i (c64vector-ref (make-c64vector 2 1+2i) 1)))
 (assert (= 1+2i (c128vector-ref (make-c128vector 2 1+2i) 1)))
 (assert (= 3.0+0.0i (c64vector-ref (make-c64vector 2 3) 1)))
+
+;; the complex constructors used to pre-scale the length with an unchecked
+;; `fx*', which shifts and re-tags a non-fixnum into a plausible-looking
+;; fixnum, so the length never reached `alloc''s validation
+(assert (bulk-error? (lambda () (make-c64vector 'x))))
+(assert (bulk-error? (lambda () (make-c128vector 'x))))
+(assert (bulk-error? (lambda () (make-c64vector -1))))
+(assert (bulk-error? (lambda () (make-c128vector -1))))
+(assert (= 3 (c64vector-length (make-c64vector 3 1+2i))))
+(assert (= 3 (c128vector-length (make-c128vector 3 1+2i))))
+(assert (= 0 (c64vector-length (make-c64vector 0))))

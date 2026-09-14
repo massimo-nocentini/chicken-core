@@ -652,7 +652,7 @@ EOF
 
   (set! make-c64vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
-      (let ((v (##sys#make-structure 'c64vector (alloc 'make-c64vector 4 (fx* len 2) ext?))))
+      (let ((v (##sys#make-structure 'c64vector (alloc 'make-c64vector 8 len ext?))))
         (when (and ext? fin?) (set-finalizer! v ext-free))
         (if (not init)
             v
@@ -666,7 +666,7 @@ EOF
 
   (set! make-c128vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
-      (let ((v (##sys#make-structure 'c128vector (alloc 'make-c128vector 8 (fx* len 2) ext?))))
+      (let ((v (##sys#make-structure 'c128vector (alloc 'make-c128vector 16 len ext?))))
         (when (and ext? fin?) (set-finalizer! v ext-free))
         (if (not init)
             v
