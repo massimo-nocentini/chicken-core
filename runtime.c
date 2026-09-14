@@ -5636,7 +5636,9 @@ C_regparm C_word C_i_list_tail(C_word lst, C_word i)
 
 C_regparm C_word C_i_vector_ref(C_word v, C_word i)
 {
-  int j;
+  C_word j;			/* NOT int: a fixnum is 62 bits on LP64, and
+				   truncating the index lets one past 2**32
+				   alias an in-range element */
 
   if(C_immediatep(v) || C_header_bits(v) != C_VECTOR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "vector-ref", v);
@@ -5655,7 +5657,7 @@ C_regparm C_word C_i_vector_ref(C_word v, C_word i)
 
 C_regparm C_word C_i_bytevector_ref(C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-u8-ref", v);
@@ -5675,7 +5677,7 @@ C_regparm C_word C_i_bytevector_ref(C_word v, C_word i)
 
 C_regparm C_word C_i_s8vector_ref(C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_s8vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "s8vector-ref", v);
@@ -5695,7 +5697,7 @@ C_regparm C_word C_i_s8vector_ref(C_word v, C_word i)
 
 C_regparm C_word C_i_u16vector_ref(C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_u16vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "u16vector-ref", v);
@@ -5716,7 +5718,7 @@ C_regparm C_word C_i_u16vector_ref(C_word v, C_word i)
 C_regparm C_word C_i_s16vector_ref(C_word v, C_word i)
 {
   C_word size;
-  int j;
+  C_word j;
 
   if(C_immediatep(v) || C_header_bits(v) != C_STRUCTURE_TYPE ||
      C_header_size(v) != 2 || C_block_item(v, 0) != s16vector_symbol)
@@ -5737,7 +5739,7 @@ C_regparm C_word C_i_s16vector_ref(C_word v, C_word i)
 
 C_regparm C_word C_a_i_u32vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_u32vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "u32vector-ref", v);
@@ -5757,7 +5759,7 @@ C_regparm C_word C_a_i_u32vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 
 C_regparm C_word C_a_i_s32vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_s32vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "s32vector-ref", v);
@@ -5777,7 +5779,7 @@ C_regparm C_word C_a_i_s32vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 
 C_regparm C_word C_a_i_u64vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_u64vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "u64vector-ref", v);
@@ -5797,7 +5799,7 @@ C_regparm C_word C_a_i_u64vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 
 C_regparm C_word C_a_i_s64vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_s64vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "s64vector-ref", v);
@@ -5817,7 +5819,7 @@ C_regparm C_word C_a_i_s64vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 
 C_regparm C_word C_a_i_f32vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 {
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_f32vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "f32vector-ref", v);
@@ -5838,7 +5840,7 @@ C_regparm C_word C_a_i_f32vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 C_regparm C_word C_a_i_f64vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 {
   C_word size;
-  int j;
+  C_word j;
 
   if(!C_truep(C_i_f64vectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "f64vector-ref", v);
@@ -5859,7 +5861,7 @@ C_regparm C_word C_a_i_f64vector_ref(C_word **ptr, C_word c, C_word v, C_word i)
 
 C_regparm C_word C_i_block_ref(C_word x, C_word i)
 {
-  int j;
+  C_word j;
 
   if(C_immediatep(x) || (C_header_bits(x) & C_BYTEBLOCK_BIT) != 0)
     barf(C_BAD_ARGUMENT_TYPE_NO_BLOCK_ERROR, "##sys#block-ref", x);
@@ -5880,7 +5882,7 @@ C_regparm C_word C_i_block_ref(C_word x, C_word i)
 
 C_regparm C_word C_i_string_set(C_word s, C_word i, C_word c)
 {
-  int j;
+  C_word j;
 
   if(C_immediatep(s) || C_header_bits(s) != C_STRING_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "string-set!", s);
@@ -5904,7 +5906,7 @@ C_regparm C_word C_i_string_set(C_word s, C_word i, C_word c)
 
 C_regparm C_word C_i_string_ref(C_word s, C_word i)
 {
-  int j;
+  C_word j;
 
   if(C_immediatep(s) || C_header_bits(s) != C_STRING_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "string-ref", s);
@@ -6089,7 +6091,7 @@ C_regparm C_word C_i_set_cdr(C_word x, C_word val)
 
 C_regparm C_word C_i_vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
 
   if(C_immediatep(v) || C_header_bits(v) != C_VECTOR_TYPE)
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "vector-set!", v);
@@ -6109,7 +6111,7 @@ C_regparm C_word C_i_vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_bytevector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_word n;
 
   if(!C_truep(C_i_bytevectorp(v)))
@@ -6135,7 +6137,7 @@ C_regparm C_word C_i_bytevector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_s8vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_word n;
 
   if(!C_truep(C_i_s8vectorp(v)))
@@ -6161,7 +6163,7 @@ C_regparm C_word C_i_s8vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_u16vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_word n;
 
   if(!C_truep(C_i_u16vectorp(v)))
@@ -6187,7 +6189,7 @@ C_regparm C_word C_i_u16vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_s16vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_word n;
 
   if(!C_truep(C_i_s16vectorp(v)))
@@ -6213,7 +6215,7 @@ C_regparm C_word C_i_s16vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_u32vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_u32 n;
 
   if(!C_truep(C_i_u32vectorp(v)))
@@ -6239,7 +6241,7 @@ C_regparm C_word C_i_u32vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_s32vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_s32 n;
 
   if(!C_truep(C_i_s32vectorp(v)))
@@ -6265,7 +6267,7 @@ C_regparm C_word C_i_s32vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_u64vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_u64 n;
 
   if(!C_truep(C_i_u64vectorp(v)))
@@ -6291,7 +6293,7 @@ C_regparm C_word C_i_u64vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_s64vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   C_s64 n;
 
   if(!C_truep(C_i_s64vectorp(v)))
@@ -6317,7 +6319,7 @@ C_regparm C_word C_i_s64vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_f32vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   double f;
 
   if(!C_truep(C_i_f32vectorp(v)))
@@ -6342,7 +6344,7 @@ C_regparm C_word C_i_f32vector_set(C_word v, C_word i, C_word x)
 
 C_regparm C_word C_i_f64vector_set(C_word v, C_word i, C_word x)
 {
-  int j;
+  C_word j;
   double f;
 
   if(!C_truep(C_i_f64vectorp(v)))

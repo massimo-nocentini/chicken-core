@@ -332,3 +332,14 @@
 (let* ((v (f64vector 1.0 2.0)) (l (make-locative v 1)))
   (locative-set! l 9.5)
   (assert (eqv? 9.5 (f64vector-ref v 1))))
+
+;; the accessors held the index in an `int', so an index past 2**32 was
+;; truncated and the bounds check passed on the wrapped value
+(let ((big 4294967298))                 ; 2**32 + 2
+  (assert (bulk-error? (lambda () (f64vector-ref (f64vector 1. 2. 3. 4. 5.) big))))
+  (assert (bulk-error? (lambda () (f64vector-set! (f64vector 1. 2.) big 0.0))))
+  (assert (bulk-error? (lambda () (u8vector-ref (u8vector 1 2 3) big))))
+  (assert (bulk-error? (lambda () (u16vector-ref (u16vector 1 2 3) big))))
+  (assert (bulk-error? (lambda () (s32vector-ref (s32vector 1 2 3) big))))
+  (assert (bulk-error? (lambda () (vector-ref (vector 1 2 3) big))))
+  (assert (bulk-error? (lambda () (string-ref "abc" big)))))
