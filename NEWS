@@ -46,6 +46,50 @@
   - Fixed several bugs in input decoding from TCP and process ports,
     special thanks to "crzcrz" for the considerable help in analyzing 
     and testing the problem and it's solution.
+  - `(chicken number-vector)': a ratnum reaching any of the complex
+    vector store paths -- `c64vector', `make-c64vector', `c64vector-set!',
+    `list->c64vector' and their c128 counterparts, and so also `read' of
+    a `#c64(1/2)' literal -- was read as a bignum and crashed.
+  - `(chicken number-vector)': `release-number-vector' and the NONGC
+    finalizer freed the wrong pointer for a `u8vector', which is a
+    bytevector rather than a structure, and crashed.  A NONGC `u8vector'
+    is also never finalized, whatever FINALIZE says; it must be released
+    explicitly, and this is now documented.
+  - `(chicken number-vector)': `make-c64vector' and `make-c128vector'
+    rejected the complex fill value they exist for, and did not validate
+    their length, so a non-fixnum length was an uncatchable out-of-memory
+    panic.
+  - `make-locative' range-checked the index in bytes while the locative
+    then scaled it by the element size, so an index up to `elemsize' times
+    too large was accepted and read or wrote past the end of the object.
+    Locatives into `c64vector' and `c128vector' addressed the
+    representation rather than the elements and are now rejected.
+  - The bounds checks in the vector, string, bytevector and number vector
+    accessors truncated the index to a C `int', so an index at or above
+    2^32 aliased an in-range element instead of signalling: for example
+    `(vector-ref (vector 1 2 3) 4294967297)' returned 2.
+  - The number vector setters accepted out-of-range values and stored them
+    wrapped: `(u8vector-set! v 0 -1)' stored 255, and `(s8vector-set! v 0
+    128)' stored -128.  This also applies to R7RS `bytevector-u8-set!',
+    which now rejects a negative byte.  `make-s8vector' correspondingly
+    accepts a negative fill, which it used to reject.
+  - `(chicken number-vector)': the `#<tag>"string"' read syntax worked for
+    `#u8' only; every other tag raised an error.
+  - `(chicken number-vector)': `bytevector->u64vector' and
+    `bytevector->s64vector', and their `/shared' variants, accepted a
+    bytevector whose length was a multiple of 4 rather than 8 and silently
+    dropped the trailing bytes.  Such lengths now raise.
+  - `(chicken number-vector)': the feature identifier `srfi-4' is defined
+    again, as the manual has always said.
+  - `(chicken number-vector)': `sub*vector' now takes an optional TO,
+    defaulting to the length, and `*vector->list' optional START and END.
+    `sub*vector' also requires FROM <= TO rather than failing inside the
+    allocator.
+  - `(chicken number-vector)': new `f32vector-mul!', `f32vector-div!',
+    `f64vector-mul!' and `f64vector-div!', the elementwise vector-vector
+    product and quotient.
+  - `(chicken memory)': `move-memory!' accepts `c64vector' and
+    `c128vector', which it used to reject.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
@@ -103,6 +147,22 @@
     closure allocation, at every optimization level including -unsafe.
     Note that, as with every sibling accessor, the -unsafe variants now
     drop the type and range checks these two used to keep.
+  - `##sys#check-range/including' was misspelled in the intrinsic name
+    list, so both of its rewrite rules were dead and every call compiled
+    to an out-of-line call with a rest-argument allocation.  It affects
+    `string-copy', `vector-copy!', `bytevector-copy!', `utf8->string' and
+    the number vector operations.
+  - `u64vector-ref' and `s64vector-ref' now inline, as the 32-bit
+    accessors already did; the setters were already registered.
+  - `c128vector?' is an extended binding again -- the list named a
+    nonexistent `f128vector?'.
+  - The scrutinizer declared `c64vector-ref' and `c128vector-ref' as
+    returning a float, but they return a complex number, so specialized
+    code read a pointer as a double: `(+ (c64vector-ref v 0) 1.0)' gave a
+    different answer compiled than interpreted.  The complex constructors
+    and setters were likewise declared not to accept complex arguments.
+  - The `s64vector' procedures had no type declarations at all, and
+    `make-f64vector' was declared with one parameter too few.
 
 - Runtime system
   - Bignum multiplication and division now work a whole digit at a time
