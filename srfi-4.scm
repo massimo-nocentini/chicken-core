@@ -503,9 +503,13 @@ EOF
           "if(buf == NULL) C_return(C_SCHEME_FALSE);"
           "C_block_header_init(buf, C_make_header(C_BYTEVECTOR_TYPE, bytes));"
           "C_return(buf);") )
+       ;; A u8vector is the bytevector itself, not a (tag . bytevector)
+       ;; structure, so for one of those slot 1 is the second word of the
+       ;; user data rather than the block ext-alloc malloc'd.
        (ext-free
-        (foreign-lambda* void ((scheme-object bv))
-          "C_free((void *)C_block_item(bv, 1));") )
+        (foreign-lambda* void ((scheme-object v))
+          "C_free(C_header_bits(v) == C_BYTEVECTOR_TYPE"
+          "       ? (void *)v : (void *)C_block_item(v, 1));") )
        (real-part real-part)
        (imag-part imag-part)
        (alloc

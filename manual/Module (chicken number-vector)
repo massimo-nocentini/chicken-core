@@ -459,6 +459,14 @@ for one of the {{make-XXXvector}} constructor procedures). The effect
 of calling this procedure with a number vector allocated in normal
 garbage collected memory is undefined.
 
+Note that a {{NONGC}} {{u8vector}} is never finalized, whatever the
+{{FINALIZE}} argument says: a {{u8vector}} ''is'' its bytevector, so the
+whole object lives outside the garbage collected heap, and finalizers can
+only be attached to objects inside it. Such a vector must always be
+released explicitly. For the other types only the storage is external --
+the vector itself is an ordinary garbage collected structure -- so a
+finalizer works as documented.
+
 
 ---
 Previous: [[Module (chicken type)]]

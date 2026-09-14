@@ -277,3 +277,20 @@
 (assert (= 3 (c64vector-length (make-c64vector 3 1+2i))))
 (assert (= 3 (c128vector-length (make-c128vector 3 1+2i))))
 (assert (= 0 (c64vector-length (make-c64vector 0))))
+
+;; NONGC allocation and explicit release.  ext-free used to free slot 1
+;; unconditionally, which for a u8vector -- a bare bytevector, not a
+;; (tag . bytevector) structure -- is a word of its own contents.
+(let ((v (make-u8vector 32 170 #t #f)))
+  (assert (eqv? 170 (u8vector-ref v 31)))
+  (release-number-vector v))
+(let ((v (make-f64vector 4 1.0 #t #f)))
+  (assert (eqv? 1.0 (f64vector-ref v 3)))
+  (release-number-vector v))
+(let ((v (make-u16vector 8 65535 #t #f)))
+  (assert (eqv? 65535 (u16vector-ref v 7)))
+  (release-number-vector v))
+(let ((v (make-c64vector 4 1+2i #t #f)))
+  (assert (= 1+2i (c64vector-ref v 3)))
+  (release-number-vector v))
+(assert (bulk-error? (lambda () (release-number-vector 'x))))
