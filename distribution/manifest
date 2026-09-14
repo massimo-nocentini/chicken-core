@@ -462,6 +462,7 @@ manual-html/Module (chicken locative).html
 manual-html/Module (chicken memory).html
 manual-html/Module (chicken memory representation).html
 manual-html/Module (chicken module).html
+manual-html/Module (chicken number-vector).html
 manual-html/Module (chicken pathname).html
 manual-html/Module (chicken platform).html
 manual-html/Module (chicken plist).html

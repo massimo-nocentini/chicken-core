@@ -37,8 +37,6 @@ called integer vectors):
 <tr><td>{{u16vector}}</td><td>unsigned exact integer in the range 0 to (2^16)-1</td></tr>
 <tr><td>{{s32vector}}</td><td>signed exact integer in the range -(2^31) to (2^31)-1</td></tr>
 <tr><td>{{u32vector}}</td><td>unsigned exact integer in the range 0 to (2^32)-1</td></tr>
-<tr><td>{{s64vector}}</td><td>signed exact integer in the range -(2^31) to (2^31)-1</td></tr>
-<tr><td>{{u64vector}}</td><td>unsigned exact integer in the range 0 to (2^64)-1</td></tr>
 <tr><td>{{s64vector}}</td><td>signed exact integer in the range -(2^63) to (2^63)-1</td></tr>
 <tr><td>{{u64vector}}</td><td>unsigned exact integer in the range 0 to (2^64)-1</td></tr></table>
 
@@ -57,8 +55,8 @@ And there are two datatypes of inexact complex homogeneous vectors (which will b
 
 <table>
 <tr><th>Datatype</th><th>Type of elements</th></tr>
-<tr><td>{{c64vector}}</th><th>inexact complex, typically 64 bits</td></tr>
-<tr><td>{{c128vector}}</th><th>inexact complex, typically 128 bits</td></tr>
+<tr><td>{{c64vector}}</td><td>inexact complex, typically 64 bits</td></tr>
+<tr><td>{{c128vector}}</td><td>inexact complex, typically 128 bits</td></tr>
 </table>
 
 Each homogeneous vector datatype has an external representation which
@@ -71,9 +69,11 @@ analogous to those available for Scheme's heterogeneous vectors.
 <read>#u8</read><br>
 <read>#u16</read><br>
 <read>#u32</read><br>
+<read>#u64</read><br>
 <read>#s8</read><br>
 <read>#s16</read><br>
 <read>#s32</read><br>
+<read>#s64</read><br>
 <read>#f32</read><br>
 <read>#f64</read><br>
 <read>#c64</read><br>
@@ -119,8 +119,8 @@ will result in
 
 on a little endian machine.
 
-Note that {{#u8"..."}} can be used as an abbreviation for the special case
-{{#u8("...")}}.
+Note that {{#XXX"..."}} can be used as an abbreviation for the special case
+{{#XXX("...")}}, for any of the tags above.
 
 === Predicates
 
@@ -316,7 +316,6 @@ Note that built-in bytevectors are identical to u8vectors.
 <procedure>(f64vector->bytevector F64VECTOR)</procedure><br>
 <procedure>(c64vector->bytevector C64VECTOR)</procedure><br>
 <procedure>(c128vector->bytevector C128VECTOR)</procedure><br>
-<procedure>(u8vector->bytevector/shared U8VECTOR)</procedure><br>
 <procedure>(s8vector->bytevector/shared S8VECTOR)</procedure><br>
 <procedure>(u16vector->bytevector/shared U16VECTOR)</procedure><br>
 <procedure>(s16vector->bytevector/shared S16VECTOR)</procedure><br>
@@ -335,6 +334,10 @@ Each of these procedures return the contents of the given vector as a
 {{/shared}} variants return a bytevector that shares memory with the
 contents of the vector, the others will copy the contents of the
 vector's internal bytevector object.
+
+There is no {{u8vector->bytevector}} or {{u8vector->bytevector/shared}}: a
+{{u8vector}} already ''is'' a bytevector, so both conversions would be the
+identity.
 
 <procedure>(bytevector->s8vector BYTEVECTOR)</procedure><br>
 <procedure>(bytevector->u16vector BYTEVECTOR)</procedure><br>
