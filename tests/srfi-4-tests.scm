@@ -294,3 +294,41 @@
   (assert (= 1+2i (c64vector-ref v 3)))
   (release-number-vector v))
 (assert (bulk-error? (lambda () (release-number-vector 'x))))
+
+;; ##sys#make-locative checked the index against the BYTE size of the
+;; backing bytevector while C_a_i_make_locative scales it by the element
+;; size, so the accepted range was elemsize times too large.
+(import (chicken locative))
+
+(define-syntax test-locative-range
+  (er-macro-transformer
+   (lambda (x r c)
+     (let* ((name (symbol->string (strip-syntax (cadr x))))
+            (len (caddr x)))
+       (define (conc op) (string->symbol (string-append name op)))
+       `(let ((v (,(conc "vector") ,@(cdddr x))))
+          ;; the last element is addressable, one past the end is not
+          (assert (,(conc "vector-ref") v (- ,len 1))
+                  (locative-ref (make-locative v (- ,len 1))))
+          (assert (bulk-error? (lambda () (make-locative v ,len))))
+          ;; an index inside the byte count but outside the element count
+          (assert (bulk-error? (lambda () (make-locative v (* ,len 8))))))))))
+
+(test-locative-range u8 4 1 2 3 4)
+(test-locative-range s8 4 1 2 3 4)
+(test-locative-range u16 4 1 2 3 4)
+(test-locative-range s16 4 1 2 3 4)
+(test-locative-range u32 2 9 8)
+(test-locative-range s32 2 9 -8)
+(test-locative-range u64 2 9 8)
+(test-locative-range s64 2 -1 -2)
+(test-locative-range f32 2 1.0 2.0)
+(test-locative-range f64 2 1.0 2.0)
+
+;; complex vectors have no locative type of their own
+(assert (bulk-error? (lambda () (make-locative (c64vector 1+2i) 0))))
+(assert (bulk-error? (lambda () (make-locative (c128vector 1+2i) 0))))
+
+(let* ((v (f64vector 1.0 2.0)) (l (make-locative v 1)))
+  (locative-set! l 9.5)
+  (assert (eqv? 9.5 (f64vector-ref v 1))))
