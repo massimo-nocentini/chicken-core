@@ -119,8 +119,6 @@ the source text should be read from standard input.
 
 ; -merge-reusable-closures : Allows merging of reusable closures.  When multiple procedures close over the exact same set of variables, the outermost procedure's closure gets re-used inside the inner procedures.  This reduces memory usage and saves on copying of variables which should be faster and also less generated code, especially for large closures.
 
-; -merge-shareable-closures : Allows merging of shareable closures.  Like the above, except this also allows procedures to share a closure when the set of variables differ.  Currently, this only works for non-escaping closures which strictly grow their containing procedure's set of closed-over variables, and only if there is exactly one sub-closure.  This turns out to be more than you would expect due to many internal procedures introduced during CPS transformation.
-
 ; -optimize-leaf-routines : Enable leaf routine optimization.
 
 ; -optimize-level LEVEL : Enables certain sets of optimization options. {{LEVEL}} should be an integer.
@@ -139,22 +137,22 @@ the source text should be read from standard input.
 </tr>
 <tr>
 <td>2 '''(Default)'''</td>
-<td>{{-optimize-leaf-routines -inline -lfa2 -merge-reusable-closures -merge-shareable-closures}}</td>
+<td>{{-optimize-leaf-routines -inline -lfa2 -merge-reusable-closures}}</td>
 <td>Enable optimizations that do not break standard compliance</td>
 </tr>
 <tr>
 <td>3</td>
-<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -merge-reusable-closures -merge-shareable-closures}}</td>
+<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -merge-reusable-closures}}</td>
 <td>Maximal optimization, while still "safe"</td>
 </tr>
 <tr>
 <td>4</td>
-<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -unsafe -merge-reusable-closures -merge-shareable-closures}}</td>
+<td>{{-optimize-leaf-routines -local -inline -lfa2 -inline-global -specialize -unsafe -merge-reusable-closures}}</td>
 <td>Maximal optimization, "unsafe"</td>
 </tr>
 <tr>
 <td>5 (or higher)</td>
-<td>{{-optimize-leaf-routines -block -inline -lfa2 -inline-global -specialize -unsafe -disable-interrupts -no-trace -no-lambda-info -merge-reusable-closures -merge-shareable-closures}}</td>
+<td>{{-optimize-leaf-routines -block -inline -lfa2 -inline-global -specialize -unsafe -disable-interrupts -no-trace -no-lambda-info -merge-reusable-closures}}</td>
 <td>All possible optimizations, "unsafe"</td>
 </tr>
 </table>

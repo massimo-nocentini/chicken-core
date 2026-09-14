@@ -1,19 +1,21 @@
 ;;;; closure-sharing-reentry-tests.scm
 ;
-; Closure sharing (-merge-shareable-closures, on from -O2 up) lets a lambda be
-; the "container" for the free variables of the single lambda it contains:
-; every lambda in the chain writes the variables of its activation that live
-; in the shared closure into the container's closure object on entry, and the
-; contained continuation reads them back from there when it runs.  That is
-; sound only when the container's closure object is not entered again while a
-; reader from an earlier entry can still run, which holds for a
-; compiler-introduced continuation lambda (allocated at the call it continues)
-; but not for a procedure: a procedure's closure is allocated once (at toplevel
-; for a global, at its binding for a local one) and entered by every call.
-; When such a procedure was chosen as a container and activated again while an
-; earlier activation's continuation was still pending - by nested recursion,
-; or by a continuation captured in the earlier activation and re-entered later
-; - the earlier continuation saw the later activation's parameters.
+; Closure reuse (-merge-reusable-closures, on from -O1 up) lets a lambda whose
+; free variables are exactly those of its containing lambda read them through
+; the container's closure object, which is complete when it is allocated and
+; is never written afterwards.  The removed closure SHARING pass
+; (-merge-shareable-closures, formerly on from -O2 up) let the contained
+; lambda grow that set instead: every lambda in the chain wrote the variables
+; of its activation that lived in the shared closure into the container's
+; closure object on entry, and the contained continuation read them back from
+; there when it ran.  That was sound only when the container's closure object
+; was not entered again while a reader from an earlier entry could still run.
+; A procedure's closure is allocated once (at toplevel for a global, at its
+; binding for a local one) and entered by every call, so when such a procedure
+; was chosen as a container and activated again while an earlier activation's
+; continuation was still pending - by nested recursion, or by a continuation
+; captured in the earlier activation and re-entered later - the earlier
+; continuation saw the later activation's parameters.
 ;
 ; A global procedure could become a container only with -local (so at -O3);
 ; a local procedure with a free variable (not contractable) already at -O2.

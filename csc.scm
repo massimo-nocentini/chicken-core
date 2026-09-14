@@ -153,7 +153,6 @@
     -emit-all-import-libraries -no-elevation -module-registration -no-module-registration
     -no-procedure-checks-for-usual-bindings -regenerate-import-libraries
     -specialize -strict-types -lfa2 -debug-info -merge-reusable-closures
-    -merge-shareable-closures
     -no-procedure-checks-for-toplevel-bindings))
 
 (define-constant complex-options
@@ -434,7 +433,6 @@ Usage: #{csc} [OPTION ...] [FILENAME ...]
     -lfa2                          perform additional lightweight flow-analysis pass
     -unroll-limit LIMIT            specifies inlining limit for self-recursive calls
     -merge-reusable-closures       enables closure reuse
-    -merge-shareable-closures      enables closure sharing
 
   Configuration options:
 

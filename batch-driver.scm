@@ -117,8 +117,7 @@
 		 (undefined . und) (replacing . rpg) (unused . uud) (extended-binding . xtb)
 		 (inline-export . ilx) (hidden-refs . hrf)
 		 (value-ref . vvf)
-		 (customizable . cst) (has-unused-parameters . hup) (boxed-rest . bxr)
-                 (shareable-container . shc) (shareable-user . shu) ) )
+		 (customizable . cst) (has-unused-parameters . hup) (boxed-rest . bxr) ) )
 	(omit #f))
     (lambda (db)
       (unless omit
@@ -142,8 +141,7 @@
 		     (case (caar es)
 		       ((captured assigned boxed global contractable standard-binding assigned-locally
 				  collapsable removable undefined replacing unused simple inlinable inline-export
-				  has-unused-parameters extended-binding customizable constant boxed-rest hidden-refs
-                                  shareable-container shareable-user)
+				  has-unused-parameters extended-binding customizable constant boxed-rest hidden-refs)
 			(printf "\t~a" (cdr (assq (caar es) names))) )
 		       ((unknown)
 			(set! val 'unknown) )
@@ -404,8 +402,6 @@
       (set! enable-specialization #t))
     (when (memq 'merge-reusable-closures options)
       (set! merge-reusable-closures #t))
-    (when (memq 'merge-shareable-closures options)
-      (set! merge-shareable-closures #t))
     (when (memq 'no-warnings options)
       (dribble "Warnings are disabled")
       (set! ##sys#warnings-enabled #f)

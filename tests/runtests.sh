@@ -252,6 +252,14 @@ $compile -O2 closure-sharing-reentry-tests.scm
 ./a.out
 $compile -O3 closure-sharing-reentry-tests.scm
 ./a.out
+# Multi-shot re-entry of reused closures out of LIFO order; -O5 (block
+# mode) changes the closure shapes, so it is exercised too.
+$compile -O2 closure-sharing-multishot-tests.scm
+./a.out
+$compile -O3 closure-sharing-multishot-tests.scm
+./a.out
+$compile -O5 closure-sharing-multishot-tests.scm
+./a.out
 
 echo "======================================== lolevel tests ..."
 $interpret -s lolevel-tests.scm

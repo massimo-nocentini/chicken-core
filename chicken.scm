@@ -104,7 +104,6 @@
 		      (cons* 'optimize-leaf-routines
 			     'inline
                              'merge-reusable-closures
-                             'merge-shareable-closures
 			     'lfa2
 			     options)) ) 
 		   ((3)
@@ -114,7 +113,6 @@
 			     'inline-global
 			     'local
                              'merge-reusable-closures
-                             'merge-shareable-closures
 			     'lfa2
 			     'specialize
 			     options) ) )
@@ -125,7 +123,6 @@
 			     'inline-global
 			     'specialize
                              'merge-reusable-closures
-                             'merge-shareable-closures
 			     'lfa2
 			     'local 
                              'unsafe
@@ -144,7 +141,6 @@
 			       'inline-global
 			       'lfa2
                                'merge-reusable-closures
-                               'merge-shareable-closures
 			       options) ) ) ) )
 		 (loop (cdr rest)) ) )
 	      ((eq? 'debug-level o)
