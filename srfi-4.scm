@@ -536,7 +536,7 @@ EOF
        (real-part real-part)
        (imag-part imag-part)
        (alloc
-        (lambda (loc elem-size elems ext?)
+        (lambda (loc elem-size elems ext? #!optional (fill #f))
           (##sys#check-fixnum elems loc)
           (when (fx< elems 0) (##sys#error loc "size is negative" elems))
           (let ((len (fx*? elems elem-size)))
@@ -545,7 +545,7 @@ EOF
                 (let ((bv (ext-alloc len)))
                   (or bv
                       (##sys#error loc "not enough memory - cannot allocate external number vector" len)) )
-                (##sys#allocate-bytevector len #f))))))
+                (##sys#allocate-bytevector len fill))))))
 
   (set! release-number-vector
     (lambda (v)
@@ -555,27 +555,31 @@ EOF
 
   (set! make-u8vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
-      (let ((v (alloc 'make-u8vector 1 len ext?)))
+      (when init (check-uint-length init 8 'make-u8vector))
+      (let ((v (alloc 'make-u8vector 1 len ext? (and (not ext?) init))))
         (when (and ext? fin?) (set-finalizer! v ext-free))
-        (if (not init)
-            v
-            (begin
-              (check-uint-length init 8 'make-u8vector)
-              (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
-                  ((##core#inline "C_fixnum_greater_or_equal_p" i len) v)
-                (##core#inline "C_setsubbyte" v i init) ) ) ) ) ) )
+        ;; the garbage-collected path was filled by the allocator
+        (when (and init ext?)
+          (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
+              ((##core#inline "C_fixnum_greater_or_equal_p" i len))
+            (##core#inline "C_setsubbyte" v i init)))
+        v) ) )
 
   (set! make-s8vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
-      (let ((v (##sys#make-structure 's8vector (alloc 'make-s8vector 1 len ext?))))
+      (when init (check-int-length init 8 'make-s8vector))
+      (let ((v (##sys#make-structure
+                's8vector
+                ;; C_memset takes the fill as an int and keeps the low byte,
+                ;; which is the two's-complement encoding s8vector-set! would
+                ;; have stored
+                (alloc 'make-s8vector 1 len ext? (and (not ext?) init)))))
         (when (and ext? fin?) (set-finalizer! v ext-free))
-        (if (not init)
-            v
-            (begin
-              (check-int-length init 8 'make-s8vector)
-              (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
-                  ((##core#inline "C_fixnum_greater_or_equal_p" i len) v)
-                (##core#inline "C_u_i_s8vector_set" v i init) ) ) ) ) ) )
+        (when (and init ext?)
+          (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
+              ((##core#inline "C_fixnum_greater_or_equal_p" i len))
+            (##core#inline "C_u_i_s8vector_set" v i init)))
+        v) ) )
 
   (set! make-u16vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
@@ -657,11 +661,9 @@ EOF
             v
             (begin
               (check-int/flonum init 'make-f32vector)
-              (unless (##core#inline "C_i_flonump" init)
-                (set! init (##core#inline_allocate ("C_a_u_i_int_to_flo" 4) init)))
-              (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
-                  ((##core#inline "C_fixnum_greater_or_equal_p" i len) v)
-                (##core#inline "C_u_i_f32vector_set" v i init) ) ) ) ) ) )
+              ;; the kernel returns C_SCHEME_UNDEFINED, so V stays the result
+              (##core#inline "C_nv_f32_fill" v (->f init) 0 len)
+              v) ) ) ) )
 
   (set! make-f64vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
@@ -671,11 +673,9 @@ EOF
             v
             (begin
               (check-int/flonum init 'make-f64vector)
-              (unless (##core#inline "C_i_flonump" init)
-                (set! init (##core#inline_allocate ("C_a_u_i_int_to_flo" 4) init)) )
-              (do ((i 0 (##core#inline "C_fixnum_plus" i 1)))
-                  ((##core#inline "C_fixnum_greater_or_equal_p" i len) v)
-                (##core#inline "C_u_i_f64vector_set" v i init) ) ) ) ) ) )
+              ;; the kernel returns C_SCHEME_UNDEFINED, so V stays the result
+              (##core#inline "C_nv_f64_fill" v (->f init) 0 len)
+              v) ) ) ) )
 
   (set! make-c64vector
     (lambda (len #!optional (init #f)  (ext? #f) (fin? #t))
@@ -725,9 +725,7 @@ EOF
                 (do ((p lst (##core#inline "C_slot" p 1))
                      (i 0 (##core#inline "C_fixnum_plus" i 1)) )
                     ((##core#inline "C_eqp" p '()) v)
-                  (if (and (##core#inline "C_blockp" p) (##core#inline "C_pairp" p))
-                      (,set v i (##core#inline "C_slot" p 0))
-                      (##sys#error-not-a-proper-list lst ',name) ) ) ) )))))))
+                  (,set v i (##core#inline "C_slot" p 0)) ) ) )))))))
 
 (define list->u8vector ##sys#list->bytevector)
 
@@ -828,14 +826,15 @@ EOF
        `(define (,name v)
           (##sys#check-structure v ',(string->symbol tag) ',name)
           (let ((len (##core#inline ,(string-append "C_u_i_" tag "_length") v)))
-            (let loop ((i 0))
-              (if (fx>= i len)
-                  '()
-                  (cons
-                   ,(if alloc
-                        `(##core#inline_allocate (,(string-append "C_a_u_i_" tag "_ref") ,alloc) v i)
-                        `(##core#inline ,(string-append "C_u_i_" tag "_ref") v i))
-                   (loop (fx+ i 1)) ) ) ) ) ) ) )))
+            (let loop ((i (fx- len 1)) (acc '()))
+              (if (fx< i 0)
+                  acc
+                  (loop (fx- i 1)
+                        (cons
+                         ,(if alloc
+                              `(##core#inline_allocate (,(string-append "C_a_u_i_" tag "_ref") ,alloc) v i)
+                              `(##core#inline ,(string-append "C_u_i_" tag "_ref") v i))
+                         acc) ) ) ) ) ) ) )))
 
 (define (u8vector->list v)
   (##sys#check-bytevector v 'u8vector->list)
@@ -907,7 +906,7 @@ EOF
   (lambda (v)
     (##sys#check-structure v tag loc)
     (let* ((old (##sys#slot v 1))
-	   (new (##sys#make-bytevector (##sys#size old))))
+	   (new (##sys#allocate-bytevector (##sys#size old) #f)))
       (##core#inline "C_copy_block" old new) ) ) )
 
 (define (unpack tag sz loc)
@@ -922,13 +921,15 @@ EOF
 (define (unpack-copy tag sz loc)
   (lambda (str)
     (##sys#check-bytevector str loc)
-    (let* ((len (##sys#size str))
-	   (new (##sys#make-bytevector len)))
+    (let ((len (##sys#size str)))
       (if (or (eq? #t sz)
 	      (eq? 0 (##core#inline "C_fixnum_modulo" len sz)))
+	  ;; allocate unfilled, and only once the size is known to be good:
+	  ;; ##sys#make-bytevector defaults its fill to 0, and C_fix(0) is
+	  ;; truthy, so it memset a buffer C_copy_block immediately overwrote
 	  (##sys#make-structure
 	   tag
-	   (##core#inline "C_copy_block" str new) )
+	   (##core#inline "C_copy_block" str (##sys#allocate-bytevector len #f)) )
 	  (##sys#error loc "bytevector does not have correct size for packing" tag len sz) ) ) ) )
 
 (define s8vector->bytevector/shared (pack 's8vector 's8vector->bytevector/shared))
