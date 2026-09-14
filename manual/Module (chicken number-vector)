@@ -262,21 +262,22 @@ procedures.  For example, to set the {{i}}th element of SRFI-4
 
 === Conversions
 
-<procedure>(u8vector->list U8VECTOR)</procedure><br>
-<procedure>(s8vector->list S8VECTOR)</procedure><br>
-<procedure>(u16vector->list U16VECTOR)</procedure><br>
-<procedure>(s16vector->list S16VECTOR)</procedure><br>
-<procedure>(u32vector->list U32VECTOR)</procedure><br>
-<procedure>(s32vector->list S32VECTOR)</procedure><br>
-<procedure>(u64vector->list U64VECTOR)</procedure><br>
-<procedure>(s64vector->list S64VECTOR)</procedure><br>
-<procedure>(f32vector->list F32VECTOR)</procedure><br>
-<procedure>(f64vector->list F64VECTOR)</procedure><br>
-<procedure>(c64vector->list C64VECTOR)</procedure><br>
-<procedure>(c128vector->list C128VECTOR)</procedure><br>
+<procedure>(u8vector->list U8VECTOR [START [END]])</procedure><br>
+<procedure>(s8vector->list S8VECTOR [START [END]])</procedure><br>
+<procedure>(u16vector->list U16VECTOR [START [END]])</procedure><br>
+<procedure>(s16vector->list S16VECTOR [START [END]])</procedure><br>
+<procedure>(u32vector->list U32VECTOR [START [END]])</procedure><br>
+<procedure>(s32vector->list S32VECTOR [START [END]])</procedure><br>
+<procedure>(u64vector->list U64VECTOR [START [END]])</procedure><br>
+<procedure>(s64vector->list S64VECTOR [START [END]])</procedure><br>
+<procedure>(f32vector->list F32VECTOR [START [END]])</procedure><br>
+<procedure>(f64vector->list F64VECTOR [START [END]])</procedure><br>
+<procedure>(c64vector->list C64VECTOR [START [END]])</procedure><br>
+<procedure>(c128vector->list C128VECTOR [START [END]])</procedure><br>
 
 Return a list consisting of the elements of SRFI-4 homogeneous number
-VECTOR.
+VECTOR, from index {{START}} (which defaults to 0) up to but not
+including {{END}} (which defaults to the length of the vector).
 
 <procedure>(list->u8vector U8LIST)</procedure><br>
 <procedure>(list->s8vector S8LIST)</procedure><br>
@@ -369,22 +370,23 @@ with the contents of the bytevector, the others will copy the bytevector.
 
 === Subvectors
 
-<procedure>(subu8vector U8VECTOR FROM TO)</procedure><br>
-<procedure>(subu16vector U16VECTOR FROM TO)</procedure><br>
-<procedure>(subu32vector U32VECTOR FROM TO)</procedure><br>
-<procedure>(subu64vector U32VECTOR FROM TO)</procedure><br>
-<procedure>(subs8vector S8VECTOR FROM TO)</procedure><br>
-<procedure>(subs16vector S16VECTOR FROM TO)</procedure><br>
-<procedure>(subs32vector S32VECTOR FROM TO)</procedure><br>
-<procedure>(subs64vector S32VECTOR FROM TO)</procedure><br>
-<procedure>(subf32vector F32VECTOR FROM TO)</procedure><br>
-<procedure>(subf64vector F64VECTOR FROM TO)</procedure><br>
-<procedure>(subc64vector C64VECTOR FROM TO)</procedure><br>
-<procedure>(subc128vector C128VECTOR FROM TO)</procedure><br>
+<procedure>(subu8vector U8VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subu16vector U16VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subu32vector U32VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subu64vector U64VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subs8vector S8VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subs16vector S16VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subs32vector S32VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subs64vector S64VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subf32vector F32VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subf64vector F64VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subc64vector C64VECTOR [FROM [TO]])</procedure><br>
+<procedure>(subc128vector C128VECTOR [FROM [TO]])</procedure><br>
 
 Creates a fresh number vector of the same type as the argument vector
-with the elements at the positions {{FROM}} up to but not including
-{{TO}}.
+with the elements at the positions {{FROM}} (which defaults to 0) up to
+but not including {{TO}} (which defaults to the length of the vector).
+It is an error if {{FROM}} is greater than {{TO}}.
 
 === Bulk arithmetic on float vectors
 

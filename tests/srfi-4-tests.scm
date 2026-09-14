@@ -460,3 +460,46 @@
                     (with-output-to-string
                       (lambda () (write (f64vector 1.5 +inf.0))))
                   read)))
+
+;; sub*vector takes an optional TO, and *vector->list optional START/END
+(define-syntax test-ranges
+  (er-macro-transformer
+   (lambda (x r c)
+     (let ((name (symbol->string (strip-syntax (cadr x)))))
+       (define (conc op) (string->symbol (string-append name op)))
+       (define (sub) (string->symbol (string-append "sub" name "vector")))
+       `(let ((v (,(conc "vector") ,@(cddr x))))
+          ;; TO defaults to the length
+          (assert (equal? v (,(sub) v)))
+          (assert (equal? v (,(sub) v 0)))
+          (assert (equal? (,(sub) v 1 4) (,(sub) v 1)))
+          (assert (equal? (,(sub) v 2 2) (,(sub) v 2 2)))
+          ;; START/END on ->list, and the invariant tying the two together
+          (assert (equal? (,(conc "vector->list") v) (,(conc "vector->list") v 0)))
+          (assert (equal? (,(conc "vector->list") v 1 3)
+                          (,(conc "vector->list") (,(sub) v 1 3))))
+          (assert (equal? '() (,(conc "vector->list") v 2 2)))
+          (assert (equal? (,(conc "vector->list") v 1)
+                          (,(conc "vector->list") v 1 4)))
+          ;; FROM > TO and out of range are errors, not silent
+          (assert (bulk-error? (lambda () (,(sub) v 3 1))))
+          (assert (bulk-error? (lambda () (,(sub) v 0 9))))
+          (assert (bulk-error? (lambda () (,(conc "vector->list") v 3 1))))
+          (assert (bulk-error? (lambda () (,(conc "vector->list") v 0 9)))))))))
+
+(test-ranges u8 1 2 3 4)
+(test-ranges s8 1 -2 3 -4)
+(test-ranges u16 1 2 3 4)
+(test-ranges s16 1 -2 3 -4)
+(test-ranges u32 1 2 3 4)
+(test-ranges s32 1 -2 3 -4)
+(test-ranges u64 1 2 3 4)
+(test-ranges s64 1 -2 3 -4)
+(test-ranges f32 1.0 2.0 3.0 4.0)
+(test-ranges f64 1.0 2.0 3.0 4.0)
+(test-ranges c64 1+2i 3+4i 5+6i 7+8i)
+(test-ranges c128 1+2i 3+4i 5+6i 7+8i)
+
+;; a non-vector still reports a type error, not a failure inside ##sys#size
+(assert (bulk-error? (lambda () (subf64vector 42))))
+(assert (bulk-error? (lambda () (f64vector->list 42))))
