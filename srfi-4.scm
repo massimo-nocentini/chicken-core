@@ -1183,21 +1183,26 @@ EOF
 ;;; Printing:
 
 (set! ##sys#user-print-hook
-  (let ((old-hook ##sys#user-print-hook))
+  ;; the dispatch table is built once, not per call: its unquotes are
+  ;; global variables, so a quasiquote in the body allocated it afresh
+  ;; every time -- and library.scm routes every structure through this
+  ;; hook, so the cost fell on records, conditions, ports and hash tables
+  ;; as much as on number vectors
+  (let ((old-hook ##sys#user-print-hook)
+        (tags `((u8vector u8 ,chicken.number-vector#u8vector->list)
+          (s8vector s8 ,chicken.number-vector#s8vector->list)
+          (u16vector u16 ,chicken.number-vector#u16vector->list)
+          (s16vector s16 ,chicken.number-vector#s16vector->list)
+          (u32vector u32 ,chicken.number-vector#u32vector->list)
+          (s32vector s32 ,chicken.number-vector#s32vector->list)
+          (u64vector u64 ,chicken.number-vector#u64vector->list)
+          (s64vector s64 ,chicken.number-vector#s64vector->list)
+          (f32vector f32 ,chicken.number-vector#f32vector->list)
+          (f64vector f64 ,chicken.number-vector#f64vector->list)
+          (c64vector c64 ,chicken.number-vector#c64vector->list)
+          (c128vector c128 ,chicken.number-vector#c128vector->list))))
     (lambda (x readable port)
-      (let ((tag (assq (##core#inline "C_slot" x 0)
-		       `((u8vector u8 ,chicken.number-vector#u8vector->list)
-			 (s8vector s8 ,chicken.number-vector#s8vector->list)
-			 (u16vector u16 ,chicken.number-vector#u16vector->list)
-			 (s16vector s16 ,chicken.number-vector#s16vector->list)
-			 (u32vector u32 ,chicken.number-vector#u32vector->list)
-			 (s32vector s32 ,chicken.number-vector#s32vector->list)
-			 (u64vector u64 ,chicken.number-vector#u64vector->list)
-			 (s64vector s64 ,chicken.number-vector#s64vector->list)
-			 (f32vector f32 ,chicken.number-vector#f32vector->list)
-			 (f64vector f64 ,chicken.number-vector#f64vector->list)
-                         (c64vector c64 ,chicken.number-vector#c64vector->list)
-                         (c128vector c128 ,chicken.number-vector#c128vector->list)) ) ) )
+      (let ((tag (assq (##core#inline "C_slot" x 0) tags)))
 	(cond (tag
 	       (##sys#print #\# #f port)
 	       (##sys#print (cadr tag) #f port)

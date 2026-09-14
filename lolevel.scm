@@ -136,7 +136,7 @@ EOF
 	(slot1structs '(mmap
 			u8vector u16vector u32vector u64vector
 			s8vector s16vector s32vector s64vector
-			f32vector f64vector)) )
+			f32vector f64vector c64vector c128vector)) )
     (lambda (from to #!optional n (foffset 0) (toffset 0))
       ;
       (define (nosizerr)

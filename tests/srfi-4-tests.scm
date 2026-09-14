@@ -437,3 +437,26 @@
 (assert (equal? (f64vector 2.0 3.0) (subf64vector (f64vector 1. 2. 3. 4.) 1 3)))
 (assert (equal? (u8vector 2 3) (subu8vector (u8vector 1 2 3 4) 1 3)))
 (assert (equal? (f64vector) (subf64vector (f64vector 1. 2.) 1 1)))
+
+;; move-memory! omitted the complex vectors from its slot-1 structure list
+(import (chicken memory))
+(let ((a (c64vector 1+2i)) (b (c64vector 0)))
+  (move-memory! a b 8)
+  (assert (= 1+2i (c64vector-ref b 0))))
+(let ((a (c128vector 3+4i)) (b (c128vector 0)))
+  (move-memory! a b 16)
+  (assert (= 3+4i (c128vector-ref b 0))))
+
+;; printing must be unchanged by the dispatch table hoist
+(assert (string=? "#f64(1.5 +nan.0 +inf.0 -0.0)"
+                  (with-output-to-string
+                    (lambda () (write (f64vector 1.5 +nan.0 +inf.0 -0.0))))))
+(assert (string=? "#c64(1.0+2.0i)"
+                  (with-output-to-string (lambda () (write (c64vector 1+2i))))))
+(assert (string=? "#s64(-1 2)"
+                  (with-output-to-string (lambda () (write (s64vector -1 2))))))
+(assert (equal? (f64vector 1.5 +inf.0)
+                (with-input-from-string
+                    (with-output-to-string
+                      (lambda () (write (f64vector 1.5 +inf.0))))
+                  read)))
