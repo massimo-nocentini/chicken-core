@@ -283,6 +283,18 @@ EOF
            tmp
            (##core#inline_allocate ("C_a_u_i_int_to_flo" 4) tmp))))))
 
+;; `->f' is only safe for values `check-int/flonum' accepts: C_a_u_i_int_to_flo
+;; tests C_FIXNUM_BIT and otherwise falls through to C_a_u_i_big_to_flo, which
+;; reads a ratnum's numerator -- an immediate -- as a bignum pointer.  The
+;; complex paths take their arguments apart with real-part/imag-part, so they
+;; must check each part rather than the number as a whole.
+(define-syntax ->f/checked
+  (syntax-rules ()
+    ((_ x loc)
+     (let ((tmp x))
+       (check-int/flonum tmp loc)
+       (->f tmp)))))
+
 ;;; Get vector length:
 
 (define (u8vector-length x)
@@ -361,8 +373,10 @@ EOF
          (len (fx/ (##core#inline "C_i_bytevector_length" bv) 8)))
     (##sys#check-range i 0 len 'c64vector-set!)
     (##sys#check-number y 'c64vector-set!)
-    (##core#inline "C_u_i_f32vector_set" x (fx* i 2) (->f (real-part y)))
-    (##core#inline "C_u_i_f32vector_set" x (fx+ (fx* i 2) 1) (->f (imag-part y)))))
+    (##core#inline "C_u_i_f32vector_set" x (fx* i 2)
+                   (->f/checked (real-part y) 'c64vector-set!))
+    (##core#inline "C_u_i_f32vector_set" x (fx+ (fx* i 2) 1)
+                   (->f/checked (imag-part y) 'c64vector-set!))))
 
 (define (c128vector-set! x i y)
   (##sys#check-structure x 'c128vector 'c128vector-set!)
@@ -370,8 +384,10 @@ EOF
          (len (fx/ (##core#inline "C_i_bytevector_length" bv) 16)))
     (##sys#check-range i 0 len 'c128vector-set!)
     (##sys#check-number y 'c128vector-set!)
-    (##core#inline "C_u_i_f64vector_set" x (fx* i 2) (->f (real-part y)))
-    (##core#inline "C_u_i_f64vector_set" x (fx+ (fx* i 2) 1) (->f (imag-part y)))))
+    (##core#inline "C_u_i_f64vector_set" x (fx* i 2)
+                   (->f/checked (real-part y) 'c128vector-set!))
+    (##core#inline "C_u_i_f64vector_set" x (fx+ (fx* i 2) 1)
+                   (->f/checked (imag-part y) 'c128vector-set!))))
 
 (define u8vector-ref bytevector-u8-ref)
 
@@ -641,9 +657,8 @@ EOF
         (if (not init)
             v
             (let ((len2 (fx* len 2))
-                  (rp (->f (real-part init)))
-                  (ip (->f (imag-part init))))
-              (check-int/flonum init 'make-c64vector)
+                  (rp (->f/checked (real-part init) 'make-c64vector))
+                  (ip (->f/checked (imag-part init) 'make-c64vector)))
               (do ((i 0 (fx+ i 2)))
                   ((fx>= i len2) v)
                 (##core#inline "C_u_i_f32vector_set" v i rp)
@@ -656,9 +671,8 @@ EOF
         (if (not init)
             v
             (let ((len2 (fx* len 2))
-                  (rp (->f (real-part init)))
-                  (ip (->f (imag-part init))))
-              (check-int/flonum init 'make-c128vector)
+                  (rp (->f/checked (real-part init) 'make-c128vector))
+                  (ip (->f/checked (imag-part init) 'make-c128vector)))
               (do ((i 0 (fx+ i 2)))
                   ((fx>= i len2) v)
                 (##core#inline "C_u_i_f64vector_set" v i rp)
@@ -712,10 +726,11 @@ EOF
              (lst lst (##core#inline "C_slot" lst 1)))
             ((##core#inline "C_eqp" lst '()) v)
             (let ((x (##core#inline "C_slot" lst 0)))
-              (##core#inline "C_u_i_f32vector_set" v i (->f (real-part x)))
+              (##core#inline "C_u_i_f32vector_set" v i
+               (->f/checked (real-part x) 'list->c64vector))
               (##core#inline "C_u_i_f32vector_set"
                v (##core#inline "C_u_fixnum_plus" i 1)
-               (->f (imag-part x)))))))))
+               (->f/checked (imag-part x) 'list->c64vector))))))))
 
 (define list->c128vector
   (let ((real-part real-part)
@@ -729,10 +744,11 @@ EOF
              (lst lst (##core#inline "C_slot" lst 1)))
             ((##core#inline "C_eqp" lst '()) v)
             (let ((x (##core#inline "C_slot" lst 0)))
-              (##core#inline "C_u_i_f64vector_set" v i (->f (real-part x)))
+              (##core#inline "C_u_i_f64vector_set" v i
+               (->f/checked (real-part x) 'list->c128vector))
               (##core#inline "C_u_i_f64vector_set"
                v (##core#inline "C_u_fixnum_plus" i 1)
-               (->f (imag-part x)))))))))
+               (->f/checked (imag-part x) 'list->c128vector))))))))
 
 
 ;;; More constructors:

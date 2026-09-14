@@ -244,3 +244,25 @@
              (do ((i 0 (add1 i))
                   (s 0.0 (+ s (* (f64vector-ref v i) (f64vector-ref v i)))))
                  ((>= i 257) s)))))
+
+;; A ratnum reaching `->f' used to be read as a bignum and segfault; every
+;; complex store path must reject it cleanly, and must still accept the
+;; complex, flonum and fixnum values it exists for.
+(assert (bulk-error? (lambda () (c64vector 1/2))))
+(assert (bulk-error? (lambda () (c128vector 1/2))))
+(assert (bulk-error? (lambda () (make-c64vector 2 1/2))))
+(assert (bulk-error? (lambda () (make-c128vector 2 1/2))))
+(assert (bulk-error? (lambda () (c64vector-set! (make-c64vector 1 0) 0 1/2))))
+(assert (bulk-error? (lambda () (c128vector-set! (make-c128vector 1 0) 0 1/2))))
+(assert (bulk-error? (lambda () (list->c64vector (list 1/2)))))
+(assert (bulk-error? (lambda () (list->c128vector (list 1/2)))))
+(assert (bulk-error? (lambda () (with-input-from-string "#c64(1/2)" read))))
+
+(assert (= 1+2i (c64vector-ref (c64vector 1+2i) 0)))
+(assert (= 1+2i (c128vector-ref (c128vector 1+2i) 0)))
+(assert (= 1.5+0.0i (c64vector-ref (c64vector 1.5) 0)))
+(assert (= 2.0+0.0i (c128vector-ref (c128vector 2) 0)))
+;; a complex fill is the one initializer these constructors exist for
+(assert (= 1+2i (c64vector-ref (make-c64vector 2 1+2i) 1)))
+(assert (= 1+2i (c128vector-ref (make-c128vector 2 1+2i) 1)))
+(assert (= 3.0+0.0i (c64vector-ref (make-c64vector 2 3) 1)))
