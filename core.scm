@@ -2624,12 +2624,26 @@
 	            ((not (rassoc sym callback-names eq?))))
 	   (db-put! db (first lparams) 'shareable-user #t)
            (and-let* ((id (first lparams))
+                      ;; Only a compiler-introduced continuation lambda may be a
+                      ;; container.  Every lambda of a sharing chain - the
+                      ;; container and each of its users - writes the variables of
+                      ;; its activation that live in the shared closure into the
+                      ;; CONTAINER's closure object on entry, and the users read
+                      ;; them back from there when they run.  So that one object
+                      ;; must not be entered again while a reader from an earlier
+                      ;; entry can still run.  A continuation closure is allocated
+                      ;; at the call it continues, so ordinary control flow keeps
+                      ;; that.  A procedure's closure is allocated once - at
+                      ;; toplevel for a global, at its binding for a local one -
+                      ;; and entered by every call, so a nested activation, or a
+                      ;; continuation captured in an earlier activation and
+                      ;; re-entered later, read the latest activation's values.
+                      ;; (Multi-shot re-entry of the same continuation object in
+                      ;; non-LIFO order still breaks the invariant; that is
+                      ;; inherent to closure sharing and is not addressed here.)
+                      ((not (second lparams)))
                       (contains (or (db-get db id 'contains) '()))
                       ((= (length contains) 1)))
-             ;; TODO: It should be possible to have escaping / global procedures be containers, but
-             ;; they should not call themselves because then they might be setting variables in
-             ;; the closure to different values at different times.  So for now we're extra careful
-             ;; about which are containers.
              (db-put! db (first lparams) 'shareable-container #t)))
 
 	 ;; Make 'removable, if it has no references and is not assigned to, and one of the following:

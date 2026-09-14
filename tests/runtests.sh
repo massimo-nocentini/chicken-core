@@ -246,6 +246,13 @@ $compile delimcc-retention.scm
 $compile -O3 delimcc-retention.scm
 ./a.out
 
+echo "======================================== closure sharing re-entry tests ..."
+# -O2 exercises the local-procedure case; -O3 implies -local and the global ones.
+$compile -O2 closure-sharing-reentry-tests.scm
+./a.out
+$compile -O3 closure-sharing-reentry-tests.scm
+./a.out
+
 echo "======================================== lolevel tests ..."
 $interpret -s lolevel-tests.scm
 $compile -specialize lolevel-tests.scm
