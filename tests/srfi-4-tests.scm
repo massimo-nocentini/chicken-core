@@ -400,3 +400,26 @@
 (let* ((bv (make-bytevector 16 0)) (v (bytevector->u64vector bv)))
   (u64vector-set! v 0 255)
   (assert (= 0 (bytevector-u8-ref bv 0))))
+
+;; -axpy! is documented to be bit-identical to the element-at-a-time loop,
+;; which rounds the product before adding; an FMA would not be
+(define-syntax test-axpy-identity
+  (er-macro-transformer
+   (lambda (x r c)
+     (let ((name (symbol->string (strip-syntax (cadr x)))))
+       (define (conc op) (string->symbol (string-append name op)))
+       `(let ((y (,(conc "vector") -0.01 0.3 -7.5))
+              (x (,(conc "vector") 0.1 0.7 2.25))
+              (w (,(conc "vector") -0.01 0.3 -7.5)))
+          (,(conc "vector-axpy!") y 0.1 x)
+          ;; the same computation, one element at a time, through the
+          ;; safe accessors -- this is the loop the manual names
+          (do ((i 0 (add1 i))) ((>= i 3))
+            (,(conc "vector-set!") w i
+             (+ (* 0.1 (,(conc "vector-ref") x i))
+                (,(conc "vector-ref") w i))))
+          (do ((i 0 (add1 i))) ((>= i 3))
+            (assert (= (,(conc "vector-ref") y i) (,(conc "vector-ref") w i)))))))))
+
+(test-axpy-identity f64)
+(test-axpy-identity f32)

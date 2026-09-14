@@ -63,10 +63,29 @@
    accurate, the error growing like sqrt(n/8) rather than n).  The
    elementwise kernels reassociate nothing and are exact. */
 
-/* REVIEW AMENDMENT: `d * a[i] + b[i]' is contracted into an FMA by clang/gcc
-   whenever the build enables FMA (-march=native, -march=haswell, -mfma...),
-   which silently breaks the documented bit-identity with the Scheme loop.
-   Turn contraction off for this block. */
+/* `d * a[i] + b[i]' is contracted into a single FMA whenever the build has
+   FMA available -- a user -march flag on x86-64, or the baseline on AArch64
+   and ppc64 -- and that silently breaks the documented bit-identity with the
+   Scheme loop, which rounds the product before adding: C_a_i_flonum_times
+   materialises a flonum that C_a_i_flonum_plus then reads back, and CHICKEN
+   never fuses (+ (* a x) y) on its own.
+
+   Two levers are needed because the compilers disagree about which one they
+   implement.  clang honours the standard pragma.  GCC has never implemented
+   it -- it warns "ignoring '#pragma STDC FP_CONTRACT'" under -Wall and
+   defaults to -ffp-contract=fast, which contracts across statements, so a
+   named temporary would not help either; it wants the optimize attribute
+   instead.  Both are scoped to this block and neither affects the rest of
+   the translation unit.
+
+   NOT covered: x87 excess precision on a 32-bit x86 build, where GCC
+   defaults to -mfpmath=387 and FLT_EVAL_METHOD is 2, so the product is kept
+   at 80 bits and rounded once.  That needs -fexcess-precision=standard or
+   -msse2 -mfpmath=sse in the build, not a pragma here. */
+#if defined(__GNUC__) && !defined(__clang__)
+# pragma GCC push_options
+# pragma GCC optimize ("fp-contract=off")
+#endif
 #pragma STDC FP_CONTRACT OFF
 #if defined(__GNUC__) || defined(__clang__)
 # define C_nv_restrict __restrict
@@ -188,6 +207,10 @@ static C_word PFX ## _dot(C_word **ptr, C_word c, C_word x, C_word y, C_word s, 
 
 C_nv_define_kernels(double, C_nv_f64)
 C_nv_define_kernels(float, C_nv_f32)
+
+#if defined(__GNUC__) && !defined(__clang__)
+# pragma GCC pop_options
+#endif
 EOF
 ) )
 
