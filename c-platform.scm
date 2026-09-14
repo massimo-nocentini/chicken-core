@@ -198,7 +198,7 @@
     chicken.number-vector#u32vector? chicken.number-vector#u64vector?
     chicken.number-vector#s32vector? chicken.number-vector#s64vector?
     chicken.number-vector#f32vector? chicken.number-vector#f64vector?
-    chicken.number-vector#c64vector? chicken.number-vector#f128vector?
+    chicken.number-vector#c64vector? chicken.number-vector#c128vector?
 
     chicken.number-vector#u8vector-length chicken.number-vector#s8vector-length
     chicken.number-vector#u16vector-length chicken.number-vector#s16vector-length
@@ -269,7 +269,7 @@
     ##sys#pointer? ##sys#generic-structure? ##sys#structure? ##sys#check-structure
     ##sys#check-number ##sys#check-list ##sys#check-pair ##sys#check-string
     ##sys#check-symbol ##sys#check-boolean ##sys#check-locative
-    ##sys#check-fixnum ##sys#check-range ##sys#check-range/internal
+    ##sys#check-fixnum ##sys#check-range ##sys#check-range/including
     ##sys#check-port ##sys#check-input-port ##sys#check-output-port
     ##sys#check-open-port ##sys#check-bytevector ##sys#signal-hook
     ##sys#check-char ##sys#check-vector ##sys#check-bytevector ##sys#list ##sys#cons
@@ -1101,6 +1101,8 @@
 
 (rewrite 'chicken.number-vector#u32vector-ref 16 2 "C_a_i_u32vector_ref" #t min-words-per-bignum)
 (rewrite 'chicken.number-vector#s32vector-ref 16 2 "C_a_i_s32vector_ref" #t min-words-per-bignum)
+(rewrite 'chicken.number-vector#u64vector-ref 16 2 "C_a_i_u64vector_ref" #t 7)
+(rewrite 'chicken.number-vector#s64vector-ref 16 2 "C_a_i_s64vector_ref" #t 7)
 
 (rewrite 'chicken.number-vector#f32vector-ref 16 2 "C_a_u_i_f32vector_ref" #f words-per-flonum)
 (rewrite 'chicken.number-vector#f32vector-ref 16 2 "C_a_i_f32vector_ref" #t words-per-flonum)
