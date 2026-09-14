@@ -5728,7 +5728,7 @@ C_regparm C_word C_i_s16vector_ref(C_word v, C_word i)
     j = C_unfix(i);
 
     if(j < 0 || j >= (C_header_size(C_block_item(v, 1)) >> 1))
-    	barf(C_OUT_OF_BOUNDS_ERROR, "u16vector-ref", v, i);
+    	barf(C_OUT_OF_BOUNDS_ERROR, "s16vector-ref", v, i);
 
     return C_fix(((signed short *)C_data_pointer(C_block_item(v, 1)))[j]);
   }
@@ -6115,7 +6115,7 @@ C_regparm C_word C_i_bytevector_set(C_word v, C_word i, C_word x)
   C_word n;
 
   if(!C_truep(C_i_bytevectorp(v)))
-    barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-set!", v);
+    barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-u8-set!", v);
 
   if(i & C_FIXNUM_BIT) {
     j = C_unfix(i);
@@ -6199,7 +6199,7 @@ C_regparm C_word C_i_s16vector_set(C_word v, C_word i, C_word x)
     j = C_unfix(i);
 
     if(j < 0 || j >= (C_header_size(C_block_item(v, 1)) >> 1))
-    	barf(C_OUT_OF_BOUNDS_ERROR, "u16vector-set!", v, i);
+    	barf(C_OUT_OF_BOUNDS_ERROR, "s16vector-set!", v, i);
 
     if(x & C_FIXNUM_BIT) {
       if (C_unfix(C_i_fixnum_length(x)) <= 15) n = C_unfix(x);
