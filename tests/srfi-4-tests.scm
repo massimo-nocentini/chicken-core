@@ -122,6 +122,14 @@
                ("#u8(\"a\" \"\")" #u8(97))
                ("#u8\"\"" #u8())
                ("#s8\"\"" #s8())
+               ;; the string form used to reach list->NNNvector as a list of
+               ;; characters, so it worked for u8 only
+               ("#s8\"abc\"" #s8(97 98 99))
+               ("#u16\"abc\"" #u16(97 98 99))
+               ("#s64\"A\"" #s64(65))
+               ("#u64\"A\"" #u64(65))
+               ("#f32\"AB\"" #f32(65.0 66.0))
+               ("#f64\"AB\"" #f64(65.0 66.0))
                ("#u64(\" \" #\\! 1 \"A\")" #u64(32 33 1 65))
                ("#u64(\" \" #\\! \"A\" 1)" #u64(32 33 65 1))
                ("#u64(\"🐔\"      \"🏫\")" #u64(#xf0 #x9f #x90 #x94   #xf0 #x9f #x8f #xab)))))
@@ -374,3 +382,21 @@
 ;; make-s8vector validated its fill with the unsigned checker
 (assert (= -1 (s8vector-ref (make-s8vector 2 -1) 1)))
 (assert (bulk-error? (lambda () (make-s8vector 2 200))))
+
+;; bytevector->u64vector and ->s64vector validated against element size 4,
+;; so a length that is a multiple of 4 but not of 8 was accepted and the
+;; trailing four bytes became unreachable
+(import (chicken bytevector))
+(assert (= 2 (u64vector-length (bytevector->u64vector (make-bytevector 16 0)))))
+(assert (= 2 (s64vector-length (bytevector->s64vector/shared (make-bytevector 16 0)))))
+(assert (bulk-error? (lambda () (bytevector->u64vector (make-bytevector 12 0)))))
+(assert (bulk-error? (lambda () (bytevector->s64vector (make-bytevector 12 0)))))
+(assert (bulk-error? (lambda () (bytevector->u64vector/shared (make-bytevector 12 0)))))
+(assert (bulk-error? (lambda () (bytevector->s64vector/shared (make-bytevector 4 0)))))
+;; /shared aliases, the copying form does not
+(let* ((bv (make-bytevector 16 0)) (v (bytevector->u64vector/shared bv)))
+  (u64vector-set! v 0 255)
+  (assert (= 255 (bytevector-u8-ref bv 0))))
+(let* ((bv (make-bytevector 16 0)) (v (bytevector->u64vector bv)))
+  (u64vector-set! v 0 255)
+  (assert (= 0 (bytevector-u8-ref bv 0))))

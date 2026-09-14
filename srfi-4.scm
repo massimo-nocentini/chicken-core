@@ -937,8 +937,8 @@ EOF
 (define bytevector->s16vector/shared (unpack 's16vector 2 'bytevector->s16vector/shared))
 (define bytevector->u32vector/shared (unpack 'u32vector 4 'bytevector->u32vector/shared))
 (define bytevector->s32vector/shared (unpack 's32vector 4 'bytevector->s32vector/shared))
-(define bytevector->u64vector/shared (unpack 'u64vector 4 'bytevector->u64vector/shared))
-(define bytevector->s64vector/shared (unpack 's64vector 4 'bytevector->s64vector/shared))
+(define bytevector->u64vector/shared (unpack 'u64vector 8 'bytevector->u64vector/shared))
+(define bytevector->s64vector/shared (unpack 's64vector 8 'bytevector->s64vector/shared))
 (define bytevector->f32vector/shared (unpack 'f32vector 4 'bytevector->f32vector/shared))
 (define bytevector->f64vector/shared (unpack 'f64vector 8 'bytevector->f64vector/shared))
 (define bytevector->c64vector/shared (unpack 'c64vector 8 'bytevector->c64vector/shared))
@@ -949,8 +949,8 @@ EOF
 (define bytevector->s16vector (unpack-copy 's16vector 2 'bytevector->s16vector))
 (define bytevector->u32vector (unpack-copy 'u32vector 4 'bytevector->u32vector))
 (define bytevector->s32vector (unpack-copy 's32vector 4 'bytevector->s32vector))
-(define bytevector->u64vector (unpack-copy 'u64vector 4 'bytevector->u64vector))
-(define bytevector->s64vector (unpack-copy 's64vector 4 'bytevector->s64vector))
+(define bytevector->u64vector (unpack-copy 'u64vector 8 'bytevector->u64vector))
+(define bytevector->s64vector (unpack-copy 's64vector 8 'bytevector->s64vector))
 (define bytevector->f32vector (unpack-copy 'f32vector 4 'bytevector->f32vector))
 (define bytevector->f64vector (unpack-copy 'f64vector 8 'bytevector->f64vector))
 (define bytevector->c64vector (unpack-copy 'c64vector 8 'bytevector->c64vector))
@@ -1145,7 +1145,7 @@ EOF
                                ;; reuse already created bytevector
                                (##core#inline "C_chop_bv" (##sys#slot d 0)))
                               (else 
-                               ((cadr c) (##sys#string->list d)))))))
+                               ((cadr c) (##sys#canonicalize-number-list! (list d))))))))
 		  (else (##sys#read-error port "invalid sharp-sign read syntax" tag)) ) )
 	  (old-hook char port) ) ) ) )
 
