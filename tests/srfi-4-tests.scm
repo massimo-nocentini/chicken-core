@@ -503,3 +503,62 @@
 ;; a non-vector still reports a type error, not a failure inside ##sys#size
 (assert (bulk-error? (lambda () (subf64vector 42))))
 (assert (bulk-error? (lambda () (f64vector->list 42))))
+
+;; elementwise vector-vector multiply and divide
+(define-syntax test-vv
+  (er-macro-transformer
+   (lambda (x r c)
+     (let ((name (symbol->string (strip-syntax (cadr x)))))
+       (define (conc op) (string->symbol (string-append name op)))
+       `(begin
+          ;; disjoint vectors
+          (let ((y (,(conc "vector") 2. 3. 4.)) (x (,(conc "vector") 5. 6. 7.)))
+            (,(conc "vector-mul!") y x)
+            (assert (equal? y (,(conc "vector") 10. 18. 28.))))
+          ;; the same object twice: squares in place, and must take the
+          ;; aliasing path rather than the __restrict one
+          (let ((y (,(conc "vector") 2. 3. 4.)))
+            (,(conc "vector-mul!") y y)
+            (assert (equal? y (,(conc "vector") 4. 9. 16.))))
+          ;; two distinct structures over one bytevector: also aliased, and
+          ;; the test is pointer equality of the data, not of the objects
+          (let* ((bv (make-bytevector (* 3 ,(caddr x)) 0))
+                 (a (,(conc "vector->list") (,(conc "vector") 0. 0. 0.))))
+            (let ((p (,(string->symbol (string-append "bytevector->" name "vector/shared")) bv))
+                  (q (,(string->symbol (string-append "bytevector->" name "vector/shared")) bv)))
+              (,(conc "vector-fill!") p 3.)
+              (,(conc "vector-mul!") p q)
+              (assert (equal? (,(conc "vector->list") p) '(9. 9. 9.)))))
+          ;; divide, including the IEEE results a guard would have destroyed
+          (let ((y (,(conc "vector") 10. 9. 8.)) (x (,(conc "vector") 2. 3. 4.)))
+            (,(conc "vector-div!") y x)
+            (assert (equal? y (,(conc "vector") 5. 3. 2.))))
+          (let ((y (,(conc "vector") 1. 0.)) (x (,(conc "vector") 0. 0.)))
+            (,(conc "vector-div!") y x)
+            (assert (= +inf.0 (,(conc "vector-ref") y 0)))
+            (assert (not (= (,(conc "vector-ref") y 1) (,(conc "vector-ref") y 1)))))
+          ;; ranges, the unroll boundary at 4, and the guards
+          (let ((y (,(conc "vector") 1. 2. 3. 4. 5.)) (x (,(conc "vector") 1. 2. 3. 4. 5.)))
+            (,(conc "vector-mul!") y x 1 4)
+            (assert (equal? y (,(conc "vector") 1. 4. 9. 16. 5.))))
+          (let ((y (,(conc "vector") 1. 2.)))
+            (,(conc "vector-mul!") y (,(conc "vector") 3. 4.) 1 1)
+            (assert (equal? y (,(conc "vector") 1. 2.))))
+          (assert (bulk-error? (lambda ()
+            (,(conc "vector-mul!") (,(conc "vector") 1. 2.) (,(conc "vector") 1.)))))
+          (assert (bulk-error? (lambda ()
+            (,(conc "vector-div!") (,(conc "vector") 1. 2.) (,(conc "vector") 1.)))))
+          (assert (bulk-error? (lambda ()
+            (,(conc "vector-mul!") (,(conc "vector") 1.) 42)))))))))
+
+(test-vv f64 8)
+(test-vv f32 4)
+
+;; f32 must agree bit for bit with the element-at-a-time loop
+(let ((y (f32vector 1.1 2.2 3.3 4.4 5.5))
+      (x (f32vector 0.3 0.7 1.9 2.5 3.1))
+      (w (f32vector 1.1 2.2 3.3 4.4 5.5)))
+  (f32vector-mul! y x)
+  (do ((i 0 (add1 i))) ((>= i 5))
+    (f32vector-set! w i (* (f32vector-ref w i) (f32vector-ref x i))))
+  (assert (equal? y w)))

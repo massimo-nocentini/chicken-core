@@ -205,8 +205,56 @@ static C_word PFX ## _dot(C_word **ptr, C_word c, C_word x, C_word y, C_word s, 
   return C_flonum(ptr, t); \
 }
 
+/* Elementwise vector-vector operations.  Same three-shape aliasing dispatch
+   as PFX##_axpy, and for the same reason: the two vectors may legitimately
+   be the same object, and __restrict on pointers that provably alias is
+   undefined behaviour. */
+
+#define C_nv_define_vv(T, PFX, NAME, OP) \
+static void PFX ## _ ## NAME ## _same(T *b, C_word i, C_word n) \
+{ \
+  for(; i + 4 <= n; i += 4) { \
+    b[i]   = (T)((double)b[i]   OP (double)b[i]); \
+    b[i+1] = (T)((double)b[i+1] OP (double)b[i+1]); \
+    b[i+2] = (T)((double)b[i+2] OP (double)b[i+2]); \
+    b[i+3] = (T)((double)b[i+3] OP (double)b[i+3]); \
+  } \
+  for(; i < n; ++i) b[i] = (T)((double)b[i] OP (double)b[i]); \
+} \
+ \
+static void PFX ## _ ## NAME ## _disjoint(T *C_nv_restrict b, \
+                                          const T *C_nv_restrict a, \
+                                          C_word i, C_word n) \
+{ \
+  for(; i + 4 <= n; i += 4) { \
+    b[i]   = (T)((double)b[i]   OP (double)a[i]); \
+    b[i+1] = (T)((double)b[i+1] OP (double)a[i+1]); \
+    b[i+2] = (T)((double)b[i+2] OP (double)a[i+2]); \
+    b[i+3] = (T)((double)b[i+3] OP (double)a[i+3]); \
+  } \
+  for(; i < n; ++i) b[i] = (T)((double)b[i] OP (double)a[i]); \
+} \
+ \
+static C_word PFX ## _ ## NAME(C_word y, C_word v, C_word s, C_word e) \
+{ \
+  T *b = C_nv_elems(T, y); \
+  T *a = C_nv_elems(T, v); \
+  C_word i = C_unfix(s), n = C_unfix(e); \
+  if(a == b) PFX ## _ ## NAME ## _same(b, i, n); \
+  else if((C_uword)(a + n) <= (C_uword)(b + i) || \
+          (C_uword)(b + n) <= (C_uword)(a + i)) \
+    PFX ## _ ## NAME ## _disjoint(b, a, i, n); \
+  else for(; i < n; ++i) b[i] = (T)((double)b[i] OP (double)a[i]); \
+  return C_SCHEME_UNDEFINED; \
+}
+
 C_nv_define_kernels(double, C_nv_f64)
 C_nv_define_kernels(float, C_nv_f32)
+
+C_nv_define_vv(double, C_nv_f64, mul, *)
+C_nv_define_vv(double, C_nv_f64, div, /)
+C_nv_define_vv(float,  C_nv_f32, mul, *)
+C_nv_define_vv(float,  C_nv_f32, div, /)
 
 #if defined(__GNUC__) && !defined(__clang__)
 # pragma GCC pop_options
@@ -261,9 +309,9 @@ EOF
    subs8vector subu16vector subu8vector subu32vector subu64vector
    subc64vector subc128vector
    f64vector-fill! f64vector-copy! f64vector-scale! f64vector-axpy!
-   f64vector-sum f64vector-dot
+   f64vector-mul! f64vector-div! f64vector-sum f64vector-dot
    f32vector-fill! f32vector-copy! f32vector-scale! f32vector-axpy!
-   f32vector-sum f32vector-dot)
+   f32vector-mul! f32vector-div! f32vector-sum f32vector-dot)
 
 (import scheme
 	chicken.base
@@ -1088,8 +1136,8 @@ EOF
 
 (define-syntax define-nvector-bulk-ops
   (syntax-rules ()
-    ((_ tag es fill! copy! scale! axpy! sum dot
-        c-fill c-copy c-scale c-axpy c-sum c-dot)
+    ((_ tag es fill! copy! scale! axpy! mul! div! sum dot
+        c-fill c-copy c-scale c-axpy c-mul c-div c-sum c-dot)
      (begin
        (define (fill! v x #!optional (start 0) end)
          (let ((e (%nvector-check-range v 'tag es start end 'fill!)))
@@ -1119,6 +1167,14 @@ EOF
            (%nvector-check-covers x 'tag es e 'axpy!)
            (check-int/flonum a 'axpy!)
            (##core#inline c-axpy y (->f a) x start e)))
+       (define (mul! y x #!optional (start 0) end)
+         (let ((e (%nvector-check-range y 'tag es start end 'mul!)))
+           (%nvector-check-covers x 'tag es e 'mul!)
+           (##core#inline c-mul y x start e)))
+       (define (div! y x #!optional (start 0) end)
+         (let ((e (%nvector-check-range y 'tag es start end 'div!)))
+           (%nvector-check-covers x 'tag es e 'div!)
+           (##core#inline c-div y x start e)))
        (define (sum v #!optional (start 0) end)
          (let ((e (%nvector-check-range v 'tag es start end 'sum)))
            (##core#inline_allocate (c-sum 4) v start e)))
@@ -1130,16 +1186,16 @@ EOF
 (define-nvector-bulk-ops
   f64vector 8
   f64vector-fill! f64vector-copy! f64vector-scale! f64vector-axpy!
-  f64vector-sum f64vector-dot
+  f64vector-mul! f64vector-div! f64vector-sum f64vector-dot
   "C_nv_f64_fill" "C_nv_f64_copy" "C_nv_f64_scale" "C_nv_f64_axpy"
-  "C_nv_f64_sum" "C_nv_f64_dot")
+  "C_nv_f64_mul" "C_nv_f64_div" "C_nv_f64_sum" "C_nv_f64_dot")
 
 (define-nvector-bulk-ops
   f32vector 4
   f32vector-fill! f32vector-copy! f32vector-scale! f32vector-axpy!
-  f32vector-sum f32vector-dot
+  f32vector-mul! f32vector-div! f32vector-sum f32vector-dot
   "C_nv_f32_fill" "C_nv_f32_copy" "C_nv_f32_scale" "C_nv_f32_axpy"
-  "C_nv_f32_sum" "C_nv_f32_dot")
+  "C_nv_f32_mul" "C_nv_f32_div" "C_nv_f32_sum" "C_nv_f32_dot")
 
 (register-feature! 'srfi-4)
 

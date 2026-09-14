@@ -416,6 +416,30 @@ Computes {{Y[i] <- A * X[i] + Y[i]}} in place for every {{i}} in the range
 {{[START,END)}}. The range applies to both vectors, and both are range
 checked: a shorter {{X}} is an error, not a silent truncation.
 
+<procedure>(f32vector-mul! Y X [START [END]])</procedure><br>
+<procedure>(f64vector-mul! Y X [START [END]])</procedure><br>
+
+Multiplies every element of {{Y}} in the range {{[START,END)}} by the
+corresponding element of the ''vector'' {{X}}, in place -- the elementwise
+product, not a second spelling of {{-scale!}}, which takes a number. The
+range applies to both vectors and both are range checked: a shorter {{X}}
+is an error, not a silent truncation. {{Y}} and {{X}} may be the same
+vector, or two vectors sharing one bytevector.
+
+<procedure>(f32vector-div! Y X [START [END]])</procedure><br>
+<procedure>(f64vector-div! Y X [START [END]])</procedure><br>
+
+Computes {{Y[i] <- Y[i] / X[i]}} under the same rules. There is no
+division-by-zero check: the IEEE results are produced, so dividing by
+{{0.0}} yields an infinity and {{0.0}} by {{0.0}} yields a NaN, exactly as
+the equivalent loop would.
+
+There is no {{-add!}} or {{-sub!}}. With floating-point contraction turned
+off, which this module arranges, {{1.0 * x}} and {{-1.0 * x}} are exactly
+representable and introduce no rounding, so {{(f64vector-axpy! Y 1.0 X)}}
+and {{(f64vector-axpy! Y -1.0 X)}} ''are'' elementwise addition and
+subtraction, bit for bit, including for the infinities and NaNs.
+
 <procedure>(f32vector-sum F32VECTOR [START [END]])</procedure><br>
 <procedure>(f64vector-sum F64VECTOR [START [END]])</procedure><br>
 
