@@ -423,3 +423,17 @@
 
 (test-axpy-identity f64)
 (test-axpy-identity f32)
+
+;; the manual says the srfi-4 feature identifier is defined when loaded
+(import (chicken platform))
+(assert (feature? 'srfi-4))
+
+;; sub*vector checked both bounds against 0 and never required FROM <= TO,
+;; so a negative size reached the allocator and barfed with an internal
+;; byte count instead of naming the procedure
+(assert (bulk-error? (lambda () (subf64vector (f64vector 1. 2. 3. 4.) 3 1))))
+(assert (bulk-error? (lambda () (subu8vector (u8vector 1 2 3 4) 3 1))))
+(assert (bulk-error? (lambda () (subs16vector (s16vector 1 2 3 4) 4 2))))
+(assert (equal? (f64vector 2.0 3.0) (subf64vector (f64vector 1. 2. 3. 4.) 1 3)))
+(assert (equal? (u8vector 2 3) (subu8vector (u8vector 1 2 3 4) 1 3)))
+(assert (equal? (f64vector) (subf64vector (f64vector 1. 2.) 1 1)))

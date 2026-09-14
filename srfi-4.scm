@@ -987,7 +987,10 @@ EOF
 	 [len (##sys#size bv)]
 	 [ilen (##core#inline "C_u_fixnum_divide" len es)] )
     (##sys#check-range/including from 0 ilen loc)
-    (##sys#check-range/including to 0 ilen loc)
+    ;; anchor the second bound at FROM: checking both against 0 lets
+    ;; FROM > TO through, and the negative size then barfs out of the
+    ;; allocator with an internal byte count instead of the arguments
+    (##sys#check-range/including to from ilen loc)
     (let* ([size2 (fx* es (fx- to from))]
 	   [bv2 (##sys#allocate-bytevector size2 #f)] )
       (let ([v (##sys#make-structure t bv2)])
@@ -998,7 +1001,7 @@ EOF
   (##sys#check-bytevector v 'subu8vector)
   (let ((n (##sys#size v)))
     (##sys#check-range/including from 0 n 'subu8vector)
-    (##sys#check-range/including to 0 n 'subu8vector)
+    (##sys#check-range/including to from n 'subu8vector)
     (bytevector-copy v from to)))
   
 (define (subu16vector v from to) (subnvector v 'u16vector 2 from to 'subu16vector))
@@ -1064,13 +1067,15 @@ EOF
                 (n (fx- e start)))
            (##sys#check-structure to 'tag 'copy!)
            (let ((tlen (%nvector-elements to es)))
-             ;; REVIEW AMENDMENT: not ##sys#check-range/including -- its C
-             ;; implementation truncates the index to `int', so at >= 2^32
-             ;; slips through and the memmove writes out of bounds.
+             ;; Hand-rolled rather than ##sys#check-range/including
+             ;; because the bound on AT is `at + n', which folds the
+             ;; three conditions into one test.  The overflow of
+             ;; (fx+ at n) is harmless: (fx> at tlen) has already
+             ;; returned by then.
              (##sys#check-fixnum at 'copy!)
              (when (or (fx< at 0) (fx> at tlen) (fx> (fx+ at n) tlen))
                (##sys#error-hook
-                (foreign-value "C_OUT_OF_BOUNDS_ERROR" int) 'copy! at tlen)))
+                (foreign-value "C_OUT_OF_BOUNDS_ERROR" int) 'copy! tlen at)))
            (##core#inline c-copy to at from start e)))
        (define (scale! v a #!optional (start 0) end)
          (let ((e (%nvector-check-range v 'tag es start end 'scale!)))
@@ -1103,6 +1108,7 @@ EOF
   "C_nv_f32_fill" "C_nv_f32_copy" "C_nv_f32_scale" "C_nv_f32_axpy"
   "C_nv_f32_sum" "C_nv_f32_dot")
 
+(register-feature! 'srfi-4)
 
 ) ; module chicken.number-vector
 
