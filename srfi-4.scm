@@ -48,13 +48,28 @@
    for f32 as well as f64.
 
    The loops are unrolled by hand rather than left to the loop vectorizer.
-   The reductions carry a loop-carried FP dependence that clang will not
-   reorder at any -O level without -ffast-math, and a rolled `a[i] *= s' is
-   left scalar at -Os, which is what the stock CHICKEN build uses (the loop
-   vectorizer declines there rather than emit runtime checks).  Written out
-   this way the SLP vectorizer takes _scale, _sum, _dot and both halves of
-   _axpy from -Os upwards; _fill stays scalar stores, which costs nothing
-   because it is store-port bound either way, and _copy is a memmove.
+   The reductions carry a loop-carried FP dependence that no compiler may
+   reorder without -ffast-math, and a rolled `a[i] *= s' is left scalar at
+   -Os, which is what the stock CHICKEN build uses.  Written out this way an
+   SLP vectorizer can take _scale, _sum, _dot and both halves of _axpy
+   without any reassociation permission; _fill stays scalar stores, which
+   costs nothing because it is store-port bound either way, and _copy is a
+   memmove.
+
+   WHICH COMPILER ACTUALLY DOES IT, measured against the generated srfi-4.c
+   at the stock `-Os -fomit-frame-pointer', counting packed FP arithmetic
+   (`v?(add|sub|mul|div)p[sd]' -- NOT `movaps', which is a register move and
+   makes a naive grep read positive on exactly the build where the answer is
+   no):
+
+     clang 18.1 -Os              68   its SLP vectorizer runs at -Os
+     gcc 13.3   -Os               0   gcc's does not run at -Os at all
+     gcc 13.3   -Os + the pragma below  161
+
+   -ftree-slp-vectorize is among the passes -O3 enables and -Os does not, so
+   on GCC this block has to ask for it; see the pragma below.  Since
+   defaults.make has `C_COMPILER ?= gcc', the unasked-for case was the
+   default build on the default platform.
 
    CONSEQUENCE, and it is a real one: _sum and _dot keep eight independent
    partial sums and combine them pairwise at the end.  That is a
@@ -78,13 +93,32 @@
    instead.  Both are scoped to this block and neither affects the rest of
    the translation unit.
 
+   The GCC lever also carries "O3", which is what makes the vectorizer run
+   here at -Os; see the measurements above.  Keep "fp-contract=off" in the
+   list: raising the optimization level does not re-enable contraction, and
+   the object is verified to contain no vfmadd even at -O3 -march=native,
+   but the guarantee is the reason this pragma exists and it should be
+   stated where it is made.  The __OPTIMIZE__ guard leaves the -O0 debug
+   build (Makefile.linux:37) debuggable -- at -O0 these functions stay at
+   -O0 and only the FP-contract guarantee is asserted.
+
+   Note that `#pragma GCC optimize' resets optimization-class flags for the
+   functions it covers, which drops -fstack-protector-strong for them.  That
+   is pre-existing -- the fp-contract lever alone does it -- and these are
+   non-allocating leaf functions with no local arrays and no calls, but a
+   hardening audit will find it and it should be written down.
+
    NOT covered: x87 excess precision on a 32-bit x86 build, where GCC
    defaults to -mfpmath=387 and FLT_EVAL_METHOD is 2, so the product is kept
    at 80 bits and rounded once.  That needs -fexcess-precision=standard or
    -msse2 -mfpmath=sse in the build, not a pragma here. */
 #if defined(__GNUC__) && !defined(__clang__)
 # pragma GCC push_options
-# pragma GCC optimize ("fp-contract=off")
+# if defined(__OPTIMIZE__)
+#  pragma GCC optimize ("O3", "fp-contract=off")
+# else
+#  pragma GCC optimize ("fp-contract=off")
+# endif
 #endif
 #pragma STDC FP_CONTRACT OFF
 #if defined(__GNUC__) || defined(__clang__)
