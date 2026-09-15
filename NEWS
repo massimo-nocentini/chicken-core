@@ -31,7 +31,13 @@
     more consistent with other Scheme implementations and return results
     that are more useful.
   - Multiplication with exact zero always produces a zero result.
-  - Various improvements numerical code, contributed by Peter McGoron.
+  - Various improvements numerical code, in particular for complex numbers
+    and inverse trigonometric functions. Contributed by Peter McGoron.
+  - Added safe variant for bytevector predicates, which would otherwise
+    fail when given immediate values (thanks to Massimo Nocentini).
+  - Added some missing range changes in utf8/bytes->string procedures,
+    handle edge case in read-line internals, added fast path for ASCII
+    chars in utf comparison predicate (thank to Massimo Nocentini).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
@@ -48,6 +54,9 @@
     2, making this actually match the documentation.
   - Fixed a bug in the "lfa2" pass that could result in exponential
     compile times due to redundant node walking.
+  - Fix misspelled primitives in extended bindings list for compiler
+    rewrites, added rewrites for R7RS bytevector operations (thanks
+    to Massimo Nocentini).
 
 6.0.0
 
