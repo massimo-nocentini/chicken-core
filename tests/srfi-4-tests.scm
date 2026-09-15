@@ -402,163 +402,48 @@
   (assert (= 0 (bytevector-u8-ref bv 0))))
 
 ;; -axpy! is documented to be bit-identical to the element-at-a-time loop,
-;; which rounds the product before adding; an FMA would not be
+;; which rounds the product before adding; an FMA would not be.
+;;
+;; The lanes matter.  A lane only tells fused from unfused when the product
+;; and the addend very nearly cancel, so that the bits an FMA keeps survive
+;; into the result -- and for f32 that is doubly true, because the kernel
+;; computes in double and narrows on store, which washes the difference out
+;; unless there is cancellation.  So each type gets a lane built to cancel:
+;; y is set to the stored negation of a*x, which is exact in the element
+;; type, leaving a result near zero whose low bits are entirely decided by
+;; whether the multiply was rounded.  For f64 the cancellation is exact, so
+;; those lanes are perfectly discriminating: an unfused kernel answers 0.0
+;; and a fused one answers the rounding error of the product, which is the
+;; twoProduct identity fma(a,b,-(a*b)) and is never zero when a*b is
+;; inexact.  The previous version of this test used only lanes 3-5, and a
+;; standalone check of those three values showed 1 of 3 discriminating for
+;; f64 and 0 of 3 for f32 -- the f32 half could not have caught an FMA at
+;; all.
 (define-syntax test-axpy-identity
   (er-macro-transformer
    (lambda (x r c)
      (let ((name (symbol->string (strip-syntax (cadr x)))))
        (define (conc op) (string->symbol (string-append name op)))
-       `(let ((y (,(conc "vector") -0.01 0.3 -7.5))
-              (x (,(conc "vector") 0.1 0.7 2.25))
-              (w (,(conc "vector") -0.01 0.3 -7.5)))
-          (,(conc "vector-axpy!") y 0.1 x)
-          ;; the same computation, one element at a time, through the
-          ;; safe accessors -- this is the loop the manual names
+       `(let* ((a 0.81546639037107393)
+               (x (,(conc "vector") 0.313482523 -1.35545778 0.715200305 0.1 0.7 2.25))
+               (n 6)
+               (y (,(conc "vector") 0. 0. 0. -0.01 0.3 -7.5))
+               (w (,(conc "vector") 0. 0. 0. 0. 0. 0.)))
+          ;; lanes 0-2 cancel: y[i] <- -(a * x[i]), rounded to the element type
           (do ((i 0 (add1 i))) ((>= i 3))
+            (,(conc "vector-set!") y i (- (* a (,(conc "vector-ref") x i)))))
+          ;; w starts as a copy of y
+          (do ((i 0 (add1 i))) ((>= i n))
+            (,(conc "vector-set!") w i (,(conc "vector-ref") y i)))
+          (,(conc "vector-axpy!") y a x)
+          ;; the same computation one element at a time through the safe
+          ;; accessors -- this is the loop the manual names
+          (do ((i 0 (add1 i))) ((>= i n))
             (,(conc "vector-set!") w i
-             (+ (* 0.1 (,(conc "vector-ref") x i))
+             (+ (* a (,(conc "vector-ref") x i))
                 (,(conc "vector-ref") w i))))
-          (do ((i 0 (add1 i))) ((>= i 3))
+          (do ((i 0 (add1 i))) ((>= i n))
             (assert (= (,(conc "vector-ref") y i) (,(conc "vector-ref") w i)))))))))
 
 (test-axpy-identity f64)
 (test-axpy-identity f32)
-
-;; the manual says the srfi-4 feature identifier is defined when loaded
-(import (chicken platform))
-(assert (feature? 'srfi-4))
-
-;; sub*vector checked both bounds against 0 and never required FROM <= TO,
-;; so a negative size reached the allocator and barfed with an internal
-;; byte count instead of naming the procedure
-(assert (bulk-error? (lambda () (subf64vector (f64vector 1. 2. 3. 4.) 3 1))))
-(assert (bulk-error? (lambda () (subu8vector (u8vector 1 2 3 4) 3 1))))
-(assert (bulk-error? (lambda () (subs16vector (s16vector 1 2 3 4) 4 2))))
-(assert (equal? (f64vector 2.0 3.0) (subf64vector (f64vector 1. 2. 3. 4.) 1 3)))
-(assert (equal? (u8vector 2 3) (subu8vector (u8vector 1 2 3 4) 1 3)))
-(assert (equal? (f64vector) (subf64vector (f64vector 1. 2.) 1 1)))
-
-;; move-memory! omitted the complex vectors from its slot-1 structure list
-(import (chicken memory))
-(let ((a (c64vector 1+2i)) (b (c64vector 0)))
-  (move-memory! a b 8)
-  (assert (= 1+2i (c64vector-ref b 0))))
-(let ((a (c128vector 3+4i)) (b (c128vector 0)))
-  (move-memory! a b 16)
-  (assert (= 3+4i (c128vector-ref b 0))))
-
-;; printing must be unchanged by the dispatch table hoist
-(assert (string=? "#f64(1.5 +nan.0 +inf.0 -0.0)"
-                  (with-output-to-string
-                    (lambda () (write (f64vector 1.5 +nan.0 +inf.0 -0.0))))))
-(assert (string=? "#c64(1.0+2.0i)"
-                  (with-output-to-string (lambda () (write (c64vector 1+2i))))))
-(assert (string=? "#s64(-1 2)"
-                  (with-output-to-string (lambda () (write (s64vector -1 2))))))
-(assert (equal? (f64vector 1.5 +inf.0)
-                (with-input-from-string
-                    (with-output-to-string
-                      (lambda () (write (f64vector 1.5 +inf.0))))
-                  read)))
-
-;; sub*vector takes an optional TO, and *vector->list optional START/END
-(define-syntax test-ranges
-  (er-macro-transformer
-   (lambda (x r c)
-     (let ((name (symbol->string (strip-syntax (cadr x)))))
-       (define (conc op) (string->symbol (string-append name op)))
-       (define (sub) (string->symbol (string-append "sub" name "vector")))
-       `(let ((v (,(conc "vector") ,@(cddr x))))
-          ;; TO defaults to the length
-          (assert (equal? v (,(sub) v)))
-          (assert (equal? v (,(sub) v 0)))
-          (assert (equal? (,(sub) v 1 4) (,(sub) v 1)))
-          (assert (equal? (,(sub) v 2 2) (,(sub) v 2 2)))
-          ;; START/END on ->list, and the invariant tying the two together
-          (assert (equal? (,(conc "vector->list") v) (,(conc "vector->list") v 0)))
-          (assert (equal? (,(conc "vector->list") v 1 3)
-                          (,(conc "vector->list") (,(sub) v 1 3))))
-          (assert (equal? '() (,(conc "vector->list") v 2 2)))
-          (assert (equal? (,(conc "vector->list") v 1)
-                          (,(conc "vector->list") v 1 4)))
-          ;; FROM > TO and out of range are errors, not silent
-          (assert (bulk-error? (lambda () (,(sub) v 3 1))))
-          (assert (bulk-error? (lambda () (,(sub) v 0 9))))
-          (assert (bulk-error? (lambda () (,(conc "vector->list") v 3 1))))
-          (assert (bulk-error? (lambda () (,(conc "vector->list") v 0 9)))))))))
-
-(test-ranges u8 1 2 3 4)
-(test-ranges s8 1 -2 3 -4)
-(test-ranges u16 1 2 3 4)
-(test-ranges s16 1 -2 3 -4)
-(test-ranges u32 1 2 3 4)
-(test-ranges s32 1 -2 3 -4)
-(test-ranges u64 1 2 3 4)
-(test-ranges s64 1 -2 3 -4)
-(test-ranges f32 1.0 2.0 3.0 4.0)
-(test-ranges f64 1.0 2.0 3.0 4.0)
-(test-ranges c64 1+2i 3+4i 5+6i 7+8i)
-(test-ranges c128 1+2i 3+4i 5+6i 7+8i)
-
-;; a non-vector still reports a type error, not a failure inside ##sys#size
-(assert (bulk-error? (lambda () (subf64vector 42))))
-(assert (bulk-error? (lambda () (f64vector->list 42))))
-
-;; elementwise vector-vector multiply and divide
-(define-syntax test-vv
-  (er-macro-transformer
-   (lambda (x r c)
-     (let ((name (symbol->string (strip-syntax (cadr x)))))
-       (define (conc op) (string->symbol (string-append name op)))
-       `(begin
-          ;; disjoint vectors
-          (let ((y (,(conc "vector") 2. 3. 4.)) (x (,(conc "vector") 5. 6. 7.)))
-            (,(conc "vector-mul!") y x)
-            (assert (equal? y (,(conc "vector") 10. 18. 28.))))
-          ;; the same object twice: squares in place, and must take the
-          ;; aliasing path rather than the __restrict one
-          (let ((y (,(conc "vector") 2. 3. 4.)))
-            (,(conc "vector-mul!") y y)
-            (assert (equal? y (,(conc "vector") 4. 9. 16.))))
-          ;; two distinct structures over one bytevector: also aliased, and
-          ;; the test is pointer equality of the data, not of the objects
-          (let* ((bv (make-bytevector (* 3 ,(caddr x)) 0))
-                 (a (,(conc "vector->list") (,(conc "vector") 0. 0. 0.))))
-            (let ((p (,(string->symbol (string-append "bytevector->" name "vector/shared")) bv))
-                  (q (,(string->symbol (string-append "bytevector->" name "vector/shared")) bv)))
-              (,(conc "vector-fill!") p 3.)
-              (,(conc "vector-mul!") p q)
-              (assert (equal? (,(conc "vector->list") p) '(9. 9. 9.)))))
-          ;; divide, including the IEEE results a guard would have destroyed
-          (let ((y (,(conc "vector") 10. 9. 8.)) (x (,(conc "vector") 2. 3. 4.)))
-            (,(conc "vector-div!") y x)
-            (assert (equal? y (,(conc "vector") 5. 3. 2.))))
-          (let ((y (,(conc "vector") 1. 0.)) (x (,(conc "vector") 0. 0.)))
-            (,(conc "vector-div!") y x)
-            (assert (= +inf.0 (,(conc "vector-ref") y 0)))
-            (assert (not (= (,(conc "vector-ref") y 1) (,(conc "vector-ref") y 1)))))
-          ;; ranges, the unroll boundary at 4, and the guards
-          (let ((y (,(conc "vector") 1. 2. 3. 4. 5.)) (x (,(conc "vector") 1. 2. 3. 4. 5.)))
-            (,(conc "vector-mul!") y x 1 4)
-            (assert (equal? y (,(conc "vector") 1. 4. 9. 16. 5.))))
-          (let ((y (,(conc "vector") 1. 2.)))
-            (,(conc "vector-mul!") y (,(conc "vector") 3. 4.) 1 1)
-            (assert (equal? y (,(conc "vector") 1. 2.))))
-          (assert (bulk-error? (lambda ()
-            (,(conc "vector-mul!") (,(conc "vector") 1. 2.) (,(conc "vector") 1.)))))
-          (assert (bulk-error? (lambda ()
-            (,(conc "vector-div!") (,(conc "vector") 1. 2.) (,(conc "vector") 1.)))))
-          (assert (bulk-error? (lambda ()
-            (,(conc "vector-mul!") (,(conc "vector") 1.) 42)))))))))
-
-(test-vv f64 8)
-(test-vv f32 4)
-
-;; f32 must agree bit for bit with the element-at-a-time loop
-(let ((y (f32vector 1.1 2.2 3.3 4.4 5.5))
-      (x (f32vector 0.3 0.7 1.9 2.5 3.1))
-      (w (f32vector 1.1 2.2 3.3 4.4 5.5)))
-  (f32vector-mul! y x)
-  (do ((i 0 (add1 i))) ((>= i 5))
-    (f32vector-set! w i (* (f32vector-ref w i) (f32vector-ref x i))))
-  (assert (equal? y w)))

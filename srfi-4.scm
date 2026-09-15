@@ -98,7 +98,24 @@
    list: raising the optimization level does not re-enable contraction, and
    the object is verified to contain no vfmadd even at -O3 -march=native,
    but the guarantee is the reason this pragma exists and it should be
-   stated where it is made.  The __OPTIMIZE__ guard leaves the -O0 debug
+   stated where it is made.  "no-fast-math" is there because
+   "fp-contract=off" stops only the fusion, and a user's -ffast-math or
+   -Ofast would still let GCC factor `d * b[i] + b[i]' into `(d + 1) * b[i]'
+   -- measured to change four of seven adversarial values, worst case a
+   subnormal answered as 2.4475812443579217e-308 against a correct
+   2.2250738585072014e-308.  It costs nothing at the stock flags: the
+   generated kernels are instruction-for-instruction identical with and
+   without it.
+
+   Note the asymmetry, because it is the opposite of what one would guess:
+   GCC's pragma is a real per-function flag override and beats anything on
+   the command line, while clang's `#pragma STDC FP_CONTRACT OFF' is a
+   per-expression hint that -ffp-contract=fast, -ffast-math and -Ofast all
+   override.  Measured: under clang -Os -march=native -ffp-contract=fast the
+   kernels contain 22 vfmadd, and no source construct prevents it --
+   `#pragma clang fp contract(off)' and `#pragma float_control' were both
+   tested and both lose.  A clang user who needs the guarantee under those
+   flags must pass -ffp-contract=fast-honor-pragmas, which restores it.  The __OPTIMIZE__ guard leaves the -O0 debug
    build (Makefile.linux:37) debuggable -- at -O0 these functions stay at
    -O0 and only the FP-contract guarantee is asserted.
 
@@ -115,9 +132,9 @@
 #if defined(__GNUC__) && !defined(__clang__)
 # pragma GCC push_options
 # if defined(__OPTIMIZE__)
-#  pragma GCC optimize ("O3", "fp-contract=off")
+#  pragma GCC optimize ("O3", "fp-contract=off", "no-fast-math")
 # else
-#  pragma GCC optimize ("fp-contract=off")
+#  pragma GCC optimize ("fp-contract=off", "no-fast-math")
 # endif
 #endif
 #pragma STDC FP_CONTRACT OFF
