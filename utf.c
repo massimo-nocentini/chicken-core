@@ -3379,6 +3379,14 @@ C_regparm C_word C_utf_compare(C_word s1, C_word s2, C_word start1, C_word start
     C_char *p1 = utf_index(s1, C_unfix(start1));
     C_char *p2 = utf_index(s2, C_unfix(start2));
     int e, n = C_unfix(len);
+    while(n > 0) {
+        unsigned char b1 = (unsigned char)*p1, b2 = (unsigned char)*p2;
+        if((b1 | b2) & 0x80) break;
+        if(b1 != b2) return C_fix((C_word)b1 - (C_word)b2);
+        ++p1; 
+        ++p2; 
+        --n;
+    }
     while(n--) {
         C_u32 c1, c2;
         p1 = utf8_decode(p1, &c1, &e);
