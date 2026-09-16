@@ -780,7 +780,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-string old 'file-link)
       (##sys#check-string new 'file-link)
       (when (fx< (link old new) 0)
-      (posix-error #:file-error 'hard-link "could not create hard link" old new) ) ) ) )
+        (posix-error #:file-error 'file-link "could not create hard link" old new) ) ) ) )
 
 (define-inline (eagain/ewouldblock? e)
   (or (eq? e _ewouldblock)
