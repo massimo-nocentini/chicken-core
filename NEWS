@@ -38,6 +38,9 @@
   - Added some missing range changes in utf8/bytes->string procedures,
     handle edge case in read-line internals, added fast path for ASCII
     chars in utf comparison predicate (thank to Massimo Nocentini).
+  - Fixed incorrect buffer management in "file-mkstemp" (from the
+    "chicken.file.posix" module).
+  - Made the "u8vector" type a proper synonym for "bytevector".
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
