@@ -225,6 +225,76 @@
 
 (test-error (string-fill "Hello" 4 #\x))
 
+
+;; Confirm that compressed ranges in UnicodeData.txt are expanded correctly.
+
+(define (count-if pred lo hi)
+  (let loop ((i lo) (n 0))
+    (if (> i hi)
+        n
+        (loop (add1 i)
+              (if (pred (integer->char i))
+                  (add1 n)
+                  n)))))
+
+(test-equal 20992 (count-if char-alphabetic? #x4E00 #x9FFF))   ; CJK
+(test-equal 11172 (count-if char-alphabetic? #xAC00 #xD7A3))   ; Hangul
+(test-assert (> (count-if char-alphabetic? 0 #x10FFFF) 100000))
+
+
+;; Confirm that consecutive decimal digit runs are not folded together.
+
+(test-equal 0 (digit-value (integer->char #x1D7CE)))   ; bold zero
+(test-equal 0 (digit-value (integer->char #x1D7D8)))   ; double-struck zero
+(test-equal 0 (digit-value (integer->char #x1D7E2)))   ; sans-serif zero
+(test-equal 0 (digit-value (integer->char #x1D7EC)))   ; sans-serif bold zero
+(test-equal 0 (digit-value (integer->char #x1D7F6)))   ; monospace zero
+(test-equal 9 (digit-value (integer->char #x1D7FF)))   ; monospace nine
+
+;; Confirm that decimal digits are all in 0 to 9 range.
+
+(test-assert (let loop ((i 0))
+               (cond ((> i #x10FFFF) #t)
+                     ((let ((v (digit-value (integer->char i))))
+                        (or (not v) (and (>= v 0) (<= v 9))))
+                      (loop (+ i 1)))
+                     (else #f))))
+
+
+;; Confirm predicate compliance to R7RS.
+
+(test-assert (char-upper-case? (integer->char #x2160)))   ; ROMAN NUMERAL ONE
+(test-assert (char-upper-case? (integer->char #x24B6)))   ; CIRCLED CAPITAL A
+(test-assert (char-lower-case? (integer->char #x2170)))   ; SMALL ROMAN NUMERAL ONE
+(test-assert (char-lower-case? (integer->char #x24D0)))   ; CIRCLED SMALL A
+(test-assert (char-lower-case? (integer->char #x02B0)))   ; MODIFIER SMALL H
+(test-assert (char-alphabetic? (integer->char #x0345)))   ; COMBINING YPOGEGRAMMENI
+(test-assert (char-alphabetic? (integer->char #x093E)))   ; DEVANAGARI VOWEL SIGN AA
+(test-assert (char-alphabetic? (integer->char #x2160)))   ; Nl is Alphabetic
+
+(test-assert (char-whitespace? (integer->char #x0085)))   ; NEL
+(test-assert (char-whitespace? (integer->char #x2029)))   ; PARAGRAPH SEPARATOR
+(test-assert (char-whitespace? (integer->char #x202F)))   ; NARROW NO-BREAK SPACE
+(test-assert (not (char-whitespace? (integer->char #x001C))))
+(test-assert (not (char-whitespace? (integer->char #x001F))))
+(test-assert (not (char-whitespace? (integer->char #x180E))))
+
+;; Confirm title case folding.
+
+(test-equal #\x01C4 (char-upcase (integer->char #x01C5)))   ; LATIN CAPITAL DZ
+(test-equal #\x01C6 (char-downcase (integer->char #x01C5))) ; latin small dz
+
+;; As per R7RS 7.1.1
+;;
+;; <intraline whitespace> -> <space or tab>
+;; <line ending> -> <newline> | <return> <newline> | <return>.
+;; <whitespace> -> <intraline whitespace> | <line ending>
+
+(test-equal (list (string->symbol "1\x1c;2"))
+            (with-input-from-string "(1\x1c;2)" read))
+(test-equal '(1 2) (with-input-from-string "(1 2)" read))
+(test-equal '(1 2) (with-input-from-string "(1\n2)" read))
+
 (test-end)
 
 (test-exit)

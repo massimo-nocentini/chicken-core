@@ -5634,7 +5634,7 @@ C_regparm C_word C_i_bytevector_ref(C_word v, C_word i)
 {
   int j;
 
-  if(!C_truep(C_bytevectorp(v)))
+  if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-u8-ref", v);
 
   if(i & C_FIXNUM_BIT) {
@@ -5910,7 +5910,7 @@ C_regparm C_word C_i_vector_length(C_word v)
 
 C_regparm C_word C_i_bytevector_length(C_word v)
 {
-  if(C_immediatep(v) || !C_truep(C_bytevectorp(v)))
+  if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-length", v);
 
   return C_fix(C_header_size(v));
@@ -6089,7 +6089,7 @@ C_regparm C_word C_i_bytevector_set(C_word v, C_word i, C_word x)
   int j;
   C_word n;
 
-  if(!C_truep(C_bytevectorp(v)))
+  if(!C_truep(C_i_bytevectorp(v)))
     barf(C_BAD_ARGUMENT_TYPE_ERROR, "bytevector-set!", v);
 
   if(i & C_FIXNUM_BIT) {
@@ -7375,7 +7375,7 @@ C_regparm C_word C_i_check_range_2(C_word i, C_word f, C_word t, C_word loc)
     barf(C_BAD_ARGUMENT_TYPE_NO_FIXNUM_ERROR, NULL, i);
   }
 
-  int index = C_unfix(i);
+  C_word index = C_unfix(i);
 
   if(index < C_unfix(f)) {
     error_location = loc;
@@ -7398,7 +7398,7 @@ C_regparm C_word C_i_check_range_including_2(C_word i, C_word f, C_word t, C_wor
     barf(C_BAD_ARGUMENT_TYPE_NO_FIXNUM_ERROR, NULL, i);
   }
 
-  int index = C_unfix(i);
+  C_word index = C_unfix(i);
 
   if(index < C_unfix(f)) {
     error_location = loc;
@@ -8032,8 +8032,27 @@ cplx_times(C_word **ptr, C_word rx, C_word ix, C_word ry, C_word iy)
   clear_buffer_object(ab, i1);
   clear_buffer_object(ab, i2);
 
-  if (C_truep(C_u_i_zerop2(i))) return r;
+  if (i == C_fix(0))
+    return r;
   else return C_cplxnum(ptr, r, i);
+}
+
+void C_adjust_complex(C_word **ptr, C_word *r, C_word *i, C_word x, C_word y) {
+    if((*r & C_FIXNUM_BIT) != 0) {
+        if((*i & C_FIXNUM_BIT) != 0) {
+            if(C_truep(C_u_i_inexactp(x)) || C_truep(C_u_i_inexactp(y))) {
+                *r = C_flonum(ptr, C_unfix(*r));
+                *i = C_flonum(ptr, C_unfix(*i));
+            }
+        } else if(C_block_header(*i) == C_FLONUM_TAG)
+            *r = C_flonum(ptr, C_unfix(*r));
+        return;
+    }
+    if((*i & C_FIXNUM_BIT) != 0) {
+        if(C_block_header(*r) == C_FLONUM_TAG) 
+            *i = C_flonum(ptr, C_unfix(*i));
+        return;
+    }
 }
 
 /* The maximum size this needs is that required to store a complex
@@ -8045,7 +8064,10 @@ cplx_times(C_word **ptr, C_word rx, C_word ix, C_word ry, C_word iy)
 C_regparm C_word
 C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
 {
-  if (x & C_FIXNUM_BIT) {
+  /* (* 0 z) => 0 for any z, including NaN and infinity. */
+  if (x == C_fix(0) || y == C_fix(0)) {
+    return C_fix(0);
+  } else if (x & C_FIXNUM_BIT) {
     if (y & C_FIXNUM_BIT) {
       return C_a_i_fixnum_times(ptr, 2, x, y);
     } else if (C_immediatep(y)) {
@@ -8059,6 +8081,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8079,6 +8102,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8097,6 +8121,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8115,6 +8140,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
         C_word r = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_real(y));
         C_word i = C_s_a_i_times(ptr, 2, x, C_u_i_cplxnum_imag(y));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     } else {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "*", y);
@@ -8126,6 +8152,7 @@ C_s_a_i_times(C_word **ptr, C_word n, C_word x, C_word y)
     } else {
         C_word r = C_s_a_i_times(ptr, 2, y, C_u_i_cplxnum_real(x));
         C_word i = C_s_a_i_times(ptr, 2, y, C_u_i_cplxnum_imag(x));
+        C_adjust_complex(ptr, &r, &i, x, y);
         return C_cplxnum(ptr, r, i);
     }
   } else {

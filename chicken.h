@@ -1658,8 +1658,8 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 
 #define C_ub_i_f32vector_ref(b, i)      (((float *)C_data_pointer(C_block_item((b), 1)))[ C_unfix(i) ])
 #define C_ub_i_f64vector_ref(b, i)      (((double *)C_data_pointer(C_block_item((b), 1)))[ C_unfix(i) ])
-#define C_ub_i_f32vector_set(v, i, x)   ((((float *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)), 0)
-#define C_ub_i_f64vector_set(v, i, x)   ((((double *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)), 0)
+#define C_ub_i_f32vector_set(v, i, x)   ((((float *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)), C_SCHEME_UNDEFINED)
+#define C_ub_i_f64vector_set(v, i, x)   ((((double *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)), C_SCHEME_UNDEFINED)
 
 #define C_a_i_flonum_sin(ptr, c, x)     C_flonum(ptr, C_sin(C_flonum_magnitude(x)))
 #define C_a_i_flonum_cos(ptr, c, x)     C_flonum(ptr, C_cos(C_flonum_magnitude(x)))
@@ -2836,6 +2836,11 @@ inline static int C_persistable_symbol(C_word x)
 inline static C_word C_i_pairp(C_word x)
 {
   return C_mk_bool(!C_immediatep(x) && C_header_type(x) == C_PAIR_TYPE);
+}
+
+inline static C_word C_i_bytevectorp(C_word x)
+{
+  return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_BYTEVECTOR_TYPE);
 }
 
 inline static C_word C_i_weak_pairp(C_word x)

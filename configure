@@ -265,6 +265,7 @@ test -n "$static" && echo "STATICBUILD = 1" >> config.make
 test -n "$CC" && echo "C_COMPILER = $cccmd" >> config.make
 test -n "$linker" && echo "LINKER = $linker" >> config.make
 test -n "$CFLAGS" && echo "C_COMPILER_OPTIMIZATION_OPTIONS = $CFLAGS" >> config.make
+test -n "$CFLAGS" && echo "RUNTIME_OPTIMIZATION_OPTIONS = $CFLAGS" >> config.make
 test -n "$host" && echo "HOSTSYSTEM = $host" >> config.make
 test -n "$target" && echo "TARGETSYSTEM = $target" >> config.make
 test -n "$pprefix" && echo "PROGRAM_PREFIX = $pprefix" >> config.make

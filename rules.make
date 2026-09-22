@@ -38,7 +38,8 @@ LIBCHICKEN_SCHEME_OBJECTS_1 = \
        extras lolevel tcp srfi-4 continuation $(POSIXFILE) internal \
        irregex scheduler debugger-client profiler stub expand modules \
        chicken-syntax chicken-ffi-syntax build-version r7lib
-LIBCHICKEN_OBJECTS_1 = $(LIBCHICKEN_SCHEME_OBJECTS_1) runtime utf
+LIBCHICKEN_C_OBJECTS_1 = runtime utf
+LIBCHICKEN_OBJECTS_1 = $(LIBCHICKEN_SCHEME_OBJECTS_1) $(LIBCHICKEN_C_OBJECTS_1)
 LIBCHICKEN_SHARED_OBJECTS = $(LIBCHICKEN_OBJECTS_1:=$(O))
 LIBCHICKEN_STATIC_OBJECTS = $(LIBCHICKEN_OBJECTS_1:=-static$(O)) \
 	eval-modules-static$(O)
@@ -93,11 +94,22 @@ $(1)$(O): $(1).c chicken.h $$(CHICKEN_CONFIG_H)
 	  $$(INCLUDES)
 endef
 
+define declare-shared-library-c-object
+$(1)$(O): $(1).c chicken.h $$(CHICKEN_CONFIG_H)
+	$$(C_COMPILER) $$(C_COMPILER_OPTIONS) \
+	  $$(C_COMPILER_COMPILE_OPTION) $$(RUNTIME_OPTIMIZATION_OPTIONS) $$(C_COMPILER_SHARED_OPTIONS) \
+	  $$(C_COMPILER_BUILD_RUNTIME_OPTIONS) $$< $$(C_COMPILER_OUTPUT) \
+	  $$(INCLUDES)
+endef
+
 # The above meta-rule is reused in the setup API stuff below, so we alias it
 declare-libchicken-object = $(declare-shared-library-object)
+declare-libchicken-c-object = $(declare-shared-library-c-object)
 
-$(foreach obj, $(LIBCHICKEN_OBJECTS_1),\
+$(foreach obj, $(LIBCHICKEN_SCHEME_OBJECTS_1),\
           $(eval $(call declare-libchicken-object,$(obj))))
+$(foreach obj, $(LIBCHICKEN_C_OBJECTS_1),\
+          $(eval $(call declare-libchicken-c-object,$(obj))))
 
 # static versions
 
@@ -110,10 +122,22 @@ $(1)-static$(O): $(1).c chicken.h $$(CHICKEN_CONFIG_H)
 	  $$(INCLUDES)
 endef
 
-declare-static-libchicken-object = $(declare-static-library-object)
+define declare-static-library-c-object
+$(1)-static$(O): $(1).c chicken.h $$(CHICKEN_CONFIG_H)
+	$$(C_COMPILER) $$(C_COMPILER_OPTIONS) \
+	  $$(C_COMPILER_COMPILE_OPTION) $$(RUNTIME_OPTIMIZATION_OPTIONS) \
+	  $$(C_COMPILER_STATIC_OPTIONS) \
+	  $$(C_COMPILER_BUILD_RUNTIME_OPTIONS) $$< $$(C_COMPILER_OUTPUT) \
+	  $$(INCLUDES)
+endef
 
-$(foreach obj, $(LIBCHICKEN_OBJECTS_1),\
+declare-static-libchicken-object = $(declare-static-library-object)
+declare-static-libchicken-c-object = $(declare-static-library-c-object)
+
+$(foreach obj, $(LIBCHICKEN_SCHEME_OBJECTS_1),\
           $(eval $(call declare-static-libchicken-object,$(obj))))
+$(foreach obj, $(LIBCHICKEN_C_OBJECTS_1),\
+          $(eval $(call declare-static-libchicken-c-object,$(obj))))
 
 $(eval $(call declare-static-libchicken-object,eval-modules))
 
@@ -168,6 +192,9 @@ endef
 $(foreach obj, $(UTILITY_PROGRAM_OBJECTS_1),\
           $(eval $(call declare-utility-program-object,$(obj))))
 
+# generated Unicode tables
+
+utf$(O) utf-static$(O): utf-tables.c
 
 # resource objects
 
@@ -1020,13 +1047,6 @@ export PROGRAM_SUFFIX
 
 check: $(TARGETS)
 	cd tests; sh runtests.sh
-
-# benchmark
-
-.PHONY: bench
-
-bench: $(CHICKEN_SHARED_EXECUTABLE) $(CSI_SHARED_EXECUTABLE) $(CSC_PROGRAM)$(EXE)
-	cd tests; echo >>bench.log; date >>bench.log; sh runbench.sh 2>&1 | tee -a bench.log
 
 
 # build static bootstrapping chicken

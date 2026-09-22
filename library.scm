@@ -37,7 +37,10 @@
 	exit-in-progress cleanup-before-exit chicken.base#cleanup-tasks
         maximal-string-length find-ratio-between find-ratio
 	make-complex flonum->ratnum ratnum
-	+maximum-allowed-exponent+ mantexp->dbl ldexp round-quotient
+	+maximum-allowed-exponent+ mantexp->dbl ldexp ldexp*
+	round-quotient
+	fllog1+ ##sys#sign ##sys#atanh ##sys#internal-atanh
+	##sys#sign-bit ##sys#tanh
 	##sys#string->compnum ##sys#internal-gcd)
   (not inline chicken.base#sleep-hook ##sys#change-directory-hook
        ##sys#user-read-hook ##sys#error-hook ##sys#signal-hook ##sys#signal-hook/errno
@@ -2506,19 +2509,25 @@ EOF
 (define (##sys#/-2 x y)
   (when (eq? y 0)
     (##sys#error-hook (foreign-value "C_DIVISION_BY_ZERO_ERROR" int) '/ x y))
-  (cond ((and (##core#inline "C_i_exact_integerp" x)
+  (cond ((eq? x 0) 0)
+        ((and (##core#inline "C_i_exact_integerp" x)
               (##core#inline "C_i_exact_integerp" y))
          (let ((g (%integer-gcd x y)))
            (ratnum (%integer-quotient x g) (%integer-quotient y g))))
         ;; Compnum *must* be checked first
         ((or (cplxnum? x) (cplxnum? y))
-         (let* ((a (real-part x)) (b (imag-part x))
-                (c (real-part y)) (d (imag-part y))
-                (r (+ (* c c) (* d d)))
-                (x (##sys#/-2 (+ (* a c) (* b d)) r))
-                (y (##sys#/-2 (- (* b c) (* a d)) r)) )
-           (make-complex x y) ))
-        ((or (##core#inline "C_i_flonump" x) (##core#inline "C_i_flonump" y))
+          (if (cplxnum? y)
+              (let* ((a (real-part x)) (b (imag-part x))
+                     (c (real-part y)) (d (imag-part y))
+                     (r (+ (* c c) (* d d)))
+                     (x (##sys#/-2 (+ (* a c) (* b d)) r))
+                     (y (##sys#/-2 (- (* b c) (* a d)) r)) )
+                (make-complex x y) )
+              (let* ((a (real-part x)) (b (imag-part x))
+                     (xu (##sys#/-2 a y))
+                     (yu (##sys#/-2 b y)))
+                (make-complex xu yu))))
+       ((or (##core#inline "C_i_flonump" x) (##core#inline "C_i_flonump" y))
          ;; This may be incorrect when one is a ratnum consisting of bignums
          (fp/ (exact->inexact x) (exact->inexact y)))
         ((ratnum? x)
@@ -2702,12 +2711,61 @@ EOF
 	  (##sys#/-2 (+ (exp in) (exp (- in))) 2) )
 	(##core#inline_allocate ("C_a_i_cos" 4) (exact->inexact n)) ) ))
 
+(define (##sys#tanh z)
+  (let* ((x (real-part z))
+         (y (imag-part z))
+         (tanh-overflow-treshold (/ (fpasinh maximum-flonum) 2))
+         (tanh-overflow-low-treshold (/ (fpasinh maximum-flonum) 4))
+         (ax (abs x)))
+    (cond
+      ((eqv? z 0) 0)
+      ((> ax tanh-overflow-treshold)
+       (if (real? z)
+           (* 1.0 (##sys#sign-bit x))
+           (make-rectangular (* 1.0 (##sys#sign-bit x))
+                             (* 0.0 (##sys#sign-bit y)))))
+      ((> ax tanh-overflow-low-treshold)
+       (if (real? z)
+           (* 1.0 (##sys#sign-bit x))
+           (let ((y*2 (* y 2.0))
+                 (cosh-x*2 (fpcosh (* 2.0 x))))
+             (cond
+               ((finite? y*2)
+                (make-rectangular (* 1.0 (##sys#sign-bit x))
+                                  (/ (sin y*2)
+                                     cosh-x*2)))
+               ((finite? y)
+                (make-rectangular (* 1.0 (##sys#sign-bit x))
+                                  (/ (* 2.0 (sin y) (cos y))
+                                     cosh-x*2)))
+               (else (make-rectangular (* 1.0 (##sys#sign-bit sign x))
+                                       (* 0.0 (##sys#sign-bit sign y))))))))
+      (else
+       (let* ((t (tan y))
+              (beta (+ 1.0 (* t t)))
+              (s (if (eqv? x 0)
+                     0.0              ; Avoid divide-by-exact-zero errors
+                     (fpsinh x)))
+              (rho (sqrt (+ 1.0 (* s s)))))
+         (if (infinite? t)
+             (make-rectangular (/ rho s) (/ t))
+             (let ((ret (if (real? z)
+                            (* beta rho s)
+                            (make-rectangular (* beta rho s)
+                                              t))))
+               (/ ret (+ 1.0 (* beta (* s s)))))))))))
+
+
+
 (set! scheme#tan
   (lambda (n)
     (##sys#check-number n 'tan)
     (if (cplxnum? n)
-	(##sys#/-2 (sin n) (cos n))
+        (* -i (##sys#tanh (* +i n)))   ; Kahan's version
 	(##core#inline_allocate ("C_a_i_tan" 4) (exact->inexact n)) ) ))
+
+(define (##sys#conjugate z)
+  (make-rectangular (real-part z) (- (imag-part z))))
 
 ;; General case: sin^{-1}(z) = -i\ln(iz + \sqrt{1-z^2})
 (set! scheme#asin
@@ -2720,9 +2778,30 @@ EOF
 				   (##core#inline_allocate
 				    ("C_a_i_fix_to_flo" 4) n)))
 	  ;; General definition can return compnums
-	  (else (* -i (##sys#log-1
-		       (+ (* +i n)
-			  (##sys#sqrt/loc 'asin (- 1 (* n n))))) )) ) ))
+	  (else
+	    (cond
+	      ;; These should fall out of the algorithm below,
+	      ;; but inexactness-promotion rules end up generating
+	      ;; a NaN somewhere.
+	      ;;
+	      ;; These are the special cases -inf.0+0.0i and
+	      ;; +inf.0+0.0i from Gambit. Since Gambit has mixed exactness numbers,
+	      ;; this doesn't copy -inf.0+0i and +inf.0+0i. Basically, unsigned
+	      ;; zero is approached counterclockwise, and signed zero from the
+	      ;; side with that sign. So unsigned zero approches from the bottom
+	      ;; and matches -0.0, which is probably not what we want.
+	      ((eqv? n +inf.0)  1.5707963267948966+inf.0i)
+	      ((eqv? n -inf.0) -1.5707963267948966+inf.0i)
+	      (else
+	       (let* ((x (real-part n))
+	              (s:1-n (sqrt (- 1 n)))
+	              (s:1+n (sqrt (+ 1 n)))
+	              (ipart (imag-part (* (##sys#conjugate s:1-n)
+	                                   s:1+n))))
+	         (make-rectangular (atan x (real-part (* s:1-n s:1+n)))
+	                           (if (and (exact? ipart) (zero? ipart))
+	                               0
+	                               (fpasinh ipart))))))))))
 
 ;; General case:
 ;; cos^{-1}(z) = 1/2\pi + i\ln(iz + \sqrt{1-z^2}) = 1/2\pi - sin^{-1}(z) = sin(1) - sin(z)
@@ -2737,7 +2816,76 @@ EOF
                                      (##core#inline_allocate
                                       ("C_a_i_fix_to_flo" 4) n)))
             ;; General definition can return compnums
-            (else (- asin1 (asin n)))))))
+            (else
+              (let* ((s:1-n (sqrt (- 1 n)))
+                     (s:1+n (sqrt (+ 1 n)))
+                     (x (* 2 (atan (real-part s:1-n) (real-part s:1+n))))
+                     (w (imag-part (* (##sys#conjugate s:1+n)
+                                      s:1-n)))
+                     (y (if (eq? w 0)
+                            0
+                            (fpasinh w))))
+                (make-rectangular x y)))))))
+
+;;; Start Kahan's atan (with modifications from Gambit)
+
+(define fllog1+
+  (foreign-lambda double "log1p" double))
+
+(define (##sys#sign-bit x)
+  (cond
+    ((eq? x 0) +1)
+    ((eqv? x +0.0) +1.0)
+    ((eqv? x -0.0) -1.0)
+    (else (signum x))))
+
+(define (##sys#internal-atanh z)
+  (let* ((z (* (##sys#sign-bit (real-part z)) (##sys#conjugate z)))
+         (x (real-part z))
+         (y (imag-part z))
+         (theta (/ (sqrt maximum-flonum) 4))
+         (rho (/ theta))
+         (fl-pi/2  1.57079632679489661923132169163975144)
+         (fl-pi/4 0.785398163397448309615660845819875721))
+    (cond
+      ((or (> x theta) (> (abs y) theta))
+       (make-rectangular (real-part (/ z))
+                         (* fl-pi/2 (##sys#sign-bit y))))
+      ((and (= x 1.0) (zero? y))
+       (make-rectangular +inf.0
+                         (* (##sys#sign-bit y) fl-pi/4)))
+      ((= x 1.0)
+       (let ((absy (abs y)))
+         (make-rectangular (log (/ (sqrt (sqrt (+ 4.0 (* y y))))
+                                   (sqrt absy)))
+                           (* (/ (+ fl-pi/2
+                                    (atan absy 2.0))
+                                 2.0)
+                              (##sys#sign-bit y)))))
+      (else
+       (let ((y^2 (* y y)))
+         (make-rectangular (cond
+                             ((eqv? x 0) 0)
+                             (else
+                              (/ (fllog1+ (/ (* 4.0 x)
+                                             (+ (* (- 1.0 x) (- 1.0 x))
+                                                y^2)))
+                                 4.0)))
+                           (/ (angle (+ (* (- 1.0 x) (+ 1.0 x))
+                                        (- y^2)
+                                        (make-rectangular
+                                         0.0
+                                         (* 2.0 y))))
+                              2.0)))))))
+
+(define (##sys#atanh z)
+  (cond
+    ((eqv? z 0) 0)
+    ((and (real? z) (eqv? (abs z) 1))
+     (error 'atanh "atanh has a singularity at 1 and -1"))
+    ((and (real? z) (< -1.0 z 1.0))
+     (fpatanh (exact->inexact z)))
+    (else (* (##sys#sign-bit (real-part z)) (##sys#conjugate (##sys#internal-atanh z))))))
 
 (set! scheme#atan
   (lambda (n #!optional b)
@@ -2745,15 +2893,15 @@ EOF
     (cond ((cplxnum? n)
 	   (if b
 	       (##sys#error-bad-real n 'atan)
-	       (let ((in (* +i n)))
-		 (##sys#/-2 (- (##sys#log-1 (+ 1 in))
-			       (##sys#log-1 (- 1 in))) +2i))))
+	       (* -i (##sys#atanh (* +i n)))))
 	  (b
 	   (##core#inline_allocate
 	    ("C_a_i_atan2" 4) (exact->inexact n) (exact->inexact b)))
 	  (else
 	   (##core#inline_allocate
 	    ("C_a_i_atan" 4) (exact->inexact n))) ) ))
+
+;;; End kahan algorithm
 
 ;; This is "Karatsuba Square Root" as described by Paul Zimmermann,
 ;; which is 3/2K(n) + O(n log n) for an input of 2n words, where K(n)
@@ -2790,13 +2938,70 @@ EOF
     (##sys#check-exact-uinteger x 'exact-integer-sqrt)
     (##sys#exact-integer-sqrt x)))
 
+;; Complex square root according to Kahan's algorithm.
+
+(define logb (foreign-lambda double "logb" double))
+(define (ldexp* x k)
+  (if (inexact? x)
+      (ldexp x k)
+      (* x (expt 2 k))))
+
+(define (##sys#cssqs z)
+  (let* ((x (real-part z))
+         (y (imag-part z))
+         (x^2 (* x x))
+         (y^2 (* y y))
+         (rho (+ x^2 y^2)))
+    (if (and (or (nan? rho) (infinite? rho))
+             (or (infinite? x) (infinite? y)))
+        (values +inf.0 0)
+        (let ((underflowed? (or (< x^2 minimum-flonum)
+                                (< y^2 minimum-flonum)))
+              (overflowed? (or (infinite? rho)
+                               (infinite? x^2)
+                               (infinite? y^2))))
+          (if (or overflowed?
+                  (and underflowed? (< rho (/ minimum-flonum
+                                              flonum-epsilon))))
+              (let* ((k (logb (inexact (max (abs x) (abs y)))))
+                     (x* (ldexp* x (- k)))
+                     (y* (ldexp* y (- k))))
+                (values (+ (* x* x*) (* y* y*)) k))
+              (values rho 0))))))
+
+(define (##sys#csqrt z)
+   (define (even*? k)
+     (and (integer? k) (even? k)))
+   (define (odd*? k)
+     (and (integer? k) (odd? k)))
+   (let*-values (((x) (real-part z))
+                 ((y) (imag-part z))
+                 ((rho k) (##sys#cssqs z))
+                 ((rho) (if (not (nan? x))
+                            (+ (ldexp* (abs x) (- k))
+                               (sqrt rho))
+                            rho))
+                 ((rho) (if (even*? k)
+                            (+ rho rho)
+                            rho))
+                 ((k) (if (odd*? k)
+                          (/ (- k 1) 2)
+                          (- (/ k 2) 1)))
+                 ((rho) (ldexp* (sqrt rho) k))
+                 ((zeta) rho)
+                 ((eta) y)
+                 ((eta) (if (and (not (zero? rho)) (not (infinite? eta)))
+                            (/ eta rho 2.0)
+                            eta)))
+     (if (and (not (zero? rho)) (negative? x))
+         (make-rectangular (abs eta) (* rho (##sys#sign-bit y)))
+         (make-rectangular zeta eta))))
+
 ;; This procedure is so large because it tries very hard to compute
 ;; exact results if at all possible.
 (define (##sys#sqrt/loc loc n)
   (cond ((cplxnum? n)     ; Must be checked before we call "negative?"
-         (let ((p (##sys#/-2 (angle n) 2))
-               (m (##core#inline_allocate ("C_a_i_sqrt" 4) (magnitude n))) )
-           (make-complex (* m (cos p)) (* m (sin p)) ) ))
+         (##sys#csqrt n))
         ((negative? n)
          (make-complex .0 (##core#inline_allocate
 			   ("C_a_i_sqrt" 4) (exact->inexact (- n)))))
@@ -3507,8 +3712,7 @@ EOF
   (##sys#make-bytevector size fill) )
 
 (define (bytevector? x)
-  (and (##core#inline "C_blockp" x)
-       (##core#inline "C_bytevectorp" x) ) )
+  (##core#inline "C_i_bytevectorp" x) )
 
 (define (bytevector-length bv)
   (##sys#check-bytevector bv 'bytevector-size)
@@ -3532,16 +3736,22 @@ EOF
   (##sys#check-bytevector bv 'utf8->string)
   (let* ((n (##sys#size bv))
          (to (or end n)))
+    (##sys#check-range/including start 0 n 'utf8->string)
     (if end
         (##sys#check-range/including end 0 n 'utf8->string))
-    (if (not (##core#inline "C_utf_validate" bv n start to))
-        (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
-    (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
+    (let ((count (##core#inline "C_utf_validate" bv n start to)))
+      (if (not count)
+          (##sys#error-hook (foreign-value "C_DECODING_ERROR" int) 'utf8->string bv))
+      (let* ((len (##core#inline "C_fixnum_difference" to start))
+             (dest (##sys#make-bytevector (##core#inline "C_fixnum_plus" len 1))))
+        (##core#inline "C_copy_memory_with_offset" dest bv 0 start len)
+        (##core#inline_allocate ("C_a_ustring" 5) dest count)))))
 
 (define (bytes->string bv #!optional (start 0) end)
   (##sys#check-bytevector bv 'bytes->string)
   (let* ((n (##sys#size bv))
          (to (or end n)))
+    (##sys#check-range/including start 0 n 'bytes->string)
     (if end
         (##sys#check-range/including end 0 n 'bytes->string))
     (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
@@ -5965,10 +6175,7 @@ EOF
                                  (begin
                                    (conc1 13)
                                    (loop buf offset offset limit)))
-                             ;; Restore \r here, too (when we reached EOF)
-                             (begin
-                               (conc1 13)
-                               (values offset (getline) #t)))))
+                             (values (fx+ offset 1) (getline) #t))))
                       ((eq? c 13)
                        (conc buf offset pos)
                        (values (fx+ pos 1) (getline) #t))
@@ -6647,7 +6854,7 @@ EOF
 (define ##sys#make-tagged-pointer (##core#primitive "C_make_tagged_pointer"))
 (define (##sys#pointer? x) (##core#inline "C_anypointerp" x))
 (define (##sys#set-pointer-address! ptr addr) (##core#inline "C_update_pointer" addr ptr))
-(define (##sys#bytevector? x) (##core#inline "C_bytevectorp" x))
+(define (##sys#bytevector? x) (##core#inline "C_i_bytevectorp" x))
 (define (##sys#string->pbytevector s) (##core#inline "C_string_to_pbytevector" s))
 (define (##sys#permanent? x) (##core#inline "C_permanentp" x))
 (define (##sys#block-address x) (##core#inline_allocate ("C_block_address" 6) x))
@@ -7710,7 +7917,7 @@ static C_word C_curdir(C_word buf, C_word size) {
   (when new
     (##sys#check-list new 'include-path)
     (set! ##sys#include-pathnames new))
-  ##include-pathnames)
+  ##sys#include-pathnames)
 
 (define path-list-separator
   (if ##sys#windows-platform #\; #\:))
@@ -7772,8 +7979,6 @@ static C_word C_curdir(C_word buf, C_word size) {
          => (lambda (p)
               (map chop-separator (##sys#split-path p))))
         (else (list installation-home))))
-
-(define (include-path) ##sys#include-pathnames)
 
 
 ;;; Feature identifiers:

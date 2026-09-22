@@ -14,8 +14,9 @@
   - The procedures in "(scheme write)" respect any print-length limits
     imposed by the REPL.
   - Fixed a bug in "read-string" when reading from a binary port.
-  - Fixed a bug in bit->boolean when given negative bignums which would give
-    incorrect output or crash due to out of bounds read (reported by crzcrz).
+  - Fixed a bug in bit->boolean when given negative bignums which would 
+    give incorrect output or crash due to out of bounds read (reported by 
+    crzcrz).
   - The deprecated "chicken-home" and "define-record-printer" have been 
     removed.
   - Fix "=" raising an error when passed a complex number and a bignum,
@@ -25,10 +26,27 @@
   - Fixed several bugs in input decoding from TCP and process ports,
     special thanks to "crzcrz" for the considerable help in analyzing 
     and testing the problem and it's solution.
+  - Improved the behaviour of a number of arithmetic primitives when using
+    mixed complex and non-complex numbers as arguments to make them
+    more consistent with other Scheme implementations and return results
+    that are more useful.
+  - Multiplication with exact zero always produces a zero result.
+  - Various improvements numerical code, in particular for complex numbers
+    and inverse trigonometric functions. Contributed by Peter McGoron.
+  - Added safe variant for bytevector predicates, which would otherwise
+    fail when given immediate values (thanks to Massimo Nocentini).
+  - Added some missing range changes in utf8/bytes->string procedures,
+    handle edge case in read-line internals, added fast path for ASCII
+    chars in utf comparison predicate (thank to Massimo Nocentini).
+  - Fixed incorrect buffer management in "file-mkstemp" (from the
+    "chicken.file.posix" module).
+  - Made the "u8vector" type a proper synonym for "bytevector".
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
+  - Disabled confusing warnings about indirect exports when using 
+    "define-library". 
 
 - Tools
   - Added new global egg property "custom-build" which allows completely
@@ -37,6 +55,11 @@
 - Compiler
   - Added missing option "-merge-reusable-closures" at optimization level
     2, making this actually match the documentation.
+  - Fixed a bug in the "lfa2" pass that could result in exponential
+    compile times due to redundant node walking.
+  - Fix misspelled primitives in extended bindings list for compiler
+    rewrites, added rewrites for R7RS bytevector operations (thanks
+    to Massimo Nocentini).
 
 6.0.0
 

@@ -391,12 +391,17 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (set! chicken.file.posix#file-mkstemp
   (lambda (template)
     (##sys#check-string template 'file-mkstemp)
-    (let* ([buf (##sys#make-c-string template 'file-mkstemp)]
-	   [fd (##core#inline "C_mkstemp" buf)]
-	   [path-length (string-length buf)])
-      (when (eq? -1 fd)
-	(posix-error #:file-error 'file-mkstemp "cannot create temporary file" template) )
-      (values fd (##sys#substring buf 0 (fx- path-length 1) ) ) ) ) )
+    (let* ((bv1 (##sys#make-c-string template 'file-mkstemp))
+           (len (##sys#size bv1))
+           (bv2 (##sys#make-bytevector len)) )
+      (##core#inline "C_copy_memory" bv2 bv1 len)
+      (let ((fd (##core#inline "C_mkstemp" bv2)))
+        (when (eq? -1 fd)
+	  (posix-error #:file-error 'file-mkstemp 
+                       "cannot create temporary file" template) )
+        (values 
+          fd 
+          (##sys#buffer->string! bv2 (fx- len 1)))))))
 
 
 ;;; I/O multiplexing:
@@ -780,7 +785,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-string old 'file-link)
       (##sys#check-string new 'file-link)
       (when (fx< (link old new) 0)
-      (posix-error #:file-error 'hard-link "could not create hard link" old new) ) ) ) )
+        (posix-error #:file-error 'file-link "could not create hard link" old new) ) ) ) )
 
 (define-inline (eagain/ewouldblock? e)
   (or (eq? e _ewouldblock)

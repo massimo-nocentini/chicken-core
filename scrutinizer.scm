@@ -89,7 +89,7 @@
 ;        | (deprecated NAME)
 ;   VALUE = string | symbol | keyword | char | number |
 ;           boolean | true | false |
-;           null | eof | bwp | bytevector |  pointer | port | locative | fixnum |
+;           null | eof | bwp | bytevector | u8vector | pointer | port | locative | fixnum |
 ;           float | bignum | ratnum | cplxnum | integer | pointer-vector
 ;   BASIC = * | list | pair | procedure | vector | undefined | noreturn | values
 ;   COMPLEX = (pair TYPE TYPE)
@@ -135,14 +135,14 @@
 
 (define-constant value-types
   '(string symbol keyword char null boolean true false bytevector eof bwp
-    fixnum float number integer bignum ratnum cplxnum
+    fixnum float number integer bignum ratnum cplxnum u8vector
     pointer-vector port pointer locative))
 
 (define-constant basic-types
   '(* list pair procedure vector undefined deprecated noreturn values))
 
 (define-constant struct-types
-  '(u8vector s8vector u16vector s16vector u32vector s32vector u64vector
+  '(s8vector u16vector s16vector u32vector s32vector u64vector
     s64vector f32vector f64vector c64vector c128vector thread queue environment time
     continuation lock mmap condition hash-table tcp-listener))
 
@@ -975,6 +975,8 @@
 	  ((eq? t2 'undefined) #f)
 	  ((eq? t1 'noreturn))
 	  ((eq? t2 'noreturn))
+          ((or (and (eq? t1 'bytevector) (eq? t2 'u8vector))
+               (and (eq? t1 'u8vector) (eq? t2 'bytevector))))
 	  ((maybe-expand-type t1) => (cut match1 <> t2))
 	  ((maybe-expand-type t2) => (cut match1 t1 <>))
 	  ((and (pair? t1) (eq? 'not (car t1)))
@@ -1826,7 +1828,7 @@
   ;; - coalesces all "forall" forms into one (remove "forall" if typevar-set is empty)
   ;; - renames type-variables
   ;; - replaces type-abbreviations
-  ;; - replaces "blob" by "bytevector" for backwards compatibility
+  ;; - replaces "blob" and "u8vector" by "bytevector" for backwards compatibility
   (let ((ptype #f)			; (T . PT) | #f
 	(clean #f)
 	(typevars '())
@@ -1867,6 +1869,7 @@
 	    ((eq? t 'immediate) '(or eof null fixnum char boolean))
 	    ((eq? t 'any) '*)
             ((eq? t 'blob) 'bytevector) ; DEPRECATED
+            ((eq? t 'u8vector) 'bytevector)
             ((eq? t 'void) 'undefined)
 	    ((eq? t 'input-port) '(refine (input) port))
 	    ((eq? t 'output-port) '(refine (output) port))
