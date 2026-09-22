@@ -7917,7 +7917,7 @@ static C_word C_curdir(C_word buf, C_word size) {
   (when new
     (##sys#check-list new 'include-path)
     (set! ##sys#include-pathnames new))
-  ##include-pathnames)
+  ##sys#include-pathnames)
 
 (define path-list-separator
   (if ##sys#windows-platform #\; #\:))
@@ -7979,8 +7979,6 @@ static C_word C_curdir(C_word buf, C_word size) {
          => (lambda (p)
               (map chop-separator (##sys#split-path p))))
         (else (list installation-home))))
-
-(define (include-path) ##sys#include-pathnames)
 
 
 ;;; Feature identifiers:
