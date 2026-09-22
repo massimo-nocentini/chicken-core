@@ -182,6 +182,8 @@ static sigset_t C_sigset;
 #define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_c_string(b), C_unfix(n)))
 #define C_write(fd, b, start, n)   C_fix(write(C_unfix(fd), C_c_string(b) + C_unfix(start), C_unfix(n)))
 #define C_mkstemp(t)        C_fix(mkstemp(C_c_string(t)))
+#define C_mkstemps(t, n)    C_fix(mkstemps(C_c_string(t), C_unfix(n)))
+#define C_mkdtemp(t)        C_fix(mkdtemp(C_c_string(t)) ? 0 : -1)
 
 #define C_ctime(n)          (C_secs = (n), ctime(&C_secs))
 
@@ -402,6 +404,34 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
         (values 
           fd 
           (##sys#buffer->string! bv2 (fx- len 1)))))))
+
+(set! chicken.file.posix#file-mkstemps
+  (lambda (template suffixlen)
+    (##sys#check-string template 'file-mkstemps)
+    (##sys#check-fixnum suffixlen 'file-mkstemps)
+    (let* ((bv1 (##sys#make-c-string template 'file-mkstemps))
+           (len (##sys#size bv1))
+           (bv2 (##sys#make-bytevector len)) )
+      (##core#inline "C_copy_memory" bv2 bv1 len)
+      (let ((fd (##core#inline "C_mkstemps" bv2 suffixlen)))
+        (when (eq? -1 fd)
+	  (posix-error #:file-error 'file-mkstemps
+                       "cannot create temporary file" template) )
+        (values
+          fd
+          (##sys#buffer->string! bv2 (fx- len 1)))))))
+
+(set! chicken.file.posix#file-mkdtemp
+  (lambda (template)
+    (##sys#check-string template 'file-mkdtemp)
+    (let* ((bv1 (##sys#make-c-string template 'file-mkdtemp))
+           (len (##sys#size bv1))
+           (bv2 (##sys#make-bytevector len)) )
+      (##core#inline "C_copy_memory" bv2 bv1 len)
+      (when (eq? -1 (##core#inline "C_mkdtemp" bv2))
+        (posix-error #:file-error 'file-mkdtemp
+                     "cannot create temporary directory" template) )
+      (##sys#buffer->string! bv2 (fx- len 1)))))
 
 
 ;;; I/O multiplexing:

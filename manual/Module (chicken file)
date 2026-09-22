@@ -165,6 +165,17 @@ Changed in CHICKEN 5.4.0: the values of the {{TMPDIR}}, {{TEMP}} and
 {{TMP}} environment variables are no longer memoized (see
 [[#1830|https://bugs.call-cc.org/ticket/1830]]).
 
+==== call-with-temporary-file
+
+<procedure>(call-with-temporary-file PROC)</procedure>
+
+Creates a temporary file and calls {{PROC}} with an output port for
+the file and its pathname. The file has no extension and is created
+in the same directory as with {{create-temporary-file}}.
+
+Returns the values returned by {{PROC}}. When {{PROC}} returns normally,
+the output port is closed. The file is not deleted.
+
 === Finding files
 
 ==== find-files
