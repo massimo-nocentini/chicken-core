@@ -975,6 +975,8 @@
 	  ((eq? t2 'undefined) #f)
 	  ((eq? t1 'noreturn))
 	  ((eq? t2 'noreturn))
+          ((or (and (eq? t1 'bytevector) (eq? t2 'u8vector))
+               (and (eq? t1 'u8vector) (eq? t2 'bytevector))))
 	  ((maybe-expand-type t1) => (cut match1 <> t2))
 	  ((maybe-expand-type t2) => (cut match1 t1 <>))
 	  ((and (pair? t1) (eq? 'not (car t1)))
