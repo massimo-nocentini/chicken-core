@@ -495,6 +495,7 @@ echo "======================================== syntax-rules stress test ..."
 $time $interpret -bnq syntax-rule-stress-test.scm
 
 echo "======================================== include test ..."
+$interpret -s include-path.scm
 mkdir -p a/b
 echo > a/b/ok.scm
 echo '(include "a/b/ok.scm")' > a/b/include.scm
