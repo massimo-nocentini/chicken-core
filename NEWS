@@ -16,15 +16,15 @@
   - Fixed a bug in "read-string" when reading from a binary port.
   - Fixed a bug in bit->boolean when given negative bignums which would 
     give incorrect output or crash due to out of bounds read (reported by 
-    crzcrz).
+    Stanislav Kljuhhin).
   - The deprecated "chicken-home" and "define-record-printer" have been 
     removed.
   - Fix "=" raising an error when passed a complex number and a bignum,
-    returning #f instead (reported by "crzcrz").
+    returning #f instead (reported by Stanislav Kljuhhin).
   - Fixed various potential buffer overflows in runtime system, reported 
-    with fixes by "crzcrz".
+    with fixes by Stanislav Kljuhhin.
   - Fixed several bugs in input decoding from TCP and process ports,
-    special thanks to "crzcrz" for the considerable help in analyzing 
+    special thanks to Stanislav Kljuhhin for the considerable help in analyzing 
     and testing the problem and it's solution.
   - Improved the behaviour of a number of arithmetic primitives when using
     mixed complex and non-complex numbers as arguments to make them
@@ -40,7 +40,13 @@
     chars in utf comparison predicate (thank to Massimo Nocentini).
   - Fixed incorrect buffer management in "file-mkstemp" (from the
     "chicken.file.posix" module).
-  - Made the "u8vector" type a proper synonym for "bytevector".
+  - Made the "u8vector" type a proper synonym for "bytevector" (thanks to
+    Diega A. Mundo).
+  - Fixed argument handling for "include-path" (thanks to "siiky", Diego
+    A. Mundo and Kristianl Lein-Mathisen).
+  - Overhauled UTF character-class databases and predicates and moved
+    tables into a separate file to easy maintenance (thanks to Stanislav 
+    Kljuhhin).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
