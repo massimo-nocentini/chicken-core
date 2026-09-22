@@ -1307,7 +1307,7 @@ EOF
                (add bv start end))
              (lambda (_ _) ; close
                (##sys#setislot port 8 #t))
-             #f    ; flush-output
+             (lambda (_) #f)    ; flush-output
              #f ; u8-ready?
              #f  ; read-bytevector!
              #f    ; read-line
