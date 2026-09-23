@@ -740,7 +740,7 @@
     (define (literal-size lit)
       (cond ((immediate? lit) 0)
 	    ((big-fixnum? lit) 2)       ; immediate if fixnum, bignum see below
-	    ((string? lit) 0)		; statically allocated
+	    ((string? lit) 5)		; statically allocated (bytevector only)
 	    ((bignum? lit) 2)		; internal vector statically allocated
 	    ((flonum? lit) words-per-flonum)
 	    ((symbol? lit) 7)           ; size of symbol, and possibly a bucket
