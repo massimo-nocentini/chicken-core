@@ -460,6 +460,11 @@ $interpret -s utf-compare-tests.scm
 $compile utf-compare-tests.scm
 ./a.out
 
+echo "======================================== utf string-set! tests ..."
+$interpret -s utf-string-set-tests.scm
+$compile utf-string-set-tests.scm
+./a.out
+
 echo "======================================== condition tests ..."
 $interpret -s condition-tests.scm
 
