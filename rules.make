@@ -791,7 +791,6 @@ file.c: file.scm \
 		chicken.io.import.scm \
 		chicken.irregex.import.scm \
 		chicken.foreign.import.scm \
-		chicken.memory.representation.import.scm \
 		chicken.pathname.import.scm \
 		chicken.process-context.import.scm
 lolevel.c: lolevel.scm \

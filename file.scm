@@ -35,7 +35,7 @@
 
 (declare
   (unit file)
-  (uses extras irregex lolevel pathname posix)
+  (uses extras irregex pathname posix)
   (fixnum)
   (disable-interrupts)
   (foreign-declare #<<EOF
@@ -140,7 +140,6 @@ EOF
 	chicken.foreign
 	chicken.io
 	chicken.irregex
-        chicken.memory.representation
 	chicken.pathname
 	chicken.process-context)
 
@@ -369,7 +368,7 @@ EOF
               (if (file-exists? pn)
                   (loop)
                   (call-with-output-file pn (lambda (p) pn)))))
-          (let* ((n (number-of-bytes ext))
+          (let* ((n (fx- (##sys#size (##sys#slot ext 0)) 1))
                  ;; Account for the added dot.
                  (n (if (fx= n 0) 0 (fx+ n 1)))
                  (pn (make-pathname
