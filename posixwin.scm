@@ -555,7 +555,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	(cond
 	  ((fx= _errno _eintr) (##sys#dispatch-interrupt loop))
 	  (else
-	   (posix-error #:file-error 'file-close "cannot close file" fd)))))))
+	   (##sys#posix-error #:file-error 'file-close "cannot close file" fd)))))))
 
 (set! chicken.file.posix#file-read
   (lambda (fd size . buffer)
@@ -621,7 +621,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	  (if (eq? -1 fd)
 	      (if (fx< count max-attempts)
 		  (loop (fx+ count 1))
-		  (posix-error #:file-error 'file-mkstemp "cannot create temporary file" template))
+		  (##sys#posix-error #:file-error 'file-mkstemp "cannot create temporary file" template))
 	      (values fd tmpl)))))))
 
 ;;; Pipe primitive:
@@ -764,7 +764,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                       (##core#inline "C_u_i_execve" prg argbuf envbuf)
                       (##core#inline "C_u_i_execvp" prg argbuf))))
            (when (fx= r -1)
-             (posix-error #:process-error 'process-execute "cannot execute process" filename))))))))
+             (##sys#posix-error #:process-error 'process-execute "cannot execute process" filename))))))))
 
 (set! chicken.process#process-spawn
   (lambda (mode filename #!optional (arglist '()) envlist exactf)
@@ -778,7 +778,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                       (##core#inline "C_u_i_spawnvpe" mode prg argbuf envbuf)
                       (##core#inline "C_u_i_spawnvp" mode prg argbuf))))
            (if (fx= r -1)
-               (posix-error #:process-error 'process-spawn
+               (##sys#posix-error #:process-error 'process-spawn
                             "cannot spawn process" filename)
                (register-pid r))))))))
 

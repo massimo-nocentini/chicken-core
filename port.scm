@@ -592,15 +592,6 @@ char *ttyname(int fd) {
     (##sys#set-port-data! port (vector #f))
     port))
 
-;; Duplication from posix-common.scm
-(define posix-error
-  (let ((strerror (foreign-lambda c-string "strerror" int))
-	(string-append string-append))
-    (lambda (type loc msg . args)
-      (let ((rn (##sys#update-errno)))
-        (apply ##sys#signal-hook/errno
-               type rn loc (string-append msg " - " (strerror rn)) args)))))
-
 ;; Terminal ports
 (define (terminal-port? port)
   (##sys#check-open-port port 'terminal-port?)
@@ -618,7 +609,7 @@ char *ttyname(int fd) {
     (lambda (port)
       (check-terminal! 'terminal-name port)
       (or (ttyname (##core#inline "C_port_fileno" port))
-	  (posix-error #:error 'terminal-name
+	  (##sys#posix-error #:error 'terminal-name
 		       "cannot determine terminal name" port)))))
 
 (define terminal-size
@@ -633,7 +624,7 @@ char *ttyname(int fd) {
 			    (location rows)
 			    (location columns)))
 	    (values rows columns)
-	    (posix-error #:error 'terminal-size
+	    (##sys#posix-error #:error 'terminal-size
 			 "cannot determine terminal size" port))))))
 
 )

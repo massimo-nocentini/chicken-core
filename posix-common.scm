@@ -192,16 +192,6 @@ EOF
 (define-foreign-variable _eilseq int "EILSEQ")
 (define-foreign-variable _ewouldblock int "EWOULDBLOCK")
 
-(define posix-error
-  (let ([strerror (foreign-lambda c-string "strerror" int)]
-	[string-append string-append] )
-    (lambda (type loc msg . args)
-      (let ([rn (##sys#update-errno)])
-        (apply ##sys#signal-hook/errno
-               type rn loc (string-append msg " - " (strerror rn)) args)))))
-
-(define ##sys#posix-error posix-error)
-
 
 ;;; File properties
 
@@ -252,7 +242,7 @@ EOF
 		   #:type-error loc "bad argument type - not a fixnum, port or string" file)) ) ) )
     (if (fx< r 0)
 	(if err
-	    (posix-error #:file-error loc "cannot access file" file)
+	    (##sys#posix-error #:file-error loc "cannot access file" file)
 	    #f)
 	#t)))
 
@@ -278,7 +268,7 @@ EOF
 		     #:type-error 'file-permissions
 		     "bad argument type - not a fixnum, port or string" f)) ) ) )
       (when (fx< r 0)
-	(posix-error #:file-error 'set-file-permissions! "cannot change file permissions" f p) ) )))
+	(##sys#posix-error #:file-error 'set-file-permissions! "cannot change file permissions" f p) ) )))
 
 (set! chicken.file.posix#file-modification-time
   (lambda (f)
@@ -302,7 +292,7 @@ EOF
 		  scheme-object scheme-object scheme-object)
 		f atime mtime)))
 	(when (fx< r 0)
-	  (apply posix-error
+	  (apply ##sys#posix-error
 		 #:file-error
 		 'set-file-times! "cannot set file times" f rest))))))
 
@@ -404,7 +394,7 @@ EOF
 		     (##core#inline "C_lseek" port pos whence))
 		    (else
 		     (##sys#signal-hook #:type-error 'set-file-position! "invalid file" port)) )
-	(posix-error #:file-error 'set-file-position! "cannot set file position" port pos) ) ) ) )
+	(##sys#posix-error #:file-error 'set-file-position! "cannot set file position" port pos) ) ) ) )
 
 (set! chicken.file.posix#file-position
   (getter-with-setter
@@ -418,7 +408,7 @@ EOF
 		      (else
 		       (##sys#signal-hook #:type-error 'file-position "invalid file" port)) ) ) )
        (when (< pos 0)
-	 (posix-error #:file-error 'file-position "cannot retrieve file position of port" port) )
+	 (##sys#posix-error #:file-error 'file-position "cannot retrieve file position of port" port) )
        pos) )
    chicken.file.posix#set-file-position! ; doesn't accept WHENCE
    "(chicken.file.posix#file-position port)"))
@@ -497,7 +487,7 @@ EOF
      loc) )
   (define (check loc fd inp r enc)
     (if (##sys#null-pointer? r)
-        (posix-error #:file-error loc "cannot open file" fd)
+        (##sys#posix-error #:file-error loc "cannot open file" fd)
         (let ((port (##sys#make-port (if inp 1 2) ##sys#stream-port-class "(fdport)" 'stream)))
           (##core#inline "C_set_file_ptr" port r)
           (##sys#setslot port 15 enc)
@@ -523,9 +513,9 @@ EOF
           ((not (zero? (##sys#peek-unsigned-integer port 0)))
            (let ([fd (##core#inline "C_port_fileno" port)])
              (when (fx< fd 0)
-               (posix-error #:file-error 'port->fileno "cannot access file-descriptor of port" port) )
+               (##sys#posix-error #:file-error 'port->fileno "cannot access file-descriptor of port" port) )
              fd) )
-          (else (posix-error #:type-error 'port->fileno "port has no attached file" port)) ) ) )
+          (else (##sys#posix-error #:type-error 'port->fileno "port has no attached file" port)) ) ) )
 
 (set! chicken.file.posix#duplicate-fileno
   (lambda (old . new)
@@ -536,7 +526,7 @@ EOF
                     (##sys#check-fixnum n 'duplicate-fileno)
                     (##core#inline "C_dup2" old n) ) ) ] )
       (when (fx< fd 0)
-        (posix-error #:file-error 'duplicate-fileno "cannot duplicate file-descriptor" old) )
+        (##sys#posix-error #:file-error 'duplicate-fileno "cannot duplicate file-descriptor" old) )
       fd) ) )
 
 
@@ -552,7 +542,7 @@ EOF
   (lambda (fd)
     (##sys#check-fixnum fd 'change-directory*)
     (unless (fx= 0 (##core#inline "C_fchdir" fd))
-      (posix-error #:file-error 'change-directory* "cannot change current directory" fd))
+      (##sys#posix-error #:file-error 'change-directory* "cannot change current directory" fd))
     fd))
 
 (set! ##sys#change-directory-hook
@@ -724,7 +714,7 @@ EOF
             (receive (epid enorm ecode) (process-wait-impl pid nohang)
               (cond
                ((fx= epid -1)
-                (posix-error #:process-error 'process-wait
+                (##sys#posix-error #:process-error 'process-wait
                              "waiting for child process failed" pid))
                ((fx= epid 0)
                 (values 0 #f #f))
@@ -816,7 +806,7 @@ EOF
   (define (badmode m) (##sys#error "illegal input/output mode specifier" m))
   (define (check loc cmd inp r)
     (if (##sys#null-pointer? r)
-	(posix-error #:file-error loc "cannot open pipe" cmd)
+	(##sys#posix-error #:file-error loc "cannot open pipe" cmd)
 	(let ((port (##sys#make-port (if inp 1 2) ##sys#stream-port-class "(pipe)" 'stream)))
 	  (##core#inline "C_set_file_ptr" port r)
 	  port) ) )
@@ -847,14 +837,14 @@ EOF
       (##sys#check-input-port port #t 'close-input-pipe)
       (let ((r (##core#inline "close_pipe" port)))
 	(when (eq? -1 r)
-	  (posix-error #:file-error 'close-input-pipe "error while closing pipe" port))
+	  (##sys#posix-error #:file-error 'close-input-pipe "error while closing pipe" port))
 	r) ) )
   (set! chicken.process#close-output-pipe
     (lambda (port)
       (##sys#check-output-port port #t 'close-output-pipe)
       (let ((r (##core#inline "close_pipe" port)))
 	(when (eq? -1 r)
-	  (posix-error #:file-error 'close-output-pipe "error while closing pipe" port))
+	  (##sys#posix-error #:file-error 'close-output-pipe "error while closing pipe" port))
 	r) ) ))
 
 (set! chicken.process#with-input-from-pipe

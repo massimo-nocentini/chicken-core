@@ -6417,6 +6417,13 @@ EOF
       (apply ##sys#signal-hook/errno mode #f msg args)
       (##sys#signal-hook/errno mode #f msg)))
 
+(define ##sys#posix-error
+  (let ((string-append string-append))
+    (lambda (type loc msg . args)
+      (apply ##sys#signal-hook/errno
+             type (##sys#update-errno) loc 
+             (string-append msg " - " strerror) args))))
+
 (define (abort x)
   (##sys#current-exception-handler x)
   (abort
@@ -6432,7 +6439,7 @@ EOF
 
 (define ##sys#error-handler
   (make-parameter
-   (let ([string-append string-append])
+   (let ((string-append string-append))
      (lambda (msg . args)
        (##sys#error-handler (lambda args (##core#inline "C_halt" "error in error")))
        (cond ((not (foreign-value "C_gui_mode" bool))
