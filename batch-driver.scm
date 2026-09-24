@@ -465,6 +465,7 @@
     (set! ##sys#read-error-with-line-number #t)
     (set! ##sys#include-pathnames
       (append (map chop-separator (collect-options 'include-path))
+              '(".")
 	      ##sys#include-pathnames) )
     (when (and outfile filename (string=? outfile filename))
       (quit-compiling "source- and output-filename are the same") )
