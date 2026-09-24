@@ -44,9 +44,16 @@
     Diega A. Mundo).
   - Fixed argument handling for "include-path" (thanks to "siiky", Diego
     A. Mundo and Kristianl Lein-Mathisen).
-  - Overhauled UTF character-class databases and predicates and moved
-    tables into a separate file to easy maintenance (thanks to Stanislav 
-    Kljuhhin).
+  - Overhauled UTF character-class databases and predicates to Unicode 18 
+    and moved tables into a separate file to easy maintenance (thanks to 
+    Stanislav Kljuhhin).
+  - Added "file-mkstemps" and "file-mkdtemp" to the "(chicken file posix)"
+    module and "call-with-temporary-file" (in "(chicken file)"), contributed
+    by Stanislav Kljuhhin.
+  - "include" now searches relative to the including source file, if a
+    relative path is given, to make it more portable across existing
+    Scheme implementations (suggested by "Retropikzel"). "include-relative"
+    still exists but has been deprecated.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
