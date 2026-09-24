@@ -502,20 +502,20 @@ echo '(include "a/b/ok.scm")' > a/b/include.scm
 $compile -analyze-only a/b/include.scm
 echo '(include "b/ok.scm")' > a/b/include.scm
 $compile -analyze-only a/b/include.scm -include-path a
-echo '(include-relative "ok.scm")' > a/b/include.scm
+echo '(include "ok.scm")' > a/b/include.scm
 $compile -analyze-only a/b/include.scm
-echo '(include-relative "b/ok.scm")' > a/include.scm
+echo '(include "b/ok.scm")' > a/include.scm
 $compile -analyze-only a/include.scm
-echo '(include-relative "b/ok.scm")' > a/b/include.scm
+echo '(include "b/ok.scm")' > a/b/include.scm
 $compile -analyze-only a/b/include.scm -include-path a
 echo > a/b/other.scm
 # make sure first include doesn't change state for second:
-echo '(include-relative "b/ok.scm") (include-relative "b/other.scm")' > a/include.scm
+echo '(include "b/ok.scm") (include "b/other.scm")' > a/include.scm
 $compile -analyze-only a/include.scm
-echo '(include-relative "ok.scm")' > a/b/other.scm
-echo '(include-relative "b/other.scm")' > a/include.scm
+echo '(include "ok.scm")' > a/b/other.scm
+echo '(include "b/other.scm")' > a/include.scm
 $compile -analyze-only a/include.scm
-echo '(include-relative "b/other.scm") (let () (include-relative "b/ok.scm") (include-relative "b/ok.scm"))' > a/include.scm
+echo '(include "b/other.scm") (let () (include "b/ok.scm") (include "b/ok.scm"))' > a/include.scm
 $compile -analyze-only a/include.scm
 rm -r a
 

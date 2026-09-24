@@ -274,8 +274,7 @@ implements [[http://srfi.schemers.org/srfi-17/srfi-17.html|SRFI-17]].
 <macro>(include-ci STRING1 STRING2 ...)</macro>
 
 Semantics: Both {{include}} and {{include-ci}} take one or
-more filenames expressed as string literals, apply an
-implementation-specific algorithm to find corresponding
+more filenames expressed as string literals, find the corresponding
 files, read the contents of the files in the specified order
 as if by repeated applications of {{read}}, and effectively replace the {{include}}
 or {{include-ci}} expression with a {{begin}}
@@ -283,6 +282,12 @@ expression containing what was read from the files. The
 difference between the two is that {{include-ci}} reads each
 file as if it began with the {{#!fold-case}} directive, while
 {{include}} does not.
+
+If the given filenames are relative paths, they are searched in the
+directory containing the file where the {{include}} form appears,
+then in the paths given in the list returned by {{include-path}}
+(from the {{(chicken platform)}} module) or in the extension
+repository directory.
 
 
 === Derived expression types

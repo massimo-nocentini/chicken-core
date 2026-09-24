@@ -6,6 +6,8 @@ Deprecated functions and variables
   codepoints when a non-binary encoding is used in the port. It
   will be replaced by a method that returns bytevectors in the
   future.
+- "include-relative" is not needed, as "include" already takes the
+  including file directory into account.
 
 6.0.0
 - The foreign type "blob" is obsolete and equivalent to the 

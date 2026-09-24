@@ -433,7 +433,7 @@
  (##sys#er-transformer
   (lambda (form r c)
     (##sys#check-syntax 'include form '(_ . #(string 1)))
-    `(##core#begin ,@(map (lambda (x) `(##core#include ,x #f))
+    `(##core#begin ,@(map (lambda (x) `(##core#include ,x ,##sys#current-source-filename))
                        (cdr form))))))
 
 (##sys#extend-macro-environment
@@ -441,10 +441,10 @@
  (##sys#er-transformer
   (lambda (form r c)
     (##sys#check-syntax 'include-ci form '(_ . #(string 1)))
-    `(##core#begin ,@(map (lambda (x) `(##core#include-ci ,x #f))
+    `(##core#begin ,@(map (lambda (x) `(##core#include-ci ,x ,##sys#current-source-filename))
                        (cdr form))))))
 
-(##sys#extend-macro-environment
+(##sys#extend-macro-environment     ; DEPRECATED
  'include-relative '()
  (##sys#er-transformer
   (lambda (form r c)

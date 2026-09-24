@@ -829,7 +829,7 @@ EOF
   (;; [syntax] and-let* case-lambda cut cute declare define-constant
    ;; define-inline define-record define-record-type
    ;; define-values delay-force fluid-let include
-   ;; include-relative let-optionals let-values let*-values letrec*
+   ;; let-optionals let-values let*-values letrec*
    ;; letrec-values nth-value optional parameterize rec receive
    ;; require-library require-extension set!-values syntax unless when
    bignum? flonum? fixnum? ratnum? cplxnum? finite? infinite? nan?
