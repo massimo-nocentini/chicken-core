@@ -352,54 +352,68 @@ C_regparm C_word C_utf_compare(C_word s1, C_word s2, C_word start1, C_word start
     return C_fix(0);
 }
 
-C_regparm C_word C_utf_compare_ci(C_word s1, C_word s2, C_word start1, C_word start2, C_word len)
+typedef struct C_fold {
+    C_char *p; /* Pointer to the beginning of the next UTF-8 char. */
+    int n;     /* Number of remaining UTF-8 chars. */
+    int i;     /* Start index of the buffer. */
+    int e;     /* End index of the buffer. */
+    int b[3];
+} C_FOLD;
+
+#define C_fold_empty(r) ((r).i == (r).e)
+#define C_fold_len(r) ((r).e - (r).i)
+#define C_fold_push(r, c) ((r).b[ (r).e++ ] = (c))
+#define C_fold_pop(r) ((r).b[ (r).i++ ])
+#define C_fold_more(r) ((r).n || !C_fold_empty(r))
+
+C_regparm C_word C_utf_compare_ci(C_word s1, C_word s2, C_word start1, C_word start2, C_word len1, C_word len2)
 {
-    C_char *p1 = utf_index(s1, C_unfix(start1));
-    C_char *p2 = utf_index(s2, C_unfix(start2));
-    int e, n = C_unfix(len);
-    while(n--) {
-        C_u32 c1, c2;
-        const int *m;
-        int r1, r2, i;
-        p1 = utf8_decode(p1, &c1, &e);
-        p2 = utf8_decode(p2, &c2, &e);
-        if(c1 >= 'A' && c1 <= 'Z') r1 = c1 + 32;
-        else r1 = c1;
-        if(c2 >= 'A' && c2 <= 'Z') r2 = c2 + 32;
-        else r2 = c2;
-        if(r1 == r2) continue;
-        if(r1 < 128 || r2 < 128) goto fail;
-        m = bsearch(&r1, fold2, nelem(fold2), sizeof(*fold2), &runemapcmp);
-        if(m) {
-            for(i = 1; i < 3; ++i) {
-                if(m[ i ] == 0) break;
-                if(m[ i ] != c2) return C_fix(m[ i ] - c2);
-                if(i != 2 && m[ i + 1 ] != 0) p2 = utf8_decode(p2, &c2, &e);
-            }
-        } else {
-            m = bsearch(&r1, fold1, nelem(fold1), sizeof(*fold1), &runemapcmp);
-            if(m) {
-                if(m[ 1 ] != c2) return C_fix(m[ 1 ] - c2);
+    /* The lengths of strings and indices into them are meaningless to us
+       (besides bounding the slice of input we are looking into), because the
+       length of a folded string may be anywhere between N and 3*N. Instead we
+       maintain two lookahead buffers of capacity 3. The buffers are refilled
+       when they run empty, and are consumed by one rune at each iteration. */
+    C_FOLD f[2] = {
+        {.p = utf_index(s1, C_unfix(start1)), .n = C_unfix(len1), .i = 0, .e = 0, .b = {0}},
+        {.p = utf_index(s2, C_unfix(start2)), .n = C_unfix(len2), .i = 0, .e = 0, .b = {0}}};
+    while(C_fold_more(f[0]) && C_fold_more(f[1])) {
+        int r1 = (unsigned char)*f[0].p, r2 = (unsigned char)*f[1].p;
+        /* 7-bit ASCII fast path. */
+        if(!((r1 | r2) & 0x80) && C_fold_empty(f[0]) && C_fold_empty(f[1])) {
+            if(r1 >= 'A' && r1 <= 'Z') r1 += 32;
+            if(r2 >= 'A' && r2 <= 'Z') r2 += 32;
+            if(r1 != r2) return C_fix(r1 - r2);
+            f[0].p++; f[1].p++;
+            f[0].n--; f[1].n--;
+            continue;
+        }
+        /* At least one UTF-8 rune or unconsumed fold, slow path. */
+        for(int i = 0; i < 2; i++) {
+            if(C_fold_empty(f[i])) {
+                /* Refill buffers and advance n. */
+                C_u32 c; int u; int err; const int *m;
+                f[i].i = f[i].e = 0;
+                f[i].p = utf8_decode(f[i].p, &c, &err); f[i].n--; u = c;
+                m = bsearch(&u, fold2, nelem(fold2), sizeof(*fold2), &runemapcmp);
+                if(m) {
+                    for(int j = 1; j <= 3; ++j) {
+                        if(!m[j]) break;
+                        C_fold_push(f[i], m[j]);
+                    }
+                } else {
+                    m = bsearch(&u, fold1, nelem(fold1), sizeof(*fold1), &runemapcmp);
+                    if(m) C_fold_push(f[i], m[1]);
+                    else C_fold_push(f[i], u);
+                }
             }
         }
-        m = bsearch(&r2, fold2, nelem(fold2), sizeof(*fold2), &runemapcmp);
-        if(m) {
-            for(i = 1; i < 3; ++i) {
-                if(m[ i ] == 0) break;
-                if(c1 != m[ i ]) return C_fix(c1 - m[ i ]);
-                if(i != 2 && m[ i + 1 ]) p1 = utf8_decode(p1, &c1, &e);
-            }
-        } else {
-            m = bsearch(&r2, fold1, nelem(fold1), sizeof(*fold1), &runemapcmp);
-            if(m) {
-                if(c1 != m[ 1 ]) return C_fix(c1 - m[ 1 ]);
-            }
-        }
-        continue;
-fail:
-        return C_fix(r1 - r2);
+        /* Now runes in b at i can be directly compared. */
+        r1 = C_fold_pop(f[0]);
+        r2 = C_fold_pop(f[1]);
+        if(r1 != r2) return C_fix(r1 - r2);
     }
-    return C_fix(0);
+    /* Everything matched up to this point, the shortest string wins. */
+    return C_fix((f[0].n + C_fold_len(f[0])) - (f[1].n + C_fold_len(f[1])));
 }
 
 /* XXX inline this? */
@@ -416,9 +430,8 @@ C_regparm C_word C_utf_equal(C_word s1, C_word s2)
 /* XXX inline this? */
 C_regparm C_word C_utf_equal_ci(C_word s1, C_word s2)
 {
-    C_word n1 = C_block_item(s1, 1);
-    if(n1 != C_block_item(s2, 1)) return C_SCHEME_FALSE;
-    return C_mk_bool(C_utf_compare_ci(s1, s2, C_fix(0), C_fix(0), n1) == C_fix(0));
+    return C_mk_bool(C_utf_compare_ci(s1, s2, C_fix(0), C_fix(0),
+                                      C_block_item(s1, 1), C_block_item(s2, 1)) == C_fix(0));
 }
 
 C_regparm C_word C_utf_copy(C_word from, C_word to, C_word start1, C_word end1, C_word start2)

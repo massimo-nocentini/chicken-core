@@ -1259,7 +1259,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_u_i_substring_equal_p(x, y, s1, s2, len) \
                                         C_mk_bool(C_utf_compare(x, y, s1, s2, len) == C_fix(0))
 #define C_u_i_substring_ci_equal_p(x, y, s1, s2, len) \
-                                        C_mk_bool(C_utf_compare_ci(x, y, s1, s2, len) == C_fix(0))
+                                        C_mk_bool(C_utf_compare_ci(x, y, s1, s2, len, len) == C_fix(0))
 
 /* this does not use C_mutate: */
 #define C_copy_bytevector(b1, b2, len)  (C_memcpy(C_data_pointer(b2), C_data_pointer(b1), C_unfix(len)), (b2))
@@ -1913,7 +1913,7 @@ C_fctexport C_char *C_getenventry(int i);
 C_fctexport C_word C_utf_subchar(C_word s, C_word i) C_regparm;
 C_fctexport C_word C_utf_setsubchar(C_word s, C_word i, C_word c) C_regparm;
 C_fctexport C_word C_utf_compare(C_word s1, C_word s2, C_word start1, C_word start2, C_word len) C_regparm;
-C_fctexport C_word C_utf_compare_ci(C_word s1, C_word s2, C_word start1, C_word start2, C_word len) C_regparm;
+C_fctexport C_word C_utf_compare_ci(C_word s1, C_word s2, C_word start1, C_word start2, C_word len1, C_word len2) C_regparm;
 C_fctexport C_word C_utf_equal(C_word s1, C_word s2) C_regparm;
 C_fctexport C_word C_utf_equal_ci(C_word s1, C_word s2) C_regparm;
 C_fctexport C_word C_utf_copy(C_word from, C_word to, C_word start1, C_word end1, C_word start2) C_regparm;

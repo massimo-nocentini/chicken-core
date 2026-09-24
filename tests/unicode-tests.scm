@@ -4,6 +4,7 @@
 (import (chicken string) (chicken io))
 (import (chicken bytevector))
 (import (only (scheme base) write-string))
+(import (only (scheme char) string-foldcase))
 
 (include "test.scm")
                            
@@ -159,6 +160,25 @@
 (test-assert (string-ci=? "Xῌηιx" "xηιῌX"))
 (test-assert (string-ci=? "αβξ" "αβξ"))
 (test-assert (string-ci=? "αβξ" "ΑΒΞ"))
+(test-assert (not (string-ci=? "ß" "sx")))
+(test-assert (string-ci=? "ẞ" "ß"))
+(test-assert (string-ci=? "ß" "SS"))
+(test-assert (string-ci=? "sßS" "ssSS"))
+(test-assert (string-ci=? "sßS" "ssß"))
+(test-assert (not (string-ci<? "ß" "ss")))
+(test-assert (string-ci<? "a" "B"))
+(test-assert (string-ci<? "ßnake" "ssnakes"))
+(test-assert (= 0 (string-compare3-ci "ß" "ss")))
+
+;; Let's stress the logic in C_utf_conpare_ci out a bit.
+(let* ((orig (with-input-from-file "i-dont-know-i-just-work-here.utf-8.txt" read-line))
+       (lower (string-foldcase orig)))
+  (test-assert (string-ci=? orig lower))
+  (test-assert (string-ci=? lower orig))
+  (test-assert (string-ci<=? lower orig))
+  (test-assert (string-ci>=? lower orig))
+  (test-assert (not (string-ci<? orig lower)))
+  (test-assert (not (string-ci>? orig lower))))
 
 ;; Contributed by Anton Idukov:
 
