@@ -58,6 +58,10 @@
     bytevectors inside bytevector literals are spliced, allowing for various
     ways to construct complex byte sequences (thanks to Kristian 
     Lein-Mathisen).
+  - Procedures expecting specifically input or output ports now check
+    whether their port argument is of the correct direction.  Previously
+    e.g. close-input-port would silently ignore output port arguments
+    (thanks to Étienne Pflieger).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused

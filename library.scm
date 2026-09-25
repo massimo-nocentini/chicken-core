@@ -1319,7 +1319,7 @@ EOF
 (set! scheme#get-output-bytevector
  (lambda (p)
   (define (fail) (error 'get-output-bytevector "not an output-bytevector" p))
-  (##sys#check-port p 'get-output-bytevector)
+  (##sys#check-output-port p 'get-output-bytevector)
   (if (eq? (##sys#slot p 7) 'custom)
       (let ((getter (##sys#slot p 9)))
         (if (procedure? getter)
@@ -4481,7 +4481,7 @@ EOF
     (if (null? args)
 	##sys#standard-input
 	(let ((p (car args)))
-	  (##sys#check-port p 'current-input-port)
+	  (##sys#check-input-port p 'current-input-port)
 	  (let-optionals (cdr args) ((convert? #t) (set? #t))
 	    (when set? (set! ##sys#standard-input p)))
 	  p) ) ))
@@ -4491,7 +4491,7 @@ EOF
     (if (null? args)
 	##sys#standard-output
 	(let ((p (car args)))
-	  (##sys#check-port p 'current-output-port)
+	  (##sys#check-output-port p 'current-output-port)
 	  (let-optionals (cdr args) ((convert? #t) (set? #t))
 	    (when set? (set! ##sys#standard-output p)))
 	  p) ) ))
@@ -4501,7 +4501,7 @@ EOF
     (if (null? args)
 	##sys#standard-error
 	(let ((p (car args)))
-	  (##sys#check-port p 'current-error-port)
+	  (##sys#check-output-port p 'current-error-port)
 	  (let-optionals (cdr args) ((convert? #t) (set? #t))
 	    (when set? (set! ##sys#standard-error p)))
 	  p))))
@@ -4551,7 +4551,9 @@ EOF
         port) ) )
 
   (define (close port inp loc)
-    (##sys#check-port port loc)
+    (if inp
+        (##sys#check-input-port port loc)
+        (##sys#check-output-port port loc))
     ; repeated closing is ignored
     (let ((direction (if inp 1 2)))
       (when (##core#inline "C_port_openp" port direction)
