@@ -410,7 +410,7 @@ char *ttyname(int fd) {
                                   (let ((m (insert dest start x)))
                                     (loop (and n (fx- n m)) (fx+ c m))))))))))
 	     read-line			; read-line
-	     read-buffered     ; read-buffered
+	     ##sys#read-buffered-bytes     ; read-buffered
              (lambda (p) (ready?))  ; char-ready?
              ))
 	   (data (vector #f))

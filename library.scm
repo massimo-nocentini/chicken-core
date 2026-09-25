@@ -8521,12 +8521,15 @@ static C_word C_curdir(C_word buf, C_word size) {
 (define chicken.io#read-bytevector/port read-bytevector/port)
 (define chicken.io#read-bytevector!/port read-bytevector!/port)
 
-(define (read-buffered #!optional (port ##sys#standard-input))  ; DEPRECATED
-  (##sys#check-input-port port #t 'read-buffered)
+(define (##sys#read-buffered-bytes port)
   (let ((rb (##sys#slot (##sys#slot port 2) 9))) ; read-buffered method
     (if rb
 	(rb port)
 	"")))
+
+(define (read-buffered #!optional (port ##sys#standard-input))  ; DEPRECATED
+  (##sys#check-input-port port #t 'read-buffered)
+  (##sys#read-buffered-bytes port))
 
 
 ;;; read token of characters that satisfy a predicate
