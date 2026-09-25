@@ -1949,7 +1949,7 @@
 
 (chicken.port#call-with-input-string (#(procedure #:enforce) chicken.port#call-with-input-string (string (procedure (input-port) . *)) . *))
 (chicken.port#call-with-output-string (#(procedure #:enforce) chicken.port#call-with-output-string ((procedure (output-port) . *)) string))
-(chicken.port#copy-port (#(procedure #:enforce) chicken.port#copy-port (* * #!optional (procedure (*) *) (procedure (* output-port) *)) undefined))
+(chicken.port#copy-port (#(procedure #:enforce) chicken.port#copy-port (* * #!optional (procedure (*) *) (procedure (* *) *)) undefined))
 (chicken.port#make-input-port (#(procedure #:clean #:enforce) chicken.port#make-input-port ((procedure () (or char eof)) (procedure () *) (procedure () . *) #!rest *) input-port))
 (chicken.port#make-output-port (#(procedure #:clean #:enforce) chicken.port#make-output-port ((procedure (string) . *) (procedure () . *) #!rest *) output-port))
 (chicken.port#make-binary-input-port (#(procedure #:clean #:enforce) chicken.port#make-binary-input-port ((procedure () (or fixnum eof)) (procedure () *) (procedure () . *) #!rest *) input-port))
