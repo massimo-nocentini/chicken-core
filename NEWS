@@ -1,4 +1,4 @@
-6.0.1
+6.1.0
 
 - Core libraries
   - Writing to an output bytevector could write beyond allocated range,
@@ -54,6 +54,10 @@
     relative path is given, to make it more portable across existing
     Scheme implementations (suggested by "Retropikzel"). "include-relative"
     still exists but has been deprecated.
+  - Added "#u8{...}" notation for reading hex-encoded bytevectors,
+    bytevectors inside bytevector literals are spliced, allowing for various
+    ways to construct complex byte sequences (thanks to Kristian 
+    Lein-Mathisen).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
