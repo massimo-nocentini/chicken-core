@@ -1356,7 +1356,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_a_i_fix_to_flo(p, n, f)       C_flonum(p, C_unfix(f))
 #define C_cast_to_flonum(n)             ((double)(n))
 #define C_a_i_mpointer(ptr, n, x)       C_mpointer(ptr, (x))
-#define C_a_u_i_pointer_inc(ptr, n, p, i) C_mpointer(ptr, (C_char *)(p) + C_unfix(i))
+#define C_a_u_i_pointer_inc(ptr, n, p, i) C_mpointer(ptr, (C_char *)C_c_pointer_nn(p) + C_unfix(i))
 #define C_pointer_eqp(x, y)             C_mk_bool(C_c_pointer_nn(x) == C_c_pointer_nn(y))
 #define C_a_int_to_num(ptr, n, i)       C_int_to_num(ptr, i)
 #define C_a_unsigned_int_to_num(ptr, n, i)  C_unsigned_int_to_num(ptr, i)
