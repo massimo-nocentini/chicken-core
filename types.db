@@ -1920,9 +1920,9 @@
 (chicken.memory.representation#procedure-data (#(procedure #:clean #:enforce) chicken.memory.representation#procedure-data (procedure) *))
 (chicken.memory.representation#record->vector (#(procedure #:clean) chicken.memory.representation#record->vector (*) vector))
 
-(chicken.memory.representation#make-record-instance (#(procedure #:clean) chicken.memory.representation#make-record-instance (symbol #!rest) *))
-(chicken.memory.representation#record-instance? (#(procedure #:clean) chicken.memory.representation#record-instance? (* #!optional symbol) boolean)
-		  ((* symbol) (##sys#structure? #(1) #(2)))
+(chicken.memory.representation#make-record-instance (#(procedure #:clean) chicken.memory.representation#make-record-instance (* #!rest) *))
+(chicken.memory.representation#record-instance? (#(procedure #:clean) chicken.memory.representation#record-instance? (* #!optional *) boolean)
+		  ((* *) (##sys#structure? #(1) #(2)))
 		  ((*) (let ((#(tmp) #(1)))
 			 (if (##sys#immediate? #(tmp))
 			     '#f
