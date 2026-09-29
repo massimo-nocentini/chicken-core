@@ -1093,6 +1093,7 @@ EOF
 	(delete-duplicates
 	 (append (map chop-separator (collect-options "-include-path"))
 		 (map chop-separator (collect-options "-I"))
+                 '(".")
 		 ##sys#include-pathnames)
 	 string=?) )
       (when kwstyle
