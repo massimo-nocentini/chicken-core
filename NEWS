@@ -20,6 +20,12 @@
   - `read-line' could write past the end of its accumulator for lines
     longer than 2048 bytes arriving in a single chunk, as from a string
     port: wrong output around 2100 bytes and a crash by 3000.
+  - Several string operations wrote the terminating zero byte one past
+    the end of a completely filled buffer: `string-foldcase' at its
+    worst-case 3x expansion, `string-upcase', `string-downcase' and
+    `string-foldcase' on empty input, `latin1->string' (all bytes
+    >= 0x80, or empty) and `vector->string' and `string-map' (all
+    4-byte characters, or empty).
   - `utf8->string' decoded its input twice, once to validate and once to
     count codepoints; it now does one pass and is about 1.9x faster.
   - Writing to an output bytevector could write beyond allocated range,

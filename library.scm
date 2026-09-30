@@ -1708,10 +1708,16 @@ EOF
     (##core#inline "C_utf_fill" bv fill)
     (##core#inline_allocate ("C_a_ustring" 5) bv size)))
 
+;; C_utf_set_bv_size stores the terminating zero byte at index LEN, so
+;; a buffer filled up to its very end (string-foldcase's 3x worst case,
+;; any empty input) must be copied instead of shrunk in place.
 (define (##sys#buffer->string! buf len)
-  (##core#inline "C_utf_set_bv_size" buf len)
-  (##core#inline_allocate ("C_a_ustring" 5) buf
-                          (##core#inline "C_utf_range_length" buf 0 len)))
+  (if (fx< len (##sys#size buf))
+      (begin
+        (##core#inline "C_utf_set_bv_size" buf len)
+        (##core#inline_allocate ("C_a_ustring" 5) buf
+                                (##core#inline "C_utf_range_length" buf 0 len)))
+      (##sys#buffer->string buf 0 len)))
 
 (define (##sys#buffer->string buf start len)
   (let ((bv (##sys#make-bytevector (fx+ len 1))))
