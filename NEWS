@@ -182,6 +182,10 @@
     3.5x.  Builds without such a type keep the previous code.
   - CHICKEN_run and C_callback no longer allocate stack after setjmp,
     which on WebAssembly leaked stack on every minor GC.
+  - The major GC, C_copy_block, object-evict and the heap dump and
+    heap filter walkers kept a block's size in an int, so on 64-bit
+    platforms a live object of 2 GB or more (e.g. a 2.2 GB bytevector)
+    corrupted the heap at the next major GC.
 
 - Platform support
   - New "emscripten" platform.  `make wasm' cross-builds libchicken,

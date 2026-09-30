@@ -3907,8 +3907,8 @@ static C_regparm void mark_live_heap_only_objects(C_byte *tgt_space_start, C_byt
  */
 static C_regparm void mark_nested_objects(C_byte *heap_scan_top, C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit)
 {
-  int n;
-  C_word bytes;
+  C_uword n, bytes;		/* NOT int: blocks of 2 GB or more exist on
+				   64-bit platforms (and wasm64) */
   C_word *p;
   C_header h;
   C_SCHEME_BLOCK *bp;
@@ -5093,7 +5093,7 @@ C_regparm C_word C_establish_signal_handler(C_word signum, C_word reason)
 
 C_regparm C_word C_copy_block(C_word from, C_word to)
 {
-  int n = C_header_size(from);
+  C_uword n = C_header_size(from);
   C_long bytes;
 
   if(C_header_bits(from) & C_BYTEBLOCK_BIT) {
@@ -5111,7 +5111,7 @@ C_regparm C_word C_copy_block(C_word from, C_word to)
 
 C_regparm C_word C_evict_block(C_word from, C_word ptr)
 {
-  int n = C_header_size(from);
+  C_uword n = C_header_size(from);
   C_long bytes;
   C_word *p = (C_word *)C_pointer_address(ptr);
 
@@ -13522,7 +13522,7 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
 {
   C_word k = av[ 0 ];
   HDUMP_BUCKET *b, *b2, **bp;
-  int n, bytes;
+  C_uword n, bytes;
   C_byte *scan;
   C_SCHEME_BLOCK *sbp;
   C_header h;
@@ -13655,7 +13655,7 @@ static void C_ccall filter_heap_objects_2(C_word c, C_word *av)
     userarg = av[ 1 ],
     vector = av[ 2 ],
     k = av[ 3 ];
-  int n, bytes;
+  C_uword n, bytes;
   C_byte *scan;
   C_SCHEME_BLOCK *sbp;
   C_header h;
