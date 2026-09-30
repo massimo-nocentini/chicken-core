@@ -30,9 +30,15 @@
 # Environment:
 #   WASM_DIR   directory holding the node wrappers (build-wasm/node)
 #   TEST_DIR   the source tests directory (read only)
+#   WASM_ARCH  the architecture built (wasm64 or wasm32); S0 checks that
+#              the tools are that, and the expectations that differ
+#              follow it.  Default: what csi reports.
+#   WASM_WEB_DIR, WASM_SDK  the web directory and the staged SDK, if
+#              S0 should check their architecture too
 #   WASM_SMOKE_ALLOW_UNSUPPORTED=1  tolerate "unsupported syscall"
 #              diagnostics (DEBUGBUILD lane only)
 #   WASM_SMOKE_LANE_W=0  skip lane W (worst-case engine stack)
+#   WASM_SMOKE_BIG=0     skip S25 (a 2 GB block on wasm64, about 4.5 GB of memory)
 #
 # Every check compares stdout and/or the exit status.  Any engine-level
 # failure on stderr (RangeError, RuntimeError, Aborted) fails the check.
@@ -119,6 +125,49 @@ expect_error() {
     fi
 }
 
+# S0: the architecture.  (machine-type), the memory of every .wasm (a
+# 64-bit memory is memory64) and what a program compiled with the SDK
+# reports must all be WASM_ARCH.
+reported=$("$WASM_DIR/csi" -n -e '(import (chicken platform)) (display (machine-type))' 2>/dev/null) || true
+WASM_ARCH=${WASM_ARCH:-$reported}
+case $WASM_ARCH in
+    wasm64)
+	fixnum_max=4611686018427387903 bits='#t #f'
+	# C_WASM_MAX_NURSERY in runtime.c at the default frame pad
+	max_nursery_k=384
+	jiffies_per_second=1000000 jiffy_ms=1000 ;;
+    wasm32)
+	fixnum_max=1073741823 bits='#f #t'
+	max_nursery_k=256
+	jiffies_per_second=1000 jiffy_ms=1 ;;
+    *) echo "wasm-smoke: unknown architecture '$WASM_ARCH' (csi reports '$reported')"; exit 1 ;;
+esac
+echo "wasm-smoke: $WASM_ARCH"
+
+expect S0 "$WASM_ARCH" "$WASM_DIR/csi" -n -e '(import (chicken platform)) (display (machine-type))'
+wasm_files="$WASM_DIR/csi.wasm $WASM_DIR/chicken.wasm"
+if test -n "$WASM_WEB_DIR"; then
+    wasm_files="$wasm_files $WASM_WEB_DIR/chicken-repl.wasm $WASM_WEB_DIR/chicken-compiler.wasm"
+fi
+s0b() {
+    for w in $wasm_files; do
+	a=$("$NODE" "$TEST_DIR/wasm/wasm-arch.js" "$w") || return 1
+	echo "$(basename "$w") $a"
+	test "x$a" = "x$WASM_ARCH" || return 1
+    done
+}
+expect_status S0b 0 s0b
+if test -n "$WASM_SDK"; then
+    s0c() {
+	echo '(import (chicken platform)) (display (machine-type))' >smoke-arch.scm &&
+	"$WASM_SDK/bin/csc-wasm" -node smoke-arch.scm -o smoke-arch.js &&
+	test "x$("$NODE" "$TEST_DIR/wasm/wasm-arch.js" smoke-arch.wasm)" = "x$WASM_ARCH" &&
+	"$NODE" smoke-arch.js
+    }
+    expect S0c "$WASM_ARCH" s0c
+    rm -f smoke-arch.scm smoke-arch.js smoke-arch.wasm
+fi
+
 # The checks that stress stack depth and GC restarts; lane W reruns them.
 S23_ITERATIONS=20000000
 
@@ -131,11 +180,11 @@ stack_checks() {
 	'(import (chicken fixnum)) (define (f n) (if (fx= n 0) 0 (fx+ 1 (f (fx- n 1))))) (print (f 1000000))'
     expect_error S18 'recursion too deep or circular data' csi_run -n -e \
 	'(define (mk) (let loop ((i 0) (l (quote ()))) (if (< i 1000000) (loop (+ i 1) (list l)) l))) (print (equal? (mk) (mk)))'
-    # the same two at the largest nursery the runtime accepts (320k at
-    # the default frame pad: C_WASM_MAX_NURSERY in runtime.c)
-    expect S9m 1000000 csi_run -:s320k -n -e \
+    # the same two at the largest nursery the runtime accepts (at the
+    # default frame pad: C_WASM_MAX_NURSERY in runtime.c)
+    expect S9m 1000000 csi_run -:s${max_nursery_k}k -n -e \
 	'(define (f n) (if (= n 0) 0 (+ 1 (f (- n 1))))) (print (f 1000000))'
-    expect_error S18m 'recursion too deep or circular data' csi_run -:s320k -n -e \
+    expect_error S18m 'recursion too deep or circular data' csi_run -:s${max_nursery_k}k -n -e \
 	'(define (mk) (let loop ((i 0) (l (quote ()))) (if (< i 1000000) (loop (+ i 1) (list l)) l))) (print (equal? (mk) (mk)))'
     # -: options must come first; more than 30000 minor GCs (drift regression)
     expect S23 ok csi_run -:s64k -n -e \
@@ -145,7 +194,7 @@ stack_checks() {
 C="csi_run -n"
 
 expect S1 3 $C -e '(print (+ 1 2))'
-expect S2 '#f #t wasm32 1073741823 #t emscripten unix #f' $C -e \
+expect S2 "$bits $WASM_ARCH $fixnum_max #t emscripten unix #f" $C -e \
     '(import (chicken platform) (chicken fixnum)) (print (feature? #:64bit) " " (feature? #:32bit) " " (machine-type) " " most-positive-fixnum " " (feature? #:emscripten) " " (software-version) " " (software-type) " " (feature? #:dload))'
 expect_status S3 3 $C -e '(exit 3)'
 expect_status S3b nonzero $C -e '(car 1)'
@@ -185,10 +234,11 @@ stack_checks
 
 expect S19 '#t' $C -e \
     '(import (chicken time)) (let-values (((u0 s0) (cpu-time))) (let l ((i 0)) (if (< i 3000000) (l (+ i 1)))) (let-values (((u1 s1) (cpu-time))) (print (> u1 u0))))'
-expect S20 '1000 #t' $C -e \
+expect S20 "$jiffies_per_second #t" $C -e \
     '(import (scheme time)) (print (jiffies-per-second) " " (< 0 (current-jiffy)))'
 
 # S20b: 37 minutes after startup, microsecond jiffies would have wrapped
+# a 32-bit fixnum (wasm32 counts milliseconds); 50 ms must count 40-200 ms
 s20b() {
     "$NODE" -e '
 const csi = process.argv[1];
@@ -204,19 +254,28 @@ require(csi);' "$WASM_DIR/csi.js"
 }
 run S20b s20b && {
     set -- $(cat smoke.out)
-    if test "$status" -eq 0 && test "x$1" = 'x#t' && test "${2:-0}" -ge 40 && test "${2:-0}" -le 200; then
+    if test "$status" -eq 0 && test "x$1" = 'x#t' && test "${2:-0}" -ge $((40 * jiffy_ms)) &&
+	    test "${2:-0}" -le $((200 * jiffy_ms)); then
 	echo "ok   [$lane] S20b"
     else
-	fail S20b "expected '#t <40..200>', got '$(cat smoke.out)'"
+	fail S20b "expected '#t <$((40 * jiffy_ms))..$((200 * jiffy_ms))>', got '$(cat smoke.out)'"
     fi
 }
 
 expect_error S21 'exceeds the WebAssembly stack' csi_run -:s8m -n -e 1
-expect_error S21b 'exceeds the WebAssembly maximum' csi_run -:s321k -n -e 1
+expect_error S21b 'exceeds the WebAssembly maximum' csi_run -:s$((max_nursery_k + 1))k -n -e 1
 expect S22 '#f' $C -e '(import (chicken process-context)) (print (executable-pathname))'
 expect_status S24 0 "$WASM_DIR/chicken-status" -h
 # chicken-profile exits 64 after -help (as natively), so ask for its version
 expect_status S24b 0 "$WASM_DIR/chicken-profile" -version
+
+# S25 (wasm64): a block of 2 GB or more survives major GCs (the GC once
+# kept block sizes in an int).  Needs about 4.5 GB of memory; set
+# WASM_SMOKE_BIG=0 to skip it.
+if test "$WASM_ARCH" = wasm64 && test "${WASM_SMOKE_BIG:-1}" != 0; then
+    expect S25 '2306867200 7 9 99999 100000' $C -e \
+	'(import (chicken bytevector) (chicken gc)) (define b (make-bytevector (* 2200 1024 1024) 7)) (bytevector-u8-set! b (- (bytevector-length b) 1) 9) (define l (let loop ((i 0) (a (quote ()))) (if (< i 100000) (loop (+ i 1) (cons (vector i) a)) a))) (gc #t) (gc #t) (print (bytevector-length b) " " (bytevector-u8-ref b 0) " " (bytevector-u8-ref b (- (bytevector-length b) 1)) " " (vector-ref (car l) 0) " " (length l))'
+fi
 
 # Lane W: worst-case engine stack.  Liftoff frames are the largest; a
 # browser worker gets about 1 MB of native stack.

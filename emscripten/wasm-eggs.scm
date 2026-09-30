@@ -46,6 +46,7 @@
 ; when the egg found is older than the one asked for.
 ;
 ; Environment:
+;   WASM_EGGS_ARCH             the target: wasm64 (the default) or wasm32
 ;   WASM_EGGS_CHICKEN_INSTALL  command retrieving an egg: "CMD -r NAME"
 ;   WASM_EGGS_CORE             modules provided by the core system:
 ;                              eggs of these names are not built
@@ -135,10 +136,19 @@
 		       (else (list n))))
 	       names)))
 
+;; The target architecture, WASM_ARCH: wasm64 (the default) or wasm32.
+(define target-arch
+  (let ((a (get-environment-variable "WASM_EGGS_ARCH")))
+    (cond ((or (not a) (string=? "" a)) 'wasm64)
+	  ((member a '("wasm64" "wasm32")) (string->symbol a))
+	  (else (fprintf (current-error-port) "~a: bad WASM_EGGS_ARCH ~s~%" program a)
+		(exit 1)))))
+
 ;; The features of the target (a csi built by "make wasm" reports these
 ;; in `features'), for `cond-expand' and `platform' in .egg files.
 (define target-features
-  '(chicken chicken-6 chicken-6.0 32bit ptables little-endian wasm32 clang
+  `(chicken chicken-6 chicken-6.0 ,(if (eq? target-arch 'wasm64) '64bit '32bit)
+    ptables little-endian ,target-arch clang
     emscripten unix posix r7rs ieee-float ratios exact-complex
     full-numeric-tower full-unicode srfi-0 srfi-2 srfi-4 srfi-6 srfi-8 srfi-9
     srfi-10 srfi-11 srfi-12 srfi-15 srfi-16 srfi-17 srfi-23 srfi-26 srfi-28

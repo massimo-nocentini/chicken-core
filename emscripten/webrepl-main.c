@@ -50,11 +50,13 @@ static char *in_buf;
 static size_t in_len, in_pos;
 static double slice_start, slice_ms = 50.0, wakeup_ms;
 
-/* Never let a JS exception unwind through CHICKEN frames. */
+/* Never let a JS exception unwind through CHICKEN frames.  A pointer
+ * reaches JS as a BigInt on wasm64 (MEMORY64), as a Number on wasm32. */
 EM_JS(void, js_emit, (int fd, const unsigned char *p, int n), {
   try {
+    var a = typeof p === 'bigint' ? Number(p) : p >>> 0;
     if (Module['onSchemeOutput'])
-      Module['onSchemeOutput'](fd, HEAPU8.slice(p >>> 0, (p >>> 0) + n));
+      Module['onSchemeOutput'](fd, HEAPU8.slice(a, a + n));
   } catch (e) { console.error(e); }
 });
 
@@ -156,7 +158,8 @@ int main(int argc, char **argv)
 
 /* The API for JS (see web/repl-driver.js) */
 
-/* TEXT is LEN bytes of UTF-8, and may contain NUL characters */
+/* TEXT is LEN bytes of UTF-8, and may contain NUL characters.  On wasm64
+ * the link's -sSIGNATURE_CONVERSIONS lets JS pass TEXT as a Number. */
 EMSCRIPTEN_KEEPALIVE void webrepl_feed(const char *text, int len, int eof)
 {
   if(len > 0) {

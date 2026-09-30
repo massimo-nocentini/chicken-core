@@ -42,7 +42,32 @@ endif
 
 # platform configuration
 
-ARCH = wasm32
+# WASM_ARCH (recorded in config.make by "make wasm") selects the target:
+# wasm64 (the default: 64-bit words and pointers, emscripten's MEMORY64,
+# so CHICKEN is a 64-bit platform as on x86-64) or wasm32 (32-bit, for
+# engines without memory64).  Objects of the two cannot be linked
+# together.
+WASM_ARCH ?= wasm64
+# -m64 selects emcc's wasm64-unknown-emscripten target (MEMORY64=1;
+# emscripten 6 deprecates -sMEMORY64 in its favour).
+ifeq ($(WASM_ARCH),wasm64)
+WASM_ARCH_FLAG = -m64
+# The heap may grow past 4 GB: V8 (Chrome, node) accepts up to 16 GB.
+WASM_DEFAULT_MAXIMUM_MEMORY = 17179869184
+# Objects are twice as big, so the nursery must be too (apply with
+# 10000 arguments needs 320 KB), but the engine's frames are bigger:
+# a larger pad keeps the frame count low (see C_WASM_MAX_NURSERY).
+WASM_DEFAULT_FRAME_PAD = 128
+else ifeq ($(WASM_ARCH),wasm32)
+WASM_ARCH_FLAG = -m32
+# 2 GB, not 4: pointers stay below 2^31, which JS glue may see signed.
+WASM_DEFAULT_MAXIMUM_MEMORY = 2147483648
+WASM_DEFAULT_FRAME_PAD = 64
+else
+$(error WASM_ARCH must be wasm64 or wasm32, not "$(WASM_ARCH)")
+endif
+
+ARCH = $(WASM_ARCH)
 STATICBUILD = 1
 EXE =
 
@@ -56,10 +81,10 @@ LIBRARIAN_OPTIONS = crs
 
 WASM_SJLJ ?= wasm
 WASM_STACK_SIZE ?= 4194304
-WASM_MAXIMUM_MEMORY ?= 2147483648
+WASM_MAXIMUM_MEMORY ?= $(WASM_DEFAULT_MAXIMUM_MEMORY)
 WASM_INITIAL_MEMORY ?= 33554432
-WASM_FRAME_PAD ?= 64
-WASM_EMFLAGS = -sSUPPORT_LONGJMP=$(WASM_SJLJ)
+WASM_FRAME_PAD ?= $(WASM_DEFAULT_FRAME_PAD)
+WASM_EMFLAGS = $(WASM_ARCH_FLAG) -sSUPPORT_LONGJMP=$(WASM_SJLJ)
 
 # WASM_EGGS and the host tools that build them, recorded apart (see
 # "eggs" below)
@@ -228,8 +253,8 @@ else
 WASM_REPO_STAMP = wasm-repo.stamp
 endif
 
-wasm-eggs.mk: wasm-eggs.scm $(WASM_EGG_CONFIG) $(SRCDIR)setup.defaults
-	WASM_EGGS_CHICKEN_INSTALL="$(WASM_HOST_CHICKEN_INSTALL)" \
+wasm-eggs.mk: wasm-eggs.scm config.make $(WASM_EGG_CONFIG) $(SRCDIR)setup.defaults
+	WASM_EGGS_CHICKEN_INSTALL="$(WASM_HOST_CHICKEN_INSTALL)" WASM_EGGS_ARCH=$(WASM_ARCH) \
 	  WASM_EGGS_CORE="$(IMPORT_LIBRARIES)" \
 	  WASM_EGGS_DEFAULTS="$(SRCDIR)setup.defaults" WASM_EGG_DIR="$(WASM_EGG_DIR)" \
 	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio" \
@@ -309,11 +334,15 @@ WASM_WEB_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=web,worker,node \
 WEB_ASSETS = repl.js repl-driver.js repl-worker.js compiler-worker.js chicken.png
 WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-compiler.wasm
 
+# On wasm64 JS sees pointers as BigInt; SIGNATURE_CONVERSIONS makes
+# webrepl_feed take its pointer as a Number, as _malloc and
+# stringToNewUTF8 give it (no effect on wasm32).
 $(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) \
     $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP)
 	mkdir -p $(WEB_DIR)
 	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenRepl -sEXIT_RUNTIME=0 -Wl,--wrap=_exit \
 	  -sEXPORTED_FUNCTIONS=_main,_webrepl_feed,_webrepl_resume,_webrepl_interrupt,_webrepl_state,_webrepl_started,_webrepl_exited,_webrepl_exit_code,_webrepl_wakeup_ms,_webrepl_set_slice_ms,_malloc,_free \
+	  -sSIGNATURE_CONVERSIONS=webrepl_feed:_p__ \
 	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 \
 	  csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
 	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
@@ -328,13 +357,14 @@ $(addprefix $(WEB_DIR)/,$(WEB_ASSETS)): $(WEB_DIR)/%: %
 	mkdir -p $(WEB_DIR)
 	cp $< $@
 
+# @ARCH@ tells the page to check for memory64 (wasm64).
 # The page passes @BUILD@ as ?v= on every URL it loads, so browsers never
 # mix cached files of two builds: the build id alone would not change
 # between rebuilds of an uncommitted tree, hence the checksum.
 $(WEB_DIR)/index.html: index.html buildid $(addprefix $(WEB_DIR)/,$(WEB_ASSETS) $(filter %.js,$(WEB_MODULES)))
 	mkdir -p $(WEB_DIR)
 	v="$$(cat buildid)-$$(cat $(filter $(WEB_DIR)/%,$^) $(WEB_DIR)/*.wasm | cksum | cut -d' ' -f1)"; \
-	  sed "s/@BUILD@/$$v/g" $< >$@
+	  sed -e "s/@BUILD@/$$v/g" -e "s/@ARCH@/$(WASM_ARCH)/g" $< >$@
 
 # SDK: compile user programs (translated by a host chicken) to wasm
 
@@ -356,6 +386,7 @@ $(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm
 	cp $(filter %chicken.h,$^) chicken-config.h $(WASM_STAGE)$(CHICKENINCDIR)/
 	echo '$(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS)' >$(WASM_SDK_SHARE)/emcflags
 	echo '$(WASM_COMMON_LDFLAGS)' >$(WASM_SDK_SHARE)/emldflags
+	echo '-feature emscripten -feature $(WASM_ARCH)' >$(WASM_SDK_SHARE)/features
 	cp $(WASM_NODE_PRE) $(WASM_SDK_SHARE)/
 	sed -e 's|@CHICKEN@|$(CHICKEN)|' -e 's|@EMCC@|$(C_COMPILER)|' \
 	  -e 's|@STAGE@|$(abspath $(WASM_STAGE))$(PREFIX)|' -e 's|@REPO@|$(abspath $(WASM_REPO))|' \
@@ -384,7 +415,7 @@ wasm-check: wasm-node wasm-web wasm-sdk
 	rm -rf $(WASM_TESTS_RUN) && mkdir -p $(WASM_TESTS_RUN)
 	cd $(WASM_TESTS_RUN) && TEST_DIR=$(abspath $(SRCDIR))/tests WASM_DIR=$(CURDIR)/node \
 	  WASM_WEB_DIR=$(CURDIR)/$(WEB_DIR) WASM_SDK=$(abspath $(WASM_STAGE))$(PREFIX) \
-	  HOSTCHICKEN="$(CHICKEN)" sh $(SRCDIR)tests/wasm-smoke.sh
+	  HOSTCHICKEN="$(CHICKEN)" WASM_ARCH=$(WASM_ARCH) NODE="$(NODE)" sh $(SRCDIR)tests/wasm-smoke.sh
 	cd $(WASM_TESTS_RUN) && TEST_DIR=$(abspath $(SRCDIR))/tests WASM_DIR=$(CURDIR)/node \
 	  WASM_SDK=$(abspath $(WASM_STAGE))$(PREFIX) HOSTCHICKEN="$(CHICKEN)" \
 	  sh $(SRCDIR)tests/runtests-wasm.sh

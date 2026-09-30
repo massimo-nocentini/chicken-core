@@ -1059,7 +1059,11 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
  * at least C_WASM_FRAME_PAD bytes of shadow stack, so the nursery size
  * bounds the number of live native frames between two minor GCs. */
 # ifndef C_WASM_FRAME_PAD
-#  define C_WASM_FRAME_PAD 64
+#  ifdef C_SIXTY_FOUR
+#   define C_WASM_FRAME_PAD 128
+#  else
+#   define C_WASM_FRAME_PAD 64
+#  endif
 # endif
 # define C_stack_pointer ((C_word *)C_alloca(C_WASM_FRAME_PAD))
 #elif (defined (__llvm__) && defined (__GNUC__)) || defined (__TINYC__)

@@ -46,6 +46,6 @@
      (extension wasm-egg-b
        (component-dependencies wasm-egg-b-core)
        (cond-expand
-         ((and target wasm32) (csc-options "-D" "wasm-egg-b-target"))
+         ((and target emscripten (or wasm32 wasm64)) (csc-options "-D" "wasm-egg-b-target"))
          (else (error "wasm-egg-b: not built for the WebAssembly target"))))))
    (else (error "wasm-egg-b: needs CHICKEN 6"))))

@@ -1073,6 +1073,9 @@ ifneq ($(PLATFORM),emscripten)
 WASM_BUILDDIR ?= build-wasm
 WASM_GOAL ?= wasm-all
 WASM_PREFIX ?= /chicken
+# always recorded, so that a build directory made before wasm64 became
+# the default (or with the other arch) is rebuilt, not mixed
+WASM_ARCH ?= wasm64
 EMCC ?= $(if $(EMSDK),$(EMSDK)/upstream/emscripten/emcc,emcc)
 WASM_CHICKEN_BIN ?= $(abspath chicken$(EXE))
 WASM_HOST_CHICKEN ?= env LD_LIBRARY_PATH=$(abspath .) $(WASM_CHICKEN_BIN)
@@ -1084,7 +1087,7 @@ WASM_HOST_CHICKEN_INSTALL ?= env LD_LIBRARY_PATH=$(abspath .) $(abspath chicken-
 WASM_HOST_REPOSITORY ?= $(or $(CHICKEN_REPOSITORY_PATH),$(EGGDIR))
 # local egg directories (holding a .egg file) by absolute path
 WASM_EGGS_ABS = $(foreach e,$(WASM_EGGS),$(if $(or $(findstring /,$e),$(wildcard $e/*.egg)),$(abspath $e),$e))
-WASM_KNOBS = WASM_SJLJ WASM_STACK_SIZE WASM_FRAME_PAD WASM_SIMD WASM_MAXIMUM_MEMORY \
+WASM_KNOBS = WASM_ARCH WASM_SJLJ WASM_STACK_SIZE WASM_FRAME_PAD WASM_SIMD WASM_MAXIMUM_MEMORY \
   WASM_INITIAL_MEMORY WASM_LINK_OPT
 WASM_MAKE = "$(MAKE)" -C $(WASM_BUILDDIR) -f $(abspath $(SRCDIR))/GNUmakefile PLATFORM=emscripten
 
@@ -1180,7 +1183,7 @@ wasm-cross: $(TARGETS) $(WASM_BUILDDIR)/config.make
 	  echo "TARGET_LINKER_OPTIONS = $$(cat $(WASM_SDK_PREFIX)/share/chicken/emldflags)"; \
 	  echo "TARGET_LINKER_OPTIMIZATION_OPTIONS ="; \
 	  echo "TARGET_LIBRARIES = -lm"; \
-	  echo "TARGET_FEATURES = -feature emscripten -feature wasm32"; } >$(WASM_CROSS_SRC)/config.make.tmp
+	  echo "TARGET_FEATURES = $$(cat $(WASM_SDK_PREFIX)/share/chicken/features)"; } >$(WASM_CROSS_SRC)/config.make.tmp
 	cd $(WASM_CROSS_SRC) && if cmp -s config.make.tmp config.make; then rm config.make.tmp; else mv config.make.tmp config.make; fi
 	+"$(MAKE)" -C $(WASM_CROSS_SRC)
 	+"$(MAKE)" -C $(WASM_CROSS_SRC) install

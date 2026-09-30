@@ -48,6 +48,10 @@ const require = createRequire(import.meta.url);
 const pw = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const webDir = path.resolve(process.argv[2] || 'web');
 const shots = process.env.SHOTS ? path.resolve(process.env.SHOTS) : null;
+// the architecture the page was built for (make wasm WASM_ARCH=...)
+const arch = (/<meta name="chicken-wasm-arch" content="([^"]*)">/
+              .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
+if (arch !== 'wasm64' && arch !== 'wasm32') throw new Error('no wasm arch in ' + webDir + '/index.html');
 const browsers = (process.env.BROWSERS || 'chromium').split(',').map(s => s.trim()).filter(Boolean);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -126,6 +130,13 @@ async function runBrowser(name) {
   await check(P + '(+ 1 2) and Enter gives 3', async () => {
     await evalTo('(+ 1 2)', /\n3\n#;\d+> $/);
     assert(/#;1> \(\+ 1 2\)\n/.test(await term()), 'input echoed after the prompt');
+  });
+
+  await check(P + `the REPL runs the ${arch} build`, async () => {
+    const want = arch === 'wasm64' ? '(wasm64 #t 4611686018427387903)' : '(wasm32 #f 1073741823)';
+    await evalTo('(import (chicken platform) (chicken fixnum))', /#;\d+> $/);
+    await evalTo('(list (machine-type) (feature? #:64bit) most-positive-fixnum)', /\n\(.*\)\n#;\d+> $/);
+    assert((await since()).includes('\n' + want + '\n'), 'got: ' + await since());
   });
 
   await check(P + 'multi-line input with Shift+Enter', async () => {
@@ -391,6 +402,49 @@ async function runBrowser(name) {
     await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
     assert(/served over HTTP/.test(await f.textContent('#notice-text')), 'notice: ' + await f.textContent('#notice-text'));
     assert(await f.isDisabled('#line'), 'input disabled');
+    await f.close();
+  });
+
+  // Engines without memory64 (as Safari 26 and 27): the page must say so
+  // for a wasm64 build, and still start a wasm32 build.
+  await check(P + `without memory64 the ${arch} page ` +
+              (arch === 'wasm64' ? 'explains what it needs' : 'still works'), async () => {
+    const f = await context.newPage();
+    const wasmFetched = [];
+    f.on('pageerror', e => errors.push('no-memory64 pageerror: ' + e.message));
+    f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
+    await f.addInitScript(() => {
+      const validate = WebAssembly.validate;
+      WebAssembly.validate = function (bytes) {
+        const b = new Uint8Array(bytes.buffer || bytes);
+        // a memory section declaring a 64-bit memory: flags 0x04 or 0x05
+        for (let i = 8; i + 3 < b.length; i++)
+          if (b[i] === 0x05 && b[i + 2] === 0x01 && (b[i + 3] & ~1) === 0x04) return false;
+        return validate.apply(this, arguments);
+      };
+    });
+    await f.goto(base + 'index.html');
+    if (arch === 'wasm64') {
+      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
+      assert(/64-bit WebAssembly \(memory64\)/.test(await f.textContent('#notice-text')),
+             'notice: ' + await f.textContent('#notice-text'));
+      assert(/WASM_ARCH=wasm32/.test(await f.textContent('#term')), 'term suggests a wasm32 build');
+      assert(await f.isDisabled('#line'), 'input disabled');
+      assert(await f.isDisabled('#compile'), 'compile disabled');
+      await f.click('#restart');
+      await new Promise(r => setTimeout(r, 500));
+      assert(await f.$eval('#status', e => e.dataset.state) === 'error', 'still unavailable after Restart');
+      // Ctrl+Enter in the editor must not get past the disabled Compile button
+      await f.click('#tab-compile');
+      await f.click('#src');
+      await f.keyboard.press('Control+Enter');
+      await new Promise(r => setTimeout(r, 500));
+      assert(await f.isDisabled('#compile'), 'compile still disabled after Ctrl+Enter');
+      assert(/memory64/.test(await f.textContent('#cstatus')), 'cstatus: ' + await f.textContent('#cstatus'));
+      assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
+    } else {
+      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+    }
     await f.close();
   });
 

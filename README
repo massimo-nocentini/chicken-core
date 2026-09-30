@@ -349,7 +349,15 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     A configured and built host tree can cross-build CHICKEN to
     WebAssembly with Emscripten (tested with emscripten 6.0.10; the
-    tests need node 22 or later, and "wasm-serve" needs python3).
+    tests need node 22 or later, 24 for wasm64, and "wasm-serve"
+    needs python3).
+    By default the target is wasm64: 64-bit WebAssembly (memory64),
+    on which CHICKEN is a 64-bit platform, with 62-bit fixnums and
+    a heap that may grow past 4 GB.  It runs in Chrome and Edge 133,
+    Firefox 134 and node 24 or later, but not in Safari (up to
+    27.2; only Safari Technology Preview has memory64 so far).
+    "WASM_ARCH=wasm32" builds the 32-bit target instead, which runs
+    in all of them (see WASM_ARCH below).
     The build always happens out of tree, by
     default in "build-wasm"; the host tree's own "chicken"
     translates the Scheme sources, so build the host first:
@@ -398,7 +406,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       stage directory, the same is:
 
         CHICKEN_REPOSITORY_PATH=lib/chicken/12 chicken foo.scm \
-          -static -feature emscripten -feature wasm32 -output-file foo.c
+          -static $(cat share/chicken/features) -output-file foo.c
         emcc $(cat share/chicken/emcflags) -DHAVE_CHICKEN_CONFIG_H \
           -I include/chicken -c foo.c -o foo.o
         emcc $(cat share/chicken/emldflags) foo.o \
@@ -511,14 +519,36 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       The installation prefix inside the virtual file system
       (default "/chicken").
 
+    WASM_ARCH
+      "wasm64" (the default) or "wasm32".  wasm64 needs memory64 in
+      the engine (see above); the browser page says so, and suggests
+      a wasm32 build, in a browser without it.  wasm32 is a 32-bit
+      platform (30-bit fixnums, at most 2 GB of memory) that runs
+      wherever WebAssembly does.  The features "wasm64" or "wasm32"
+      and "64bit" or "32bit" tell them apart, as (machine-type)
+      does.  To keep both, give each its own WASM_BUILDDIR:
+
+        make wasm-check WASM_BUILDDIR=build-wasm32 WASM_ARCH=wasm32
+
+      wasm64 is somewhat slower: in node 25 it took 7% to 17% more
+      time than wasm32 on the benchmarks tried (compiled and
+      interpreted fib, fft, sorting, the wasm "chicken" compiling
+      tests/compiler.scm), except bignum arithmetic, which was
+      about 20% faster with 64-bit digits.
+
     WASM_STACK_SIZE
       The link-time stack size, which also bounds the nursery
       (default 4194304 bytes).  A "-:s" nursery larger than fits
       is refused at startup.
 
     WASM_INITIAL_MEMORY, WASM_MAXIMUM_MEMORY
-      Linear memory (defaults 32 MB and 2 GB; the heap grows
-      between them).
+      Linear memory (defaults 32 MB, and 16 GB on wasm64, the most
+      Chrome and node allow, or 2 GB on wasm32; the heap grows
+      between them).  The heap is two semispaces, and growing it
+      needs the old and the new heap at once, so the live data
+      that fits is well below the maximum: with 16 GB, a single
+      object of about 4 GB works, and a larger one ends in an
+      "out of memory" panic.
 
     WASM_SJLJ
       emscripten's SUPPORT_LONGJMP mode: "wasm" (the default,
@@ -526,12 +556,15 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       "emscripten".
 
     WASM_FRAME_PAD
-      The minimum shadow-stack bytes per CPS frame (default 64),
-      which keeps the engine's native call depth bounded by the
-      nursery.  For the same reason the nursery is limited to
-      5120 times the pad (320 KB by default), whatever the stack
-      size: a larger "-:s" is refused at startup, and a larger
-      "-nursery" is lowered to it.
+      The minimum shadow-stack bytes per CPS frame (default 128 on
+      wasm64, 64 on wasm32), which keeps the engine's native call
+      depth bounded by the nursery.  For the same reason the
+      nursery is limited to 3072 times the pad on wasm64 (384 KB
+      by default) and 4096 times on wasm32 (256 KB), whatever the
+      stack size: a larger "-:s" is refused at startup, and a
+      larger "-nursery" is lowered to it.  These limits keep a
+      margin of 1.6 to 1.9 over the nursery that overflowed a 1 MB
+      (browser worker) stack in the tests.
 
     WASM_SIMD
       Compile with -msimd128.
@@ -551,7 +584,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       PATH) and the host chicken that translates the sources
       (default: the in-tree "chicken").
 
-    "make wasm-check" runs tests/wasm-smoke.sh, the interpreted and
+    "make wasm-check" runs tests/wasm-smoke.sh (which first checks
+    that the tools, the page's modules and a program compiled with
+    csc-wasm are all of WASM_ARCH), the interpreted and
     compiled test lanes of tests/runtests-wasm.sh, the headless
     REPL tests tests/wasm/repl-harness.js (also under Liftoff with a
     small stack) and tests/wasm/worker-harness.js, and an eggs lane:
@@ -576,13 +611,15 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
       - "executable-pathname" is #f, and "cpu-time" and
         "current-process-milliseconds" measure wall-clock time.
+        On wasm32 "current-jiffy" counts milliseconds, not
+        microseconds.
 
       - Runtime options ("-:...") must precede all other arguments.
 
       - A fault in unsafe code (e.g. "fx/" by zero compiled with
         -unsafe) aborts the instance instead of raising an error,
-        and wild writes into linear memory go unnoticed.  Blocks are
-        limited to 16 MB, as on any 32-bit platform.
+        and wild writes into linear memory go unnoticed.  On wasm32
+        blocks are limited to 16 MB, as on any 32-bit platform.
 
       - In the browser REPL, long primitives (a huge "expt", "sort"
         or "make-list") do not yield: Stop then replaces the worker

@@ -222,7 +222,9 @@ export CHICKEN_REPOSITORY_PATH
 # (feature? #:64bit) about itself, e.g. to emit fixnum literals that do
 # not fit in 31 bits portably, so the host's word size and platform
 # features stay visible to cond-expand.
-target_features='-static -feature emscripten -feature wasm32'
+# The target features ("emscripten" and "wasm64" or "wasm32") are
+# recorded in the SDK by "make wasm".
+target_features="-static $(cat "$S/share/chicken/features")"
 
 # stem FILE: set b to FILE's base name without its extension, made
 # unique among the inputs (app.scm and app.c, or a/m.scm and b/m.scm),

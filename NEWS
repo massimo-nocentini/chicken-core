@@ -208,6 +208,19 @@
     in the repository image, so that a plain (import srfi-1) works.
     The units are initialised on first import, and the SDK gets them
     as libchicken-eggs.a.  Eggs with custom build scripts are refused.
+  - The WebAssembly target is 64-bit by default: `make wasm' builds for
+    wasm64 (emscripten's memory64), where CHICKEN has 62-bit fixnums and
+    16 GB of linear memory (a heap that can grow past 4 GB, with
+    single objects of up to about 4 GB).  It needs Chrome or Edge
+    133, Firefox 134 or node 24; Safari does not support it yet, and
+    the REPL page tells a browser without memory64 to use another or
+    a wasm32 build.
+    `make wasm WASM_ARCH=wasm32' builds the 32-bit target.  The
+    frame pad and the nursery limit that protect the engine's native
+    stack were re-measured per architecture: 128 bytes and 384 KB on
+    wasm64, 64 bytes and 256 KB on wasm32 (was 320 KB), for a margin
+    of 1.6 to 1.9.  In node, wasm64 code runs 7% to 17% slower than
+    wasm32, except bignum arithmetic (about 20% faster).
 
 6.0.0
 

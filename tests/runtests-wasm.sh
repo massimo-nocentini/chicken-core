@@ -213,7 +213,8 @@ check_diff dwindtst dwindtst.expected $interpret -s dwindtst.scm
 check delimited-continuation-tests $interpret -s delimited-continuation-tests.scm
 check lolevel-tests $interpret -s lolevel-tests.scm
 
-# rt:262.  A fatal gate: wasm32 compares against arithmetic-test.32.expected.
+# rt:262.  A fatal gate: compares against arithmetic-test.64.expected on
+# wasm64, arithmetic-test.32.expected on wasm32.
 check arithmetic-test $interpret -D check -s arithmetic-test.scm
 if test $status -ne 0; then
     echo "runtests-wasm: arithmetic-test failed, which is fatal"
@@ -320,9 +321,14 @@ if want C; then
 lane_begin C "wasm chicken"
 
 # rt:503-507.  Runtime options must come first: runtests.sh passes
-# -:s after the file name, where the runtime never sees it.  300000
-# instead of 500000: the wasm runtime refuses a nursery over 320k.
-for s in 100000 250000 300000; do
+# -:s after the file name, where the runtime never sees it.  Up to the
+# largest nursery the wasm runtime accepts, instead of 500000: 384k on
+# wasm64, 256k on wasm32 (C_WASM_MAX_NURSERY in runtime.c).
+case $($WASM_DIR/csi -n -e '(import (chicken platform)) (display (machine-type))') in
+    wasm32) max_nursery=262144 ;;
+    *) max_nursery=393216 ;;
+esac
+for s in 100000 150000 $max_nursery; do
     check "nursery stress -:s$s" $wchicken -:s$s -ignore-repository "$SRC_DIR/port.scm" \
 	-output-file tmp.wasm.c -include-path "$SRC_DIR"
 done

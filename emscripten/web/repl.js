@@ -52,6 +52,7 @@
 
   const BUILD = (document.querySelector('meta[name="chicken-build"]') || {}).content || '';
   const Q = BUILD && BUILD.indexOf('@') < 0 ? '?v=' + encodeURIComponent(BUILD) : '';
+  const ARCH = (document.querySelector('meta[name="chicken-wasm-arch"]') || {}).content || '';
   const $ = id => document.getElementById(id);
   const term = $('term'), line = $('line'), statusPill = $('status'), statusText = $('status-text');
 
@@ -257,6 +258,10 @@
 
   const uploads = new Map();            // name -> Uint8Array, resent on every spawn
   const HTTP_HINT = 'This page must be served over HTTP, for example with "make wasm-serve".';
+  const NO_MEMORY64 = '; this browser does not support 64-bit WebAssembly (memory64), which this build needs.\n' +
+        '; Use Chrome or Edge 133, Firefox 134 or later, or a build made with "make wasm WASM_ARCH=wasm32".';
+  let noMemory64 = false;               // set at start (see hasMemory64)
+  let unavailable = null;               // why nothing can run (set at start), or null
 
   function csiArgs() {
     const extra = settings.args.trim() ? settings.args.trim().split(/\s+/) : [];
@@ -287,6 +292,7 @@
   }
 
   async function spawn() {
+    if (noMemory64) { fatal(NO_MEMORY64); return; }   // Restart in the header
     kill();
     const g = gen;
     alive = true;
@@ -671,6 +677,12 @@
   $('download').addEventListener('click', e => { if (!cUrl) e.preventDefault(); });
 
   async function compile() {
+    if (unavailable) {                  // Ctrl+Enter bypasses the disabled button
+      const st = $('cstatus');
+      st.className = 'cstatus fail';
+      st.textContent = unavailable;
+      return;
+    }
     if (cbusy) return;
     cbusy = true;
     const btn = $('compile'), st = $('cstatus');
@@ -749,14 +761,29 @@
 
   // ---- start
 
-  if (location.protocol === 'file:') {
+  // A wasm64 build (the default) needs memory64: without it the modules
+  // fail to compile.  This module declares a 64-bit memory and nothing else.
+  function hasMemory64() {
+    try {
+      return WebAssembly.validate(new Uint8Array([
+        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,   // magic, version
+        0x05, 0x03, 0x01, 0x04, 0x00]));                  // memory: i64, min 0
+    } catch (e) { return false; }
+  }
+  noMemory64 = ARCH === 'wasm64' && typeof WebAssembly === 'object' && !hasMemory64();
+
+  if (location.protocol === 'file:')
+    unavailable = '; ' + HTTP_HINT + '\n; Browsers do not run workers or fetch .wasm files from file:// URLs.';
+  else if (typeof WebAssembly !== 'object' || typeof Worker !== 'function')
+    unavailable = '; this browser lacks WebAssembly or Web Workers.';
+  else if (noMemory64)
+    unavailable = NO_MEMORY64;
+  if (unavailable) {
     term.textContent = '';
-    fatal('; ' + HTTP_HINT + '\n; Browsers do not run workers or fetch .wasm files from file:// URLs.');
+    fatal(unavailable);
     $('notice-restart').hidden = true;
     $('compile').disabled = true;
-  } else if (typeof WebAssembly !== 'object' || typeof Worker !== 'function') {
-    term.textContent = '';
-    fatal('; this browser lacks WebAssembly or Web Workers.');
+    unavailable = unavailable.split('\n')[0].replace(/^; /, '');
   } else {
     spawn();
   }

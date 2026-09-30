@@ -39,6 +39,9 @@ const createChickenRepl = require(path.join(webDir, 'chicken-repl.js'));
 const Driver = require(path.join(__dirname, '..', '..', 'emscripten', 'web', 'repl-driver.js'));
 const { RUNNING, WAITING, BUSY, EXITED, SLEEPING } = Driver;
 const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(webDir, 'chicken-repl.wasm')));
+// the architecture the page was built for (make wasm WASM_ARCH=...)
+const arch = (/<meta name="chicken-wasm-arch" content="([^"]*)">/
+              .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
 
 let failures = 0, passes = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -397,9 +400,14 @@ function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
   await check('27 a paste over 16 MB is read in full, without leaking', async () => {
     const heap = () => S.drv.module.HEAPU8.length;
     const big = ';' + 'x'.repeat(17e6) + '\n(+ 40 2)\n';
-    S.send(big);
-    await S.expectOut(val('42'), 180000);
-    await S.prompt(180000);
+    // Two pastes to warm up: depending on how the input chunks meet the
+    // GCs, the heap takes its final size in the first or the second
+    // (on wasm64, 188 MB, or 205 MB and then 246 MB), then stays there.
+    for (let i = 0; i < 2; i++) {
+      S.send(big);
+      await S.expectOut(val('42'), 180000);
+      await S.prompt(180000);
+    }
     const h1 = heap();
     for (let i = 0; i < 2; i++) {
       S.send(big);
@@ -409,7 +417,8 @@ function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
     const h3 = heap();
     console.log(`#   linear memory ${h1} -> ${h3} bytes`);
     assert(h3 - h1 < 8e6, 'memory grew by ' + (h3 - h1) + ' bytes over two more pastes');
-    assert(h3 < 160e6, 'memory ' + h3);
+    // the heap doubles as it grows: about 90 MB on wasm32, 190-250 MB on wasm64
+    assert(h3 < (arch === 'wasm64' ? 320e6 : 160e6), 'memory ' + h3);
   });
 
   if (S.crash) { failures++; console.log('not ok - crash: ' + S.crash); }

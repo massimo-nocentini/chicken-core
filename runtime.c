@@ -1317,11 +1317,25 @@ void C_set_or_change_heap_size(C_word heap, int reintern)
  * bounds the number of live native frames between two minor GCs (and
  * the depth of the C recursion in equal? and friends) by about
  * nursery / pad, so the nursery must stay small enough for the engine.
- * At the default pad, 320 KB passes the worst cases of the wasm tests
- * (Liftoff frames on a 1 MB worker stack) with some margin; 416 KB
- * already fails. */
+ * Measured with the nursery unclamped, in 32 KB steps, under node 25
+ * (V8): the worst case is equal? on two deep lists (tests/wasm-smoke.sh
+ * S18) with Liftoff frames, on node's main thread with --stack-size=900
+ * and in a worker limited to a 1 MB stack (as in a browser).  On wasm32
+ * (pad 64) it passes up to 416 KB, 6656 frames, and fails at 448 KB.
+ * On wasm64 the engine's frames are bigger: at pad 64 it passes up to
+ * 320 KB (5120 frames), at pad 128 (the wasm64 default, see
+ * Makefile.emscripten) up to 704 KB (5632 frames), failing at 352 and
+ * 736 KB.  The nursery is limited to 4096 frames on wasm32 (256 KB at
+ * the default pad) and 3072 on wasm64 (384 KB), a margin of 1.6-1.9x.
+ * 64-bit objects need the larger nursery: apply with 10000 arguments
+ * (tests/apply-test.scm) never completes with 304 KB or less on wasm64
+ * (144 KB or less on wasm32), as natively. */
 # ifndef C_WASM_MAX_NURSERY
-#  define C_WASM_MAX_NURSERY ((C_uword)C_WASM_FRAME_PAD * 5 * 1024)
+#  ifdef C_SIXTY_FOUR
+#   define C_WASM_MAX_NURSERY ((C_uword)C_WASM_FRAME_PAD * 3 * 1024)
+#  else
+#   define C_WASM_MAX_NURSERY ((C_uword)C_WASM_FRAME_PAD * 4 * 1024)
+#  endif
 # endif
 
 static C_uword wasm_available_stack(C_word *from)
@@ -14097,8 +14111,8 @@ C_regparm C_long C_current_jiffy(void) {
 	LARGE_INTEGER ticks;
 	QueryPerformanceCounter(&ticks);
 	return ticks.QuadPart;
-#elif defined(__EMSCRIPTEN__)
-	/* 32-bit C_long: microseconds would wrap after ~36 minutes */
+#elif defined(__EMSCRIPTEN__) && !defined(C_SIXTY_FOUR)
+	/* wasm32, 32-bit C_long: microseconds would wrap after ~36 minutes */
 	struct timespec tm;
 	clock_gettime(CLOCK_MONOTONIC, &tm);
 	return tm.tv_nsec / 1000000 + tm.tv_sec * 1000;
@@ -14114,7 +14128,7 @@ C_regparm C_long C_jiffies_per_second(void) {
 	LARGE_INTEGER ticks;
 	QueryPerformanceFrequency(&ticks);
 	return ticks.QuadPart;
-#elif defined(__EMSCRIPTEN__)
+#elif defined(__EMSCRIPTEN__) && !defined(C_SIXTY_FOUR)
 	return 1000;
 #else
 	return 1000000;
