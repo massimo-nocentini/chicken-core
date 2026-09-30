@@ -180,6 +180,23 @@
     decomposing every digit into halves.  Measured on x86-64: multiply
     2.4x, quotient and remainder about 4x, a modular-exponentiation loop
     3.5x.  Builds without such a type keep the previous code.
+  - CHICKEN_run and C_callback no longer allocate stack after setjmp,
+    which on WebAssembly leaked stack on every minor GC.
+
+- Platform support
+  - New "emscripten" platform.  `make wasm' cross-builds libchicken,
+    csi, chicken, chicken-profile and chicken-status to WebAssembly with
+    Emscripten, out of tree in build-wasm/.  It also builds a browser
+    REPL (build-wasm/web/) that runs the unmodified csi in a Web Worker
+    with streaming output and Ctrl-C and needs no special HTTP headers,
+    an in-browser "Compile to C" page, and an SDK with a `csc-wasm'
+    script for compiling programs to WebAssembly.  `make wasm-cross'
+    builds a "wasm-" prefixed cross toolchain for that SDK, and
+    `make wasm-check' runs node-based test lanes.  See the README.
+  - On WebAssembly every CPS frame reserves a minimum of shadow stack,
+    so that the nursery bounds the engine's native call depth, and the
+    nursery is clamped to the link-time stack size and to a maximum
+    the engine's native stack can hold.
 
 6.0.0
 

@@ -13,7 +13,8 @@
 ; generic-structure predicates, and the range checks used by the lolevel
 ; accessors.
 
-(import (chicken number-vector) (chicken bytevector) (chicken condition))
+(import (chicken number-vector) (chicken bytevector) (chicken condition)
+        (only (chicken platform) feature?))
 
 (define immediates (list 42 -1 '() #t #f #\a (void)))
 (define non-bytevector-blocks (list "str" 3.5 '(1 2) (vector 1 2) (s8vector 1 2)))
@@ -175,7 +176,10 @@
   (assert (eq? 'rejected (checked-range (* two^32 2) 0 3)))
   (assert (eq? 'rejected (checked-range/including (+ two^32 1) 0 3)))
   ;; and a genuinely in-range large index must still be ACCEPTED -- the fix
-  ;; must widen the comparison, not reject everything above 2^32
-  (assert (eq? 'accepted (checked-range (+ two^32 1) 0 (+ two^32 5)))))
+  ;; must widen the comparison, not reject everything above 2^32.  Only
+  ;; with 64-bit fixnums: on 32-bit platforms 2^32 + 1 is a bignum, which
+  ;; is never an index.
+  (when (feature? #:64bit)
+    (assert (eq? 'accepted (checked-range (+ two^32 1) 0 (+ two^32 5))))))
 
 (print "bytevector guard tests passed")

@@ -33,6 +33,10 @@
 #include <sys/stat.h>
 #include <strings.h>
 
+#ifdef __EMSCRIPTEN__
+# include <emscripten/stack.h>
+#endif
+
 #ifdef HAVE_SYSEXITS_H
 # include <sysexits.h>
 #endif
@@ -1303,12 +1307,72 @@ void C_set_or_change_heap_size(C_word heap, int reintern)
 }
 
 
+#ifdef __EMSCRIPTEN__
+/* The nursery lives on emscripten's shadow stack, whose size is fixed at
+ * link time (-sSTACK_SIZE).  Shrink (or refuse) a nursery that would run
+ * off its end.  This, not --stack-first, is the primary overflow guard. */
+# define C_WASM_C_SLACK (128 * 1024)
+
+/* The engine's own call stack is invisible from C: C_WASM_FRAME_PAD
+ * bounds the number of live native frames between two minor GCs (and
+ * the depth of the C recursion in equal? and friends) by about
+ * nursery / pad, so the nursery must stay small enough for the engine.
+ * At the default pad, 320 KB passes the worst cases of the wasm tests
+ * (Liftoff frames on a 1 MB worker stack) with some margin; 416 KB
+ * already fails. */
+# ifndef C_WASM_MAX_NURSERY
+#  define C_WASM_MAX_NURSERY ((C_uword)C_WASM_FRAME_PAD * 5 * 1024)
+# endif
+
+static C_uword wasm_available_stack(C_word *from)
+{
+  C_uword here = (C_uword)from, end = (C_uword)emscripten_stack_get_end(),
+          need = C_STACK_RESERVE + C_WASM_C_SLACK;
+
+  return here > end + need ? here - end - need : 0;
+}
+
+static void wasm_fit_nursery(C_word *from)
+{
+  C_uword avail = wasm_available_stack(from);
+
+  if(avail < 64 * 1024)
+    panic(C_text("WebAssembly stack too small for a nursery; relink with a larger -sSTACK_SIZE"));
+
+  if(stack_size > avail) {
+    if(stack_size_changed)
+      panic(C_text("nursery size (-:s) exceeds the WebAssembly stack; relink with a larger -sSTACK_SIZE"));
+
+    stack_size = avail;
+  }
+
+  if(stack_size > C_WASM_MAX_NURSERY) {
+    if(stack_size_changed)
+      panic(C_text("nursery size (-:s) exceeds the WebAssembly maximum (C_WASM_MAX_NURSERY), which keeps the engine's native stack from overflowing"));
+
+    stack_size = C_WASM_MAX_NURSERY;
+  }
+}
+#endif
+
+
 /* Modify stack-size at runtime: */
 
 void C_do_resize_stack(C_word stack)
 {
-  C_uword old = stack_size,
-          diff = stack - old;
+  C_uword old = stack_size, diff;
+
+#ifdef __EMSCRIPTEN__
+  if(stack_bottom != NULL) {
+    C_uword avail = wasm_available_stack(stack_bottom);
+
+    if((C_uword)stack > avail) stack = avail;
+  }
+
+  if((C_uword)stack > C_WASM_MAX_NURSERY) stack = C_WASM_MAX_NURSERY;
+#endif
+
+  diff = stack - old;
 
   if(diff != 0 && !stack_size_changed) {
     if(debug_mode)
@@ -1557,10 +1621,38 @@ C_word arg_val(C_char *arg)
 }
 
 
+#if defined(__GNUC__) || defined(__clang__)
+# define C_noinline                 __attribute__ ((noinline))
+#else
+# define C_noinline
+#endif
+
+/* Must not be inlined: on WebAssembly a longjmp restores the stack pointer
+ * of the function containing setjmp as it was *after* any dynamic alloca
+ * done there, so an alloca after setjmp would leak shadow stack on every
+ * restart (i.e. every minor GC).  No C_alloc/C_stack_pointer may follow
+ * setjmp in CHICKEN_run or C_callback. */
+static C_noret void C_noinline restart_from_temporary_stack(void)
+{
+  /* We must copy the argvector onto the stack, because
+   * any subsequent save() will otherwise clobber it.
+   */
+  C_word *p = C_alloc(C_restart_c);
+  assert(C_restart_c == (C_temporary_stack_bottom - C_temporary_stack));
+  C_memcpy(p, C_temporary_stack, C_restart_c * sizeof(C_word));
+  C_temporary_stack = C_temporary_stack_bottom;
+  ((C_proc)C_restart_trampoline)(C_restart_c, p);
+}
+
+
 /* Run embedded code with arguments: */
 
 C_word CHICKEN_run(void *toplevel)
 {
+#if defined(__EMSCRIPTEN__) && defined(DEBUGBUILD)
+  volatile C_uword restart_sp;
+#endif
+
   if(!chicken_is_initialized && !CHICKEN_initialize(0, 0, 0, toplevel))
     panic(C_text("could not initialize"));
 
@@ -1572,6 +1664,10 @@ C_word CHICKEN_run(void *toplevel)
 
   if(profiling) set_profile_timer(profile_frequency);
 
+#ifdef __EMSCRIPTEN__
+  wasm_fit_nursery(C_stack_pointer_test);
+#endif
+
 #if C_STACK_GROWS_DOWNWARD
   C_stack_hard_limit = (C_word *)((C_byte *)C_stack_pointer - stack_size);
 #else
@@ -1581,8 +1677,20 @@ C_word CHICKEN_run(void *toplevel)
 
   stack_bottom = C_stack_pointer;
 
+#ifdef __EMSCRIPTEN__
+  /* C_raise_interrupt only fakes the limit when no interrupt was pending;
+   * re-arm it so a pending interrupt is handled promptly after re-entry
+   * (CHICKEN_continue) instead of at the next natural GC. */
+  if(pending_interrupts_count > 0 && C_interrupts_enabled)
+    C_stack_limit = stack_bottom;
+#endif
+
   if(debug_mode)
     C_dbg(C_text("debug"), C_text("stack bottom is 0x%lx\n"), (C_word)stack_bottom);
+
+#if defined(__EMSCRIPTEN__) && defined(DEBUGBUILD)
+  restart_sp = (C_uword)emscripten_stack_get_current();
+#endif
 
   /* The point of (usually) no return... */
 #ifdef HAVE_SIGSETJMP
@@ -1591,18 +1699,14 @@ C_word CHICKEN_run(void *toplevel)
   C_setjmp(C_restart);
 #endif
 
+#if defined(__EMSCRIPTEN__) && defined(DEBUGBUILD)
+  /* Every restart must land at the same shadow stack depth */
+  assert((C_uword)emscripten_stack_get_current() == restart_sp);
+#endif
+
   serious_signal_occurred = 0;
 
-  if(!return_to_host) {
-    /* We must copy the argvector onto the stack, because
-     * any subsequent save() will otherwise clobber it.
-     */
-    C_word *p = C_alloc(C_restart_c);
-    assert(C_restart_c == (C_temporary_stack_bottom - C_temporary_stack));
-    C_memcpy(p, C_temporary_stack, C_restart_c * sizeof(C_word));
-    C_temporary_stack = C_temporary_stack_bottom;
-    ((C_proc)C_restart_trampoline)(C_restart_c, p);
-  }
+  if(!return_to_host) restart_from_temporary_stack();
 
   if(profiling) set_profile_timer(0);
 
@@ -2109,6 +2213,11 @@ C_regparm C_u64 C_cpu_milliseconds(void)
 #if defined(C_NONUNIX) || defined(__CYGWIN__)
     if(CLOCKS_PER_SEC == 1000) return clock();
     else return ((C_u64)clock() / CLOCKS_PER_SEC) * 1000;
+#elif defined(__EMSCRIPTEN__)
+    struct timespec ts;          /* single-threaded: wall time == CPU time */
+
+    if(clock_gettime(CLOCK_MONOTONIC, &ts) == -1) return 0;
+    else return (C_u64)ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 #else
     struct rusage ru;
 
@@ -2195,16 +2304,7 @@ C_word C_callback(C_word closure, int argc)
 
   serious_signal_occurred = 0;
 
-  if(!callback_returned_flag) {
-    /* We must copy the argvector onto the stack, because
-     * any subsequent save() will otherwise clobber it.
-     */
-    C_word *p = C_alloc(C_restart_c);
-    assert(C_restart_c == (C_temporary_stack_bottom - C_temporary_stack));
-    C_memcpy(p, C_temporary_stack, C_restart_c * sizeof(C_word));
-    C_temporary_stack = C_temporary_stack_bottom;
-    ((C_proc)C_restart_trampoline)(C_restart_c, p);
-  }
+  if(!callback_returned_flag) restart_from_temporary_stack();
   else {
     C_memcpy(&C_restart, &prev, sizeof(C_restart));
     callback_returned_flag = 0;
@@ -2224,6 +2324,10 @@ void C_callback_adjust_stack(C_word *a, int size)
 		   "[debug]   current:  \t%p\n"
 		   "[debug]   previous: \t%p (bottom) - %p (limit)\n"),
 	    a, stack_bottom, C_stack_limit);
+
+#ifdef __EMSCRIPTEN__
+    wasm_fit_nursery(a);
+#endif
 
 #if C_STACK_GROWS_DOWNWARD
     C_stack_hard_limit = (C_word *)((C_byte *)a - stack_size);
@@ -12405,6 +12509,11 @@ C_a_i_cpu_time(C_word **a, int c, C_word buf)
 #if defined(C_NONUNIX) || defined(__CYGWIN__)
   if(CLOCKS_PER_SEC == 1000) u = clock();
   else u = C_uint64_to_num(a, ((C_u64)clock() / CLOCKS_PER_SEC) * 1000);
+#elif defined(__EMSCRIPTEN__)
+  struct timespec ts;          /* single-threaded: wall time == CPU time */
+
+  if(clock_gettime(CLOCK_MONOTONIC, &ts) == -1) u = 0;
+  else u = C_uint64_to_num(a, (C_u64)ts.tv_sec * 1000 + ts.tv_nsec / 1000000);
 #else
   struct rusage ru;
 
@@ -13175,6 +13284,9 @@ C_resolve_executable_pathname(C_char *fname)
     }
   }
 }
+#elif defined(__EMSCRIPTEN__)
+  /* A wasm module has no executable image to point at. */
+  goto error;
 #elif defined(SEARCH_EXE_PATH)
   int len;
   C_char *path, buf[C_MAX_PATH];
@@ -13985,6 +14097,11 @@ C_regparm C_long C_current_jiffy(void) {
 	LARGE_INTEGER ticks;
 	QueryPerformanceCounter(&ticks);
 	return ticks.QuadPart;
+#elif defined(__EMSCRIPTEN__)
+	/* 32-bit C_long: microseconds would wrap after ~36 minutes */
+	struct timespec tm;
+	clock_gettime(CLOCK_MONOTONIC, &tm);
+	return tm.tv_nsec / 1000000 + tm.tv_sec * 1000;
 #else
 	struct timespec tm;
 	clock_gettime(CLOCK_MONOTONIC, &tm);
@@ -13997,6 +14114,8 @@ C_regparm C_long C_jiffies_per_second(void) {
 	LARGE_INTEGER ticks;
 	QueryPerformanceFrequency(&ticks);
 	return ticks.QuadPart;
+#elif defined(__EMSCRIPTEN__)
+	return 1000;
 #else
 	return 1000000;
 #endif

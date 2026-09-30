@@ -345,7 +345,167 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       already tiled; several of those kernels come out measurably
       slower than at the default "-Os". If you set this, measure it.
 
-    2.7. Uninstalling CHICKEN
+    2.7. Building for WebAssembly (Emscripten)
+
+    A configured and built host tree can cross-build CHICKEN to
+    WebAssembly with Emscripten (tested with emscripten 6.0.10; the
+    tests need node 22 or later, and "wasm-serve" needs python3).
+    The build always happens out of tree, by
+    default in "build-wasm"; the host tree's own "chicken"
+    translates the Scheme sources, so build the host first:
+
+        ./configure && make
+        source /path/to/emsdk/emsdk_env.sh    # or pass EMCC=/path/to/emcc
+        make wasm                             # everything, in build-wasm/
+        make wasm-check                       # node-based tests
+        make wasm-serve                       # serve the REPL page (PORT=8080)
+
+    This produces:
+
+    build-wasm/libchicken-static.a
+      The runtime library, static only (there is no dynamic loading).
+
+    build-wasm/node/{csi,chicken,chicken-profile,chicken-status}
+      The tools, as shell wrappers around node (".js" plus ".wasm"),
+      with access to the host file system, environment and exit
+      status.  The import libraries are in build-wasm/stage.  Set
+      "NODE" to choose the node binary and "NODE_OPTIONS_WASM" to
+      pass it options.
+
+    build-wasm/web/
+      A static web site: a REPL running the unmodified "csi" in a
+      Web Worker, with streaming output, a Stop button (Ctrl-C),
+      file upload, a ".csirc" and a "Compile to C" tab that runs
+      the wasm "chicken".  It needs no special HTTP headers (no
+      COOP/COEP) but must be served over HTTP, not opened from a
+      file:// URL.  Any static web server will do.
+
+    build-wasm/stage/chicken/
+      An SDK for compiling your own programs to WebAssembly: the
+      library, the headers, the import libraries and "csc-wasm", a
+      small csc that translates with the host chicken and compiles
+      and links with emcc:
+
+        build-wasm/stage/chicken/bin/csc-wasm -node foo.scm -o foo.js
+        node foo.js
+
+      Without "-node" the output uses emscripten's defaults (runs on
+      the web, in a worker or under node, with an in-memory file
+      system).  Programs are linked statically: a unit a program
+      uses must be compiled with "-c -unit NAME" and named with
+      "-uses NAME" and its object file.  The comment at the top of
+      the "csc-wasm" script lists its options.  By hand, in the
+      stage directory, the same is:
+
+        CHICKEN_REPOSITORY_PATH=lib/chicken/12 chicken foo.scm \
+          -static -feature emscripten -feature wasm32 -output-file foo.c
+        emcc $(cat share/chicken/emcflags) -DHAVE_CHICKEN_CONFIG_H \
+          -I include/chicken -c foo.c -o foo.o
+        emcc $(cat share/chicken/emldflags) foo.o \
+          lib/libchicken-static.a -lm -o foo.js
+
+    "make wasm-cross" additionally builds CHICKEN's own cross
+    toolchain (see the "Cross development" chapter of the manual)
+    for this SDK, installed in "build-wasm-cross/inst" with the
+    program prefix "wasm-".  Its "wasm-csc" needs "-static" (the
+    SDK has no shared library); add
+    "-L @build-wasm-cross/inst/share/wasm-chicken/node.rsp" to
+    link for node as "csc-wasm -node" does.  The toolchain refers
+    to the SDK in WASM_BUILDDIR by absolute path, so rerun
+    "make wasm-cross" after cleaning that directory.
+
+    Other targets: "make wasm-clean" removes the build outputs,
+    "make wasm-distclean" the build directories.  "WASM_GOAL"
+    selects what "make wasm" builds in the build directory
+    ("wasm-lib", "wasm-node", "wasm-web", "wasm-sdk" or the default
+    "wasm-all").
+
+    Settings are given on the host "make" command line and recorded
+    in the build directory, so that changing one rebuilds
+    everything there and repeating it rebuilds nothing.  They are
+    recorded, not remembered: every "make wasm..." command for a
+    build directory must repeat them, since a setting left out
+    reverts to its default (and so rebuilds everything):
+
+    WASM_BUILDDIR
+      The build directory (default "build-wasm").
+
+    WASM_PREFIX
+      The installation prefix inside the virtual file system
+      (default "/chicken").
+
+    WASM_STACK_SIZE
+      The link-time stack size, which also bounds the nursery
+      (default 4194304 bytes).  A "-:s" nursery larger than fits
+      is refused at startup.
+
+    WASM_INITIAL_MEMORY, WASM_MAXIMUM_MEMORY
+      Linear memory (defaults 32 MB and 2 GB; the heap grows
+      between them).
+
+    WASM_SJLJ
+      emscripten's SUPPORT_LONGJMP mode: "wasm" (the default,
+      needs Chrome 95, Firefox 100, Safari 15.2 or later) or
+      "emscripten".
+
+    WASM_FRAME_PAD
+      The minimum shadow-stack bytes per CPS frame (default 64),
+      which keeps the engine's native call depth bounded by the
+      nursery.  For the same reason the nursery is limited to
+      5120 times the pad (320 KB by default), whatever the stack
+      size: a larger "-:s" is refused at startup, and a larger
+      "-nursery" is lowered to it.
+
+    WASM_SIMD
+      Compile with -msimd128.
+
+    WASM_LINK_OPT
+      The emcc link optimization options (default -O2).
+
+    WASM_DEBUG
+      A debug build (-O0 -g, emscripten ASSERTIONS=2).
+
+    EMCC, WASM_HOST_CHICKEN
+      The emcc to use (default: from $EMSDK, else "emcc" on the
+      PATH) and the host chicken that translates the sources
+      (default: the in-tree "chicken").
+
+    "make wasm-check" runs tests/wasm-smoke.sh, the interpreted and
+    compiled test lanes of tests/runtests-wasm.sh, and the headless
+    REPL tests tests/wasm/repl-harness.js (also under Liftoff with a
+    small stack) and tests/wasm/worker-harness.js.  The browser test
+    tests/wasm/page.spec.mjs needs Playwright and is run by hand:
+
+        BROWSERS=chromium,firefox node tests/wasm/page.spec.mjs build-wasm/web
+
+    Limitations:
+
+      - There is no dynamic loading: no ".so" files, and eggs with
+        compiled code must be linked statically.  "csc" and
+        "chicken-install" do not run inside WebAssembly; use
+        "csc-wasm" or "make wasm-cross".
+
+      - "fork", "exec", "process", pipes and signals raise errors,
+        there are no sockets in browsers, and profiling ("-:p")
+        does not work.  In the browser "system", ",e" and ",s" fail.
+
+      - "executable-pathname" is #f, and "cpu-time" and
+        "current-process-milliseconds" measure wall-clock time.
+
+      - Runtime options ("-:...") must precede all other arguments.
+
+      - A fault in unsafe code (e.g. "fx/" by zero compiled with
+        -unsafe) aborts the instance instead of raising an error,
+        and wild writes into linear memory go unnoticed.  Blocks are
+        limited to 16 MB, as on any 32-bit platform.
+
+      - In the browser REPL, long primitives (a huge "expt", "sort"
+        or "make-list") do not yield: Stop then replaces the worker
+        after 3 seconds.  SRFI-18 threads are suspended while the
+        REPL waits for input, and "emergency-exit" may lose buffered
+        output.
+
+    2.8. Uninstalling CHICKEN
 
     To remove CHICKEN from your file-system, enter (probably as
     root):
@@ -355,7 +515,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     (If you gave DESTDIR during installation, you have to pass
     the same setting to "make" when uninstalling)
 
-    2.8. What gets installed
+    2.9. What gets installed
 
     These files will be installed under the prefix given during
     build and installation:

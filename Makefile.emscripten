@@ -1,0 +1,303 @@
+# Makefile.emscripten - configuration for WebAssembly via Emscripten -*- Makefile -*-
+#
+# Copyright (c) 2026, The CHICKEN Team
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
+# conditions are met:
+#
+#   Redistributions of source code must retain the above copyright notice, this list of conditions and the following
+#     disclaimer.
+#   Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+#     disclaimer in the documentation and/or other materials provided with the distribution.
+#   Neither the name of the author nor the names of its contributors may be used to endorse or promote
+#     products derived from this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
+# OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+# AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+# OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# This platform is always built out of tree, driven by "make wasm" from a
+# configured and built host tree (see the "wasm" targets at the end of
+# rules.make and the README).  The host tree's "chicken" translates the
+# Scheme sources; everything else here is compiled with emcc.
+
+SRCDIR ?= ./
+
+ifeq ($(abspath $(SRCDIR)),$(CURDIR))
+$(error PLATFORM=emscripten must be built out of tree: run "make wasm" from a configured host tree)
+endif
+ifeq ($(origin CHICKEN),undefined)
+$(error CHICKEN must name a host chicken (written to config.make by "make wasm"))
+endif
+ifneq ($(filter all install install-bin install-dev check bench dist,$(MAKECMDGOALS)),)
+$(error PLATFORM=emscripten supports only the wasm-* goals)
+endif
+
+# platform configuration
+
+ARCH = wasm32
+STATICBUILD = 1
+EXE =
+
+C_COMPILER ?= emcc
+EMBIN = $(if $(findstring /,$(C_COMPILER)),$(dir $(C_COMPILER)),)
+CXX_COMPILER ?= $(EMBIN)em++
+LIBRARIAN ?= $(EMBIN)emar
+LIBRARIAN_OPTIONS = crs
+
+# knobs (normally recorded in config.make by "make wasm")
+
+WASM_SJLJ ?= wasm
+WASM_STACK_SIZE ?= 4194304
+WASM_MAXIMUM_MEMORY ?= 2147483648
+WASM_INITIAL_MEMORY ?= 33554432
+WASM_FRAME_PAD ?= 64
+WASM_EMFLAGS = -sSUPPORT_LONGJMP=$(WASM_SJLJ)
+
+# options
+
+# No -DHAVE_CHICKEN_CONFIG_H: see INCLUDES.  NO_DLOAD2 must be global:
+# runtime.c defines it only for itself, library.scm tests it separately.
+# It is defined empty, as runtime.c does, to avoid a redefinition warning.
+C_COMPILER_OPTIONS ?= -fno-strict-aliasing -fwrapv -DNO_DLOAD2= $(WASM_EMFLAGS) \
+  -DC_WASM_FRAME_PAD=$(WASM_FRAME_PAD)
+ifdef WASM_SIMD
+# never -mrelaxed-simd: it reintroduces FP contraction (see srfi-4.scm)
+C_COMPILER_OPTIONS += -msimd128
+endif
+ifdef DEBUGBUILD
+C_COMPILER_OPTIMIZATION_OPTIONS ?= -g -Wall -Wno-unused -O0
+WASM_LINK_OPT ?= -g -O0 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2
+else
+C_COMPILER_OPTIMIZATION_OPTIONS ?= -O2
+WASM_LINK_OPT ?= -O2
+endif
+C_COMPILER_SHARED_OPTIONS =
+LINKER_LINK_SHARED_PROGRAM_OPTIONS =
+# chicken.h's '#include "chicken-config.h"' would find the HOST header in
+# $(SRCDIR); force-include ours instead.
+INCLUDES = -include $(CURDIR)/chicken-config.h -I. -I$(SRCDIR) -I$(SRCDIR)emscripten
+LIBRARIES = -lm
+
+# -Wl,--stack-first is NOT the default at -O1 and above (static data sits
+# below the stack otherwise); with it a large overflow traps instead of
+# corrupting data.  The nursery clamp in runtime.c is the main guard.
+WASM_COMMON_LDFLAGS = $(WASM_EMFLAGS) $(WASM_LINK_OPT) -Wl,--stack-first \
+  -sSTACK_SIZE=$(WASM_STACK_SIZE) -sINITIAL_MEMORY=$(WASM_INITIAL_MEMORY) \
+  -sALLOW_MEMORY_GROWTH=1 -sMAXIMUM_MEMORY=$(WASM_MAXIMUM_MEMORY)
+LINKER_OPTIONS = $(WASM_COMMON_LDFLAGS)
+
+# special files
+
+CHICKEN_CONFIG_H = chicken-config.h
+
+# select default and internal settings
+
+include $(SRCDIR)defaults.make
+
+chicken-config.h: chicken-defaults.h
+	echo "/* GENERATED */" >$@.tmp
+	for d in HAVE_DIRENT_H HAVE_DLFCN_H HAVE_INTTYPES_H HAVE_LIMITS_H HAVE_LONG_LONG \
+	  HAVE_MEMMOVE HAVE_MEMORY_H HAVE_SIGACTION HAVE_SIGPROCMASK HAVE_STDINT_H \
+	  HAVE_STDLIB_H HAVE_STRERROR HAVE_STRINGS_H HAVE_STRING_H HAVE_STRTOLL \
+	  HAVE_SYS_STAT_H HAVE_SYS_TYPES_H HAVE_SETENV HAVE_UNISTD_H \
+	  HAVE_UNSIGNED_LONG_LONG STDC_HEADERS HAVE_ALLOCA HAVE_ALLOCA_H \
+	  HAVE_ERRNO_H HAVE_SYSEXITS_H HAVE_STRLCPY HAVE_STRLCAT; do \
+	  echo "#define $$d 1" >>$@.tmp; done
+	echo "#define C_STACK_GROWS_DOWNWARD 1" >>$@.tmp
+ifdef GCHOOKS
+	echo "#define C_GC_HOOKS" >>$@.tmp
+endif
+	echo "#define C_USE_STD_FEATURE_MACROS" >>$@.tmp
+	cat $@.tmp chicken-defaults.h >$@.tmp2
+	rm $@.tmp
+	mv $@.tmp2 $@
+
+include $(SRCDIR)rules.make
+
+# Source-only directory search: host outputs in $(SRCDIR) (objects,
+# archives, chicken-config.h, chicken-defaults.h) must never satisfy our
+# targets.  Generated sources (*.c, *.import.scm) are shared with the
+# host tree, which "make wasm" brings up to date first.
+VPATH :=
+vpath %.scm $(SRCDIR) $(SRCDIR)emscripten
+vpath %.c $(SRCDIR) $(SRCDIR)emscripten
+vpath %.in $(SRCDIR)emscripten
+vpath chicken.h $(SRCDIR)
+vpath webrepl.h $(SRCDIR)emscripten
+vpath types.db $(SRCDIR)
+vpath %.js $(SRCDIR)emscripten/web
+vpath %.html $(SRCDIR)emscripten/web
+vpath chicken.png $(SRCDIR)
+
+.DEFAULT_GOAL := wasm-all
+
+# build-version.scm reads "buildversion" (like "buildid" and "buildbranch",
+# which identify-me writes here) from the current directory.
+buildversion: $(SRCDIR)buildversion
+	cp $< $@
+build-version.c: buildversion
+
+# extra units and program variants (translated with the host chicken)
+
+# the import libraries csi.c depends on, taken from its rule in rules.make
+CSI_IMPORTS = $(filter %.import.scm,$(shell sed -n '/^csi.c:/,/^[^\t ]/p' $(SRCDIR)rules.make | tr -d '\\'))
+
+# config.make: DEBUGBUILD (WASM_DEBUG) changes the translation options
+wasm-units.c: wasm-units.scm eval-modules.scm config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_LIBRARY_OPTIONS) -output-file $@
+webio.c: webio.scm webrepl.h chicken.base.import.scm chicken.fixnum.import.scm \
+    chicken.port.import.scm chicken.platform.import.scm chicken.bytevector.import.scm \
+    chicken.foreign.import.scm chicken.time.import.scm config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_LIBRARY_OPTIONS) -output-file $@
+csi-node.c: csi.scm banner.scm mini-srfi-1.scm $(CSI_IMPORTS) config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -uses wasm-units -output-file $@
+csi-web.c: csi.scm banner.scm mini-srfi-1.scm $(CSI_IMPORTS) config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -uses webio -output-file $@
+
+WASM_CC = $(C_COMPILER) $(C_COMPILER_OPTIONS) $(C_COMPILER_COMPILE_OPTION) \
+  $(C_COMPILER_OPTIMIZATION_OPTIONS)
+
+wasm-units$(O) webio$(O) csi-node$(O): %$(O): %.c chicken.h $(CHICKEN_CONFIG_H)
+	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
+csi-web$(O): csi-web.c chicken.h $(CHICKEN_CONFIG_H)
+	$(WASM_CC) -DC_EMBEDDED $< $(C_COMPILER_OUTPUT) $(INCLUDES)
+webrepl-main$(O): webrepl-main.c webrepl.h chicken.h $(CHICKEN_CONFIG_H)
+	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
+
+# repository image: all import libraries and types.db at $(EGGDIR)
+
+WASM_STAGE = stage
+WASM_REPO = $(WASM_STAGE)$(EGGDIR)
+
+# config.make: the repository path depends on WASM_PREFIX.  The whole
+# stage goes, so no tree of an earlier prefix lingers; wasm-sdk (always
+# run) and the node wrappers refill it.
+wasm-repo.stamp: config.make $(IMPORT_LIBRARIES:=.import.scm) types.db
+	rm -rf $(WASM_STAGE)
+	mkdir -p $(WASM_REPO)
+	cp $(filter-out config.make,$^) $(WASM_REPO)/
+	touch $@
+
+# node flavour (host file system and environment): testing and CLI use
+
+# node-pre.js works around an emscripten NODERAWFS bug (see there)
+WASM_NODE_PRE = $(SRCDIR)emscripten/node-pre.js
+WASM_NODE_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=node -sNODERAWFS=1 \
+  -sNODE_HOST_ENV=1 -sEXIT_RUNTIME=1 --pre-js $(WASM_NODE_PRE)
+LIBCHICKEN_A = $(PRIMARY_LIBCHICKEN)
+WASM_NODE_TOOLS = csi chicken chicken-profile chicken-status
+
+node/csi.js: csi-node$(O) wasm-units$(O) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
+	mkdir -p node
+	$(LINKER) $(WASM_NODE_LDFLAGS) csi-node$(O) wasm-units$(O) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+node/chicken.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
+	mkdir -p node
+	$(LINKER) $(WASM_NODE_LDFLAGS) $(COMPILER_STATIC_OBJECTS) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+node/chicken-profile.js node/chicken-status.js: node/%.js: %$(O) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
+	mkdir -p node
+	$(LINKER) $(WASM_NODE_LDFLAGS) $< -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+
+# sh wrappers: node/csi etc. run like the native tools
+$(addprefix node/,$(WASM_NODE_TOOLS)): node/%: node/%.js wasm-repo.stamp
+	{ echo '#!/bin/sh'; \
+	  echo 'd=$$(cd "$$(dirname "$$0")" && pwd)'; \
+	  echo ': "$${CHICKEN_REPOSITORY_PATH:=$$d/../$(WASM_REPO)}"'; \
+	  echo 'export CHICKEN_REPOSITORY_PATH'; \
+	  echo 'exec "$${NODE:-node}" $${NODE_OPTIONS_WASM} "$$d/$*.js" "$$@"'; } >$@
+	chmod +x $@
+
+# web flavour: the REPL page, its worker and the in-browser compiler
+
+WEB_DIR = web
+WASM_WEB_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=web,worker,node \
+  -sMODULARIZE=1 -sFORCE_FILESYSTEM=1 --embed-file $(WASM_REPO)@$(EGGDIR)
+WEB_ASSETS = repl.js repl-driver.js repl-worker.js compiler-worker.js chicken.png
+WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-compiler.wasm
+
+$(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) \
+    $(LIBCHICKEN_A) wasm-repo.stamp
+	mkdir -p $(WEB_DIR)
+	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenRepl -sEXIT_RUNTIME=0 -Wl,--wrap=_exit \
+	  -sEXPORTED_FUNCTIONS=_main,_webrepl_feed,_webrepl_resume,_webrepl_interrupt,_webrepl_state,_webrepl_started,_webrepl_exited,_webrepl_exit_code,_webrepl_wakeup_ms,_webrepl_set_slice_ms,_malloc,_free \
+	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 \
+	  csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+
+$(WEB_DIR)/chicken-compiler.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) wasm-repo.stamp
+	mkdir -p $(WEB_DIR)
+	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenCompiler -sINVOKE_RUN=0 -sEXIT_RUNTIME=1 \
+	  -sEXPORTED_RUNTIME_METHODS=FS,callMain \
+	  $(COMPILER_STATIC_OBJECTS) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+
+$(addprefix $(WEB_DIR)/,$(WEB_ASSETS)): $(WEB_DIR)/%: %
+	mkdir -p $(WEB_DIR)
+	cp $< $@
+
+# The page passes @BUILD@ as ?v= on every URL it loads, so browsers never
+# mix cached files of two builds: the build id alone would not change
+# between rebuilds of an uncommitted tree, hence the checksum.
+$(WEB_DIR)/index.html: index.html buildid $(addprefix $(WEB_DIR)/,$(WEB_ASSETS) $(filter %.js,$(WEB_MODULES)))
+	mkdir -p $(WEB_DIR)
+	v="$$(cat buildid)-$$(cat $(filter $(WEB_DIR)/%,$^) $(WEB_DIR)/*.wasm | cksum | cut -d' ' -f1)"; \
+	  sed "s/@BUILD@/$$v/g" $< >$@
+
+# SDK: compile user programs (translated by a host chicken) to wasm
+
+WASM_SDK_SHARE = $(WASM_STAGE)$(SHAREDIR)/chicken
+
+wasm-sdk: $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE)
+	mkdir -p $(WASM_STAGE)$(LIBDIR) $(WASM_STAGE)$(CHICKENINCDIR) $(WASM_SDK_SHARE) $(WASM_STAGE)$(BINDIR)
+	cp $(LIBCHICKEN_A) $(WASM_STAGE)$(LIBDIR)/
+	cp $(filter %chicken.h,$^) chicken-config.h $(WASM_STAGE)$(CHICKENINCDIR)/
+	echo '$(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS)' >$(WASM_SDK_SHARE)/emcflags
+	echo '$(WASM_COMMON_LDFLAGS)' >$(WASM_SDK_SHARE)/emldflags
+	cp $(WASM_NODE_PRE) $(WASM_SDK_SHARE)/
+	sed -e 's|@CHICKEN@|$(CHICKEN)|' -e 's|@EMCC@|$(C_COMPILER)|' \
+	  -e 's|@STAGE@|$(abspath $(WASM_STAGE))$(PREFIX)|' -e 's|@REPO@|$(abspath $(WASM_REPO))|' \
+	  $(filter %csc-wasm.in,$^) \
+	  >$(WASM_STAGE)$(BINDIR)/csc-wasm
+	chmod +x $(WASM_STAGE)$(BINDIR)/csc-wasm
+
+# goals
+
+.PHONY: wasm-all wasm-lib wasm-node wasm-web wasm-sdk wasm-check wasm-serve wasm-clean
+
+wasm-lib: $(LIBCHICKEN_A)
+wasm-node: $(addprefix node/,$(WASM_NODE_TOOLS))
+wasm-web: $(WEB_DIR)/chicken-repl.js $(WEB_DIR)/chicken-compiler.js $(WEB_DIR)/index.html \
+  $(addprefix $(WEB_DIR)/,$(WEB_ASSETS))
+wasm-all: wasm-lib wasm-node wasm-web wasm-sdk
+
+WASM_TESTS_RUN = tests-run
+# Resolved by the shell: make's own lookup of a plain "node" command
+# stops at the first "node" on the PATH even if it is a directory (as in
+# the emsdk root, which emsdk_env.sh puts on the PATH).
+NODE ?= $(firstword $(shell command -v node) node)
+
+wasm-check: wasm-node wasm-web wasm-sdk
+	rm -rf $(WASM_TESTS_RUN) && mkdir -p $(WASM_TESTS_RUN)
+	cd $(WASM_TESTS_RUN) && TEST_DIR=$(abspath $(SRCDIR))/tests WASM_DIR=$(CURDIR)/node \
+	  WASM_WEB_DIR=$(CURDIR)/$(WEB_DIR) WASM_SDK=$(abspath $(WASM_STAGE))$(PREFIX) \
+	  HOSTCHICKEN="$(CHICKEN)" sh $(SRCDIR)tests/wasm-smoke.sh
+	cd $(WASM_TESTS_RUN) && TEST_DIR=$(abspath $(SRCDIR))/tests WASM_DIR=$(CURDIR)/node \
+	  WASM_SDK=$(abspath $(WASM_STAGE))$(PREFIX) HOSTCHICKEN="$(CHICKEN)" \
+	  sh $(SRCDIR)tests/runtests-wasm.sh
+	$(NODE) $(SRCDIR)tests/wasm/repl-harness.js $(CURDIR)/$(WEB_DIR)
+	$(NODE) --liftoff --no-wasm-tier-up --stack-size=900 $(SRCDIR)tests/wasm/repl-harness.js \
+	  $(CURDIR)/$(WEB_DIR)
+	$(NODE) $(SRCDIR)tests/wasm/worker-harness.js $(CURDIR)/$(WEB_DIR)
+
+wasm-serve: wasm-web
+	cd $(WEB_DIR) && python3 -m http.server $${PORT:-8080}
+
+wasm-clean:
+	-rm -rf node $(WEB_DIR) $(WASM_STAGE) $(WASM_TESTS_RUN) wasm-repo.stamp *$(O) *$(A) \
+	  wasm-units.c webio.c csi-node.c csi-web.c chicken-config.h chicken-defaults.h \
+	  $(DISTFILES) buildid buildbranch buildversion *.import.scm

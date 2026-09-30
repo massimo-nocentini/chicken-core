@@ -90,7 +90,7 @@
 # define C_XXXBSD
 #endif
 
-#if /*defined(__GNUC__) &&*/ (defined(__linux__) || defined(C_XXXBSD) || defined(__HAIKU__))
+#if /*defined(__GNUC__) &&*/ (defined(__linux__) || defined(C_XXXBSD) || defined(__HAIKU__) || defined(__EMSCRIPTEN__))
 # define C_GNU_ENV
 #endif
 
@@ -692,6 +692,10 @@ void *alloca ();
 # define C_MACHINE_TYPE "arm64"
 #elif defined(__arm__)
 # define C_MACHINE_TYPE "arm"
+#elif defined(__wasm64__)
+# define C_MACHINE_TYPE "wasm64"
+#elif defined(__wasm32__)
+# define C_MACHINE_TYPE "wasm32"
 #else
 # define C_MACHINE_TYPE "unknown"
 #endif
@@ -759,6 +763,8 @@ void *alloca ();
 # define C_SOFTWARE_VERSION "cygwin"
 #elif defined(_WIN32) && !defined(__CYGWIN__)
 # define C_SOFTWARE_VERSION "mingw"
+#elif defined(__EMSCRIPTEN__)
+# define C_SOFTWARE_VERSION "emscripten"
 #else
 # define C_SOFTWARE_VERSION "unknown"
 #endif
@@ -1046,7 +1052,17 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_heaptop                  ((C_word **)(&C_fromspace_top))
 #define C_drop(n)                  (C_temporary_stack += (n))
 #define C_alloc(n)                 ((C_word *)C_alloca((n) * sizeof(C_word)))
-#if (defined (__llvm__) && defined (__GNUC__)) || defined (__TINYC__)
+#if defined(__wasm__)
+/* WebAssembly: C only sees the linear-memory "shadow" stack; the engine's
+ * own call stack is separate and invisible.  Make every C_stack_pointer
+ * evaluation (hence every CPS frame, C_demand and C_stack_check1) consume
+ * at least C_WASM_FRAME_PAD bytes of shadow stack, so the nursery size
+ * bounds the number of live native frames between two minor GCs. */
+# ifndef C_WASM_FRAME_PAD
+#  define C_WASM_FRAME_PAD 64
+# endif
+# define C_stack_pointer ((C_word *)C_alloca(C_WASM_FRAME_PAD))
+#elif (defined (__llvm__) && defined (__GNUC__)) || defined (__TINYC__)
 # if defined (__i386__)
 #  define C_stack_pointer ({C_word *sp; __asm__ __volatile__("movl %%esp,%0":"=r"(sp):);sp;})
 # elif defined (__x86_64__)
