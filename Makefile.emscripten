@@ -61,6 +61,14 @@ WASM_INITIAL_MEMORY ?= 33554432
 WASM_FRAME_PAD ?= 64
 WASM_EMFLAGS = -sSUPPORT_LONGJMP=$(WASM_SJLJ)
 
+# WASM_EGGS and the host tools that build them, recorded apart (see
+# "eggs" below)
+-include config-eggs.make
+-include config-host.make
+WASM_EGG_CONFIG := $(wildcard config-eggs.make)
+WASM_HOST_CONFIG := $(wildcard config-host.make)
+WASM_HOST_CSI ?= env LD_LIBRARY_PATH=$(SRCDIR) CHICKEN_REPOSITORY_PATH=$(SRCDIR) $(SRCDIR)csi
+
 # options
 
 # No -DHAVE_CHICKEN_CONFIG_H: see INCLUDES.  NO_DLOAD2 must be global:
@@ -153,6 +161,8 @@ CSI_IMPORTS = $(filter %.import.scm,$(shell sed -n '/^csi.c:/,/^[^\t ]/p' $(SRCD
 # config.make: DEBUGBUILD (WASM_DEBUG) changes the translation options
 wasm-units.c: wasm-units.scm eval-modules.scm config.make $(WASM_CHICKEN_BIN)
 	$(CHICKEN) $< $(CHICKEN_LIBRARY_OPTIONS) -output-file $@
+wasm-egg-units.c: wasm-egg-units.scm config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_LIBRARY_OPTIONS) -output-file $@
 webio.c: webio.scm webrepl.h chicken.base.import.scm chicken.fixnum.import.scm \
     chicken.port.import.scm chicken.platform.import.scm chicken.bytevector.import.scm \
     chicken.foreign.import.scm chicken.time.import.scm config.make $(WASM_CHICKEN_BIN)
@@ -165,7 +175,7 @@ csi-web.c: csi.scm banner.scm mini-srfi-1.scm $(CSI_IMPORTS) config.make $(WASM_
 WASM_CC = $(C_COMPILER) $(C_COMPILER_OPTIONS) $(C_COMPILER_COMPILE_OPTION) \
   $(C_COMPILER_OPTIMIZATION_OPTIONS)
 
-wasm-units$(O) webio$(O) csi-node$(O): %$(O): %.c chicken.h $(CHICKEN_CONFIG_H)
+wasm-units$(O) wasm-egg-units$(O) webio$(O) csi-node$(O): %$(O): %.c chicken.h $(CHICKEN_CONFIG_H)
 	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
 csi-web$(O): csi-web.c chicken.h $(CHICKEN_CONFIG_H)
 	$(WASM_CC) -DC_EMBEDDED $< $(C_COMPILER_OUTPUT) $(INCLUDES)
@@ -178,13 +188,86 @@ WASM_STAGE = stage
 WASM_REPO = $(WASM_STAGE)$(EGGDIR)
 
 # config.make: the repository path depends on WASM_PREFIX.  The whole
-# stage goes, so no tree of an earlier prefix lingers; wasm-sdk (always
-# run) and the node wrappers refill it.
-wasm-repo.stamp: config.make $(IMPORT_LIBRARIES:=.import.scm) types.db
+# stage goes, so no tree of an earlier prefix (or egg set) lingers;
+# csc-wasm's rule and the node wrappers refill it.
+wasm-repo.stamp: config.make $(WASM_EGG_CONFIG) $(IMPORT_LIBRARIES:=.import.scm) types.db
 	rm -rf $(WASM_STAGE)
 	mkdir -p $(WASM_REPO)
-	cp $(filter-out config.make,$^) $(WASM_REPO)/
+	cp $(filter-out config.make $(WASM_EGG_CONFIG),$^) $(WASM_REPO)/
 	touch $@
+
+# eggs (WASM_EGGS, recorded in config-eggs.make by "make wasm"): each
+# extension of these eggs and of their dependencies is compiled with
+# the SDK's csc-wasm as a static unit and linked into csi (node and
+# web), with its import library in the repository image.  The rules
+# are in wasm-eggs.mk, planned by emscripten/wasm-eggs.scm (run by the
+# host csi) from the .egg files.  wasm-units uses the unit
+# wasm-egg-units, which initialises each egg unit on demand (see
+# below); without eggs it is empty.  The eggs have a record of their
+# own, so that changing WASM_EGGS rebuilds only the eggs that change,
+# the repository image and the programs.
+
+WASM_EGG_DIR = eggs
+WASM_CSC = $(WASM_STAGE)$(BINDIR)/csc-wasm
+# what every egg object depends on, besides csc-wasm (order only: it
+# is rewritten whenever the stage is)
+WASM_EGG_DEPS = config.make chicken.h $(CHICKEN_CONFIG_H) $(WASM_CHICKEN_BIN) \
+  $(IMPORT_LIBRARIES:=.import.scm) types.db
+# The host chicken compiling an egg reads the import libraries of the
+# eggs built before (csc-wasm puts the core's first); code the egg runs
+# at compile time (import-for-syntax) must be compiled for the host, as
+# in any cross build: it comes from the host's repository.
+WASM_EGG_REPOSITORY_PATH = $(CURDIR)/$(WASM_EGG_DIR)/repo$(if $(WASM_HOST_REPOSITORY),:$(WASM_HOST_REPOSITORY))
+
+ifneq ($(strip $(WASM_EGGS)),)
+WASM_REPO_STAMP = wasm-eggs-repo.stamp
+ifeq ($(filter wasm-clean,$(MAKECMDGOALS)),)
+include wasm-eggs.mk
+endif
+else
+WASM_REPO_STAMP = wasm-repo.stamp
+endif
+
+wasm-eggs.mk: wasm-eggs.scm $(WASM_EGG_CONFIG) $(SRCDIR)setup.defaults
+	WASM_EGGS_CHICKEN_INSTALL="$(WASM_HOST_CHICKEN_INSTALL)" \
+	  WASM_EGGS_CORE="$(IMPORT_LIBRARIES)" \
+	  WASM_EGGS_DEFAULTS="$(SRCDIR)setup.defaults" WASM_EGG_DIR="$(WASM_EGG_DIR)" \
+	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio" \
+	  $(WASM_HOST_CSI) -s $< $@ $(WASM_EGGS)
+
+# The egg units are initialised when first required (by "import"), as
+# they would be loaded natively, not at startup: eval's load-extension
+# cannot find a statically linked unit, so wasm-egg-units wraps it.  A
+# unit's toplevel initialises the units it requires.  It is replaced
+# only when it changes (the set of units rarely does), behind a stamp.
+wasm-egg-units.scm: wasm-egg-units.stamp ;
+wasm-egg-units.stamp: $(WASM_EGG_CONFIG) $(if $(strip $(WASM_EGGS)),wasm-eggs.mk)
+	{ echo ';;;; GENERATED BY make from WASM_EGGS: the egg units linked into csi'; \
+	  echo '(declare (unit wasm-egg-units))'; \
+	  $(if $(WASM_EGG_UNITS),echo '(set! chicken.load#load-extension'; \
+	    echo '  (let ((next chicken.load#load-extension))'; \
+	    echo '    (lambda (lib mod loc)'; \
+	    echo '      (if (##sys#provided? lib)'; \
+	    echo '          (next lib mod loc)'; \
+	    echo '          (case lib'; \
+	    $(foreach u,$(WASM_EGG_UNITS),echo '            (($u) (##core#callunit $u) (##sys#provide (quote $u)))';) \
+	    echo '            (else (next lib mod loc)))))))';) } >wasm-egg-units.scm.tmp
+	if cmp -s wasm-egg-units.scm.tmp wasm-egg-units.scm; then rm wasm-egg-units.scm.tmp; \
+	  else mv wasm-egg-units.scm.tmp wasm-egg-units.scm; fi
+	touch $@
+
+# The egg import libraries (and types files) join the repository image,
+# and the egg objects the SDK, as libchicken-eggs.a.  Each extension
+# lists the files it installed (all the modules it defines) in
+# $(WASM_EGG_DIR)/E/C.installs.
+wasm-eggs-repo.stamp: wasm-repo.stamp $(WASM_CSC) $(WASM_EGG_STAMPS)
+	set -- $$(cat $(WASM_EGG_INSTALLS) /dev/null); test $$# -eq 0 || cp "$$@" $(WASM_REPO)/
+	rm -f $(WASM_STAGE)$(LIBDIR)/libchicken-eggs$(A)
+	$(if $(WASM_EGG_OBJECTS),$(LIBRARIAN) $(LIBRARIAN_OPTIONS) \
+	  $(WASM_STAGE)$(LIBDIR)/libchicken-eggs$(A) $(WASM_EGG_OBJECTS))
+	touch $@
+
+WASM_EGG_LINK = wasm-egg-units$(O) $(WASM_EGG_OBJECTS)
 
 # node flavour (host file system and environment): testing and CLI use
 
@@ -195,9 +278,10 @@ WASM_NODE_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=node -sNODERAWFS=1 \
 LIBCHICKEN_A = $(PRIMARY_LIBCHICKEN)
 WASM_NODE_TOOLS = csi chicken chicken-profile chicken-status
 
-node/csi.js: csi-node$(O) wasm-units$(O) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
+node/csi.js: csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
 	mkdir -p node
-	$(LINKER) $(WASM_NODE_LDFLAGS) csi-node$(O) wasm-units$(O) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+	$(LINKER) $(WASM_NODE_LDFLAGS) csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
+	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
 node/chicken.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
 	mkdir -p node
 	$(LINKER) $(WASM_NODE_LDFLAGS) $(COMPILER_STATIC_OBJECTS) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
@@ -205,11 +289,14 @@ node/chicken-profile.js node/chicken-status.js: node/%.js: %$(O) $(LIBCHICKEN_A)
 	mkdir -p node
 	$(LINKER) $(WASM_NODE_LDFLAGS) $< -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
 
-# sh wrappers: node/csi etc. run like the native tools
-$(addprefix node/,$(WASM_NODE_TOOLS)): node/%: node/%.js wasm-repo.stamp
+# sh wrappers: node/csi etc. run like the native tools.  The staged
+# repository comes first, before any of CHICKEN_REPOSITORY_PATH (which
+# may name a host repository): only it has the import libraries, as
+# source, of the eggs linked in.
+$(addprefix node/,$(WASM_NODE_TOOLS)): node/%: node/%.js $(WASM_REPO_STAMP)
 	{ echo '#!/bin/sh'; \
 	  echo 'd=$$(cd "$$(dirname "$$0")" && pwd)'; \
-	  echo ': "$${CHICKEN_REPOSITORY_PATH:=$$d/../$(WASM_REPO)}"'; \
+	  echo 'CHICKEN_REPOSITORY_PATH=$$d/../$(WASM_REPO)$${CHICKEN_REPOSITORY_PATH:+:$$CHICKEN_REPOSITORY_PATH}'; \
 	  echo 'export CHICKEN_REPOSITORY_PATH'; \
 	  echo 'exec "$${NODE:-node}" $${NODE_OPTIONS_WASM} "$$d/$*.js" "$$@"'; } >$@
 	chmod +x $@
@@ -223,14 +310,15 @@ WEB_ASSETS = repl.js repl-driver.js repl-worker.js compiler-worker.js chicken.pn
 WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-compiler.wasm
 
 $(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) \
-    $(LIBCHICKEN_A) wasm-repo.stamp
+    $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP)
 	mkdir -p $(WEB_DIR)
 	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenRepl -sEXIT_RUNTIME=0 -Wl,--wrap=_exit \
 	  -sEXPORTED_FUNCTIONS=_main,_webrepl_feed,_webrepl_resume,_webrepl_interrupt,_webrepl_state,_webrepl_started,_webrepl_exited,_webrepl_exit_code,_webrepl_wakeup_ms,_webrepl_set_slice_ms,_malloc,_free \
 	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 \
-	  csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+	  csi-web$(O) webio$(O) wasm-units$(O) webrepl-main$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
+	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
 
-$(WEB_DIR)/chicken-compiler.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) wasm-repo.stamp
+$(WEB_DIR)/chicken-compiler.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) $(WASM_REPO_STAMP)
 	mkdir -p $(WEB_DIR)
 	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenCompiler -sINVOKE_RUN=0 -sEXIT_RUNTIME=1 \
 	  -sEXPORTED_RUNTIME_METHODS=FS,callMain \
@@ -252,7 +340,17 @@ $(WEB_DIR)/index.html: index.html buildid $(addprefix $(WEB_DIR)/,$(WEB_ASSETS) 
 
 WASM_SDK_SHARE = $(WASM_STAGE)$(SHAREDIR)/chicken
 
-wasm-sdk: $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE)
+# csc-wasm stands for the whole SDK, which the eggs are built with
+wasm-sdk: $(WASM_CSC) $(WASM_REPO_STAMP) wasm-host-repo.stamp
+
+# csc-wasm hides the host chicken's own repository behind the staged
+# one; it adds WASM_HOST_REPOSITORY after it, as the egg builds do, for
+# eggs that run code of other eggs at compile time (import-for-syntax).
+# A file of its own, so that a change does not rebuild csc-wasm.
+wasm-host-repo.stamp: $(WASM_CSC) $(WASM_HOST_CONFIG)
+	echo '$(WASM_HOST_REPOSITORY)' >$(WASM_SDK_SHARE)/host-repository
+	touch $@
+$(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE)
 	mkdir -p $(WASM_STAGE)$(LIBDIR) $(WASM_STAGE)$(CHICKENINCDIR) $(WASM_SDK_SHARE) $(WASM_STAGE)$(BINDIR)
 	cp $(LIBCHICKEN_A) $(WASM_STAGE)$(LIBDIR)/
 	cp $(filter %chicken.h,$^) chicken-config.h $(WASM_STAGE)$(CHICKENINCDIR)/
@@ -261,13 +359,14 @@ wasm-sdk: $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in
 	cp $(WASM_NODE_PRE) $(WASM_SDK_SHARE)/
 	sed -e 's|@CHICKEN@|$(CHICKEN)|' -e 's|@EMCC@|$(C_COMPILER)|' \
 	  -e 's|@STAGE@|$(abspath $(WASM_STAGE))$(PREFIX)|' -e 's|@REPO@|$(abspath $(WASM_REPO))|' \
-	  $(filter %csc-wasm.in,$^) \
-	  >$(WASM_STAGE)$(BINDIR)/csc-wasm
-	chmod +x $(WASM_STAGE)$(BINDIR)/csc-wasm
+	  $(filter %csc-wasm.in,$^) >$@.tmp
+	chmod +x $@.tmp
+	mv $@.tmp $@
 
 # goals
 
-.PHONY: wasm-all wasm-lib wasm-node wasm-web wasm-sdk wasm-check wasm-serve wasm-clean
+.PHONY: wasm-all wasm-lib wasm-node wasm-web wasm-sdk wasm-check wasm-check-eggs wasm-serve \
+  wasm-clean
 
 wasm-lib: $(LIBCHICKEN_A)
 wasm-node: $(addprefix node/,$(WASM_NODE_TOOLS))
@@ -293,11 +392,36 @@ wasm-check: wasm-node wasm-web wasm-sdk
 	$(NODE) --liftoff --no-wasm-tier-up --stack-size=900 $(SRCDIR)tests/wasm/repl-harness.js \
 	  $(CURDIR)/$(WEB_DIR)
 	$(NODE) $(SRCDIR)tests/wasm/worker-harness.js $(CURDIR)/$(WEB_DIR)
+	+$(MAKE) -f $(SRCDIR)GNUmakefile wasm-check-eggs
+
+# The eggs lane builds csi (node and web) and the SDK in a build
+# directory of its own, with the eggs of tests/wasm/eggs, then runs
+# tests/wasm-eggs.sh.  It starts from copies of the outputs here (not
+# the stamps, which stand for directories), so only the eggs, the
+# repository image and the programs linking them are built there.  It
+# works offline: no egg is retrieved and no host repository is used.
+WASM_EGGS_TEST_BUILD = $(WASM_TESTS_RUN)/eggs-build
+WASM_TEST_EGGS = $(abspath $(SRCDIR))/tests/wasm/eggs
+
+wasm-check-eggs: wasm-node wasm-web wasm-sdk
+	rm -rf $(WASM_EGGS_TEST_BUILD) && mkdir -p $(WASM_EGGS_TEST_BUILD)
+	find . -maxdepth 1 -type f ! -name '*.stamp' ! -name config-eggs.make ! -name config-host.make \
+	  ! -name wasm-eggs.mk ! -name 'wasm-egg-units.*' -exec cp -p {} $(WASM_EGGS_TEST_BUILD)/ \;
+	{ echo "# GENERATED BY make wasm-check-eggs"; \
+	  echo "WASM_EGGS = $(WASM_TEST_EGGS)/wasm-egg-b $(WASM_TEST_EGGS)/wasm-egg-a"; } \
+	  >$(WASM_EGGS_TEST_BUILD)/config-eggs.make
+	{ echo "# GENERATED BY make wasm-check-eggs"; \
+	  echo "WASM_HOST_CSI = $(WASM_HOST_CSI)"; } >$(WASM_EGGS_TEST_BUILD)/config-host.make
+	+$(MAKE) -C $(WASM_EGGS_TEST_BUILD) -f $(abspath $(SRCDIR))/GNUmakefile \
+	  node/csi $(WEB_DIR)/chicken-repl.js wasm-sdk
+	cd $(WASM_TESTS_RUN) && EGG_BUILD=eggs-build TEST_DIR=$(abspath $(SRCDIR))/tests \
+	  HOST_CSI="$(WASM_HOST_CSI)" NODE="$(NODE)" sh $(SRCDIR)tests/wasm-eggs.sh
 
 wasm-serve: wasm-web
 	cd $(WEB_DIR) && python3 -m http.server $${PORT:-8080}
 
 wasm-clean:
-	-rm -rf node $(WEB_DIR) $(WASM_STAGE) $(WASM_TESTS_RUN) wasm-repo.stamp *$(O) *$(A) \
+	-rm -rf node $(WEB_DIR) $(WASM_STAGE) $(WASM_TESTS_RUN) $(WASM_EGG_DIR) *.stamp *$(O) *$(A) \
 	  wasm-units.c webio.c csi-node.c csi-web.c chicken-config.h chicken-defaults.h \
+	  wasm-eggs.mk wasm-egg-units.scm wasm-egg-units.c \
 	  $(DISTFILES) buildid buildbranch buildversion *.import.scm

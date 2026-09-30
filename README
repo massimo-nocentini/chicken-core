@@ -414,6 +414,83 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     to the SDK in WASM_BUILDDIR by absolute path, so rerun
     "make wasm-cross" after cleaning that directory.
 
+    Using eggs
+
+    Eggs made only of Scheme code can be loaded from source, as
+    anywhere: "(load "matchable.scm")" in the node csi (which sees
+    the host file system), or, in the browser REPL, after uploading
+    the file.  Eggs with compiled code (foreign code, "##core#inline",
+    C files), and eggs that need one, cannot be interpreted; they
+    are linked in statically instead:
+
+        make wasm WASM_EGGS="srfi-1 srfi-13 srfi-69 ./my-egg"
+
+    Each entry is an egg name or a local egg directory (holding its
+    ".egg" file; with a "/" or relative to the host tree).  Named
+    eggs, and all egg dependencies that are not given as
+    directories, come from the chicken-install cache (as filled by
+    "chicken-install -r"); a missing egg is retrieved into it with
+    the host tree's chicken-install.  The eggs are built, in
+    dependency order, by the host tree's csi running
+    emscripten/wasm-eggs.scm, which follows chicken-install's
+    static build of the ".egg" files: every extension becomes a
+    unit compiled with csc-wasm (with the egg's csc-options and
+    cond-expand clauses evaluated for the target), "c-object"
+    components are compiled with emcc and linked with the
+    extensions listing them, and test-dependencies are ignored, as
+    are dependencies on "chicken" and on modules of the core system
+    (such as srfi-4) or mapped away by setup.defaults (such as
+    r7rs).  Unlike chicken-install, it does not check the versions
+    of dependencies: the release in the cache (or the local
+    directory) is built, with a warning if it is older than the
+    one asked for; refresh the cache with "chicken-install -r".
+    The units are linked into the node csi and the browser REPL and
+    initialised when first imported; the import libraries of all
+    the modules they define (and their types files) go into the
+    repository image, so a plain "(import srfi-1)" works in both.
+    The SDK gets the egg objects as lib/libchicken-eggs.a, for
+    programs:
+
+        csc-wasm -node prog.scm \
+          build-wasm/stage/chicken/lib/libchicken-eggs.a -o prog.js
+
+    The build stops with a message naming the egg for what cannot
+    be done statically for WebAssembly: custom build scripts
+    (egg-wide or per component, as in "sendfile"), generated source
+    files and extensions without static linkage.  Programs are not
+    built, and "data" components are not installed (a warning says
+    so); "c-include" and "scheme-include" files are installed where
+    the eggs built after them include them from (build-wasm/eggs/
+    prefix), but not into the repository image.  An egg without
+    extensions for the target (a host-only egg, such as "bind")
+    builds nothing, with a warning.  An egg that runs code of
+    another egg at compile time ("import-for-syntax", as in
+    "defstruct") needs that egg compiled for the host: the host
+    chicken finds it in the host repository (WASM_HOST_REPOSITORY:
+    by default $CHICKEN_REPOSITORY_PATH or the repository of the
+    host tree's PREFIX), so install it there with the host
+    chicken-install.  csc-wasm looks there too when
+    CHICKEN_REPOSITORY_PATH is not set, for programs importing such
+    eggs; the compiler of the browser page and the node "chicken"
+    cannot load host code, so they cannot expand an import of
+    these eggs.
+
+    The node wrappers (node/csi etc.) put the staged repository
+    before any CHICKEN_REPOSITORY_PATH of the environment, since
+    only it holds the import libraries of the eggs linked in.
+
+    WASM_EGGS is recorded in the build directory apart from the
+    other settings: changing it rebuilds only the eggs that change
+    (including eggs taken from another directory than before), the
+    repository image and the programs linking them.  The eggs are
+    built in build-wasm/eggs.  Tested with srfi-1, srfi-13,
+    srfi-14, srfi-18, srfi-19, srfi-69, matchable, miscmacros,
+    regex, defstruct, vector-lib, uri-generic, uri-common, base64,
+    check-errors, intarweb and memory-mapped-files.  srfi-19 (by
+    way of the locale egg) fails when imported in the node csi
+    unless TZ is set, since emscripten names the local time zone
+    like "UTC+0200".
+
     Other targets: "make wasm-clean" removes the build outputs,
     "make wasm-distclean" the build directories.  "WASM_GOAL"
     selects what "make wasm" builds in the build directory
@@ -465,15 +542,23 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     WASM_DEBUG
       A debug build (-O0 -g, emscripten ASSERTIONS=2).
 
+    WASM_EGGS
+      Eggs to link into csi (see "Using eggs" above; recorded apart
+      from the other settings).
+
     EMCC, WASM_HOST_CHICKEN
       The emcc to use (default: from $EMSDK, else "emcc" on the
       PATH) and the host chicken that translates the sources
       (default: the in-tree "chicken").
 
     "make wasm-check" runs tests/wasm-smoke.sh, the interpreted and
-    compiled test lanes of tests/runtests-wasm.sh, and the headless
+    compiled test lanes of tests/runtests-wasm.sh, the headless
     REPL tests tests/wasm/repl-harness.js (also under Liftoff with a
-    small stack) and tests/wasm/worker-harness.js.  The browser test
+    small stack) and tests/wasm/worker-harness.js, and an eggs lane:
+    it builds csi and the REPL again, in tests-run/eggs-build of the
+    build directory, with the test eggs of tests/wasm/eggs, and runs
+    tests/wasm-eggs.sh (node csi, a program compiled with csc-wasm,
+    refused eggs and tests/wasm/egg-harness.js for the REPL).  The browser test
     tests/wasm/page.spec.mjs needs Playwright and is run by hand:
 
         BROWSERS=chromium,firefox node tests/wasm/page.spec.mjs build-wasm/web
@@ -481,8 +566,8 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     Limitations:
 
       - There is no dynamic loading: no ".so" files, and eggs with
-        compiled code must be linked statically.  "csc" and
-        "chicken-install" do not run inside WebAssembly; use
+        compiled code must be linked statically (WASM_EGGS).  "csc"
+        and "chicken-install" do not run inside WebAssembly; use
         "csc-wasm" or "make wasm-cross".
 
       - "fork", "exec", "process", pipes and signals raise errors,

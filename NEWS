@@ -197,6 +197,13 @@
     so that the nursery bounds the engine's native call depth, and the
     nursery is clamped to the link-time stack size and to a maximum
     the engine's native stack can hold.
+  - `make wasm WASM_EGGS="srfi-1 srfi-13 ..."' builds the named eggs
+    (from the chicken-install cache, or local egg directories) and
+    their dependencies as static units for WebAssembly and links them
+    into the node csi and the browser REPL, with their import libraries
+    in the repository image, so that a plain (import srfi-1) works.
+    The units are initialised on first import, and the SDK gets them
+    as libchicken-eggs.a.  Eggs with custom build scripts are refused.
 
 6.0.0
 

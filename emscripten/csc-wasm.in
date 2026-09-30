@@ -207,6 +207,13 @@ else
 fi
 
 # The host chicken finds the target's import libraries and types.db here.
+# Without CHICKEN_REPOSITORY_PATH, the host repository recorded by "make
+# wasm" (WASM_HOST_REPOSITORY) follows, in place of the host chicken's
+# own, which the staged one hides: code that eggs run at compile time
+# (import-for-syntax) is loaded from there, compiled for the host.
+if test -z "$CHICKEN_REPOSITORY_PATH" && test -f "$S/share/chicken/host-repository"; then
+    CHICKEN_REPOSITORY_PATH=$(cat "$S/share/chicken/host-repository")
+fi
 CHICKEN_REPOSITORY_PATH=$REPO${CHICKEN_REPOSITORY_PATH:+:$CHICKEN_REPOSITORY_PATH}
 export CHICKEN_REPOSITORY_PATH
 
