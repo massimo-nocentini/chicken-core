@@ -26,6 +26,10 @@
     `string-foldcase' on empty input, `latin1->string' (all bytes
     >= 0x80, or empty) and `vector->string' and `string-map' (all
     4-byte characters, or empty).
+  - The generic `read-bytevector!' of ports made with `make-input-port'
+    without a #:read-bytevector procedure copied each character to the
+    wrong offset and could write past the requested range, so
+    `read-string' and `read-bytevector' on such ports returned garbage.
   - `utf8->string' decoded its input twice, once to validate and once to
     count codepoints; it now does one pass and is about 1.9x faster.
   - Writing to an output bytevector could write beyond allocated range,

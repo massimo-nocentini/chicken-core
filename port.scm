@@ -357,8 +357,14 @@ char *ttyname(int fd) {
     (define (insert dest start c)
       (let* ((bv (##sys#make-bytevector 4))
              (m (##core#inline "C_utf_insert" bv 0 c)))
-        (##core#inline "C_copy_memory_with_offset" dest bv 0 start m)
+        (##core#inline "C_copy_memory_with_offset" dest bv start 0 m)
         m))
+    ;; The UTF-8 bytes of the last character read by the generic
+    ;; read-bytevector! below, from TAIL-POS to TAIL-END: a character
+    ;; that does not fit is delivered in pieces, as a byte port would.
+    (define tail #f)
+    (define tail-pos 0)
+    (define tail-end 0)
     (let* ((class
 	    (vector
 	     (lambda (p)		; read-char
@@ -398,17 +404,30 @@ char *ttyname(int fd) {
 	         (lambda (p n dest start)
 	           (let loop ((n n) (c 0))
                      (cond ((eq? n 0) c)
-                           ((and (not peek-char) (##sys#slot p 10)) =>
-                             (lambda (last)
-                               (let ((m (insert dest start last)))
-                                 (##sys#setislot p 10 #f)
-                                 (loop (and n (fx- n m)) (fx+ c m)))))
-                          (else
-                            (let ((x (read)))
-                              (if (eof-object? x) 
+                           (tail
+                            (let* ((avail (fx- tail-end tail-pos))
+                                   (k (if (and n (fx< n avail)) n avail)))
+                              (##core#inline "C_copy_memory_with_offset"
+                                             dest tail (fx+ start c) tail-pos k)
+                              (if (eq? k avail)
+                                  (set! tail #f)
+                                  (set! tail-pos (fx+ tail-pos k)))
+                              (loop (and n (fx- n k)) (fx+ c k))))
+                           (else
+                            (let ((x (let ((last (and (not peek-char)
+                                                      (##sys#slot p 10))))
+                                       (cond (last
+                                              (##sys#setislot p 10 #f)
+                                              last)
+                                             (else (read))))))
+                              (if (eof-object? x)
                                   c
-                                  (let ((m (insert dest start x)))
-                                    (loop (and n (fx- n m)) (fx+ c m))))))))))
+                                  (let ((bv (##sys#make-bytevector 4)))
+                                    (set! tail-end
+                                      (##core#inline "C_utf_insert" bv 0 x))
+                                    (set! tail-pos 0)
+                                    (set! tail bv)
+                                    (loop n c)))))))))
 	     read-line			; read-line
 	     read-buffered     ; read-buffered
              (lambda (p) (ready?))  ; char-ready?

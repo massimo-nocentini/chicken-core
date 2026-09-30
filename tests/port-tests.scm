@@ -369,6 +369,42 @@ EOF
          (lambda (bv start end)
            (read-bytevector! bv p start end))))))
 
+    ;; without #:read-bytevector: the generic one reads characters
+    (test-group "make-input-port read sequences, generic read-bytevector!"
+     (test-sequence
+      (let ((p (open-input-string "1234567890")))
+        (make-input-port (lambda () (read-char p))
+                         (lambda () (char-ready? p))
+                         (lambda () (close-input-port p))))))
+
+    (test-group "make-input-port read sequences, generic read-bytevector!, peek-char"
+     (test-sequence
+      (let ((p (open-input-string "1234567890")))
+        (make-input-port (lambda () (read-char p))
+                         (lambda () (char-ready? p))
+                         (lambda () (close-input-port p))
+                         #:peek-char (lambda () (peek-char p))))))
+
+    (test-group "generic read-bytevector! with multi-byte characters"
+      (define (in s)
+        (let ((p (open-input-string s)))
+          (make-input-port (lambda () (read-char p)) (constantly #t) void)))
+      (test-equal "read-string" (read-string 3 (in "h\xe9;llo")) "h\xe9;l")
+      (test-equal "read-string, then read-line"
+                  (let ((p (in "h\xe9;llo\n")))
+                    (let* ((a (read-string 2 p)) (b (read-line p)))
+                      (list a b)))
+                  '("h\xe9;" "llo"))
+      (test-equal "read-bytevector splits a character"
+                  (let ((p (in "\xe9;xy")))
+                    (let* ((a (read-bytevector 1 p)) (b (read-bytevector 3 p)))
+                      (list a b)))
+                  '(#u8(195) #u8(169 120 121)))
+      (test-equal "read-bytevector! stays within its range"
+                  (let ((bv (make-bytevector 4 0)))
+                    (list (read-bytevector! bv (in "\x20ac;\x20ac;") 1 3) bv))
+                  '(2 #u8(0 226 130 0))))
+
     (test-group "make-binary-input-port read sequences"
      (test-sequence
       (let* ((p (open-input-string "1234567890")))
