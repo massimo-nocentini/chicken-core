@@ -1,0 +1,610 @@
+<!doctype html>
+<!-- index.html - the CHICKEN Scheme REPL page (WebAssembly)
+
+  Copyright (c) 2026, The CHICKEN Team
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following
+  conditions are met:
+
+    Redistributions of source code must retain the above copyright notice, this list of conditions and the following
+      disclaimer.
+    Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following
+      disclaimer in the documentation and/or other materials provided with the distribution.
+    Neither the name of the author nor the names of its contributors may be used to endorse or promote
+      products derived from this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS
+  OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY
+  AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR
+  CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+  OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+-->
+
+<!-- The page runs the unmodified csi in a Web Worker (repl-worker.js) and
+  the chicken compiler in another (compiler-worker.js); repl.js drives
+  both.  The build rule replaces the BUILD placeholder (in the
+  chicken-build meta tag and the URLs below) with a build id, which the
+  page passes as ?v= on every script, worker and .wasm URL.  No external resources: it
+  must be served over plain HTTP (make wasm-serve), not from file://. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="CHICKEN Scheme's csi running in your browser, compiled to WebAssembly.">
+<meta name="chicken-build" content="9a2e0278-2123657820">
+<meta name="chicken-wasm-arch" content="wasm64">
+<title>CHICKEN Scheme REPL</title>
+<link rel="icon" type="image/png" href="chicken.png?v=9a2e0278-2123657820">
+<style>
+:root {
+  --bg: #f5f3ee;
+  --surface: #ffffff;
+  --surface-2: #efece5;
+  --border: #dedad0;
+  --text: #1f1d19;
+  --muted: #6a655b;
+  --accent: #b4520a;
+  --accent-strong: #9a4407;
+  --accent-soft: #fdf0dc;
+  --on-accent: #ffffff;
+  --focus: #2563eb;
+  --term-bg: #fffdf8;
+  --term-fg: #26231d;
+  --term-err: #b42318;
+  --term-in: #8a4b08;
+  --term-prompt: #8b857a;
+  --term-sys: #6a655b;
+  --ok: #15803d;
+  --busy: #b45309;
+  --wait: #1d4ed8;
+  --sleep: #7c3aed;
+  --bad: #b42318;
+  --shadow: 0 1px 2px rgb(40 30 10 / .06), 0 4px 16px rgb(40 30 10 / .06);
+  --radius: 10px;
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131210;
+    --surface: #1c1b18;
+    --surface-2: #25231f;
+    --border: #34312b;
+    --text: #ece8df;
+    --muted: #a29d91;
+    --accent: #f5a524;
+    --accent-strong: #ffb940;
+    --accent-soft: #33260f;
+    --on-accent: #1b1406;
+    --focus: #7aa7ff;
+    --term-bg: #0e0d0c;
+    --term-fg: #e7e3da;
+    --term-err: #ff8a80;
+    --term-in: #f7c35f;
+    --term-prompt: #8a857a;
+    --term-sys: #9b968a;
+    --ok: #4ade80;
+    --busy: #fbbf24;
+    --wait: #7aa7ff;
+    --sleep: #c4a5ff;
+    --bad: #ff8a80;
+    --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .3);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131210;
+  --surface: #1c1b18;
+  --surface-2: #25231f;
+  --border: #34312b;
+  --text: #ece8df;
+  --muted: #a29d91;
+  --accent: #f5a524;
+  --accent-strong: #ffb940;
+  --accent-soft: #33260f;
+  --on-accent: #1b1406;
+  --focus: #7aa7ff;
+  --term-bg: #0e0d0c;
+  --term-fg: #e7e3da;
+  --term-err: #ff8a80;
+  --term-in: #f7c35f;
+  --term-prompt: #8a857a;
+  --term-sys: #9b968a;
+  --ok: #4ade80;
+  --busy: #fbbf24;
+  --wait: #7aa7ff;
+  --sleep: #c4a5ff;
+  --bad: #ff8a80;
+  --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .3);
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+[hidden] { display: none !important; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+.app {
+  height: 100vh;
+  height: 100dvh;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+}
+
+/* header */
+.top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0 10px;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+.brand img { width: 34px; height: 34px; flex: none; object-fit: cover; object-position: 50% 0; }
+.brand h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.01em; line-height: 1.2; }
+.brand p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.top .grow { flex: 1; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 4px 11px 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.pill .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted);
+}
+.pill[data-state="ready"] .dot { background: var(--ok); }
+.pill[data-state="running"] .dot { background: var(--busy); animation: pulse 1s ease-in-out infinite; }
+.pill[data-state="waiting"] .dot { background: var(--wait); }
+.pill[data-state="sleeping"] .dot { background: var(--sleep); animation: pulse 2s ease-in-out infinite; }
+.pill[data-state="loading"] .dot { animation: pulse 1s ease-in-out infinite; }
+.pill[data-state="exited"] .dot, .pill[data-state="error"] .dot { background: var(--bad); }
+.pill[data-state="ready"] { color: var(--text); }
+@keyframes pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .pill .dot { animation: none !important; } }
+
+/* tabs and toolbar */
+/* too narrow for one row (below about 375 px): the toolbar moves up to
+   a row of its own, and the tabs stay on the bottom border */
+.bar {
+  display: flex;
+  flex-wrap: wrap-reverse;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+}
+[role="tablist"] { display: flex; gap: 4px; }
+[role="tab"] {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 8px 12px 9px;
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-weight: 550;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+[role="tab"]:hover { color: var(--text); }
+[role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+.toolbar { display: flex; gap: 4px; padding-bottom: 5px; margin-left: auto; }
+.btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 520;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background-color .12s, border-color .12s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .45; cursor: default; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+.btn.ghost { border-color: transparent; background: none; }
+.btn.ghost:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.btn.danger svg { color: var(--bad); }
+
+main { flex: 1; min-height: 0; display: flex; flex-direction: column; padding-top: 12px; }
+.panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#panel-compile { overflow-y: auto; }
+
+/* terminal */
+.console {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--term-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.console.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
+#term {
+  flex: 1;
+  min-height: 8rem;
+  margin: 0;
+  padding: 14px 16px 6px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  color: var(--term-fg);
+  font: 13.5px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 8;
+  overscroll-behavior: contain;
+}
+#term:focus-visible { outline-offset: -3px; }
+#term .err { color: var(--term-err); }
+#term .in { color: var(--term-in); }
+#term .p { color: var(--term-prompt); }
+#term .sys { color: var(--term-sys); font-style: italic; }
+#term .loading { color: var(--term-sys); }
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 12px 10px;
+  padding: 8px 10px 8px 12px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.notice span { flex: 1; min-width: 12ch; }
+
+.entry {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 8px 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.entry .caret {
+  align-self: flex-start;
+  padding-top: 7px;
+  color: var(--accent);
+  font: 600 14px/1.5 var(--mono);
+  user-select: none;
+}
+#line {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  max-height: 40vh;
+  padding: 7px 4px;
+  border: 0;
+  background: none;
+  color: var(--term-fg);
+  font: 14px/1.5 var(--mono);
+  resize: none;
+  outline: none;
+}
+#line::placeholder { color: var(--muted); opacity: .8; }
+.entry:focus-within { box-shadow: inset 0 2px 0 -1px var(--accent); }
+.entry .btn { min-height: 36px; }
+.entry .hist { padding: 0 8px; }
+.hints {
+  margin: 8px 2px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+kbd {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface);
+  font: 11.5px/1.5 var(--mono);
+}
+
+/* compile tab */
+.lede { margin: 0 0 14px; color: var(--muted); max-width: 70ch; }
+code { font-family: var(--mono); font-size: .92em; white-space: nowrap; }
+.field-label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13.5px; }
+.editor {
+  display: block;
+  width: 100%;
+  min-height: 11rem;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font: 13.5px/1.55 var(--mono);
+  resize: vertical;
+  tab-size: 2;
+  box-shadow: var(--shadow);
+}
+.editor:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  margin: 12px 0 16px;
+}
+.controls label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--muted); font-weight: 550; }
+.controls .wide { flex: 1 1 14rem; }
+.input {
+  min-height: 34px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13.5px;
+}
+.controls .input { width: 100%; }
+#copt { width: auto; }
+.cstatus { margin: 0 0 10px; font-size: 13.5px; color: var(--muted); min-height: 1.5em; }
+.cstatus.ok { color: var(--ok); }
+.cstatus.fail { color: var(--bad); }
+.out-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; }
+.out-head .field-label { margin: 0; flex: 1; white-space: nowrap; }
+.codebox {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--term-bg);
+  color: var(--term-fg);
+  font: 12.5px/1.5 var(--mono);
+  white-space: pre;
+}
+.codebox.log { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 30vh; }
+.codebox:empty::before { content: attr(data-empty); color: var(--muted); font-family: var(--sans); font-style: italic; }
+details > summary { cursor: pointer; font-weight: 600; font-size: 13.5px; margin-bottom: 6px; }
+
+/* settings dialog */
+dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 24px 64px rgb(0 0 0 / .3);
+}
+dialog::backdrop { background: rgb(15 12 8 / .45); }
+dialog form { display: flex; flex-direction: column; gap: 14px; padding: 20px; }
+dialog h2 { margin: 0; font-size: 17px; }
+dialog label.f { display: flex; flex-direction: column; gap: 5px; font-weight: 600; font-size: 13.5px; }
+dialog .help { font-weight: 400; color: var(--muted); font-size: 12.5px; }
+dialog textarea.input { min-height: 7rem; font-family: var(--mono); resize: vertical; }
+dialog .row { display: flex; gap: 14px; flex-wrap: wrap; }
+dialog .row > * { flex: 1 1 10rem; }
+dialog fieldset { border: 0; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: 13.5px; }
+dialog legend { font-weight: 600; margin-bottom: 5px; padding: 0; }
+dialog .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; }
+dialog .check input, dialog fieldset input { accent-color: var(--accent); }
+dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+
+@media (max-width: 640px) {
+  .brand p { display: none; }
+  .toolbar .label { display: none; }
+  .toolbar .btn { padding: 0 9px; }
+  [role="tab"] { padding: 8px 8px 9px; }
+  .hints { display: none; }
+  #term { padding: 10px 12px 4px; font-size: 13px; }
+}
+@media (max-width: 380px) {
+  .toolbar { gap: 2px; }
+  .toolbar .btn { padding: 0 7px; min-height: 32px; }
+  [role="tab"] { padding: 8px 6px 9px; font-size: 13.5px; }
+  .entry .hist { padding: 0 6px; }
+}
+@media (hover: none) and (pointer: coarse) {
+  .hints { display: none; }
+}
+@media (hover: hover) and (pointer: fine) {
+  .entry .hist { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <a class="brand" href="https://call-cc.org/" title="call-cc.org">
+      <img src="chicken.png?v=9a2e0278-2123657820" alt="" width="34" height="34">
+      <div>
+        <h1>CHICKEN Scheme</h1>
+        <p>csi, compiled to WebAssembly, running in your browser</p>
+      </div>
+    </a>
+    <span class="grow"></span>
+    <span id="status" class="pill" data-state="loading" role="status" aria-live="polite">
+      <span class="dot" aria-hidden="true"></span><span id="status-text">loading</span>
+    </span>
+  </header>
+
+  <div class="bar">
+    <div role="tablist" aria-label="Views">
+      <button role="tab" id="tab-repl" aria-controls="panel-repl" aria-selected="true">REPL</button>
+      <button role="tab" id="tab-compile" aria-controls="panel-compile" aria-selected="false" tabindex="-1">Compile to C</button>
+    </div>
+    <div class="toolbar" role="toolbar" aria-label="REPL controls" id="toolbar">
+      <button class="btn ghost danger" id="stop" type="button" aria-label="Stop" title="Stop the running evaluation (Esc)">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="label">Stop</span>
+      </button>
+      <button class="btn ghost" id="restart" type="button" aria-label="Restart" title="Start a fresh interpreter">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg><span class="label">Restart</span>
+      </button>
+      <button class="btn ghost" id="clear" type="button" aria-label="Clear" title="Clear the terminal (Ctrl+L)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M10 11v6M14 11v6"/><path d="M6 7l1 13h10l1-13"/><path d="M9 7V4h6v3"/></svg><span class="label">Clear</span>
+      </button>
+      <button class="btn ghost" id="upload-btn" type="button" aria-label="Upload files" title="Copy files into the interpreter's home directory">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span class="label">Upload</span>
+      </button>
+      <input type="file" id="upload" multiple hidden>
+      <button class="btn ghost" id="settings-btn" type="button" aria-label="Settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="label">Settings</span>
+      </button>
+    </div>
+  </div>
+
+  <main>
+    <section class="panel" id="panel-repl" role="tabpanel" aria-labelledby="tab-repl">
+      <div class="console" id="console">
+        <pre id="term" role="log" aria-label="REPL output" tabindex="0"><span class="loading">Loading the interpreter…</span></pre>
+        <div class="notice" id="notice" hidden>
+          <span id="notice-text"></span>
+          <button class="btn primary" id="notice-restart" type="button">Restart</button>
+        </div>
+        <form class="entry" id="entry" autocomplete="off">
+          <span class="caret" aria-hidden="true">›</span>
+          <label for="line" class="sr-only">Scheme input</label>
+          <textarea id="line" rows="1" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="send" placeholder="Type an expression" disabled></textarea>
+          <button class="btn ghost hist" id="hist-up" type="button" aria-label="Previous input">↑</button>
+          <button class="btn ghost hist" id="hist-down" type="button" aria-label="Next input">↓</button>
+          <button class="btn primary" id="send" type="submit" disabled>Run</button>
+        </form>
+      </div>
+      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops, <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>.</p>
+    </section>
+
+    <section class="panel" id="panel-compile" role="tabpanel" aria-labelledby="tab-compile" hidden>
+      <p class="lede">Translate Scheme to C with the CHICKEN compiler, itself running here as WebAssembly. The generated C is meant for <code>csc-wasm</code> or a native <code>csc</code>; it does not run in the page.</p>
+      <label class="field-label" for="src">Scheme source</label>
+      <textarea class="editor" id="src" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">;; Press Ctrl+Enter or Compile to translate this to C.
+(define (fib n)
+  (if (&lt; n 2)
+      n
+      (+ (fib (- n 1)) (fib (- n 2)))))
+
+(print (fib 25))
+</textarea>
+      <div class="controls">
+        <label>Optimization
+          <select class="input" id="copt">
+            <option value="0">-O0</option>
+            <option value="1">-O1</option>
+            <option value="2" selected>-O2</option>
+            <option value="3">-O3</option>
+            <option value="4">-O4</option>
+            <option value="5">-O5</option>
+          </select>
+        </label>
+        <label class="wide">Extra compiler options
+          <input class="input" id="cargs" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="-unsafe -no-trace">
+        </label>
+        <label>File name
+          <input class="input" id="cname" value="program" size="10" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">
+        </label>
+        <button class="btn primary" id="compile" type="button">Compile</button>
+        <button class="btn" id="ccancel" type="button" hidden>Cancel</button>
+      </div>
+      <p class="cstatus" id="cstatus" role="status" aria-live="polite"></p>
+      <details id="clog-wrap" hidden>
+        <summary>Compiler messages</summary>
+        <pre class="codebox log" id="clog"></pre>
+      </details>
+      <div class="out-head">
+        <span class="field-label" id="cout-label">Generated C</span>
+        <button class="btn" id="copy" type="button" disabled>Copy</button>
+        <a class="btn" id="download" href="#" download="program.c" aria-disabled="true" tabindex="-1">Download .c</a>
+      </div>
+      <pre class="codebox" id="cout" tabindex="0" aria-labelledby="cout-label" data-empty="Nothing compiled yet."></pre>
+    </section>
+  </main>
+</div>
+
+<dialog id="settings" aria-labelledby="settings-title">
+  <form method="dialog" id="settings-form">
+    <h2 id="settings-title">Settings</h2>
+    <label class="f" for="set-csirc">.csirc
+      <span class="help">Scheme evaluated at startup, from <code>~/.csirc</code>. Empty means none (csi runs with <code>-n</code>).</span>
+      <textarea class="input" id="set-csirc" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" placeholder="(import (chicken string) (srfi 1))"></textarea>
+    </label>
+    <div class="row">
+      <label class="f" for="set-args">Extra csi arguments
+        <span class="help">For example <code>-:s128k</code> or <code>-R srfi-1</code>.</span>
+        <input class="input" id="set-args" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off">
+      </label>
+      <label class="f" for="set-slice">Time slice (ms)
+        <span class="help">How long csi runs before letting the page update.</span>
+        <input class="input" id="set-slice" type="number" min="5" max="1000" step="5">
+      </label>
+    </div>
+    <label class="check"><input type="checkbox" id="set-quotes">
+      <span>Replace typographic quotes (‘ ’ “ ”) outside string literals.<br><span class="help">Touch keyboards insert them; on by default on touch devices.</span></span>
+    </label>
+    <fieldset>
+      <legend>Theme</legend>
+      <label><input type="radio" name="theme" value="auto"> System</label>
+      <label><input type="radio" name="theme" value="light"> Light</label>
+      <label><input type="radio" name="theme" value="dark"> Dark</label>
+    </fieldset>
+    <div class="actions">
+      <button class="btn" value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save" type="submit">Save and restart</button>
+    </div>
+  </form>
+</dialog>
+
+<noscript><p style="padding:16px">This REPL needs JavaScript and WebAssembly.</p></noscript>
+<script src="repl.js?v=9a2e0278-2123657820"></script>
+</body>
+</html>
