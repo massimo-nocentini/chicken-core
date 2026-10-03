@@ -660,12 +660,25 @@
             (lambda () (+ 1 (raise 'an-error)))))))
   (test-error "with-exception-handler (return)"
               (with-exception-handler
-               (lambda (e) 'ignore)
+               (lambda (e) 'ignore) ;; <-- should raise "handler returned"
                (lambda () (+ 1 (raise 'an-error)))))
   (test-error "with-exception-handler (raise)"
               (with-exception-handler
                (lambda (e) (raise 'another-error))
                (lambda () (+ 1 (raise 'an-error)))))
+  (test "with-exception-handler (raise nested)"
+         '(caught outer inner boom)
+         (call/cc
+          (lambda (return)
+            (with-exception-handler
+             (lambda (e) (return (cons 'caught e)))
+             (lambda ()
+               (with-exception-handler
+                (lambda (e) (raise (cons 'outer e)))
+                (lambda ()
+                  (with-exception-handler
+                   (lambda (e) (raise (cons 'inner e)))
+                   (lambda () (raise '(boom)))))))))))
   (test "with-exception-handler (raise-continuable)"
         '("should be a number" 65)
         (let* ((exception-object #f)
@@ -674,6 +687,27 @@
                  (lambda (e) (set! exception-object e) 42)
                  (lambda () (+ (raise-continuable "should be a number") 23)))))
           (list exception-object return-value)))
+  (test "with-exception-handler (raise-continuable nested)"
+        '(top outer inner boom)
+        (with-exception-handler
+         (lambda (e) (cons 'top e))
+         (lambda ()
+           (with-exception-handler
+            (lambda (e) (raise-continuable (cons 'outer e)))
+            (lambda ()
+              (with-exception-handler
+               (lambda (e) (raise-continuable (cons 'inner e)))
+               (lambda () (raise-continuable '(boom)))))))))
+  (test "with-exception-handler (raise-continuable returning)"
+        '(caught 4 caught 3 caught 2 caught 1)
+        (with-exception-handler
+         (lambda (e) (cons 'caught e))
+         (lambda ()
+           (let* ((a (raise-continuable (cons 1 '())))
+                  (a (raise-continuable (cons 2 a)))
+                  (a (raise-continuable (cons 3 a)))
+                  (a (raise-continuable (cons 4 a))))
+             a))))
   (test "error-object? (#f)" #f (error-object? 'no))
   (test "error-object? (#t)" #t (error-object? (catch (car '()))))
   (test "error-object-message" "fubar" (error-object-message (catch (error "fubar"))))
@@ -695,7 +729,13 @@
         (guard (condition
                 ((assq 'a condition) => cdr)
                 ((assq 'b condition)))
-               (raise '((b . 23))))))
+               (raise '((b . 23)))))
+  (test "guard (nested)"        ;; by Daniel Colascione
+        'caught
+        (guard (catcher (else 'caught))
+          (guard (outer (#f #f))
+            (guard (inner (#f #f))
+              (raise 'boom))))))
 
 ;; call-with-port is not supposed to close its port when leaving the
 ;; dynamic extent, only on normal return.

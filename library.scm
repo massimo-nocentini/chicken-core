@@ -6413,17 +6413,21 @@ EOF
              (string-append msg " - " strerror) args))))
 
 (define (abort x)
-  (##sys#current-exception-handler x)
-  (abort
-   (##sys#make-structure
-    'condition
-    '(exn)
-    (list '(exn . message) "exception handler returned"
-	  '(exn . arguments) '()
-	  '(exn . location) #f) ) ) )
+  (let ((h (car ##sys#current-exception-handler)))
+    (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler))
+    (h x)
+    (abort
+     (##sys#make-structure
+      'condition
+      '(exn)
+      (list '(exn . message) "exception handler returned"
+  	    '(exn . arguments) '()
+	    '(exn . location) #f) ) ) ) )
 
 (define (signal x)
-  (##sys#current-exception-handler x) )
+  (let ((h (car ##sys#current-exception-handler)))
+    (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler))
+    (h x) ) )
 
 (define ##sys#error-handler
   (make-parameter
@@ -6463,7 +6467,7 @@ EOF
 (define ##sys#current-exception-handler
   ;; Exception-handler for the primordial thread:
   (let ((string-append string-append))
-    (lambda (c)
+    (define (h c)
       (when (##sys#structure? c 'condition)
 	(set! ##sys#last-exception c)
 	(let ((kinds (##sys#slot c 1)))
@@ -6502,23 +6506,27 @@ EOF
        (##sys#make-structure
 	'condition
 	'(uncaught-exception)
-	(list '(uncaught-exception . reason) c)) ) ) ) )
+	(list '(uncaught-exception . reason) c)) ))
+     (let ((eh (list h)))
+       (##sys#setslot eh 1 eh)
+       eh)))
 
 (define (with-exception-handler handler thunk)
-  (let ([oldh ##sys#current-exception-handler])
+  (let ((old ##sys#current-exception-handler))
     (##sys#dynamic-wind
-      (lambda () (set! ##sys#current-exception-handler handler))
+      (lambda () 
+        (set! ##sys#current-exception-handler (cons handler old)))
       thunk
-      (lambda () (set! ##sys#current-exception-handler oldh)) ) ) )
+      (lambda () 
+        (set! ##sys#current-exception-handler old)) ) ) )
 
-;; TODO: Make this a proper parameter
 (define (current-exception-handler . args)
   (if (null? args)
-      ##sys#current-exception-handler
+      (car ##sys#current-exception-handler)
       (let ((proc (car args)))
 	(##sys#check-closure proc 'current-exception-handler)
 	(let-optionals (cdr args) ((convert? #t) (set? #t))
-	  (when set? (set! ##sys#current-exception-handler proc)))
+	  (when set? (set-car! ##sys#current-exception-handler proc)))
 	proc)))
 
 ;;; Condition object manipulation
@@ -6773,49 +6781,14 @@ EOF
 
 ;;; R7RS exceptions
 
-(define ##sys#r7rs-exn-handlers
-  (make-parameter
-    (let ((lst (list ##sys#current-exception-handler)))
-      (set-cdr! lst lst)
-      lst)))
-
-(define scheme#with-exception-handler
-  (let ((eh ##sys#r7rs-exn-handlers))
-    (lambda (handler thunk)
-      (dynamic-wind
-       (lambda ()
-         ;; We might be interoperating with srfi-12 handlers set by intermediate
-         ;; non-R7RS code, so check if a new handler was set in the meanwhile.
-         (unless (eq? (car (eh)) ##sys#current-exception-handler)
-           (eh (cons ##sys#current-exception-handler (eh))))
-         (eh (cons handler (eh)))
-         (set! ##sys#current-exception-handler handler))
-       thunk
-       (lambda ()
-         (eh (cdr (eh)))
-         (set! ##sys#current-exception-handler (car (eh))))))))
-
-(define scheme#raise
-  (let ((eh ##sys#r7rs-exn-handlers))
-    (lambda (obj)
-      (scheme#with-exception-handler
-        (cadr (eh))
-        (lambda ()
-          ((cadr (eh)) obj)
-          ((car (eh))
-           (make-property-condition
-            'exn
-            'message "exception handler returned"
-            'arguments '()
-            'location #f)))))))
-
-(define scheme#raise-continuable
-  (let ((eh ##sys#r7rs-exn-handlers))
-     (lambda (obj)
-       (scheme#with-exception-handler
-        (cadr (eh))
-        (lambda ()
-          ((cadr (eh)) obj))))))
+(define (scheme#raise-continuable obj)
+  (let ((h (car ##sys#current-exception-handler)))
+    (dynamic-wind
+      (lambda () 
+        (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
+      (lambda () (h obj))
+      (lambda ()
+        (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
 
 (define scheme#error-object? condition?)
 (define scheme#error-object-message (condition-property-accessor 'exn 'message))
@@ -7011,7 +6984,7 @@ EOF
     ##sys#standard-input
     ##sys#standard-output
     ##sys#standard-error
-    ##sys#default-exception-handler
+    (list ##sys#default-exception-handler)
     (##sys#vector-resize ##sys#current-parameter-vector
 			 (##sys#size ##sys#current-parameter-vector) #f) )
    name					; #6 name

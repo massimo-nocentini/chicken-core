@@ -1250,7 +1250,7 @@
                                (guard-aux reraise (car more) (cdr more)))))))
           `((scheme#call-with-current-continuation
               (,%lambda (,%guard-k)
-                (scheme#with-exception-handler
+                (chicken.condition#with-exception-handler
                   (,%lambda (,%condition)
                     ((scheme#call-with-current-continuation
                        (,%lambda (,%handler-k)

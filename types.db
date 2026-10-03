@@ -848,8 +848,6 @@
 (scheme#interaction-environment
  (#(procedure #:clean) scheme#interaction-environment () (struct environment)))
 
-(scheme#with-exception-handler (#(procedure #:clean #:enforce) scheme#with-exception-handler ((procedure (*) . *) (procedure () . *)) . *))
-(scheme#raise (#(procedure #:clean #:enforce) scheme#raise (*) noreturn))
 (scheme#raise-continuable (#(procedure #:clean #:enforce) scheme#raise-continuable (*) . *))
 (scheme#error-object-irritants
   (#(procedure #:clean #:enforce)
@@ -1196,11 +1194,7 @@
 (chicken.condition#condition-property-accessor (#(procedure #:clean #:enforce) chicken.condition#condition-property-accessor (* * #!optional *) (procedure ((struct condition)) *)))
 
 (chicken.condition#current-exception-handler
- (#(procedure #:clean #:enforce) chicken.condition#current-exception-handler (#!optional (procedure (*) noreturn) boolean boolean) procedure)
- ((procedure) (let ((#(tmp1) #(1)))
-		(let ((#(tmp2) (set! ##sys#current-exception-handler #(tmp1))))
-		  #(tmp1))))
- (() ##sys#current-exception-handler))
+ (#(procedure #:clean #:enforce) chicken.condition#current-exception-handler (#!optional (procedure (*) noreturn) boolean boolean) procedure))
 (chicken.condition#get-condition-property (#(procedure #:clean #:enforce) chicken.condition#get-condition-property ((struct condition) * * #!optional *) *))
 (chicken.condition#make-composite-condition (#(procedure #:clean #:enforce) chicken.condition#make-composite-condition (#!rest (struct condition)) (struct condition)))
 (chicken.condition#make-property-condition (#(procedure #:clean #:enforce) chicken.condition#make-property-condition (* #!rest *) (struct condition)))
