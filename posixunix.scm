@@ -822,7 +822,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (eq? e _eagain)))
 
 (define ##sys#custom-input-port
-  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close void) (more? #f) enc)
+  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close ##sys#void) (more? #f) enc)
     (when nonblocking? (##sys#file-nonblocking! fd) )
     (let ((bufsiz (if (fixnum? bufi) bufi (##sys#size bufi)))
 	  (buf (if (fixnum? bufi) (##sys#make-bytevector bufi) bufi))
@@ -968,7 +968,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	  this-port ) ) ) ) )
 
 (define ##sys#custom-output-port
-  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 0) (on-close void)
+  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 0) (on-close ##sys#void)
                enc)
     (when nonblocking? (##sys#file-nonblocking! fd) )
     (letrec ((this-port #f)
@@ -1257,7 +1257,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                (vector-set! clsvec idx #t)
                (when (and (vector-ref clsvec idxa) (vector-ref clsvec idxb))
                  (chicken.process#process-wait proc #f) )
-               (void)) ))
+               (##core#undefined)) ))
           (needed-pipe
            (lambda (loc port)
              (and port

@@ -1038,7 +1038,7 @@ EOF
 	    (else #f) ) ) ) )
 
 (define (each . procs)
-  (cond ((null? procs) (lambda _ (void)))
+  (cond ((null? procs) (lambda _ (##core#undefined)))
 	((null? (##sys#slot procs 1)) (##sys#slot procs 0))
 	(else
 	 (lambda args
@@ -4545,7 +4545,7 @@ EOF
       (when (##core#inline "C_port_openp" port direction)
 	(##sys#setislot port 8 (fxand (##sys#slot port 8) (fxnot direction)))
 	((##sys#slot (##sys#slot port 2) 4) port direction)
-        (##sys#void))))
+        (##core#undefined))))
 
   (set! scheme#open-input-file (lambda (name . mode) (open name #t mode 'open-input-file)))
   (set! scheme#open-output-file (lambda (name . mode) (open name #f mode 'open-output-file)))
@@ -5668,7 +5668,7 @@ EOF
 
 (define (##sys#write-char-0 c p)
   ((##sys#slot (##sys#slot p 2) 2) p c)
-  (##sys#void))
+  (##core#undefined))
 
 (define (##sys#write-char/port c port)
   (##sys#check-output-port port #t 'write-char)
@@ -5702,15 +5702,13 @@ EOF
   (lambda args
     (##sys#check-output-port ##sys#standard-output #t 'print)
     (*print-each args)
-    (##sys#write-char-0 #\newline ##sys#standard-output)
-    (void)))
+    (##sys#write-char-0 #\newline ##sys#standard-output)))
 
 (set! chicken.base#print*
   (lambda args
     (##sys#check-output-port ##sys#standard-output #t 'print)
     (*print-each args)
-    (##sys#flush-output ##sys#standard-output)
-    (void)))
+    (##sys#flush-output ##sys#standard-output)))
 
 (define ##sys#current-print-length (make-parameter 0))
 (define ##sys#print-length-limit (make-parameter #f))
@@ -5737,7 +5735,7 @@ EOF
 		    (let ((n (fx- length-limit cpp0)))
 		      (when (fx> n 0) (outstr0 port (##sys#substring str 0 n)))
 		      (outstr0 port "...")
-		      ((##sys#print-exit) (##sys#void)))
+		      ((##sys#print-exit) (##core#undefined)))
 		    (outstr0 port str) )
 		(##sys#current-print-length cpl) )
 	      (outstr0 port str) ) )
@@ -5752,7 +5750,7 @@ EOF
 	      (##sys#current-print-length (fx+ cpp0 1))
 	      (when (fx> cpp0 length-limit)
 		(outstr0 port "...")
-		((##sys#print-exit) (##sys#void)))))
+		((##sys#print-exit) (##core#undefined)))))
 	  ((##sys#slot (##sys#slot port 2) 2) port chr))  ; write-char
 
 	(define (specialchar? chr)
@@ -5932,7 +5930,7 @@ EOF
 			    (outchr port #\space)
 			    (out (##sys#slot x i)) ) ) ) ) )
 		(else (##sys#error "unprintable block object encountered")))))
-      (##sys#void))))
+      (##core#undefined))))
 
 (define ##sys#procedure->string
   (let ((string-append string-append))
@@ -8218,7 +8216,7 @@ static C_word C_curdir(C_word buf, C_word size) {
   (when (##core#inline "C_port_openp" port 2)
     ((##sys#slot (##sys#slot port 2) 4) port 2))
   (##sys#setislot port 8 0)
-  (##sys#void)))
+  (##core#undefined)))
 
 (set! scheme#call-with-port
  (lambda (port proc)

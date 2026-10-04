@@ -56,7 +56,7 @@
           (##sys#current-print-length (fx+ pl 1))
           (when (fx> pl n)
             (emit "..." p)
-            ((##sys#print-exit) (##sys#void)))))
+            ((##sys#print-exit) (##core#undefined)))))
       ((##sys#slot (##sys#slot p 2) 2) p c)))   ; write-char
 
   (define (display-string s p)
@@ -69,7 +69,7 @@
                 (let ((m (fx- n pl2)))
                   (when (fx> m 0) (emit (##sys#substring s 0 m) p))
                   (emit "..." p)
-                  ((##sys#print-exit) (##sys#void)))
+                  ((##sys#print-exit) (##core#undefined)))
                 (emit s p))
             (##sys#current-print-length pl2))
           (emit s p))))
