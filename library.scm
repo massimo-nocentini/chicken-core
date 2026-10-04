@@ -4544,7 +4544,8 @@ EOF
     (let ((direction (if inp 1 2)))
       (when (##core#inline "C_port_openp" port direction)
 	(##sys#setislot port 8 (fxand (##sys#slot port 8) (fxnot direction)))
-	((##sys#slot (##sys#slot port 2) 4) port direction))))
+	((##sys#slot (##sys#slot port 2) 4) port direction)
+        (##sys#void))))
 
   (set! scheme#open-input-file (lambda (name . mode) (open name #t mode 'open-input-file)))
   (set! scheme#open-output-file (lambda (name . mode) (open name #f mode 'open-output-file)))
@@ -8216,7 +8217,8 @@ static C_word C_curdir(C_word buf, C_word size) {
     ((##sys#slot (##sys#slot port 2) 4) port 1))
   (when (##core#inline "C_port_openp" port 2)
     ((##sys#slot (##sys#slot port 2) 4) port 2))
-  (##sys#setislot port 8 0)))
+  (##sys#setislot port 8 0)
+  (##sys#void)))
 
 (set! scheme#call-with-port
  (lambda (port proc)
