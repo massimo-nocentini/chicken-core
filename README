@@ -470,7 +470,10 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       last), so an export to ".json" keeps all the outputs only
       while they fit, and else caps them per cell (a toast says
       so); either export says when Import cannot read the file
-      back.  In the notebook, Esc and then "?" lists the
+      back.  It can also be exported as ".html": a static page of
+      the notebook as it is shown, outputs included, with no
+      scripts and nothing loaded from elsewhere (Import does not
+      read it).  In the notebook, Esc and then "?" lists the
       keyboard shortcuts.  The kernel is csi running
       "-e (##webnb#kernel)" (emscripten/webnb.scm): the page posts
       requests to a mailbox in C and reads events as JSON lines on

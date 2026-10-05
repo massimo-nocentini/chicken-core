@@ -51,6 +51,7 @@
 import { createRequire } from 'node:module';
 import http from 'node:http';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
@@ -1706,6 +1707,187 @@ async function runBrowser(name) {
     assert(r.far === 0, 'a text cell out of sight is not colored yet: ' + r.far);
     await page.locator('#nb-cells > li').nth(302).scrollIntoViewIfNeeded();
     await page.waitForFunction(() => document.querySelector('#nb-cells > li:nth-child(303) .nb-md .syn-special'), null, { timeout: 5000 });
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'small.scm', mimeType: 'text/plain', buffer: Buffer.from('(+ 1 2)') }));
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1, null, { timeout: 20000 });
+  });
+
+  // Export .html: a static page of what the notebook shows, which loads
+  // nothing and runs nothing
+  await check(P + 'notebook: Export .html is a static page of the notebook', async () => {
+    const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+    const cells = [
+      { type: 'markdown', source: '# Export </title><script>x</script> test\n\n- one\n- two\n\n[to the end](#the-end)\n\n```scheme\n(define x "s") ; c\n```' },
+      { type: 'code', source: '(display "out")', count: 1, outputs: [{ k: 'stream', name: 'stdout', text: 'out\n' },
+                                                                       { k: 'stream', name: 'stderr', text: 'err\n' }] },
+      { type: 'code', source: '(iota 40)', count: 2,
+        outputs: [{ k: 'value', text: Array.from({ length: 40 }, (_, k) => 'line ' + k).join('\n') }] },
+      { type: 'code', source: '(car \'())', count: 3, status: 'error', outputs: [{ k: 'error', error: { text: 'Error: (car) bad argument type: ()',
+        chain: [{ where: '<syntax>', form: '(car (quote ()))' }, { where: 'In[3]:1', form: '(car (quote ()))' }] } }] },
+      { type: 'code', source: '(show-all)', count: 4, outputs: [
+        { k: 'display', mime: 'image/svg+xml', data: '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20"><rect width="40" height="20" style="fill: var(--accent)"/></svg>' },
+        { k: 'display', mime: 'text/html', data: '<p class="x" onclick="alert(1)">rich <b>html</b> <a href="https://call-cc.org/">link</a> ' +
+                                                 '<img src="https://example.com/x.png" alt="ext"><img src="data:image/png;base64,' + png + '" alt="dot"></p>' },
+        { k: 'display', mime: 'text/markdown', data: '### Shown\n\n- a\n- b' },
+        { k: 'note', text: '… 10 characters omitted …' }] },
+      { type: 'code', source: '(print "hidden")', count: 5, outputs: [{ k: 'stream', name: 'stdout', text: 'hidden text\n' }] },
+      // text the parser would change: a newline right after <pre>, a CR
+      { type: 'code', source: '(newline)', count: 6, outputs: [{ k: 'stream', name: 'stdout', text: '\nafter newline\n10%\r20%\r30%\n' },
+                                                                 { k: 'display', mime: 'text/plain', data: '\nplain' }] },
+      // markup that must not get out of its cell: an <li> with no list, an
+      // HTML element in SVG (XML only), and (below) a tree that the parser
+      // would build otherwise
+      { type: 'code', source: '(html)', count: 7, outputs: [
+        { k: 'display', mime: 'text/html', data: '<li>item</li>' },
+        { k: 'display', mime: 'text/html', data: '<div><li style="position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99">ESCAPED</li></div>' },
+        { k: 'display', mime: 'image/svg+xml', data: '<svg xmlns="http://www.w3.org/2000/svg" xmlns:h="http://www.w3.org/1999/xhtml" width="10" height="10">' +
+                                                     '<rect width="10" height="10"/><h:li>svg li</h:li></svg>' },
+        { k: 'display', mime: 'text/html', data: '<p>replaced</p>' }] },
+    ].concat(Array.from({ length: 200 }, (_, k) => ({ type: 'code', source: '(+ ' + k + ' 1)' })),
+             [{ type: 'code', source: '(define (far-away) (if #t "far" 0))' },
+              { type: 'code', source: '(list ' + '"0123456789" '.repeat(3000) + ')' },
+              { type: 'markdown', source: '## The end\n\n```\n(lambda () \'q)\n```' }]);
+    const buf = Buffer.from(JSON.stringify({ format: 'chicken-notebook', version: 1, meta: { title: 'html export' }, cells }));
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'ex.json', mimeType: 'application/json', buffer: buf }));
+    await page.waitForFunction(n => document.querySelectorAll('#nb-cells > li').length === n, cells.length, { timeout: 20000 });
+    await nbCell(5).focus();
+    await page.keyboard.press('o');                       // its output hidden
+    await nbSrc(1).fill('(display "out!")');              // edited since it ran
+    await nbCell(0).locator('.nb-md').dblclick();         // the text cell in edit mode
+    const inApp = await page.evaluate(() => {
+      const li = document.querySelectorAll('#nb-cells > li')[7], rich = li.querySelectorAll('.nb-rich');
+      // ul > li > div > li: read back, the inner <li> closes the outer one
+      const ul = rich[3].appendChild(document.createElement('ul')), o = ul.appendChild(document.createElement('li'));
+      o.appendChild(document.createElement('div')).appendChild(document.createElement('li')).textContent = 'inner';
+      const st = li.previousElementSibling.querySelector('.nb-stream');
+      return [st.textContent, li.previousElementSibling.querySelector('.nb-rich pre').textContent, rich[2].textContent, st.getBoundingClientRect().height];
+    });
+    assert(inApp[0] === '\nafter newline\n10%\r20%\r30%\n' && inApp[1] === '\nplain' && inApp[2] === '', 'in the page ' + JSON.stringify(inApp));
+    const far = cells.length - 3;
+    assert(!await nbCell(far).locator('.nb-editor.syn').count(), 'the far cell is not painted in the page');
+    const [dl] = await Promise.all([page.waitForEvent('download'), menu('Export .html')]);
+    assert(/^html-export\.html$/.test(dl.suggestedFilename()), 'file name ' + dl.suggestedFilename());
+    // saved as .html: file:// goes by the extension
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nb-export-')), dl.suggestedFilename());
+    await dl.saveAs(file);
+    const text = fs.readFileSync(file, 'utf8');
+    assert(/^<!doctype html>\n<html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;/.test(text),
+           'head: ' + text.slice(0, 300));
+    assert(!/<script|<link|<iframe|<object|@import|url\((?!#)/i.test(text), 'no script, link or external CSS');
+    await page.waitForFunction(() => document.getElementById('nb-live').textContent === 'Exported html-export.html', null, { timeout: 5000 });
+
+    // loaded from file://, as a page of its own
+    const f = await context.newPage();
+    const fErrors = [], requests = [];
+    f.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') fErrors.push(m.type() + ': ' + m.text()); });
+    f.on('pageerror', e => fErrors.push('pageerror: ' + e.message));
+    f.on('request', r => { if (!/^(file|data):/.test(r.url())) requests.push(r.url()); });
+    await f.goto('file://' + file);
+    const r = await f.evaluate(() => {
+      const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+      const li = $$('.nb-cells > .nb-cell'), col = e => e && getComputedStyle(e).color, box = e => e.getBoundingClientRect();
+      const attrs = $$('*').flatMap(e => [...e.attributes].map(a => [e.localName, a.name, a.value]));
+      const probe = document.body.appendChild(document.createElement('span'));
+      probe.style.color = 'var(--accent)';
+      const accent = getComputedStyle(probe).color;
+      probe.style.color = 'var(--bad)';
+      const bad = getComputedStyle(probe).color;
+      probe.remove();
+      const count = document.createRange();
+      count.selectNodeContents(li[1].querySelector('.nb-count'));
+      const svg = $('.nb-rich svg rect');
+      return {
+        title: document.title, head: $('.nbx-title').textContent, foot: $('.nbx-foot').textContent,
+        csp: !!$('meta[http-equiv="Content-Security-Policy"]'),
+        handlers: attrs.filter(([, n]) => /^on/i.test(n)).length,
+        urls: attrs.filter(([t, n, v]) => (n === 'src' && !v.startsWith('data:image/')) || (n === 'href' && !(t === 'a' && /^(#|https?:|mailto:)/.test(v))) ||
+                                          (n === 'style' && /url\((?!#)/.test(v))).map(a => a.join(' ')),
+        chrome: $$('button, textarea, input, form, .nb-bal, .nb-tools, .nb-run, .nb-stdin').length,
+        md: [$('.nb-md h1') && $('.nb-md h1').textContent, $$('.nb-md ul > li').length],
+        fence: $$('.nb-md pre code .syn-special').map(e => e.textContent), lastFence: !!li.at(-1).querySelector('pre code .syn-special'),
+        anchor: (() => { const a = $('.nb-md a[href^="#"]'); return a && document.getElementById(a.getAttribute('href').slice(1))?.textContent; })(),
+        counts: li.filter(e => e.dataset.type === 'code').slice(0, 6).map(e => e.querySelector('.nb-count').textContent),
+        edited: li[1].dataset.edited === 'true' && getComputedStyle(li[1].querySelector('.nb-count')).fontStyle === 'italic',
+        stale: li[2].dataset.stale === 'true', src1: li[1].querySelector('.nb-code').textContent,
+        streams: [...li[1].querySelectorAll('.nb-stream')].map(e => e.className + ':' + e.textContent),
+        value: (() => { const v = li[2].querySelector('.nb-value'); return v && [v.classList.contains('clamped'), v.textContent.split('\n').length, v.scrollHeight <= v.clientHeight + 1]; })(),
+        error: [$('.nb-error-msg .tag')?.textContent, $('.nb-error-msg')?.textContent, $$('.nb-trace .where').map(e => e.localName + ':' + e.textContent)],
+        svg: svg && [getComputedStyle(svg).fill, svg.getBoundingClientRect().width], accent,
+        html: [$$('.nb-rich[data-mime="text/html"] b').length, $$('.nb-rich img').map(i => i.getAttribute('src') ? i.alt + ':' + i.naturalWidth : i.alt + ':none')],
+        rmd: $$('.nb-rich[data-mime="text/markdown"] li').length, note: $$('.nb-note').map(e => e.textContent),
+        hidden: (() => { const d = li[5].querySelector('details.nbx-hidden'); return d && [d.open, d.querySelector('summary').textContent, d.querySelector('.nb-out').textContent]; })(),
+        far: [li.at(-3).querySelector('.nb-code').textContent, [...li.at(-3).querySelectorAll('.syn-special')].map(e => e.textContent)],
+        big: [li.at(-2).querySelector('.nb-code').textContent.length, li.at(-2).querySelectorAll('.nb-code span').length],
+        syn: col($('.nb-code .syn-special')), plain: col($('.nb-code')), string: col($('.nb-code .syn-string')),
+        wide: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        cells: [li.length, document.body.children.length, !!$('.nbx > footer.nbx-foot'), $$('.nb-cells > :not(.nb-cell)').length],
+        // [n] next to the code, as in the page; the red bar of an error
+        right: box(li[1].querySelector('.nb-gutter')).right - count.getBoundingClientRect().right,
+        bars: [getComputedStyle(li[3], '::before').backgroundColor, getComputedStyle(li[1], '::before').backgroundColor], bad,
+        pre: [li[6].querySelector('.nb-stream').textContent, li[6].querySelector('.nb-rich pre').textContent,
+              box(li[6].querySelector('.nb-stream')).height],
+        markup: [...li[7].querySelectorAll('.nb-out > *')].map(e => e.className + ':' + e.textContent),
+        held: $$('li').filter(e => !/^[uo]l$/.test(e.parentNode.localName) && !e.closest('.nb-rich')).length, fixed: (() => { const e = $$('li').find(e => e.textContent === 'ESCAPED');
+                                                                                        return e && !!e.closest('.nb-rich') && getComputedStyle(e).position; })(),
+      };
+    });
+    const j = JSON.stringify(r), T = 'Export </title><script>x</script> test';     // escaped
+    assert(r.title === T && r.head === T && r.csp, 'title and CSP ' + j);
+    assert(/^Exported from the CHICKEN Scheme notebook on \S/.test(r.foot), 'footer ' + r.foot);
+    assert(!r.handlers && !r.urls.length && !r.chrome, 'static, nothing external: ' + j);
+    assert(r.md[0] === T && r.md[1] === 2 && r.fence.join() === 'define,lambda' && r.lastFence && r.anchor === 'The end',
+           'markdown (also in edit mode), fences colored, anchors ' + j);
+    assert(r.counts.join() === '[1],[2],[3],[4],[5],[6]' && r.edited && r.stale && r.src1 === '(display "out!")', 'gutter ' + j);
+    assert(r.streams.join('|') === 'nb-stream stdout:out\n|nb-stream stderr:err\n', 'streams ' + r.streams);
+    assert(r.value && !r.value[0] && r.value[1] === 40 && r.value[2], 'the long value in full ' + JSON.stringify(r.value));
+    assert(r.error[0] === 'Error' && /bad argument type/.test(r.error[1]) && r.error[2].join() === 'span:In[3]:1', 'error ' + JSON.stringify(r.error));
+    assert(r.svg && r.svg[0] === r.accent && r.svg[1] === 40, 'svg ' + JSON.stringify(r.svg) + ' ' + r.accent);
+    assert(r.html.join() === '1,dot:1', 'html (the external image dropped) ' + JSON.stringify(r.html));
+    assert(r.rmd === 2 && r.note.includes('… 10 characters omitted …'), 'markdown output and note ' + j);
+    assert(r.hidden && !r.hidden[0] && r.hidden[1] === 'Output hidden' && r.hidden[2] === 'hidden text\n', 'hidden ' + JSON.stringify(r.hidden));
+    assert(r.far[0] === '(define (far-away) (if #t "far" 0))' && r.far[1].join() === 'define,if', 'far cell colored ' + JSON.stringify(r.far));
+    assert(r.big[0] > 32 * 1024 && r.big[1] === 0, 'a big cell stays plain ' + r.big);
+    assert(r.syn !== r.plain && r.string !== r.plain && r.syn !== r.string, 'colors ' + [r.syn, r.string, r.plain]);
+    assert(r.wide, 'no horizontal scroll');
+    assert(r.cells[0] === cells.length && r.cells[1] === 1 && r.cells[2] && !r.cells[3], 'every cell in its place ' + JSON.stringify(r.cells));
+    assert(r.right >= 0 && r.right <= 4, 'the count is right-aligned: ' + r.right);
+    assert(r.bars[0] === r.bad && r.bars[1] !== r.bad, 'status bar ' + JSON.stringify([r.bars, r.bad]));
+    assert(r.pre[0] === '\nafter newline\n10% 20% 30%\n' && r.pre[1] === '\nplain' && Math.abs(r.pre[2] - inApp[3]) < 1,
+           'a leading newline and a CR as in the page ' + JSON.stringify([r.pre, inApp]));
+    assert(r.markup.join('|') === 'nb-rich:item|nb-rich:ESCAPED|nb-rich:|nb-note bad:output left out: its markup does not read back the same in a static page' &&
+           !r.held && r.fixed === 'fixed', 'markup kept in its cell ' + JSON.stringify(r.markup) + ' ' + r.held + ' ' + r.fixed);
+    // the dark scheme, print (light whatever the scheme) and a phone
+    const look = () => f.evaluate(() => [getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector('.nb-code .syn-special')).color,
+                                         document.documentElement.scrollWidth <= document.documentElement.clientWidth]);
+    const light = await look();
+    await f.emulateMedia({ colorScheme: 'dark' });
+    const dark = await look();
+    await f.emulateMedia({ media: 'print', colorScheme: 'dark' });
+    const print = await look();
+    await f.emulateMedia({ media: 'screen', colorScheme: 'light' });
+    await f.setViewportSize({ width: 390, height: 800 });
+    const phone = await look();
+    assert(dark[0] !== light[0] && dark[1] !== light[1], 'dark ' + JSON.stringify([light, dark]));
+    assert(print[1] === light[1] && print[0] !== dark[0], 'print is light ' + JSON.stringify([print, dark]));
+    assert(phone[2], 'no horizontal scroll at 390 px');
+    assert(!fErrors.length && !requests.length, 'the export page: ' + fErrors.concat(requests).join('\n'));
+    await f.close();
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'small.scm', mimeType: 'text/plain', buffer: Buffer.from('(+ 1 2)') }));
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1, null, { timeout: 20000 });
+  });
+
+  // a big notebook is colored up to 1 MB of sources in all, the rest
+  // plain, so that the export does not freeze the page for seconds
+  await check(P + 'notebook: Export .html colors at most 1 MB of sources', async () => {
+    const unit = '(define (g x) (if (> x 1) "s" #\\a)) ; c\n', src = unit.repeat(Math.floor(31000 / unit.length));
+    const cells = Array.from({ length: 40 }, () => ({ type: 'code', source: src }));
+    const buf = Buffer.from(JSON.stringify({ format: 'chicken-notebook', version: 1, meta: { title: 'big export' }, cells }));
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'big.json', mimeType: 'application/json', buffer: buf }));
+    await page.waitForFunction(n => document.querySelectorAll('#nb-cells > li').length === n, cells.length, { timeout: 20000 });
+    const [dl] = await Promise.all([page.waitForEvent('download'), menu('Export .html')]);
+    const text = fs.readFileSync(await dl.path(), 'utf8');
+    const code = text.split('<pre class="nb-code"><code>').slice(1).map(t => t.startsWith('<span') ? 'c' : 'p').join('');
+    assert(code === 'c'.repeat(Math.floor(1024 * 1024 / src.length)) + 'p'.repeat(40 - Math.floor(1024 * 1024 / src.length)), 'colored ' + code);
     await accepting(() => page.setInputFiles('#nb-file', { name: 'small.scm', mimeType: 'text/plain', buffer: Buffer.from('(+ 1 2)') }));
     await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1, null, { timeout: 20000 });
   });

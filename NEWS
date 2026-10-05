@@ -263,7 +263,8 @@
     browser and can be exported and imported as .scm (cells start
     at `;; %%' comment lines) or .json (with the outputs, as far as
     the 5 MB, 5000 cells and 1000 outputs per cell that Import reads
-    allow).  The kernel is the compiled unit
+    allow), and exported as a static .html page of what the notebook
+    shows (no scripts).  The kernel is the compiled unit
     emscripten/webnb.scm, entered with `csi -e (##webnb#kernel)'.
   - On wasm64, setjmp/longjmp use the standard WebAssembly exception
     handling (exnref, `try_table') by default, since Firefox reports

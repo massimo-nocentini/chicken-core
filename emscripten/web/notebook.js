@@ -40,7 +40,8 @@
  * - Rich outputs (HTML, SVG, Markdown) are rebuilt from an allowlist by
  *   notebook-lib.js; no untrusted string ever reaches innerHTML.
  * - The notebook is saved to localStorage (debounced), outputs capped at
- *   64 KB per cell; it can be exported as .scm (percent format) or .json. */
+ *   64 KB per cell; it can be exported as .scm (percent format), .json
+ *   (with outputs) or .html (a static page of what the notebook shows). */
 
 (function () {
   'use strict';
@@ -1388,6 +1389,7 @@
     case 'import': $('nb-file').click(); break;
     case 'export-scm': exportScm(); break;
     case 'export-json': exportJson(); break;
+    case 'export-html': exportHtml(); break;
     case 'upload': $('nb-upload').click(); break;
     case 'settings': P.openSettings(); break;
     case 'keys': openShortcuts(); break;
@@ -1649,6 +1651,203 @@
       toast('Some outputs were left out: Import reads at most ' + L.LIMITS.outputs + ' per cell.', null, null, 6000);
   }
 
+  // Export .html: the notebook as the page shows it, as a static page of
+  // its own (no script, nothing loaded from elsewhere).  Its DOM is made
+  // of trees the page already trusts: markdown rendered again (all code
+  // blocks colored), the sources highlighted (up to SYN_MAX characters
+  // each, as in the editor, and HTML_SYN_MAX in all) and copies of the
+  // output areas without their buttons; it is serialized, never assembled
+  // from strings, and read back before it is saved (see settle).  Its
+  // style is the page's own rules for these parts, taken from the text of
+  // index.html's <style id="page-style"> (the code as the editor shows it:
+  // CSS_CODE), and a few for the layout of a static page.
+  const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
+  const HTML_SYN_MAX = 1024 * 1024;
+  // the page's rules kept: tokens, the cells, their counts and status
+  // bars, markdown, outputs and colors; not those of the editor, the
+  // controls or the selection
+  const CSS_KEEP = /^(?::root(?::not\(\[data-theme=.light.\]\))?|code|kbd|details > summary)$|\.(?:nb-(?:cell|gutter|body|md|out|rich|stream|value|note|error|trace|count)|md-|syn-)/;
+  const CSS_DROP = /nb-(?:editor|src|hl|bal|run|tools|stdin|more|hidden-out)|is-selected|is-editing|:hover|button|\.empty/;
+  // the exported code (.nb-code) has the frame of the editor and the text
+  // of its textarea: these properties of their rules
+  const CSS_CODE = { '.nb-editor': /^(?:border|border-[\w-]+|background)$/,
+                     '.nb-src': /^(?:margin|padding|font|font-[\w-]+|color|white-space|overflow-wrap|tab-size|letter-spacing)$/ };
+  const EXPORT_CSS = `
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); -webkit-text-size-adjust: 100%; }
+.nbx { max-width: 1120px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+.nbx-head { margin: 0 0 10px 60px; padding: 14px 0 8px; border-bottom: 1px solid var(--border); }
+.nbx-title { margin: 0; color: var(--muted); font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.nb-gutter { padding-top: 11px; }
+.nb-code code { font: inherit; white-space: inherit; }
+.nb-out { content-visibility: visible; }
+.nbx-hidden > summary { margin: 4px 0 0 12px; color: var(--muted); font: 12.5px/1.6 var(--sans); }
+.nbx-foot { margin: 20px 0 0 60px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; }
+@media (max-width: 640px) {
+  .nbx-head, .nbx-foot { margin-left: 0; }
+  .nb-gutter { padding: 0 0 2px; }
+}
+@media print {
+  body { background: none; }
+  .nbx { max-width: none; padding: 0; }
+  .nb-md pre, .nb-rich pre, .nb-value { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .nb-md pre code, .nb-rich pre code { white-space: pre-wrap; }
+}`;
+  // [prelude, body] of each top-level block of CSS text (the source, not
+  // the CSSOM: Chrome serializes a shorthand with var() and a longhand
+  // after it as empty longhands)
+  function cssBlocks(t) {
+    const out = [];
+    let q = null, depth = 0, start = 0, open = 0;
+    for (let j = 0; j < t.length; j++) {
+      const c = t[j];
+      if (q) { if (c === '\\') j++; else if (c === q) q = null; }
+      else if (c === '"' || c === '\'') q = c;
+      else if (c === '{') { if (!depth++) open = j; }
+      else if (c === '}') { if (depth && !--depth) { out.push([t.slice(start, open).trim(), t.slice(open + 1, j)]); start = j + 1; } }
+      else if (c === ';' && !depth) start = j + 1;
+    }
+    return out;
+  }
+  // the selectors of a list (not split at the commas of :is(a, b) or [x="a,b"])
+  function selectors(t) {
+    const out = [];
+    let depth = 0, start = 0;
+    for (let j = 0; j < t.length; j++) {
+      const c = t[j];
+      if (c === '(' || c === '[') depth++;
+      else if ((c === ')' || c === ']') && depth) depth--;
+      else if (c === ',' && !depth) { out.push(t.slice(start, j)); start = j + 1; }
+    }
+    out.push(t.slice(start));
+    return out.map(s => s.trim().replace(/\s+/g, ' '));
+  }
+  function exportCss() {
+    const style = document.getElementById('page-style'), light = [];
+    const keep = text => {
+      const out = [];
+      for (const [head, body] of cssBlocks(text)) {
+        const decls = body.trim().replace(/\s+/g, ' ');
+        if (/^@(?:media|supports|container|layer)\b/.test(head)) {
+          const inner = keep(body);
+          if (inner.length) out.push(head.replace(/\s+/g, ' ') + ' {\n  ' + inner.join('\n  ') + '\n}');
+        } else if (head[0] !== '@') {
+          const all = selectors(head), sel = all.filter(s => CSS_KEEP.test(s) && !CSS_DROP.test(s));
+          if (sel.length) out.push(sel.join(', ') + ' { ' + decls + ' }');
+          for (const s of all) {
+            const code = CSS_CODE[s] && decls.split(';').map(d => d.trim()).filter(d => CSS_CODE[s].test(d.slice(0, d.indexOf(':')).trim()));
+            if (code && code.length) out.push('.nb-code { ' + code.join('; ') + '; }');
+          }
+          if (head === ':root') light.push(decls);
+        }
+      }
+      return out;
+    };
+    const out = style ? keep(style.textContent.replace(/\/\*[\s\S]*?\*\//g, '')) : [];
+    // printed light, whatever the scheme: no dark page on paper
+    if (light.length) out.push('@media print {\n  :root:not([data-theme="light"]) { ' + light.join(' ') + ' }\n}');
+    return out.join('\n') + EXPORT_CSS + '\n';
+  }
+  // a copy of what an output area shows, without its controls
+  function staticOutputs(cell, v) {
+    const out = v.out.cloneNode(true);
+    out.hidden = false;
+    for (const e of out.querySelectorAll('[hidden]')) e.remove();
+    for (const b of out.querySelectorAll('button.where')) b.replaceWith(h('span', { class: 'where', text: b.textContent }));
+    for (const b of out.querySelectorAll('button')) b.remove();
+    for (const e of out.querySelectorAll('.nb-value.clamped')) e.classList.remove('clamped');
+    if (!out.firstChild) return null;
+    return cell.collapsed ? h('details', { class: 'nbx-hidden' }, h('summary', { text: 'Output hidden' }), out) : out;
+  }
+  // the text of the page; the parser drops a newline right after <pre>,
+  // so one more goes before a newline that starts one
+  function pageText(doc) {
+    const added = [];
+    for (const p of doc.querySelectorAll('pre')) {
+      const t = p.firstChild;
+      if (t && t.nodeType === 3 && t.data[0] === '\n') { t.insertData(0, '\n'); added.push(t); }
+    }
+    const s = '<!doctype html>\n' + doc.documentElement.outerHTML + '\n';
+    for (const t of added) t.deleteData(0, 1);
+    return s;
+  }
+  // the text of DOC, made to read back as DOC.  The parser reads a CR as
+  // a newline (the page shows it as a space) and drops a NUL, so they go
+  // first.  And a tree built with the DOM may parse into another: an <li>
+  // in a <div> in an <li>, with no list between, closes the outer <li>,
+  // and its </div> then a <div> of the page.  Until the text reads back
+  // the same, the first cell that does not loses its outputs (.nb-rich)
+  // that do not read back alone, or else all it shows.
+  function settle(doc, list) {
+    doc.normalize();
+    const w = doc.createTreeWalker(doc.documentElement, NodeFilter.SHOW_TEXT);
+    for (let t; (t = w.nextNode());)
+      if (/[\r\0]/.test(t.data)) t.data = t.data.replace(/\r\n/g, '\n').replace(/\r/g, ' ').replace(/\0/g, '');
+    doc.normalize();
+    const P = new DOMParser(), read = s => P.parseFromString(s, 'text/html');
+    const same = (a, b) => a.head.isEqualNode(b.head) && b.body.childElementCount === 1 && a.body.firstElementChild.isEqualNode(b.body.firstElementChild);
+    const alone = e => {
+      const d = document.implementation.createHTMLDocument();
+      d.body.appendChild(d.importNode(e, true));
+      return same(d, read(pageText(d)));
+    };
+    const note = () => h('p', { class: 'nb-note bad', text: 'output left out: its markup does not read back the same in a static page' });
+    for (let tries = 2 * list.children.length + 2; tries-- > 0;) {
+      const text = pageText(doc), back = read(text);
+      if (same(doc, back)) return text;
+      const ours = list.children, got = (back.querySelector('.nb-cells') || back.body).children;
+      let j = 0;
+      while (j < ours.length && got[j] && ours[j].isEqualNode(got[j])) j++;
+      if (j === ours.length) break;
+      const bad = [...ours[j].querySelectorAll('.nb-rich')].filter(e => !alone(e));
+      if (bad.length) for (const e of bad) e.replaceWith(note());
+      else ours[j].querySelector('.nb-body').replaceChildren(note());
+    }
+    return pageText(doc);
+  }
+  function exportHtml() {
+    const doc = document.implementation.createHTMLDocument('');
+    const ids = new Set(), list = h('div', { class: 'nb-cells' });
+    let heading = '', syn = HTML_SYN_MAX;
+    // colored while the budget lasts (a big notebook is not frozen)
+    const colors = s => s.length <= syn && (syn -= s.length, true);
+    for (const cell of nb.cells) {
+      const v = views.get(cell.id);
+      if (!v) continue;
+      // cells are not <li>: the markup of an output cannot close one
+      const div = h('div', { class: 'nb-cell', 'data-type': cell.type });
+      if (cell.type === 'markdown') {
+        if (!cell.source.trim()) continue;
+        const md = h('div', { class: 'nb-md' }, L.renderMarkdown(cell.source, document, 'nb-h-', ids, !colors(cell.source)));
+        const hd = !heading && md.querySelector('h1, h2, h3, h4, h5, h6');
+        if (hd) heading = hd.textContent.trim();
+        div.append(h('div', { class: 'nb-body' }, md));
+      } else {
+        const out = staticOutputs(cell, v);
+        if (!cell.source.trim() && !out) continue;
+        for (const k of ['status', 'stale', 'edited']) if (v.li.dataset[k]) div.dataset[k] = v.li.dataset[k];
+        const code = h('code', null, cell.source.length <= SYN_MAX && colors(cell.source) ? L.highlightDom(cell.source, document) : cell.source);
+        div.append(h('div', { class: 'nb-gutter' }, h('span', { class: 'nb-count', text: v.count.textContent })),
+                   h('div', { class: 'nb-body' }, h('pre', { class: 'nb-code' }, code), out));
+      }
+      list.appendChild(div);
+    }
+    const title = heading || (nb.title.trim() && nb.title.trim() !== 'Untitled' ? nb.title.trim() : '') || 'CHICKEN notebook';
+    const now = new Date();
+    doc.documentElement.lang = 'en';
+    doc.head.replaceChildren(h('meta', { charset: 'utf-8' }), h('meta', { 'http-equiv': 'Content-Security-Policy', content: HTML_CSP }),
+                             h('meta', { name: 'viewport', content: 'width=device-width, initial-scale=1' }),
+                             h('meta', { name: 'color-scheme', content: 'light dark' }),
+                             h('title', { text: title }), h('style', { text: exportCss() }));
+    doc.body.appendChild(h('div', { class: 'nbx' },
+      h('header', { class: 'nbx-head' }, h('p', { class: 'nbx-title', text: title })),
+      h('main', null, list),
+      h('footer', { class: 'nbx-foot' }, 'Exported from the CHICKEN Scheme notebook on ',
+        h('time', { datetime: now.toISOString(), text: now.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) }))));
+    download(fileName('.html'), settle(doc, list), 'text/html');
+  }
+
   let saveTimer = 0, saveFailed = false, lastSaved = null;
   function scheduleSave() {
     clearTimeout(saveTimer);
@@ -1772,7 +1971,7 @@
          'as in one long REPL session.\n\n' +
          '- The notebook has its own interpreter: what you define here is not visible in the **REPL** tab, and the other way round.\n' +
          '- Press **Esc** for command mode, then **?** for every shortcut.\n' +
-         '- The notebook is saved in this browser as you type. **More → Export** keeps a copy as `.scm` or as `.json` (with outputs).'),
+         '- The notebook is saved in this browser as you type. **More → Export** keeps a copy as `.scm`, as `.json` (with outputs) or as a `.html` page to read or print.'),
       code('(import notebook (chicken io) (chicken string))'),
       code('(define (fact n)\n  (if (= n 0) 1 (* n (fact (- n 1)))))\n\n(fact 30)'),
       code('(for-each (lambda (i) (print i " squared is " (* i i)))\n          \'(1 2 3 4 5))'),
@@ -1809,6 +2008,7 @@
          '- csi\'s toplevel commands work in cells: `,d x` describes a value, `,x form` shows a macro expansion.\n' +
          '- **More → Upload files** (or dropping files here) copies them into the home directory; then `(load "file.scm")`.\n' +
          '- **More → Export .scm** gives a plain Scheme file; without the `notebook` module it also runs with `csi -s`.\n' +
+         '- **More → Export .html** gives a page of the notebook as you see it, outputs included, that opens without this site.\n' +
          '- SRFI-18 threads only make progress while some cell is running.'),
     ] };
   }

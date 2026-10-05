@@ -646,6 +646,10 @@
       if (n.nodeType !== 1) continue;
       const ns = n.namespaceURI;
       const svg = ns === SVG_NS;
+      // in SVG only SVG (there is no foreignObject): an HTML element in
+      // it, which only XML can make, shows nothing and would be parsed
+      // out of the SVG if the markup were read again (Export .html)
+      if (!svg && parent.namespaceURI === SVG_NS) continue;
       const tag = svg ? n.localName : String(n.localName).toLowerCase();
       let ok;
       if (svg) ok = SVG_OK.has(tag);

@@ -47,7 +47,7 @@
 <meta name="chicken-wasm-builds" content="@BUILDS@">
 <title>CHICKEN Scheme REPL</title>
 <link rel="icon" type="image/png" href="chicken.png?v=@BUILD@">
-<style>
+<style id="page-style">
 :root {
   --bg: #f5f3ee;
   --surface: #ffffff;
@@ -996,6 +996,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
         <button type="button" role="menuitem" tabindex="-1" data-act="import">Import…</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-scm">Export .scm</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-json">Export .json</button>
+        <button type="button" role="menuitem" tabindex="-1" data-act="export-html">Export .html</button>
         <div role="separator"></div>
         <button type="button" role="menuitem" tabindex="-1" data-act="upload">Upload files</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="settings">Settings</button>
@@ -1052,7 +1053,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <button class="btn" id="nb-end-code" type="button">+ Code</button>
           <button class="btn" id="nb-end-text" type="button">+ Text</button>
         </div>
-        <p class="hints" id="nb-keys"><kbd>Shift</kbd>+<kbd>Enter</kbd> runs a cell and moves on, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs it in place, <kbd>Esc</kbd> then <kbd>?</kbd> lists every shortcut. The notebook is saved in this browser; export it from More.</p>
+        <p class="hints" id="nb-keys"><kbd>Shift</kbd>+<kbd>Enter</kbd> runs a cell and moves on, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs it in place, <kbd>Esc</kbd> then <kbd>?</kbd> lists every shortcut. The notebook is saved in this browser; export it from More as .scm, .json or .html.</p>
       </div>
       <div class="sr-only" id="nb-live" aria-live="polite"></div>
       <div class="nb-toast" id="nb-toast" role="status" hidden>
