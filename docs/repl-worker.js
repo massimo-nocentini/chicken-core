@@ -28,11 +28,16 @@
  *
  *   page -> worker   init {args, csirc, files, sliceMs, wasmModule},
  *                    input {text, eof}, interrupt, ack {bytes},
+ *                    request {text} (to the notebook kernel),
  *                    writeFile {id, path, data}, readFile {id, path},
  *                    listDir {id, path}
  *   worker -> page   ready, output {fd, text}, state {state}, exit {code},
  *                    crash {message}, ack {id}, file {id, path, data},
  *                    dir {id, path, entries}, error {id, message}
+ *
+ * output's fd is 1 or 2, or 3 for the notebook kernel's events (one
+ * JSON object per line); state 5 (IDLE) means that the kernel waits for
+ * a request.
  *
  * Messages that arrive before "ready" are queued and replayed after it;
  * "ready" always precedes the first "state".  Output is credit based:
@@ -86,6 +91,7 @@ function handle(m) {
   switch (m.type) {
   case 'input':     drv.feed(m.text, m.eof); break;
   case 'interrupt': drv.interrupt(); break;
+  case 'request':   drv.post(m.text); break;
   case 'ack':
     unacked = Math.max(0, unacked - m.bytes);
     if (unacked < HIGH / 2) drv.resumeOutput();

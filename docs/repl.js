@@ -37,7 +37,10 @@
  *   3 s while evaluating (a long primitive that never yields), it is
  *   terminated and a fresh one started.
  * - Settings, history and the theme live in localStorage when available;
- *   everything works without it. */
+ *   everything works without it.
+ * - window.ChickenPage gives the Notebook tab (notebook.js) the settings,
+ *   the storage, the compiled .wasm and the uploads; the page sends it
+ *   "chicken:tab" and "chicken:settings" events. */
 
 (function () {
   'use strict';
@@ -53,6 +56,8 @@
   const BUILD = (document.querySelector('meta[name="chicken-build"]') || {}).content || '';
   const Q = BUILD && BUILD.indexOf('@') < 0 ? '?v=' + encodeURIComponent(BUILD) : '';
   const ARCH = (document.querySelector('meta[name="chicken-wasm-arch"]') || {}).content || '';
+  // how setjmp/longjmp were built (WASM_SJLJ): exnref, legacy or none
+  const EH = (document.querySelector('meta[name="chicken-wasm-eh"]') || {}).content || '';
   const $ = id => document.getElementById(id);
   const term = $('term'), line = $('line'), statusPill = $('status'), statusText = $('status-text');
 
@@ -102,7 +107,12 @@
     if (!text) return;
     if (cls !== 'sys') tail = (tail + text).slice(-64);
     const last = pending[pending.length - 1];
-    if (last && last.cls === cls) last.text += text; else pending.push({ cls, text });
+    if (last && last.cls === cls) {
+      last.text += text;
+      // what render() would trim at once (pieces of a large write come
+      // in many messages a frame)
+      if (last.text.length > TERM_CHARS) last.text = last.text.slice(-TERM_CHARS);
+    } else pending.push({ cls, text });
     if (fromWorker) ackChars += text.length;
     if (!rendering) rendering = requestAnimationFrame(render);
   }
@@ -209,7 +219,7 @@
   // ---- status
 
   let worker = null, gen = 0, ready = false, alive = false, state = null;
-  let lastMsgAt = 0, watchdog = 0, eofSent = false;
+  let msgs = 0, watchdog = 0, eofSent = false;   // msgs: messages from the worker
   const reqs = new Map();
   let reqId = 0;
 
@@ -258,10 +268,8 @@
 
   const uploads = new Map();            // name -> Uint8Array, resent on every spawn
   const HTTP_HINT = 'This page must be served over HTTP, for example with "make wasm-serve".';
-  const NO_MEMORY64 = '; this browser does not support 64-bit WebAssembly (memory64), which this build needs.\n' +
-        '; Use Chrome or Edge 133, Firefox 134 or later, or a build made with "make wasm WASM_ARCH=wasm32".';
-  let noMemory64 = false;               // set at start (see hasMemory64)
   let unavailable = null;               // why nothing can run (set at start), or null
+  let unavailableDetail = null;         // the same with what to do about it
 
   function csiArgs() {
     const extra = settings.args.trim() ? settings.args.trim().split(/\s+/) : [];
@@ -292,7 +300,7 @@
   }
 
   async function spawn() {
-    if (noMemory64) { fatal(NO_MEMORY64); return; }   // Restart in the header
+    if (unavailable) return;
     kill();
     const g = gen;
     alive = true;
@@ -341,7 +349,7 @@
   }
 
   function onWorker(m) {
-    lastMsgAt = performance.now();
+    msgs++;
     switch (m.type) {
     case 'ready':
       ready = true;
@@ -390,18 +398,22 @@
     if (!worker || !alive) return;
     worker.postMessage({ type: 'interrupt' });
     if (state === WAITING) { line.value = ''; autosize(); }
-    if (state === RUNNING || state === BUSY || !ready) {
-      const g = gen, t0 = performance.now();
-      clearTimeout(watchdog);
-      watchdog = setTimeout(() => {
-        if (g !== gen || lastMsgAt > t0) return;
-        note('; interpreter restarted (state lost)');
-        spawn();
-      }, WATCHDOG_MS);
-    }
+    // The interrupt makes the worker report at once, whatever state it
+    // was last in: a slice that woke from a sleep or got its input may
+    // have run into a long primitive since, without reporting.  (Counted,
+    // not timed: the reply may come within the clock's resolution, which
+    // is 1 ms or coarser in some browsers.)
+    const g = gen, n0 = msgs;
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => {
+      if (g !== gen || msgs !== n0) return;
+      note('; interpreter restarted (state lost)');
+      spawn();
+    }, WATCHDOG_MS);
   }
 
   function restart() {
+    if (unavailable) return;            // also from Settings
     render();
     if (term.textContent) note('; restarting…');
     spawn();
@@ -536,13 +548,16 @@
 
   // ---- uploads (button and drag and drop)
 
+  const uploadHooks = [];               // ChickenPage.onUpload (the notebook)
   async function uploadFiles(files) {
+    if (unavailable) return;            // nothing could load them
     for (const f of files) {
       const name = f.name.replace(/^.*[\\/]/, '') || 'upload';
       let data;
       try { data = new Uint8Array(await f.arrayBuffer()); }
       catch (e) { note('; could not read ' + name + ': ' + e.message); continue; }
       uploads.set(name, data);
+      for (const hook of uploadHooks) { try { hook(name, data); } catch (e) { /* the hook's problem */ } }
       try {
         if (worker && ready) await request({ type: 'writeFile', path: HOME + name, data });
         else if (worker) worker.postMessage({ type: 'writeFile', id: ++reqId, path: HOME + name, data });
@@ -598,12 +613,14 @@
     store.set('quotes', settings.quotes ? '1' : '0');
     store.set('theme', settings.theme);
     applyTheme();
+    document.dispatchEvent(new Event('chicken:settings'));
     restart();
   });
 
   // ---- tabs
 
-  const tabs = [$('tab-repl'), $('tab-compile')];
+  // in DOM order: REPL, Notebook (notebook.js), Compile to C
+  const tabs = [...document.querySelectorAll('[role="tablist"] [role="tab"]')];
   function selectTab(tab, focus) {
     for (const t of tabs) {
       const on = t === tab;
@@ -611,12 +628,18 @@
       t.tabIndex = on ? 0 : -1;
       $(t.getAttribute('aria-controls')).hidden = !on;
     }
+    const nb = tab.id === 'tab-notebook';
+    $('toolbar').hidden = nb;
+    if ($('nb-toolbar')) $('nb-toolbar').hidden = !nb;
     $('toolbar').style.visibility = tab === tabs[0] ? '' : 'hidden';
+    statusPill.style.visibility = nb ? 'hidden' : '';   // the notebook has its own
     if (focus) tab.focus();
+    document.dispatchEvent(new CustomEvent('chicken:tab', { detail: { id: tab.id } }));
     if (tab === tabs[0]) {
       render();
       term.scrollTop = term.scrollHeight;
-      if (!touch && !line.disabled) line.focus();
+      // (arrow keys on the tabs keep the focus there)
+      if (!focus && !touch && !line.disabled) line.focus();
     }
   }
   for (const t of tabs) {
@@ -759,31 +782,78 @@
     setTimeout(() => { b.textContent = 'Copy'; }, 1500);
   });
 
+  // ---- the page API for notebook.js
+
+  function replModule() {
+    if (!replModuleP) {
+      const p = compileWasm('chicken-repl.wasm' + Q);
+      replModuleP = p;
+      p.catch(() => { if (replModuleP === p) replModuleP = null; });
+    }
+    return replModuleP;
+  }
+  window.ChickenPage = Object.freeze({
+    Q, ARCH, HOME, HTTP_HINT, BUILD, store, settings, touch,
+    get unavailable() { return unavailable; },              // one line
+    get unavailableDetail() { return unavailableDetail; },  // and what to do
+    replModule,                         // Promise<WebAssembly.Module>, compiled once
+    straightenQuotes, countLines,
+    uploads,                            // name -> Uint8Array
+    onUpload(f) { uploadHooks.push(f); },
+    uploadFiles,
+    openSettings() { $('settings-btn').click(); },
+  });
+
   // ---- start
 
-  // A wasm64 build (the default) needs memory64: without it the modules
-  // fail to compile.  This module declares a 64-bit memory and nothing else.
-  function hasMemory64() {
-    try {
-      return WebAssembly.validate(new Uint8Array([
-        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,   // magic, version
-        0x05, 0x03, 0x01, 0x04, 0x00]));                  // memory: i64, min 0
-    } catch (e) { return false; }
+  // A wasm64 build (the default) needs memory64, and a build with
+  // WASM_SJLJ=wasm (the default on wasm64) exception handling with exnref:
+  // without them the modules fail to compile.  Each of these modules has
+  // just the feature: a 64-bit memory, an empty try_table.
+  function validates(bytes) {
+    try { return WebAssembly.validate(new Uint8Array(bytes)); }
+    catch (e) { return false; }
   }
-  noMemory64 = ARCH === 'wasm64' && typeof WebAssembly === 'object' && !hasMemory64();
+  const HEADER = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];   // magic, version
+  function hasMemory64() {
+    return validates([...HEADER, 0x05, 0x03, 0x01, 0x04, 0x00]);    // memory: i64, min 0
+  }
+  function hasExnref() {
+    return validates([...HEADER,
+      0x01, 0x04, 0x01, 0x60, 0x00, 0x00,                          // type: [] -> []
+      0x03, 0x02, 0x01, 0x00,                                       // one function
+      0x0a, 0x08, 0x01, 0x06, 0x00, 0x1f, 0x40, 0x00, 0x0b, 0x0b]); // try_table end end
+  }
+  function missingFeature() {
+    const exnref = EH === 'exnref';
+    if (ARCH === 'wasm64' && !hasMemory64())
+      return '; this browser does not support 64-bit WebAssembly (memory64), which this build needs.\n' +
+        '; Use Chrome or Edge ' + (exnref ? 137 : 133) + ', Firefox 134 or later, or a build made with "make wasm WASM_ARCH=wasm32".';
+    if (exnref && !hasExnref())
+      return '; this browser does not support WebAssembly exception handling with exnref, which this build needs.\n' +
+        (ARCH === 'wasm64'
+         ? '; Use Chrome or Edge 137, Firefox 134 or later, or a build made with "make wasm WASM_SJLJ=wasm-legacy".'
+         : '; Use Chrome or Edge 137, Firefox 131, Safari 18.4 or later, or a build made with ' +
+           '"make wasm WASM_ARCH=wasm32 WASM_SJLJ=wasm-legacy".');
+    return null;
+  }
 
   if (location.protocol === 'file:')
     unavailable = '; ' + HTTP_HINT + '\n; Browsers do not run workers or fetch .wasm files from file:// URLs.';
   else if (typeof WebAssembly !== 'object' || typeof Worker !== 'function')
     unavailable = '; this browser lacks WebAssembly or Web Workers.';
-  else if (noMemory64)
-    unavailable = NO_MEMORY64;
+  else
+    unavailable = missingFeature();
   if (unavailable) {
     term.textContent = '';
     fatal(unavailable);
+    // nothing can start: Restart only would show the message again
     $('notice-restart').hidden = true;
+    $('restart').disabled = true;
     $('compile').disabled = true;
-    unavailable = unavailable.split('\n')[0].replace(/^; /, '');
+    $('upload-btn').disabled = true;
+    unavailableDetail = unavailable.replace(/^; /gm, '');
+    unavailable = unavailableDetail.split('\n')[0];
   } else {
     spawn();
   }
