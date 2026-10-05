@@ -145,6 +145,7 @@ tests/wasm-eggs.sh
 tests/wasm/in-worker.js
 tests/wasm/repl-harness.js
 tests/wasm/worker-harness.js
+tests/wasm/notebook-harness.js
 tests/wasm/egg-harness.js
 tests/wasm/page.spec.mjs
 tests/wasm/wasm-arch.js
@@ -307,6 +308,7 @@ Makefile.emscripten
 emscripten/wasm-units.scm
 emscripten/wasm-eggs.scm
 emscripten/webio.scm
+emscripten/webnb.scm
 emscripten/webrepl.h
 emscripten/webrepl-main.c
 emscripten/csc-wasm.in
@@ -316,6 +318,9 @@ emscripten/web/repl.js
 emscripten/web/repl-driver.js
 emscripten/web/repl-worker.js
 emscripten/web/compiler-worker.js
+emscripten/web/nb-kernel.js
+emscripten/web/notebook.js
+emscripten/web/notebook-lib.js
 GNUmakefile
 config.make
 rules.make

@@ -27,9 +27,11 @@
 #ifndef WEBREPL_H
 #define WEBREPL_H
 
-/* REPL states, as returned by webrepl_state() and webrepl_resume() */
+/* REPL states, as returned by webrepl_state() and webrepl_resume().
+ * IDLE: the notebook kernel (webnb.scm) waits for a request
+ * (webrepl_post); WAITING keeps meaning "Scheme reads stdin". */
 enum { WEBREPL_RUNNING = 0, WEBREPL_WAITING = 1, WEBREPL_BUSY = 2,
-       WEBREPL_EXITED = 3, WEBREPL_SLEEPING = 4 };
+       WEBREPL_EXITED = 3, WEBREPL_SLEEPING = 4, WEBREPL_IDLE = 5 };
 
 /* copies up to MAX bytes of fed input (never splitting a UTF-8
  * sequence) into BUF and returns their number, 0 when there is none */
@@ -37,12 +39,20 @@ int   webio_take_input(unsigned char *buf, int max);
 int   webio_has_input(void);
 /* one-shot: true once after JS fed an end-of-file */
 int   webio_take_eof(void);
-/* entering WAITING from another state clears a stale Ctrl-C */
+/* entering WAITING or IDLE from another state clears a stale Ctrl-C */
 void  webio_set_state(int state);
 void  webio_set_wakeup(double ms);
 int   webio_slice_expired(void);
 /* one-shot: true once after JS requested an interrupt */
 int   webio_take_interrupt(void);
 void  webio_write(int fd, const unsigned char *bytes, int n);
+
+/* notebook kernel requests (webrepl_post): whole messages, FIFO.  The
+ * length in bytes of the next one, -1 if there is none; take copies it
+ * into BUF (of MAX bytes) and pops it, returning its length, or -1. */
+int   webio_request_length(void);
+int   webio_take_request(unsigned char *buf, int max);
+/* drop fed stdin text and a pending EOF (between notebook cells) */
+void  webio_drop_input(void);
 
 #endif

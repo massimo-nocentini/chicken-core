@@ -37,7 +37,10 @@
  *   3 s while evaluating (a long primitive that never yields), it is
  *   terminated and a fresh one started.
  * - Settings, history and the theme live in localStorage when available;
- *   everything works without it. */
+ *   everything works without it.
+ * - window.ChickenPage gives the Notebook tab (notebook.js) the settings,
+ *   the storage, the compiled .wasm and the uploads; the page sends it
+ *   "chicken:tab" and "chicken:settings" events. */
 
 (function () {
   'use strict';
@@ -536,6 +539,7 @@
 
   // ---- uploads (button and drag and drop)
 
+  const uploadHooks = [];               // ChickenPage.onUpload (the notebook)
   async function uploadFiles(files) {
     for (const f of files) {
       const name = f.name.replace(/^.*[\\/]/, '') || 'upload';
@@ -543,6 +547,7 @@
       try { data = new Uint8Array(await f.arrayBuffer()); }
       catch (e) { note('; could not read ' + name + ': ' + e.message); continue; }
       uploads.set(name, data);
+      for (const hook of uploadHooks) { try { hook(name, data); } catch (e) { /* the hook's problem */ } }
       try {
         if (worker && ready) await request({ type: 'writeFile', path: HOME + name, data });
         else if (worker) worker.postMessage({ type: 'writeFile', id: ++reqId, path: HOME + name, data });
@@ -598,12 +603,14 @@
     store.set('quotes', settings.quotes ? '1' : '0');
     store.set('theme', settings.theme);
     applyTheme();
+    document.dispatchEvent(new Event('chicken:settings'));
     restart();
   });
 
   // ---- tabs
 
-  const tabs = [$('tab-repl'), $('tab-compile')];
+  // in DOM order: REPL, Notebook (notebook.js), Compile to C
+  const tabs = [...document.querySelectorAll('[role="tablist"] [role="tab"]')];
   function selectTab(tab, focus) {
     for (const t of tabs) {
       const on = t === tab;
@@ -611,12 +618,18 @@
       t.tabIndex = on ? 0 : -1;
       $(t.getAttribute('aria-controls')).hidden = !on;
     }
+    const nb = tab.id === 'tab-notebook';
+    $('toolbar').hidden = nb;
+    if ($('nb-toolbar')) $('nb-toolbar').hidden = !nb;
     $('toolbar').style.visibility = tab === tabs[0] ? '' : 'hidden';
+    statusPill.style.visibility = nb ? 'hidden' : '';   // the notebook has its own
     if (focus) tab.focus();
+    document.dispatchEvent(new CustomEvent('chicken:tab', { detail: { id: tab.id } }));
     if (tab === tabs[0]) {
       render();
       term.scrollTop = term.scrollHeight;
-      if (!touch && !line.disabled) line.focus();
+      // (arrow keys on the tabs keep the focus there)
+      if (!focus && !touch && !line.disabled) line.focus();
     }
   }
   for (const t of tabs) {
@@ -757,6 +770,27 @@
       b.textContent = 'Selected';
     }
     setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+  });
+
+  // ---- the page API for notebook.js
+
+  function replModule() {
+    if (!replModuleP) {
+      const p = compileWasm('chicken-repl.wasm' + Q);
+      replModuleP = p;
+      p.catch(() => { if (replModuleP === p) replModuleP = null; });
+    }
+    return replModuleP;
+  }
+  window.ChickenPage = Object.freeze({
+    Q, ARCH, HOME, HTTP_HINT, BUILD, store, settings, touch,
+    get unavailable() { return unavailable; },
+    replModule,                         // Promise<WebAssembly.Module>, compiled once
+    straightenQuotes, countLines,
+    uploads,                            // name -> Uint8Array
+    onUpload(f) { uploadHooks.push(f); },
+    uploadFiles,
+    openSettings() { $('settings-btn').click(); },
   });
 
   // ---- start

@@ -34,7 +34,13 @@
  * a panic) ends in _exit -> proc_exit, which throws an ExitStatus out
  * of webrepl_resume (or, during main, into callMain, which swallows it:
  * webrepl_started() is then 0).  The link wraps _exit (--wrap=_exit),
- * so the status is recorded for webrepl_exited/webrepl_exit_code. */
+ * so the status is recorded for webrepl_exited/webrepl_exit_code.
+ *
+ * The notebook kernel (webnb.scm, entered with -e "(##webnb#kernel)")
+ * takes its requests from a mailbox that webrepl_post fills: whole
+ * messages, copied in between slices.  While it has none it yields in
+ * state IDLE, which only a posted request ends (the REPL never enters
+ * IDLE). */
 
 #include "chicken.h"
 #include "webrepl.h"
@@ -49,6 +55,9 @@ static int state = WEBREPL_RUNNING, exited, exit_code, in_eof, intr, in_scheme, 
 static char *in_buf;
 static size_t in_len, in_pos;
 static double slice_start, slice_ms = 50.0, wakeup_ms;
+
+struct req { struct req *next; int len; char data[]; };
+static struct req *req_head, *req_tail;	/* the notebook kernel's mailbox */
 
 /* Never let a JS exception unwind through CHICKEN frames.  A pointer
  * reaches JS as a BigInt on wasm64 (MEMORY64), as a Number on wasm32. */
@@ -71,8 +80,9 @@ void webio_write(int fd, const unsigned char *p, int n)
 void webio_set_state(int s)
 {
   /* A Stop that arrived while an evaluation ran and was never polled is
-   * stale once the REPL waits for input again. */
-  if(s == WEBREPL_WAITING && state != WEBREPL_WAITING) intr = 0;
+   * stale once the REPL waits for input again, or the notebook kernel
+   * for its next request. */
+  if((s == WEBREPL_WAITING || s == WEBREPL_IDLE) && state != s) intr = 0;
   state = s;
 }
 
@@ -81,6 +91,30 @@ int webio_slice_expired(void) { return emscripten_get_now() - slice_start > slic
 int webio_take_interrupt(void) { int i = intr; intr = 0; return i; }
 int webio_take_eof(void) { int e = in_eof; in_eof = 0; return e; }
 int webio_has_input(void) { return in_buf != NULL; }
+
+int webio_request_length(void) { return req_head != NULL ? req_head->len : -1; }
+
+int webio_take_request(unsigned char *buf, int max)
+{
+  struct req *r = req_head;
+  int n;
+
+  if(r == NULL || r->len > max) return -1;
+
+  n = r->len;
+  memcpy(buf, r->data, n);
+  if((req_head = r->next) == NULL) req_tail = NULL;
+  free(r);
+  return n;
+}
+
+void webio_drop_input(void)
+{
+  free(in_buf);
+  in_buf = NULL;
+  in_len = in_pos = 0;
+  in_eof = 0;
+}
 
 int webio_take_input(unsigned char *buf, int max)
 {
@@ -181,18 +215,40 @@ EMSCRIPTEN_KEEPALIVE void webrepl_feed(const char *text, int len, int eof)
   in_eof |= eof;
 }
 
+/* A notebook kernel request: MSG is LEN bytes of UTF-8 (it may contain
+ * NUL characters), copied, so JS may free it at once. */
+EMSCRIPTEN_KEEPALIVE void webrepl_post(const char *msg, int len)
+{
+  struct req *r;
+
+  if(len < 0 || (r = malloc(sizeof *r + len)) == NULL) return;
+
+  r->next = NULL;
+  r->len = len;
+  memcpy(r->data, msg, len);
+  if(req_tail != NULL) req_tail->next = r; else req_head = r;
+  req_tail = r;
+}
+
 EMSCRIPTEN_KEEPALIVE int webrepl_resume(void)
 {
   if(in_scheme || !started || state == WEBREPL_EXITED) return state;
 
   if(state == WEBREPL_BUSY || state == WEBREPL_SLEEPING ||
-     (state == WEBREPL_WAITING && (in_buf != NULL || in_eof || intr)))
+     (state == WEBREPL_WAITING && (in_buf != NULL || in_eof || intr)) ||
+     (state == WEBREPL_IDLE && req_head != NULL))
     return run_slice();
 
   return state;
 }
 
-EMSCRIPTEN_KEEPALIVE void webrepl_interrupt(void) { intr = 1; }
+/* An idle notebook kernel has nothing to stop, unless a request is
+ * about to run (Run, then Stop before the worker pumped): the new
+ * request is then interrupted at its first poll. */
+EMSCRIPTEN_KEEPALIVE void webrepl_interrupt(void)
+{
+  if(state != WEBREPL_IDLE || req_head != NULL) intr = 1;
+}
 EMSCRIPTEN_KEEPALIVE int webrepl_state(void) { return state; }
 EMSCRIPTEN_KEEPALIVE int webrepl_started(void) { return started; }
 EMSCRIPTEN_KEEPALIVE int webrepl_exited(void) { return exited; }

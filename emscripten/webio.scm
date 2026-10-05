@@ -39,11 +39,40 @@
   (unit webio)
   (uses wasm-units)
   (disable-interrupts)
+  ;; every toplevel name but the ##webio# ones, so that the REPL's (or
+  ;; a notebook cell's) definitions cannot clobber them (not "block":
+  ;; it would take the ##sys# globals assigned here for this unit's own)
+  (hide take-input! has-input? take-eof set-state! set-wakeup! slice-over?
+	interrupted? js-write unbuffered make-web-output-port web-stdout
+	web-stderr flush-std yield! in-bv pending eof-pending at-prompt
+	abandon-input! fill! read-ch peek-ch web-stdin drop-input!
+	value-of display min flush-output open-output-string
+	get-output-string string->utf8 bytevector-length
+	current-process-milliseconds return-to-host)
   (foreign-declare "#include \"webrepl.h\""))
 
-(import scheme chicken.base chicken.foreign chicken.fixnum chicken.port
-	chicken.platform chicken.bytevector chicken.time
-	(only (scheme base) open-output-string get-output-string))
+(import (except scheme display min)
+	(except chicken.base flush-output)
+	(except chicken.bytevector string->utf8 bytevector-length)
+	(except chicken.time current-process-milliseconds)
+	(except chicken.platform return-to-host)
+	chicken.foreign chicken.fixnum chicken.port)
+
+;; The library procedures called after startup, taken now: a toplevel
+;; define assigns the global of the name it defines, scheme#display
+;; say.  (Not "(define display scheme#display)": a hidden global never
+;; assigned again is an alias, which the compiler replaces with what
+;; it names.)
+(define (value-of global) (##sys#slot global 0))
+(define display (value-of 'scheme#display))
+(define min (value-of 'scheme#min))
+(define flush-output (value-of 'chicken.base#flush-output))
+(define open-output-string (value-of 'scheme#open-output-string))
+(define get-output-string (value-of 'scheme#get-output-string))
+(define string->utf8 (value-of 'chicken.bytevector#string->utf8))
+(define bytevector-length (value-of 'chicken.bytevector#bytevector-length))
+(define current-process-milliseconds (value-of 'chicken.time#current-process-milliseconds))
+(define return-to-host (value-of 'chicken.platform#return-to-host))
 
 (define-constant ST-WAITING 1)
 (define-constant ST-BUSY 2)
@@ -208,3 +237,15 @@
 	(when (slice-over?) (yield! ST-BUSY))
 	(when (interrupted?) (##sys#user-interrupt-hook)))
       (old reason state))))
+
+
+;;; Hooks for the notebook kernel (webnb.scm).
+
+(define drop-input! (foreign-lambda void "webio_drop_input"))
+(define ##webio#flush flush-std)
+(define ##webio#yield yield!)
+
+(define (##webio#discard-input!)	; between cells: no stdin leaks across
+  (set! pending '())
+  (set! eof-pending #f)
+  (drop-input!))

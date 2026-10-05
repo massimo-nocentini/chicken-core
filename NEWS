@@ -227,6 +227,15 @@
     wasm64, 64 bytes and 256 KB on wasm32 (was 320 KB), for a margin
     of 1.6 to 1.9.  In node, wasm64 code runs 7% to 17% slower than
     wasm32, except bignum arithmetic (about 20% faster).
+  - The browser REPL page has a "Notebook" tab: code and Markdown
+    cells run one at a time in a second csi of its own, started on
+    the first visit, with streaming output, cell stdin, Stop, call
+    histories that point into the cell, and rich output (HTML, SVG,
+    Markdown, images and tables, rebuilt from an allowlist) through
+    an `(import notebook)' module.  Notebooks are saved in the
+    browser and can be exported and imported as .scm (cells start
+    at `;; %%' comment lines) or .json.  The kernel is the compiled unit
+    emscripten/webnb.scm, entered with `csi -e (##webnb#kernel)'.
 
 6.0.0
 

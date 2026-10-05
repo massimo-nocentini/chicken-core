@@ -383,10 +383,47 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     build-wasm/web/
       A static web site: a REPL running the unmodified "csi" in a
       Web Worker, with streaming output, a Stop button (Ctrl-C),
-      file upload, a ".csirc" and a "Compile to C" tab that runs
-      the wasm "chicken".  It needs no special HTTP headers (no
-      COOP/COEP) but must be served over HTTP, not opened from a
-      file:// URL.  Any static web server will do.
+      file upload, a ".csirc", a "Notebook" tab and a "Compile to
+      C" tab that runs the wasm "chicken".  It needs no special
+      HTTP headers (no COOP/COEP) but must be served over HTTP, not
+      opened from a file:// URL.  Any static web server will do.
+
+      The Notebook tab runs a second csi of its own, started on the
+      first visit (what is defined there is not visible in the
+      REPL, nor the other way round), one cell at a time: a code
+      cell runs with Shift+Enter (and the next cell is selected),
+      Ctrl+Enter or "Run all", and a cell that fails cancels the
+      cells queued after it.  Definitions persist from cell to
+      cell.  Output streams in while a cell runs, a cell can read
+      stdin (a field opens under it), and Stop interrupts it; a
+      long primitive that does not yield (a huge bignum) is ended
+      by restarting the kernel after 3 s, which loses its state.
+      An incomplete cell (an unclosed paren) evaluates nothing.
+      Markdown cells hold text.  "(import notebook)" provides rich
+      output: "html" and "svg" (strings or SXML), "markdown",
+      "text", "image" (a PNG, JPEG, GIF or WebP bytevector), "table"
+      (a list of rows, and optional column names) and "show", which
+      displays a value at once and, given an id, replaces the
+      earlier display with that id ("clear-output" empties the
+      cell's output).  Markup is shown only after it was rebuilt
+      from an allowlist: no scripts, event handlers, style sheets
+      or external resources.  csi's toplevel commands (",d", ",x")
+      work in cells, whose toplevel is the REPL's ("read-line" needs
+      "(import (chicken io))", for example).  SRFI-18 threads only
+      make progress while some cell runs.  The notebook is saved in
+      the browser (outputs up to 64 KB per cell) and can be exported
+      and imported as a ".scm" file (cells start at ";; %%" lines,
+      text cells at ";; %% [markdown]"; "csi -s" runs it if it does
+      not use the notebook module), or as ".json", with outputs; a
+      ".scm" file without such lines is split into cells at blank
+      lines.  In the notebook, Esc and then "?" lists the
+      keyboard shortcuts.  The kernel is csi running
+      "-e (##webnb#kernel)" (emscripten/webnb.scm): the page posts
+      requests to a mailbox in C and reads events as JSON lines on
+      file descriptor 3 (emscripten/web/nb-kernel.js).  Of the
+      settings' csi arguments it takes the "-:" runtime options,
+      -R, -I, -K, -D, -no-feature, -w, -i, -r7rs-syntax and
+      -no-parentheses-synonyms; settings apply after "Restart".
 
     build-wasm/stage/chicken/
       An SDK for compiling your own programs to WebAssembly: the
@@ -589,11 +626,14 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     csc-wasm are all of WASM_ARCH), the interpreted and
     compiled test lanes of tests/runtests-wasm.sh, the headless
     REPL tests tests/wasm/repl-harness.js (also under Liftoff with a
-    small stack) and tests/wasm/worker-harness.js, and an eggs lane:
+    small stack) and tests/wasm/worker-harness.js, the notebook
+    kernel tests tests/wasm/notebook-harness.js (also under Liftoff),
+    and an eggs lane:
     it builds csi and the REPL again, in tests-run/eggs-build of the
     build directory, with the test eggs of tests/wasm/eggs, and runs
     tests/wasm-eggs.sh (node csi, a program compiled with csc-wasm,
-    refused eggs and tests/wasm/egg-harness.js for the REPL).  The browser test
+    refused eggs and tests/wasm/egg-harness.js and
+    notebook-harness.js for the REPL and the notebook).  The browser test
     tests/wasm/page.spec.mjs needs Playwright and is run by hand:
 
         BROWSERS=chromium,firefox node tests/wasm/page.spec.mjs build-wasm/web

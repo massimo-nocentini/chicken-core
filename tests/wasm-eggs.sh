@@ -155,6 +155,9 @@ $(WASM_EGG_DIR)/host-only/src.stamp' host_only
 # the web REPL
 expect E9 'ok' sh -c "'$NODE' '$TEST_DIR/wasm/egg-harness.js' '$EGG_BUILD/web' >harness.out \
     && echo ok || { cat harness.out; exit 1; }"
+# the web notebook kernel
+expect E16 'ok' sh -c "'$NODE' '$TEST_DIR/wasm/notebook-harness.js' '$EGG_BUILD/web' --eggs \
+    >harness.out && echo ok || { cat harness.out; exit 1; }"
 
 rm -f eggs.out eggs.err
 echo

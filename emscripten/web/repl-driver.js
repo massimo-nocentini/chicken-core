@@ -46,14 +46,19 @@
  *   later(f,ms)  run f after ms milliseconds
  *   canRun()     optional backpressure: false stops pumping BUSY slices
  *                until resumeOutput() is called
- *   onOutput(fd, text)  Scheme output, fd 1 or 2, decoded UTF-8
+ *   onOutput(fd, text)  Scheme output, fd 1 or 2, decoded UTF-8; fd 3
+ *                carries the notebook kernel's events (webnb.scm), one
+ *                JSON object per line
  *   onState(st)  after every slice; st is one of the state constants
+ *                (IDLE: the notebook kernel waits for a request)
  *   onExit(code), onCrash(message)  called once; the driver is then dead
  *   onDiag(text) C-level stderr before the REPL is ready (default
  *                console.warn)
  *
  * feed() does not add a newline: after reading a datum csi peeks for the
- * newline that ends the line, so input should be "\n"-terminated. */
+ * newline that ends the line, so input should be "\n"-terminated.
+ * post(text) hands the notebook kernel (csi -e "(##webnb#kernel)") one
+ * whole request, as webnb.scm describes; requests queue in order. */
 
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -61,12 +66,12 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, IDLE = 5;
 
   async function start(createModule, o) {
     let M = null, dead = false, scheduled = false, ready = false;
     const earlyErr = [];
-    const dec = { 1: new TextDecoder(), 2: new TextDecoder() };
+    const dec = { 1: new TextDecoder(), 2: new TextDecoder(), 3: new TextDecoder() };
 
     function finish(kind, v) {
       if (dead) return;
@@ -149,6 +154,13 @@
         M._free(p);
         kick();
       },
+      post(text) {
+        if (dead) return;
+        const p = M.stringToNewUTF8(text);
+        M._webrepl_post(p, M.lengthBytesUTF8(text));
+        M._free(p);
+        kick();
+      },
       interrupt() {
         if (dead) return;
         M._webrepl_interrupt();
@@ -165,5 +177,5 @@
     return api;
   }
 
-  return { start, RUNNING, WAITING, BUSY, EXITED, SLEEPING };
+  return { start, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE };
 });

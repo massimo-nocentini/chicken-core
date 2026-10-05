@@ -246,6 +246,45 @@ const val = v => new RegExp('(^|> )' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') 
     assert(S.exit === 3, 'exit code ' + S.exit);
   });
 
+  // the notebook kernel (webnb.scm; nb-kernel.js is its client)
+  const nbArgs = ['-n', '-e', '(##webnb#kernel)'];
+  const events = X => X.msgs.filter(m => m.type === 'output' && m.fd === 3)
+    .map(m => m.text).join('').split('\n').filter(Boolean).map(l => JSON.parse(l));
+
+  await check('W-NB1 a kernel request posted before ready is served after hello', async () => {
+    const N = session({ args: nbArgs });
+    try {
+      N.post({ type: 'request', text: 'run 1 In[1]\n(* 6 7)' });
+      assert(!N.ready, 'posted before ready');
+      const done = await waitFor('done', () => {
+        if (N.crash || N.exit !== null) throw new Error('kernel ended: ' + (N.crash || N.exit));
+        return events(N).find(e => e.ev === 'done');
+      }, 30000);
+      assert(done.status === 'ok' && JSON.stringify(done.values) === '["42"]', 'done ' + JSON.stringify(done));
+      const iReady = N.msgs.findIndex(m => m.type === 'ready');
+      const iHello = N.msgs.findIndex(m => m.type === 'output' && m.fd === 3 && /"hello"/.test(m.text));
+      assert(iReady >= 0 && iReady < iHello, 'ready before hello');
+      assert(events(N).map(e => e.ev).join() === 'hello,start,done', 'events ' + events(N).map(e => e.ev));
+      await waitFor('IDLE', () => N.states[N.states.length - 1] === 5);
+      assert(!N.msgs.some(m => m.type === 'output' && m.fd !== 3), 'no banner, no prompt');
+    } finally { await N.close(); }
+  });
+
+  await check('W-NB2 a kernel request then interrupt: the cell is interrupted', async () => {
+    const N = session({ args: nbArgs });
+    try {
+      await waitFor('hello', () => events(N).find(e => e.ev === 'hello'), 30000);
+      N.post({ type: 'request', text: 'run 1 In[1]\n(let loop () (loop))' });
+      await waitFor('BUSY', () => N.states.filter(x => x === 2).length >= 2);
+      N.post({ type: 'interrupt' });
+      const done = await waitFor('done', () => events(N).find(e => e.ev === 'done'), 5000);
+      assert(done.status === 'interrupted', 'status ' + done.status);
+      N.post({ type: 'request', text: 'run 2 In[2]\n(+ 1 2)' });
+      const d2 = await waitFor('done 2', () => events(N).find(e => e.ev === 'done' && e.rid === 2));
+      assert(JSON.stringify(d2.values) === '["3"]', 'next cell ' + JSON.stringify(d2));
+    } finally { await N.close(); }
+  });
+
   await S.close();
   console.log('# ' + passes + ' passed, ' + failures + ' failed in ' +
               ((now() - t0) / 1000).toFixed(1) + ' s');
