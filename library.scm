@@ -4329,7 +4329,7 @@ EOF
               (if (eq? enc 'utf-8) ;; fast path
                   (##core#inline "C_display_char" p c)
                   (let* ((bv (##sys#make-bytevector 4))
-                         (n (##sys#encode-char c bv enc)))
+                         (n (##core#inline "C_utf_insert" bv 0 c)))
                     ((##sys#slot (##sys#slot p 2) 3) p bv 0 n))))) ; write-bytevector
           (lambda (p bv from to)                     ; write-bytevector
             (##sys#encode-buffer
