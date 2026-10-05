@@ -42,7 +42,8 @@
 ; bad-request; web/nb-kernel.js, the page's client, documents them.
 ;
 ; A cell is read whole first: if it is incomplete (an unterminated
-; list or string, a stray ")"), nothing is evaluated.  Then its forms
+; list or string, a stray ")", a dotted tail at its end, a quote or
+; a "#;" with nothing but comments after it), nothing is evaluated.  Then its forms
 ; are evaluated one by one, as the REPL does, and the values of the
 ; last one are reported.  A form is read again when the one before it
 ; changed the reader, and read only when its turn comes from the first
@@ -65,18 +66,18 @@
   (disable-interrupts)
   ;; every toplevel name but the ##webnb# ones (not "block": it would
   ;; take the ##sys# globals assigned here for this unit's own)
-  (hide request-length take-request! js-write clear-trace! running active
+  (hide request-length take-request! js-write clear-trace! running said-hello active
 	started form reading json-string json event! next-request prefix?
 	parse-rid valid-name? string-index bad-request! dispatch
 	make-incomplete incomplete? incomplete-condition string-contains?
-	incomplete-read-error? port-state restore-port-state! reader-state
+	incomplete-read-error? at-eof? quotes unquoted dangling? port-state restore-port-state! reader-state
 	same-reader-state? reader-changers changes-reader? user-code
 	no-user-code without-user-code precheck
 	print-to-string notice-unbound!
 	toplevel-command eval-cell ->string/null frame->json call-chain-of
 	string-trim-both error-text error-line error-object fallback-error
 	outcome->fields filter-list current-datum execute module-name
-	alist->plist run-cell load-csirc! emit-display written markup name-ok?
+	alist->plist run-cell cell-done load-csirc! emit-display written markup name-ok?
 	xml-escape void-elements skip-space notebook-module
 	;; the library procedures it calls (see below)
 	value-of call-with-current-continuation dynamic-wind eval display write
@@ -175,6 +176,9 @@
 (define (clear-trace!) (foreign-code "C_clear_trace_buffer();"))
 
 (define running #f)			; refuses nesting
+;; The kernel said hello: from then on a return into load-csirc! is a
+;; cell's, which re-entered a continuation captured in the .csirc.
+(define said-hello #f)
 ;; The rid of the running cell, or #f.  Reports read this global, never
 ;; a rid closed over: a continuation of an earlier cell re-entered by
 ;; the running one finishes that cell's forms and reports to this one.
@@ -339,14 +343,58 @@
 	   (or (string=? sub (substring s i (fx+ i m)))
 	       (loop (fx+ i 1)))))))
 
-(define (incomplete-read-error? c)
+;; A read error on P is an incomplete cell when the reader ran out of
+;; input: an unterminated list or string, a stray ")", or a dotted tail
+;; at the end of the input ("'(1 . 2" gets "missing list terminator",
+;; as "(a . b c)" does with more to read).
+(define (incomplete-read-error? c p)
   (and (condition? c)
        ((condition-predicate 'syntax) c)
        (let ((msg (get-condition-property c 'exn 'message #f)))
 	 (and (string? msg)
 	      (or (string-contains? msg "unterminated")
 		  (string-contains? msg "unexpected end")
-		  (string-contains? msg "unexpected list terminator"))))))
+		  (string-contains? msg "unexpected list terminator")
+		  (and (string-contains? msg "missing list terminator")
+		       (at-eof? p)))))))
+
+(define (at-eof? p) (eof-object? (##sys#peek-char-0 p)))
+
+;; A datum the reader completed with the end of the input: a quote
+;; ("'", "`", ",", ",@", "#`" or "#$") with nothing after it reads as
+;; (quote #!eof), as "'#!eof" does, and a "#;" (or "#\") with nothing
+;; after it (comments aside) reads as the end of the input, as "#!eof"
+;; does.
+(define quotes '(quote quasiquote unquote unquote-splicing quasisyntax location))
+
+(define (unquoted x)			; X without quotes
+  (if (and (pair? x) (memq (car x) quotes) (pair? (cdr x)) (null? (cddr x)))
+      (unquoted (cadr x))
+      x))
+
+;; Whether datum X, read from AT (the state of the port before it),
+;; was cut short by the end of SRC.  It is read again, from the cell's
+;; text with a symbol after it: an "#!eof" in the text still reads as
+;; the end of the input, with the symbol left, and a datum that ended
+;; the cell reads as the symbol, which the end of the input then
+;; follows; else the datum was not finished.
+(define (dangling? x at src name)
+  (and (eof-object? (unquoted x))
+       (let ((q (open-input-string (string-append src "\nx"))))
+	 (restore-port-state! q at)
+	 (##sys#setislot q 6 #f)		; P may have peeked at its end
+	 (let ((y (call-with-current-continuation
+		   (lambda (k)
+		     (with-exception-handler
+		      (lambda (c) (k #f))
+		      (lambda ()
+			(vector (without-user-code
+				 (lambda () (read-with-source-info q name))))))))))
+	   (and y
+		(let ((z (unquoted (vector-ref y 0)))
+		      (end (at-eof? q)))
+		  (not (or (and (eof-object? z) (not end))	; an "#!eof"
+			   (and end (eof-object? x) (eq? z 'x)))))))))) ; the end
 
 ;; Where a string port is: line, column, EOF flag, position, case
 ;; folding.  Phase 2 restores it to read on after a datum of phase 1.
@@ -437,14 +485,14 @@
 ;; where they happen (read syntax defined by earlier forms may change
 ;; them).  So does an incomplete datum after one that may change the
 ;; reader: a cell may define read syntax and use it.
-(define (precheck p name)
+(define (precheck p name src)
   (fluid-let ((##sys#read-error-with-line-number #t))
     (let loop ((acc '()) (at (port-state p)))
       (let ((x (call-with-current-continuation
 		(lambda (k)
 		  (with-exception-handler
 		   (lambda (c)
-		     (k (cond ((incomplete-read-error? c) (make-incomplete c))
+		     (k (cond ((incomplete-read-error? c p) (make-incomplete c))
 			      ((and (condition? c)
 				    ((condition-predicate 'user-interrupt) c))
 			       (list c))
@@ -453,6 +501,16 @@
 		     (vector (without-user-code
 			      (lambda () (read-with-source-info p name))))))))))
 	;; signalled here, outside the handler (which would get it)
+	(when (and (vector? x) (dangling? (vector-ref x 0) at src name))
+	  (set! x (make-incomplete
+		   (##sys#make-structure
+		    'condition '(exn syntax)
+		    (list '(exn . message)
+			  (string-append "(line " (##sys#number->string (##sys#slot p 4))
+					 ") unexpected end of input"
+					 (if (eof-object? (vector-ref x 0)) "" " after quotation"))
+			  '(exn . arguments) '()
+			  '(exn . location) #f)))))
 	(cond ((vector? x)
 	       (let* ((s (port-state p))
 		      (acc (cons (cons (vector-ref x 0) s) acc)))
@@ -514,7 +572,7 @@
     (clear-trace!)
     (set! ##sys#unbound-in-eval '()))
   (let* ((p (open-input-string src))
-	 (pre (precheck p name)))
+	 (pre (precheck p name src)))
     ;; AHEAD: data of phase 1 still to evaluate, each with the state
     ;; of P after it; once none is left, read from P, at AT if not #f
     (let loop ((i 1) (ahead (car pre)) (at (cdr pre))
@@ -700,12 +758,19 @@
     (##webio#discard-input!)
     (set! ##sys#unbound-in-eval #f)
     ;; formatting runs user code (record printers): describe the outcome
-    ;; only now, outside the cell, with a fallback
+    ;; only now, outside the cell, with a fallback, also for a (reset)
+    ;; there, which would else reach csi's own handler and exit
     (call-with-current-continuation
      (lambda (k)
-       (with-exception-handler
-	(lambda (e) (k (list (list "error" (cons "error" fallback-error)))))
-	(lambda () (outcome->fields outcome)))))))
+       (let ((fallback (list (list "error" (cons "error" fallback-error))))
+	     (old (##sys#reset-handler)))
+	 (dynamic-wind
+	     (lambda () (##sys#reset-handler (lambda () (k fallback))))
+	     (lambda ()
+	       (with-exception-handler
+		(lambda (e) (k fallback))
+		(lambda () (outcome->fields outcome))))
+	     (lambda () (##sys#reset-handler old))))))))
 
 (define (module-name)
   (let ((m (##sys#current-module)))
@@ -720,9 +785,13 @@
   (set! active rid)
   (set! started (current-process-milliseconds))
   (event! "start" "rid" rid "name" name)
-  (let* ((r (execute src name restore-ports))
-	 (rid active)			; maybe a later cell's (see above)
-	 (ms (- (current-process-milliseconds) started)))
+  (cell-done (execute src name restore-ports)))
+
+;; R, from execute, ends the active cell: maybe a later one than the
+;; cell that started (see above)
+(define (cell-done r)
+  (let ((rid active)
+	(ms (- (current-process-milliseconds) started)))
     (set! active #f)
     (for-each (lambda (d) (emit-display d #f rid)) (cdr r))
     (apply event! "done" "rid" rid "ms" ms "module" (module-name)
@@ -735,13 +804,16 @@
       (let* ((r (execute (string-append "(load " (with-output-to-string (lambda () (write rc))) ")")
 			 ".csirc" restore-ports))
 	     (status (caar r)))
-	(for-each (lambda (d) (emit-display d #f #f)) (cdr r))
-	(if (string=? status "ok")
-	    (event! "csirc" "status" "ok")
-	    (event! "csirc" "status" "error"
-		    "error" (cond ((assoc "error" (cdar r)) => cdr)
-				  (else (cons (cons "text" (string-append "Error: " status))
-					      (cdr fallback-error))))))))))
+	(cond (said-hello (cell-done r))	; re-entered by a cell
+	      ((string=? status "ok")
+	       (for-each (lambda (d) (emit-display d #f #f)) (cdr r))
+	       (event! "csirc" "status" "ok"))
+	      (else
+	       (for-each (lambda (d) (emit-display d #f #f)) (cdr r))
+	       (event! "csirc" "status" "error"
+		       "error" (cond ((assoc "error" (cdar r)) => cdr)
+				     (else (cons (cons "text" (string-append "Error: " status))
+						 (cdr fallback-error)))))))))))
 
 
 ;;; Rich output: display objects and the module `notebook'
@@ -753,8 +825,16 @@
 
 (define (##webnb#display? x) (##sys#structure? x 'notebook-display))
 
+(define-constant display-max 4194304)	; the page shows no more (DISPLAY_MAX)
+
+;; data larger than the page shows is not sent, only its size: it may
+;; be larger than the longest string JavaScript has
 (define (emit-display d id rid)
-  (event! "display" "rid" rid "mime" (##sys#slot d 1) "data" (##sys#slot d 2) "id" id))
+  (let ((data (##sys#slot d 2)))
+    (if (fx> (string-length data) display-max)
+	(event! "display" "rid" rid "mime" (##sys#slot d 1) "data" ""
+		"size" (string-length data) "id" id)
+	(event! "display" "rid" rid "mime" (##sys#slot d 1) "data" data "id" id))))
 
 (define (written x) (with-output-to-string (lambda () (write x))))
 
@@ -942,6 +1022,7 @@
   ;; as repl does; -e left them off
   (set! ##sys#notices-enabled #t)
   (load-verbose #t)
+  (##webio#prompts-are-cells!)
   (set-record-printer! 'notebook-display
     (lambda (d p)
       (display "#<notebook-display " p)
@@ -952,13 +1033,19 @@
   (let* ((in ##sys#standard-input)
 	 (out ##sys#standard-output)
 	 (err ##sys#standard-error)
+	 ;; also when a cell closed them (call-with-port does)
 	 (restore-ports (lambda ()
 			  (set! ##sys#standard-input in)
 			  (set! ##sys#standard-output out)
-			  (set! ##sys#standard-error err))))
+			  (set! ##sys#standard-error err)
+			  (##webio#reopen-std!))))
     (eval notebook-module)
     (load-csirc! restore-ports)
-    (event! "hello" "proto" 1 "version" (chicken-version))
+    ;; startup happens once: a cell that re-entered the .csirc ends up
+    ;; here again, and the kernel goes on taking requests
+    (unless said-hello
+      (set! said-hello #t)
+      (event! "hello" "proto" 1 "version" (chicken-version)))
     (let loop ()
       (dispatch (next-request) restore-ports)
       (loop))))

@@ -41,6 +41,7 @@
 <meta name="description" content="CHICKEN Scheme's csi running in your browser, compiled to WebAssembly.">
 <meta name="chicken-build" content="@BUILD@">
 <meta name="chicken-wasm-arch" content="@ARCH@">
+<meta name="chicken-wasm-eh" content="@EH@">
 <title>CHICKEN Scheme REPL</title>
 <link rel="icon" type="image/png" href="chicken.png?v=@BUILD@">
 <style>
@@ -788,6 +789,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 .nb-menu [role="menuitem"]:hover, .nb-menu [role="menuitem"]:focus { background: var(--surface-2); outline: none; }
 .nb-menu [role="menuitem"]:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
 .nb-menu [role="menuitem"] kbd { font-size: 11px; color: var(--muted); }
+.nb-menu [role="menuitem"][aria-disabled="true"] { opacity: .45; cursor: default; }
 .nb-menu [role="separator"] { height: 1px; margin: 4px 6px; background: var(--border); }
 
 .nb-toast {

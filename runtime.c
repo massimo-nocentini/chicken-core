@@ -34,6 +34,9 @@
 #include <strings.h>
 
 #ifdef __EMSCRIPTEN__
+# include <emscripten/em_js.h>
+# include <emscripten/heap.h>
+# include <malloc.h>
 # include <emscripten/stack.h>
 #endif
 
@@ -690,6 +693,39 @@ int C_fast_rand(void)
 }
 
 
+#ifdef __EMSCRIPTEN__
+/* Emscripten's libc ignores TZ: the local time zone is the JavaScript
+ * engine's, named after its offset ("UTC+0200" in tzname and tm_zone,
+ * so in local-timezone-abbreviation), which is not a valid POSIX TZ
+ * name; code that builds a TZ string from it, like the locale egg used
+ * by srfi-19, fails to parse it.  Unless TZ is set, set it to the
+ * engine's time zone (an IANA name such as "Europe/Rome"), as on a
+ * native system where the zone was chosen with TZ. */
+EM_JS(int, wasm_host_time_zone, (char *buf, int len), {
+  try {
+    var z = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    var a = typeof buf === 'bigint' ? Number(buf) : buf >>> 0;
+    if (typeof z !== 'string' || z.length == 0 || z.length >= len) return 0;
+    for (var i = 0; i < z.length; i++) {
+      var c = z.charCodeAt(i);
+      if (c <= 32 || c >= 127) return 0;
+      HEAPU8[a + i] = c;
+    }
+    HEAPU8[a + z.length] = 0;
+    return 1;
+  } catch (e) { return 0; }
+});
+
+static void wasm_set_time_zone(void)
+{
+  char zone[ 128 ];
+
+  if(getenv("TZ") == NULL && wasm_host_time_zone(zone, sizeof(zone)))
+    setenv("TZ", zone, 0);
+}
+#endif
+
+
 /* Initialize runtime system: */
 
 int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
@@ -717,6 +753,9 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
   C_gettimeofday(&tv, NULL);
   C_startup_time_sec = tv.tv_sec;
   C_startup_time_msec = tv.tv_usec / 1000;
+# ifdef __EMSCRIPTEN__
+  wasm_set_time_zone();
+# endif
   /* Make sure tzname, timezone, and daylight are set */
   tzset();
 #endif
@@ -4055,6 +4094,132 @@ static C_regparm void really_mark(C_word *x, C_byte *tgt_space_start, C_byte **t
 }
 
 
+#ifdef __EMSCRIPTEN__
+/* Linear memory is limited (-sMAXIMUM_MEMORY) and malloc (dlmalloc)
+ * takes it from the top (sbrk), which never comes down again: memory it
+ * took and that was freed since, as when the heap shrank, stays in its
+ * free chunks, or in its top chunk, which it extends with more memory.
+ * C_rereclaim2 allocates the new fromspace while the old heap is live
+ * and the new tospace after freeing it, so the tospace either fits in
+ * the space of the old heap or needs as much memory again besides the
+ * fromspace.  A growth is only started when both are sure to work:
+ * without that, one that does not fit fails half-way, after the copy
+ * into the new fromspace, with "cannot allocate next heap segment" (on
+ * wasm64 with 16 GB, for a single object just over 4 GB).
+ *
+ * Nor may an allocation be tried that could fail: once malloc fails to
+ * extend its top chunk, dlmalloc never extends it again, and takes all
+ * of every later block from above the break.  So what does not fit in
+ * the top chunk and above it is only tried with a footprint limit, with
+ * which malloc gives only memory it holds. */
+# define WASM_HEAP_ALLOC_SLACK ((C_uword)128 * 1024)
+
+extern size_t malloc_footprint(void), malloc_footprint_limit(void);
+extern size_t malloc_set_footprint_limit(size_t bytes);
+
+/* The memory malloc can surely give in one block: its top chunk and
+ * what is above the break. */
+static C_uword wasm_top_room(void)
+{
+  C_uword max = (C_uword)emscripten_get_heap_max(), brk = (C_uword)sbrk(0);
+
+  if(brk == (C_uword)-1 || brk >= max) return 0;
+
+  return max - brk + (C_uword)mallinfo().keepcost;
+}
+
+/* heap_alloc from the memory malloc holds, or NULL */
+static C_byte *wasm_heap_alloc_held(C_uword size, C_byte **aligned)
+{
+  size_t limit = malloc_footprint_limit();
+  C_byte *p;
+
+  malloc_set_footprint_limit(malloc_footprint());
+  p = heap_alloc(size, aligned);
+  malloc_set_footprint_limit(limit);
+  return p;
+}
+
+/* The space of the old heap once it is freed: both halves, if they are
+ * adjacent chunks, else the larger one. */
+static C_uword wasm_old_heap_hole(void)
+{
+  C_byte *lo = heapspace1, *hi = heapspace2;
+  C_uword lo_size = heapspace1_size, hi_size = heapspace2_size;
+
+  if(lo > hi) {
+    lo = heapspace2; hi = heapspace1;
+    lo_size = heapspace2_size; hi_size = heapspace1_size;
+  }
+
+  if(lo != NULL && hi != NULL &&
+     (C_uword)(hi - (lo + lo_size + page_size)) <= 64)
+    return lo_size + hi_size + 2 * page_size;
+  else return (lo_size > hi_size ? lo_size : hi_size) + page_size;
+}
+
+/* The largest total heap size (both halves) for which both are sure to
+ * fit in the top chunk and above it, and in the old heap, ignoring the
+ * other free chunks (so it can only err on the small side: see
+ * wasm_heap_try for those). */
+static C_uword wasm_heap_limit(void)
+{
+  C_uword avail = wasm_top_room(), ovh = page_size + WASM_HEAP_ALLOC_SLACK,
+          hole, half;
+
+  if(avail <= 2 * ovh) return 0;
+
+  hole = wasm_old_heap_hole();
+  half = avail / 2 - ovh;		/* both halves at the top */
+
+  if(hole > ovh && hole - ovh > half) half = hole - ovh;
+
+  if(half > avail - ovh) half = avail - ovh;	/* the fromspace */
+
+  return (half * 2) & ~(C_uword)0xffff;		/* in wasm pages */
+}
+
+/* Allocate the fromspace of a heap of SIZE bytes (both halves) into
+ * *SPACE (page-aligned in *ALIGNED), if the tospace is then sure to fit
+ * as well, once the old heap is freed; else allocate nothing.  Both may
+ * also go into free chunks, which wasm_heap_limit does not count. */
+static int wasm_heap_try(C_uword size, C_byte **space, C_byte **aligned)
+{
+  C_uword half = size / 2, need = half + page_size + WASM_HEAP_ALLOC_SLACK;
+  /* volatile: else the compiler, seeing it only tested and freed,
+   * drops the malloc and takes it to have succeeded */
+  C_byte *volatile probe;
+
+  if((*space = wasm_heap_alloc_held(half, aligned)) == NULL &&
+     (wasm_top_room() < need || (*space = heap_alloc(half, aligned)) == NULL))
+    return 0;
+
+  if(wasm_top_room() >= need || wasm_old_heap_hole() >= need) return 1;
+
+  if((probe = wasm_heap_alloc_held(half + WASM_HEAP_ALLOC_SLACK, NULL)) != NULL) {
+    heap_free(probe, half + WASM_HEAP_ALLOC_SLACK);
+    return 1;
+  }
+
+  heap_free(*space, half);
+  *space = NULL;
+  return 0;
+}
+
+static void wasm_heap_limit_reached(void)
+{
+  static C_char msg[ 160 ];
+
+  C_snprintf(msg, sizeof(msg),
+             C_text("out of memory - heap has reached its maximum size "
+                    "(WebAssembly memory is limited to "
+                    UWORD_COUNT_FORMAT_STRING " bytes)"),
+             (C_uword)emscripten_get_heap_max());
+  panic(msg);
+}
+#endif
+
+
 /* Do a major GC into a freshly allocated heap: */
 
 #define remark(x)  _mark(x, new_tospace_start, &new_tospace_top, new_tospace_limit)
@@ -4064,7 +4229,7 @@ C_regparm void C_rereclaim2(C_uword size, int relative_resize)
   int i;
   C_GC_ROOT *gcrp;
   FINALIZER_NODE *flist;
-  C_byte *new_heapspace, *start;
+  C_byte *new_heapspace = NULL, *start;
   size_t  new_heapspace_size;
 
   if(C_pre_gc_hook != NULL) C_pre_gc_hook(GC_REALLOC);
@@ -4101,6 +4266,34 @@ C_regparm void C_rereclaim2(C_uword size, int relative_resize)
 
   if(size > C_maximal_heap_size) size = C_maximal_heap_size;
 
+#ifdef __EMSCRIPTEN__
+  /* Grow no further than linear memory allows: as far as asked when
+   * wasm_heap_limit or wasm_heap_try says it fits, else to the largest
+   * size between them that wasm_heap_try finds (halving the difference
+   * a few times), else to the limit.  The new fromspace is then already
+   * allocated, if wasm_heap_try did it. */
+  if(size > heap_size) {
+    C_uword limit = wasm_heap_limit(), lo = limit > heap_size ? limit : heap_size,
+            want = size;
+    int i;
+
+    for(i = 0; want > limit && i < 8; i++) {
+      if(wasm_heap_try(want, &new_heapspace, &new_tospace_start)) break;
+
+      want = (lo + (want - lo) / 2) & ~(C_uword)0xffff;
+
+      if(want <= heap_size || want - heap_size < stack_size * 2) break;
+    }
+
+    if(new_heapspace != NULL) size = want;
+    else if(size > limit) {
+      if(limit <= heap_size) wasm_heap_limit_reached();
+
+      size = limit;
+    }
+  }
+#endif
+
   if(debug_mode) {
     C_dbg(C_text("debug"), C_text("resizing heap dynamically from "
                                   UWORD_COUNT_FORMAT_STRING "k to "
@@ -4128,7 +4321,8 @@ C_regparm void C_rereclaim2(C_uword size, int relative_resize)
    * be cycled over to "fromspace" when re-reclamation has finished
    * (that is, after the old one has been freed).
    */
-  if ((new_heapspace = heap_alloc (size, &new_tospace_start)) == NULL)
+  if (new_heapspace == NULL &&
+      (new_heapspace = heap_alloc (size, &new_tospace_start)) == NULL)
     panic(C_text("out of memory - cannot allocate heap segment"));
   new_heapspace_size = size;
 

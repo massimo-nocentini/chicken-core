@@ -47,10 +47,12 @@
  *
  * Per run(), onCell gets, in this order,
  *   queued {position} -> start {count, name} ->
- *     (stream {name, text} | display {mime, data, id} | clear | input {waiting})*
+ *     (stream {name, text} | display {mime, data, id, size} | clear | input {waiting})*
  *     -> done {status, count, ms, wallMs, values, error, module, code, reason, message}
  * or queued -> cancelled {reason}; run() resolves with the done or
- * cancelled event and never rejects.  done.status is ok, error,
+ * cancelled event and never rejects.  A display has a size when its
+ * data was too large to send (the page shows no more than 4 MB): the
+ * number of characters, and data is empty.  done.status is ok, error,
  * incomplete, interrupted or reset (from the kernel), or killed, exited
  * or crashed (the kernel went away).
  *
@@ -58,7 +60,8 @@
  * idle, busy, sleeping, input (the cell reads stdin), dead (exited,
  * crashed or killed; the next run() respawns it) or unavailable.
  *
- * onLog(kind, text): stdout and stderr outside any cell (.csirc), csirc
+ * onLog(kind, text): stdout and stderr outside any cell (.csirc, whose
+ * text displays are logged as stdout, and others as display), csirc
  * (its result), kernel (restarts and exits) and protocol (anything the
  * kernel sent that makes no sense). */
 
@@ -70,6 +73,8 @@
 
   // repl-driver.js's states
   const RUNNING = 0, WAITING = 1, BUSY = 2, SLEEPING = 4, IDLE = 5;
+  // after input, how long the stdin box waits for the kernel to read again
+  const INPUT_HIDE_MS = 250;
 
   // csi options that make sense for the kernel: an option of the list
   // ARG takes an argument (one that does not look like an option)
@@ -119,9 +124,6 @@
       if (f) f(err);
     }
     let carry = '', ackBytes = 0, ackPending = false;
-    // hello and done end a slice, and the worker's next state message
-    // reports that slice's end, maybe after the next cell was sent
-    let staleState = false;
     let watchdog = null, disposed = false;
 
     function emitState() {
@@ -137,7 +139,7 @@
     function kill() {
       gen++;                            // later messages of this worker are ignored
       if (w) { try { w.terminate(); } catch (e) { /* gone */ } }
-      w = null; ready = false; hello = false; carry = ''; ackBytes = 0; staleState = false;
+      w = null; ready = false; hello = false; carry = ''; ackBytes = 0;
       disarm();
     }
 
@@ -159,7 +161,7 @@
       const cur = current;
       current = null;
       disarm();
-      if (cur.waiting) onCell(cur.cellId, { type: 'input', waiting: false });
+      showInput(cur, false);
       const ev = Object.assign({ type: 'done', count: cur.count, ms: null,
                                  wallMs: Math.round(now() - cur.t0), values: null,
                                  error: null, module: null }, fields);
@@ -250,17 +252,19 @@
       }
     }
 
+    // A state message reports the end of a slice, and the worker sends
+    // one after every slice, also one that ran nothing (input or Stop
+    // that reached a kernel at IDLE).  States that come before the
+    // current cell's "start" event are those of earlier slices: the
+    // kernel has not read the cell's request yet.  (The worker flushes
+    // the output of a slice before its state, so "start" comes first.)
     function workerState(st) {
       if (!hello) return;               // startup: stays "starting"
-      if (staleState) {
-        staleState = false;
-        if (!current && st === IDLE) setState('idle');
-        return;
-      }
       if (!current) {
         if (st === IDLE) setState('idle');
         return;
       }
+      if (!current.started) return;
       if (st === IDLE) {                // impossible: done precedes IDLE
         log('protocol', 'the kernel went idle without reporting the end of the cell');
         finish({ status: 'error', error: noErrorResult }, true);
@@ -269,11 +273,18 @@
         return;
       }
       const waiting = st === WAITING;
-      if (waiting !== current.waiting) {
-        current.waiting = waiting;
-        onCell(current.cellId, { type: 'input', waiting });
-      }
+      current.waiting = waiting;
+      // just after input() the box stays up while the kernel may read again
+      if (waiting || !current.hideTimer) showInput(current, waiting);
       setState(waiting ? 'input' : st === SLEEPING ? 'sleeping' : 'busy');
+    }
+
+    // the cell's stdin box: CUR.shown is what onCell was last told
+    function showInput(cur, on) {
+      if (cur.hideTimer) { clearTimeout(cur.hideTimer); cur.hideTimer = null; }
+      if (cur.shown === on) return;
+      cur.shown = on;
+      onCell(cur.cellId, { type: 'input', waiting: on });
     }
 
     function events(text) {
@@ -287,6 +298,13 @@
       }
     }
 
+    function display(ev) {
+      const d = { type: 'display', mime: String(ev.mime), data: String(ev.data),
+                  id: ev.id == null ? null : String(ev.id) };
+      if (Number.isInteger(ev.size) && ev.size >= 0) d.size = ev.size;
+      return d;
+    }
+
     function checkRid(ev) {
       if (!current || ev.rid !== current.rid)
         log('protocol', ev.ev + ' for rid ' + ev.rid + ', current ' + (current ? current.rid : 'none'));
@@ -295,8 +313,11 @@
     function event(ev) {
       switch (ev.ev) {
       case 'hello':
+        if (hello && current) {         // the kernel started over under a cell
+          log('protocol', 'hello during a cell');
+          finish({ status: 'error', error: noErrorResult }, true);
+        }
         hello = true;
-        staleState = true;
         info = { proto: ev.proto, version: ev.version };
         setState('idle');
         settleStart();
@@ -306,26 +327,38 @@
         log('csirc', ev.status === 'ok' ? '~/.csirc loaded'
                                         : (ev.error && ev.error.text) || 'Error in ~/.csirc');
         break;
-      case 'start': checkRid(ev); break;
+      case 'start':
+        checkRid(ev);
+        if (current && ev.rid === current.rid) current.started = true;
+        break;
       case 'display':
       case 'clear':
         if (current) {
           if (ev.rid !== current.rid) checkRid(ev);
-          onCell(current.cellId, ev.ev === 'clear' ? { type: 'clear' }
-                 : { type: 'display', mime: String(ev.mime), data: String(ev.data),
-                     id: ev.id == null ? null : String(ev.id) });
+          onCell(current.cellId, ev.ev === 'clear' ? { type: 'clear' } : display(ev));
+        } else if (ev.rid == null) {    // .csirc: no cell to show it in
+          if (ev.ev === 'clear') break;
+          const d = display(ev);
+          if (d.mime === 'text/plain' && d.size == null) log('stdout', d.data + '\n');
+          else log('display', d.mime + ' output not shown (' + (d.size != null ? d.size : d.data.length) + ' characters)');
         } else log('protocol', ev.ev + ' outside a cell' + (ev.mime ? ' (' + ev.mime + ')' : ''));
         break;
       case 'done':
         if (!current) { log('protocol', 'done for rid ' + ev.rid + ' without a current cell'); break; }
         checkRidDone(ev);
-        staleState = true;
         finish(ev, true);
         setState('idle');
         pump();
         break;
       case 'pong': break;
-      case 'bad-request': log('protocol', 'bad request: ' + ev.text); break;
+      case 'bad-request':
+        log('protocol', 'bad request: ' + ev.text);
+        if (current && !current.started) {      // the cell never starts
+          finish({ status: 'error', error: noErrorResult }, true);
+          setState('idle');
+          pump();
+        }
+        break;
       default: log('protocol', JSON.stringify(ev));
       }
     }
@@ -335,7 +368,8 @@
       if (!hello || current || !queue.length || disposed) return;
       const q = queue.shift();
       const count = ++execCount, rid = count, name = 'In[' + count + ']';
-      current = { cellId: q.cellId, rid, count, resolve: q.resolve, t0: now(), waiting: false };
+      current = { cellId: q.cellId, rid, count, resolve: q.resolve, t0: now(), waiting: false,
+                  shown: false, hideTimer: null, started: false };
       const src = typeof q.source.toWellFormed === 'function' ? q.source.toWellFormed() : q.source;
       post({ type: 'request', text: 'run ' + rid + ' ' + name + '\n' + src });
       onCell(q.cellId, { type: 'start', count, name });
@@ -350,13 +384,18 @@
 
     // ---- the Stop watchdog
 
+    // Armed by stop() and again by every message: it fires when the
+    // worker sent nothing for watchdogMs, whatever the last state it
+    // reported.  A kernel that sleeps reports every 50 ms at least, one
+    // that waits for input answers the interrupt at once, but the slice
+    // that wakes up or gets the input may run into a long primitive
+    // without reporting anything.
     function disarm() { if (watchdog) { clearTimeout(watchdog); watchdog = null; } }
     function arm() {
       disarm();
       watchdog = setTimeout(() => {
         watchdog = null;
         if (!current) return;
-        if (state !== 'busy') { arm(); return; }   // it answers when it reads or sleeps
         const why = 'kernel did not respond to Stop and was restarted';
         kill();
         finish({ status: 'killed', reason: 'unresponsive' });
@@ -410,8 +449,21 @@
         }
         cancelQueue('stopped');
       },
+      // While the kernel reads, and just after (more input may follow
+      // before it reads again).  The cell is busy until the kernel says
+      // otherwise, which may be never: the slice that gets the input may
+      // run into a long primitive.  The stdin box goes unless the kernel
+      // waits again soon.
       input(text, eof = false) {
-        if (current && current.waiting) post({ type: 'input', text: String(text), eof: !!eof });
+        const cur = current;
+        if (!cur || !(cur.waiting || cur.shown)) return;
+        post({ type: 'input', text: String(text), eof: !!eof });
+        if (!cur.waiting) return;
+        cur.waiting = false;
+        setState('busy');
+        if (!cur.hideTimer && cur.shown)
+          cur.hideTimer = setTimeout(() => { cur.hideTimer = null; if (current === cur && !cur.waiting) showInput(cur, false); },
+                                     INPUT_HIDE_MS);
       },
       restart() {
         if (disposed) return Promise.reject({ reason: 'disposed' });

@@ -299,6 +299,22 @@ function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
     assert(S.statesSince().includes(BUSY), 'BUSY was reported');
   });
 
+  await check('28 closing stdout or stderr: they work again at the next prompt', async () => {
+    S.send('(import (scheme base)) (call-with-port (current-output-port) (lambda (p) (write "hi" p)))\n');
+    await S.expectOut(/"hi"/);
+    await S.prompt();
+    S.send('(+ 2 2)\n');
+    await S.expectOut(val('4'));
+    await S.prompt();
+    const e0 = S.err.length;
+    S.send('(close-output-port (current-error-port))\n');
+    await S.prompt();
+    S.send('(display "e" (current-error-port)) (+ 3 3)\n');
+    await S.expectOut(val('6'));
+    await S.prompt();
+    assert(/e$/.test(S.err.slice(e0)), 'stderr again: ' + JSON.stringify(S.err.slice(e0)));
+  });
+
   await check('21 backpressure: canRun() false stops pumping, resumeOutput() restarts', async () => {
     S.high = 1 << 20;
     S.unacked = 0;

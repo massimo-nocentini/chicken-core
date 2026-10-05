@@ -43,16 +43,17 @@
   ;; a notebook cell's) definitions cannot clobber them (not "block":
   ;; it would take the ##sys# globals assigned here for this unit's own)
   (hide take-input! has-input? take-eof set-state! set-wakeup! slice-over?
-	interrupted? js-write unbuffered make-web-output-port web-stdout
-	web-stderr flush-std yield! in-bv pending eof-pending at-prompt
+	interrupted? js-write unbuffered make-web-output-port stdout+flush
+	stderr+flush web-stdout web-stderr flush-stdout flush-stderr flush-std
+	reopen-std! yield! in-bv pending eof-pending at-prompt stale-at-prompt
 	abandon-input! fill! read-ch peek-ch web-stdin drop-input!
-	value-of display min flush-output open-output-string
+	value-of display min open-output-string
 	get-output-string string->utf8 bytevector-length
 	current-process-milliseconds return-to-host)
   (foreign-declare "#include \"webrepl.h\""))
 
 (import (except scheme display min)
-	(except chicken.base flush-output)
+	chicken.base
 	(except chicken.bytevector string->utf8 bytevector-length)
 	(except chicken.time current-process-milliseconds)
 	(except chicken.platform return-to-host)
@@ -66,7 +67,6 @@
 (define (value-of global) (##sys#slot global 0))
 (define display (value-of 'scheme#display))
 (define min (value-of 'scheme#min))
-(define flush-output (value-of 'chicken.base#flush-output))
 (define open-output-string (value-of 'scheme#open-output-string))
 (define get-output-string (value-of 'scheme#get-output-string))
 (define string->utf8 (value-of 'chicken.bytevector#string->utf8))
@@ -93,9 +93,17 @@
 ;;; on flush-output and on exit); writing to one flushes the other first,
 ;;; so the interleaving of stdout and stderr is kept.  Once `unbuffered'
 ;;; is set (by an error that will halt), every write goes out at once.
+;;; A large string goes out at once, without being copied into the
+;;; buffer (webrepl-main.c passes it to JavaScript in pieces).  The user
+;;; may close the standard ports (call-with-port does): webio flushes
+;;; the output ports with their own procedures, as flush-output would
+;;; then signal an error, and reopens all three at the next prompt (the
+;;; notebook kernel after each cell), as nothing could be shown or read
+;;; any more.
 
 (define unbuffered #f)
 
+;; -> (port . its flush procedure)
 (define (make-web-output-port fd before-write)
   (let ((buf (open-output-string))
 	(n 0))
@@ -105,21 +113,36 @@
 	  (set! buf (open-output-string))
 	  (set! n 0)
 	  (js-write fd bv (bytevector-length bv)))))
-    (make-output-port
-     (lambda (s)
-       (before-write)
-       (display s buf)
-       (set! n (fx+ n (string-length s)))
-       (when (or unbuffered (fx>= n 8192)) (flush)))
-     flush
-     force-output: flush)))
+    (cons (make-output-port
+	   (lambda (s)
+	     (before-write)
+	     (cond ((fx> (string-length s) 65536)
+		    (flush)
+		    (let ((bv (string->utf8 s)))
+		      (js-write fd bv (bytevector-length bv))))
+		   (else
+		    (display s buf)
+		    (set! n (fx+ n (string-length s)))
+		    (when (or unbuffered (fx>= n 8192)) (flush)))))
+	   flush
+	   force-output: flush)
+	  flush)))
 
-(define web-stdout (make-web-output-port 1 (lambda () (flush-output web-stderr))))
-(define web-stderr (make-web-output-port 2 (lambda () (flush-output web-stdout))))
+(define stdout+flush (make-web-output-port 1 (lambda () (flush-stderr))))
+(define stderr+flush (make-web-output-port 2 (lambda () (flush-stdout))))
+(define web-stdout (car stdout+flush))
+(define web-stderr (car stderr+flush))
+(define flush-stdout (cdr stdout+flush))
+(define flush-stderr (cdr stderr+flush))
 
 (define (flush-std)
-  (flush-output web-stdout)
-  (flush-output web-stderr))
+  (flush-stdout)
+  (flush-stderr))
+
+(define (reopen-std!)			; slot 8: the directions still open
+  (##sys#setislot web-stdin 8 1)
+  (##sys#setislot web-stdout 8 2)
+  (##sys#setislot web-stderr 8 2))
 
 (define (yield! state)
   (flush-std)
@@ -135,14 +158,17 @@
 (define pending '())			; characters fed but not yet read
 (define eof-pending #f)
 (define at-prompt #f)			; nothing read since the last prompt
+(define stale-at-prompt #t)		; see abandon-input!
 
 (define (abandon-input!)		; Ctrl-C while waiting for input
   (set! pending '())
   (set! eof-pending #f)
   ;; At a fresh prompt there is nothing to abandon (and the Stop may
   ;; be a stale one from an evaluation that just finished), so only a
-  ;; partially read form is reported and reset.
-  (unless at-prompt (##sys#user-interrupt-hook)))
+  ;; partially read form is reported and reset.  Not in the notebook
+  ;; kernel, where a prompt can only be a cell's (a nested repl), and
+  ;; a Stop that came between cells never reaches here.
+  (unless (and at-prompt stale-at-prompt) (##sys#user-interrupt-hook)))
 
 (define (fill!)
   (let loop ()
@@ -186,6 +212,7 @@
   (let ((old ##sys#read-prompt-hook))
     (lambda ()
       (set! at-prompt #t)
+      (reopen-std!)
       (old))))
 
 
@@ -244,6 +271,10 @@
 (define drop-input! (foreign-lambda void "webio_drop_input"))
 (define ##webio#flush flush-std)
 (define ##webio#yield yield!)
+(define ##webio#reopen-std! reopen-std!)
+
+(define (##webio#prompts-are-cells!)	; Stop at a prompt interrupts
+  (set! stale-at-prompt #f))
 
 (define (##webio#discard-input!)	; between cells: no stdin leaks across
   (set! pending '())

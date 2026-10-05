@@ -72,9 +72,27 @@ EM_JS(void, js_emit, (int fd, const unsigned char *p, int n), {
 
 /* Called from webio.scm */
 
+/* Output goes to JS in pieces of at most 1 MB, each ending on a UTF-8
+ * character boundary: a single write may hold more characters than the
+ * longest string an engine makes (2^29 - 24 in V8), and the decoder,
+ * which streams, joins the pieces again. */
+#define WEBIO_PIECE (1 << 20)
+
 void webio_write(int fd, const unsigned char *p, int n)
 {
-  js_emit(fd, p, n);
+  while(n > 0) {
+    int k = n;
+
+    if(k > WEBIO_PIECE) {
+      k = WEBIO_PIECE;
+      /* back to the start of the character (at most 3 bytes) */
+      while(k > WEBIO_PIECE - 3 && (p[ k ] & 0xc0) == 0x80) --k;
+    }
+
+    js_emit(fd, p, k);
+    p += k;
+    n -= k;
+  }
 }
 
 void webio_set_state(int s)

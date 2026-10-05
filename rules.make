@@ -1076,6 +1076,8 @@ WASM_PREFIX ?= /chicken
 # always recorded, so that a build directory made before wasm64 became
 # the default (or with the other arch) is rebuilt, not mixed
 WASM_ARCH ?= wasm64
+# likewise, as its default depends on WASM_ARCH (see Makefile.emscripten)
+WASM_SJLJ ?= $(if $(filter wasm32,$(WASM_ARCH)),wasm-legacy,wasm)
 EMCC ?= $(if $(EMSDK),$(EMSDK)/upstream/emscripten/emcc,emcc)
 WASM_CHICKEN_BIN ?= $(abspath chicken$(EXE))
 WASM_HOST_CHICKEN ?= env LD_LIBRARY_PATH=$(abspath .) $(WASM_CHICKEN_BIN)

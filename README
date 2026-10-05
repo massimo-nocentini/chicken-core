@@ -349,12 +349,13 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     A configured and built host tree can cross-build CHICKEN to
     WebAssembly with Emscripten (tested with emscripten 6.0.10; the
-    tests need node 22 or later, 24 for wasm64, and "wasm-serve"
+    tests need node 22 or later, 24.15 for wasm64, and "wasm-serve"
     needs python3).
     By default the target is wasm64: 64-bit WebAssembly (memory64),
     on which CHICKEN is a 64-bit platform, with 62-bit fixnums and
-    a heap that may grow past 4 GB.  It runs in Chrome and Edge 133,
-    Firefox 134 and node 24 or later, but not in Safari (up to
+    a heap that may grow past 4 GB.  It runs in Chrome and Edge 137,
+    Firefox 134 and node 24.15 or later (Chrome and Edge 133 and
+    node 24.0 with WASM_SJLJ=wasm-legacy), but not in Safari (up to
     27.2; only Safari Technology Preview has memory64 so far).
     "WASM_ARCH=wasm32" builds the 32-bit target instead, which runs
     in all of them (see WASM_ARCH below).
@@ -394,29 +395,46 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       cell runs with Shift+Enter (and the next cell is selected),
       Ctrl+Enter or "Run all", and a cell that fails cancels the
       cells queued after it.  Definitions persist from cell to
-      cell.  Output streams in while a cell runs, a cell can read
+      cell.  Output streams in while a cell runs (keeping the first
+      and last 512 KB of its text and 500 of its outputs, with a
+      note saying how much was left out), a cell can read
       stdin (a field opens under it), and Stop interrupts it; a
       long primitive that does not yield (a huge bignum) is ended
-      by restarting the kernel after 3 s, which loses its state.
-      An incomplete cell (an unclosed paren) evaluates nothing.
+      by restarting the kernel after 3 s, which loses its state,
+      also when it follows a "sleep" or a read in the same cell.
+      An incomplete cell (an unclosed paren or string, a quote or
+      "#;" at its end, comments aside) evaluates nothing.
       Markdown cells hold text.  "(import notebook)" provides rich
       output: "html" and "svg" (strings or SXML), "markdown",
       "text", "image" (a PNG, JPEG, GIF or WebP bytevector), "table"
       (a list of rows, and optional column names) and "show", which
       displays a value at once and, given an id, replaces the
       earlier display with that id ("clear-output" empties the
-      cell's output).  Markup is shown only after it was rebuilt
-      from an allowlist: no scripts, event handlers, style sheets
-      or external resources.  csi's toplevel commands (",d", ",x")
-      work in cells, whose toplevel is the REPL's ("read-line" needs
-      "(import (chicken io))", for example).  SRFI-18 threads only
-      make progress while some cell runs.  The notebook is saved in
-      the browser (outputs up to 64 KB per cell) and can be exported
+      cell's output; output over 4 MB is not shown, and in the
+      .csirc it goes to the kernel messages).  Markup is shown only
+      after it was rebuilt from an allowlist: no scripts, event
+      handlers, style sheets or external resources (nor CSS
+      functions that load images, such as "image-set"), SVG "use"
+      elements only while the elements they copy (nested ones
+      multiply) are no more than the markup's characters, or 2000,
+      and filters (SVG or CSS, and shadows) only while together
+      they cost no more than about 16 blurs of the output (an
+      element past that loses its filter).  csi's toplevel commands
+      (",d", ",x") work in cells, whose toplevel is the REPL's
+      ("read-line" needs "(import (chicken io))", for example).
+      SRFI-18 threads only make progress while some cell runs.  The
+      notebook is saved in the browser (outputs up to 64 KB per
+      cell) and can be exported
       and imported as a ".scm" file (cells start at ";; %%" lines,
       text cells at ";; %% [markdown]"; "csi -s" runs it if it does
       not use the notebook module), or as ".json", with outputs; a
       ".scm" file without such lines is split into cells at blank
-      lines.  In the notebook, Esc and then "?" lists the
+      lines.  Import reads files of up to 5 MB and 5000 cells, and
+      keeps up to 1000 outputs of a cell (the first ones and the
+      last), so an export to ".json" keeps all the outputs only
+      while they fit, and else caps them per cell (a toast says
+      so); either export says when Import cannot read the file
+      back.  In the notebook, Esc and then "?" lists the
       keyboard shortcuts.  The kernel is csi running
       "-e (##webnb#kernel)" (emscripten/webnb.scm): the page posts
       requests to a mailbox in C and reads events as JSON lines on
@@ -610,14 +628,34 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       Chrome and node allow, or 2 GB on wasm32; the heap grows
       between them).  The heap is two semispaces, and growing it
       needs the old and the new heap at once, so the live data
-      that fits is well below the maximum: with 16 GB, a single
-      object of about 4 GB works, and a larger one ends in an
-      "out of memory" panic.
+      that fits is well below the maximum.  The heap grows only as
+      far as both its new halves surely fit in the memory left
+      (including what malloc holds free, as after the heap
+      shrank), and then stops with "out of memory - heap has reached its
+      maximum size (WebAssembly memory is limited to N bytes)".
+      With 16 GB, a single object of up to nearly 8 GB works;
+      live data made of many smaller objects stops at about 4 GB,
+      as the earlier heaps leave memory fragmented.
 
     WASM_SJLJ
-      emscripten's SUPPORT_LONGJMP mode: "wasm" (the default,
-      needs Chrome 95, Firefox 100, Safari 15.2 or later) or
-      "emscripten".
+      How setjmp and longjmp (which the runtime uses for every
+      minor GC) are compiled:
+        "wasm" (the default on wasm64): WebAssembly exception
+          handling with exnref, the standard instructions; needs
+          Chrome and Edge 137, Firefox 131, Safari 18.4, node 22.19
+          (in the 22 series) or 24.15 or later.
+        "wasm-legacy" (the default on wasm32): the legacy
+          exception handling instructions, which run in Chrome 95,
+          Firefox 100, Safari 15.2, node 17 or later, but which
+          Firefox reports as deprecated, with a console warning for
+          each module it compiles.
+        "emscripten": emscripten's emulation through JavaScript
+          exceptions, for engines without wasm exception handling.
+      With "wasm", the browser page says so, and suggests
+      "wasm-legacy", in a browser without exnref.  "wasm" and
+      "wasm-legacy" ran equally fast (median times within 3%, about
+      the run-to-run noise) on compiled fib and fft and on
+      interpreted fib, in node 25 on wasm64.
 
     WASM_FRAME_PAD
       The minimum shadow-stack bytes per CPS frame (default 128 on
@@ -683,6 +721,13 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         On wasm32 "current-jiffy" counts milliseconds, not
         microseconds.
 
+      - Local time is the JavaScript engine's: in node that of TZ
+        or of the system, in the browser the browser's.  The C
+        library ignores TZ, and "local-timezone-abbreviation" gives
+        names like "UTC+0200".  When TZ is not set, the runtime sets
+        it to the engine's time zone (such as "Europe/Rome"), which
+        is what the locale egg (used by srfi-19) needs.
+
       - Runtime options ("-:...") must precede all other arguments.
 
       - A fault in unsafe code (e.g. "fx/" by zero compiled with
@@ -692,9 +737,13 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
       - In the browser REPL, long primitives (a huge "expt", "sort"
         or "make-list") do not yield: Stop then replaces the worker
-        after 3 seconds.  SRFI-18 threads are suspended while the
+        after 3 seconds (whatever the REPL showed last, such as
+        "sleeping").  SRFI-18 threads are suspended while the
         REPL waits for input, and "emergency-exit" may lose buffered
-        output.
+        output.  Closing a standard port (as "call-with-port" does)
+        closes it until the next prompt, or in the notebook until
+        the cell ends (where a native csi would report its closed
+        input port again and again).
 
     2.8. Uninstalling CHICKEN
 

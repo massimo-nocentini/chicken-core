@@ -33,6 +33,7 @@
  *   splitPercent(text) -> {title, cells}  toPercent(nb) -> string
  *   toJson(nb) -> string                  fromJson(text) -> {title, created,
  *                                           modified, cells, warnings}
+ *   limitOutputs(outputs, max) -> outputs (as Import keeps them)
  *   balance(text) -> {depth, ok, stray, open}
  *   splitForms(text) -> [string]          newId() -> string
  *
@@ -91,13 +92,14 @@
   const ESCAPABLE = /[!"#$%&'()*+,\-./:;<=>?@[\\\]^_`{|}~]/;
 
   // Linear in s: brackets are matched once (bracketPairs), a failed
-  // search for an emphasis closer is not repeated (noCloser), and text
-  // is flushed at each line end.
+  // search for an emphasis closer is not repeated (noCloser), code span
+  // closers are looked up in an index of the backtick runs (tickRuns),
+  // and text is flushed at each line end.
   function inline(doc, s, out, depth) {
     // out: a node to append to
     depth = depth || 0;
     if (depth > 32) { out.appendChild(doc.createTextNode(s)); return out; }
-    let i = 0, text = '', pairs = null;
+    let i = 0, text = '', pairs = null, runs = null;
     const noCloser = {};
     const flush = () => { if (text) { out.appendChild(doc.createTextNode(text)); text = ''; } };
     const n = s.length;
@@ -121,9 +123,7 @@
       if (c === '`') {
         let j = i; while (s[j] === '`') j++;
         const ticks = s.slice(i, j);
-        const end = s.indexOf(ticks, j);
-        let e = end;
-        while (e >= 0 && s[e + ticks.length] === '`') e = s.indexOf(ticks, e + ticks.length + 1);
+        const e = tickCloser(runs || (runs = tickRuns(s)), j - i, j);
         if (e >= 0) {
           flush();
           let code = s.slice(j, e).replace(/\n/g, ' ');
@@ -157,7 +157,7 @@
         continue;
       }
       if (c === '!' && s[i + 1] === '[') {
-        const r = linkAt(s, i + 1, pairs || (pairs = bracketPairs(s)));
+        const r = linkAt(s, i + 1, pairs || (pairs = bracketPairs(s, runs || (runs = tickRuns(s)))));
         if (r) {
           flush();
           const src = safeImageSrc(r.url);
@@ -178,7 +178,7 @@
         }
       }
       if (c === '[') {
-        const r = linkAt(s, i, pairs || (pairs = bracketPairs(s)));
+        const r = linkAt(s, i, pairs || (pairs = bracketPairs(s, runs || (runs = tickRuns(s)))));
         if (r) {
           flush();
           const href = safeHref(r.url);
@@ -225,24 +225,40 @@
     return a;
   }
 
-  // the end of the code span whose backticks start at s[i], or -1
-  function codeSpanEnd(s, i) {
-    let j = i; while (s[j] === '`') j++;
-    const ticks = s.slice(i, j);
-    let e = s.indexOf(ticks, j);
-    while (e >= 0 && s[e + ticks.length] === '`') e = s.indexOf(ticks, e + ticks.length + 1);
-    return e < 0 ? -1 : e + ticks.length;
+  // The runs of backticks in s, as a Map from length to their starts in
+  // order.  A code span ends at the next run exactly as long as the one
+  // that opens it (as in CommonMark), found by a binary search: searching
+  // the rest of s for each opener would be quadratic.
+  function tickRuns(s) {
+    const runs = new Map();
+    for (let p = s.indexOf('`'); p >= 0; ) {
+      let e = p + 1; while (s[e] === '`') e++;
+      let a = runs.get(e - p);
+      if (!a) runs.set(e - p, a = []);
+      a.push(p);
+      p = s.indexOf('`', e);
+    }
+    return runs;
+  }
+  // the start of the first run of exactly LEN backticks at or after FROM, or -1
+  function tickCloser(runs, len, from) {
+    const a = runs.get(len);
+    if (!a) return -1;
+    let lo = 0, hi = a.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] < from) lo = m + 1; else hi = m; }
+    return lo < a.length ? a[lo] : -1;
   }
 
   // "[" index -> its "]" index, outside escapes and code spans
-  function bracketPairs(s) {
+  function bracketPairs(s, runs) {
     const pairs = new Map(), open = [];
     for (let j = 0; j < s.length; j++) {
       const c = s[j];
       if (c === '\\') { j++; continue; }
       if (c === '`') {
-        const e = codeSpanEnd(s, j);
-        if (e >= 0) j = e - 1; else while (s[j + 1] === '`') j++;
+        let k = j; while (s[k] === '`') k++;
+        const e = tickCloser(runs, k - j, k);
+        j = (e >= 0 ? e + k - j : k) - 1;
         continue;
       }
       if (c === '[') open.push(j);
@@ -464,10 +480,18 @@
           while (i < n && !blank(lines[i]) && lines[i].includes('|')) {
             const row = splitRow(lines[i]);
             const r = doc.createElement('tr');
-            for (let k = 0; k < head.length; k++) {
+            // a short row gets one cell for the missing ones: the DOM
+            // stays linear in the source (N columns, N rows of "|")
+            const m = Math.min(row.length, head.length);
+            for (let k = 0; k < m; k++) {
               const td = doc.createElement('td');
               if (aligns[k]) td.style.textAlign = aligns[k];
-              inline(doc, row[k] || '', td);
+              inline(doc, row[k], td);
+              r.appendChild(td);
+            }
+            if (m < head.length) {
+              const td = doc.createElement('td');
+              td.setAttribute('colspan', String(head.length - m));
               r.appendChild(td);
             }
             tbody.appendChild(r);
@@ -543,7 +567,22 @@
     'elevation pointsAtX pointsAtY pointsAtZ limitingConeAngle z display visibility overflow vector-effect ' +
     'shape-rendering text-rendering image-rendering paint-order pathLength version role systemLanguage ' +
     'aria-label aria-hidden aria-labelledby aria-describedby tabindex href').split(' '));
-  const BAD_CSS = /url\s*\(|image-set|expression|@import|-moz-binding|behavior|javascript:|\\|<|>/i;
+  // image-set(), src(), image() and cross-fade() load images without url()
+  const BAD_CSS = /url\s*\(|image-set|src\s*\(|image\s*\(|cross-fade|element\s*\(|expression|@import|-moz-binding|behavior|javascript:|\\|<|>/i;
+  // The only CSS functions an SVG attribute may use (most of them are
+  // presentation attributes, which are CSS values), and no escapes.
+  const CSS_FUNCS = new Set(('url rgb rgba hsl hsla hwb lab lch oklab oklch color color-mix light-dark ' +
+    'calc min max clamp round mod rem abs sign sin cos tan asin acos atan atan2 pow sqrt hypot log exp ' +
+    'matrix matrix3d translate translatex translatey translatez translate3d scale scalex scaley scalez scale3d ' +
+    'rotate rotatex rotatey rotatez rotate3d skew skewx skewy perspective ' +
+    'blur brightness contrast drop-shadow grayscale hue-rotate invert opacity saturate sepia ' +
+    'inset circle ellipse polygon path rect xywh linear-gradient radial-gradient conic-gradient ' +
+    'repeating-linear-gradient repeating-radial-gradient repeating-conic-gradient').split(' '));
+  function cssValueOk(v) {
+    if (v.includes('\\')) return false;
+    for (const m of v.matchAll(/([a-zA-Z_-][\w-]*)\s*\(/g)) if (!CSS_FUNCS.has(m[1].toLowerCase())) return false;
+    return true;
+  }
 
   function cleanStyle(v, prefix) {
     const keep = [];
@@ -580,6 +619,7 @@
       return tag === 'a' ? h : null;      // use, textPath, gradients: fragments only
     }
     if (name === 'src') return el.localName === 'img' && !svg ? safeImageSrc(v) : null;
+    if (svg && name !== 'role' && !/^aria-/.test(name) && !cssValueOk(v)) return null;
     if (/url\s*\(/i.test(v)) {
       const m = /^\s*url\(\s*(['"]?)#([\w.:-]+)\1\s*\)\s*(.*)$/.exec(v);
       if (!m || /url\s*\(/i.test(m[3])) return null;
@@ -635,11 +675,158 @@
     }
   }
 
+  // <use> copies its target, which may hold more <use>: ten uses of a
+  // group of ten uses of ... render 10^6 elements from a kilobyte.  The
+  // rendered size of each <use> (its target's elements, uses expanded)
+  // is counted, and a <use> that would take the total for the markup
+  // past BUDGET is dropped, as is one in a cycle or in a chain deeper
+  // than USE_CHAIN.  (Ids are prefixed per output, so a <use> only
+  // finds its target in the same markup.)
+  const USE_CHAIN = 16;
+  function limitUses(root, budget) {
+    const uses = [...root.querySelectorAll('use')];
+    if (!uses.length) return;
+    const byId = new Map();
+    for (const e of root.querySelectorAll('[id]')) if (!byId.has(e.id)) byId.set(e.id, e);
+    const target = u => {
+      const h = u.getAttribute('href');
+      return h && h[0] === '#' ? byId.get(h.slice(1)) : undefined;
+    };
+    const memo = new Map();
+    // EL's rendered elements, uses expanded; Infinity in a cycle
+    function weight(el, chain) {
+      if (memo.has(el)) return memo.get(el);
+      if (chain > USE_CHAIN) return Infinity;
+      memo.set(el, Infinity);
+      let w = 1;
+      if (el.localName === 'use') { const t = target(el); if (t) w += weight(t, chain + 1); }
+      for (let c = el.firstElementChild; c && w <= budget; c = c.nextElementSibling) w += weight(c, chain);
+      if (w > budget) w = Infinity;
+      memo.set(el, w);
+      return w;
+    }
+    let total = 0;
+    for (const u of uses) {
+      if (!root.contains(u)) continue;    // inside a dropped one
+      const t = target(u);
+      const w = t ? weight(t, 1) : 0;
+      if (total + w > budget) u.remove(); else total += w;
+    }
+  }
+
+  // A filter costs about its primitives times the area it covers, for
+  // every element it applies to, at every paint: twenty 800x800 rects
+  // sharing a filter of five blurs and dilations take minutes to paint,
+  // from 1.7 KB.  Each element with a filter (SVG or CSS, or a shadow)
+  // is charged its weight (its primitives, kernel sizes counting) times
+  // the copies of it that are rendered (uses counting), and loses it
+  // when the total for the markup would go past FILTER_BUDGET (a blur
+  // weighs 4), so that what is kept costs about as much as 16 blurs of
+  // the whole output, at most (in headless Chromium and Firefox, which
+  // paint in software, 0.6 s per paint of an 800x800 SVG, 1.5 s of a
+  // 1200x800 HTML element).  So does a filter inside a mask, pattern,
+  // marker or clip path, painted once per user (or vertex).
+  const FILTER_BUDGET = 64;
+  const FE_WEIGHT = { feGaussianBlur: 4, feDropShadow: 5, feDiffuseLighting: 3, feSpecularLighting: 3,
+                      feDisplacementMap: 2, feMerge: 0, feMergeNode: 1, feDistantLight: 0, fePointLight: 0,
+                      feSpotLight: 0, feFuncA: 0, feFuncB: 0, feFuncG: 0, feFuncR: 0 };
+  const FILTER_PROPS = /^\s*(filter|-webkit-filter|backdrop-filter|-webkit-backdrop-filter|box-shadow|text-shadow)\s*:/i;
+  const NOT_RENDERED = new Set(['defs', 'symbol', 'clipPath', 'mask', 'pattern', 'marker', 'linearGradient',
+                                'radialGradient', 'filter', 'title', 'desc']);
+  const REPAINTED = new Set(['clipPath', 'mask', 'pattern', 'marker']);
+  function limitFilters(root) {
+    const els = [...root.querySelectorAll('*')];
+    const byId = new Map(), usesOf = new Map();
+    for (const e of els) if (e.id && !byId.has(e.id)) byId.set(e.id, e);
+    for (const u of els) {
+      if (u.localName !== 'use') continue;
+      const h = u.getAttribute('href'), t = h && h[0] === '#' && byId.get(h.slice(1));
+      if (t) { if (!usesOf.has(t)) usesOf.set(t, []); usesOf.get(t).push(u); }
+    }
+    const num = v => { const n = Number(v); return isFinite(n) ? Math.abs(n) : 0; };
+    const fweights = new Map();
+    function filterWeight(f) {
+      if (!f || f.localName !== 'filter') return 0;
+      if (fweights.has(f)) return fweights.get(f);
+      fweights.set(f, 0);                 // an href cycle
+      let w = 0, prims = 0;
+      for (const p of f.querySelectorAll('*')) {
+        const n = p.localName;
+        prims++;
+        if (n === 'feMorphology')
+          w += 1 + Math.max(0, ...String(p.getAttribute('radius') || '').split(/[\s,]+/).map(num)) / 4;
+        else if (n === 'feTurbulence') w += 2 * Math.max(1, num(p.getAttribute('numOctaves') || 1));
+        else w += n in FE_WEIGHT ? FE_WEIGHT[n] : 1;
+      }
+      // a filter without primitives takes those of the one it links to
+      const h = f.getAttribute('href');
+      if (!prims && h && h[0] === '#') w = filterWeight(byId.get(h.slice(1)));
+      fweights.set(f, w);
+      return w;
+    }
+    // what a filter value costs: url(#f) its filter, functions 1 to 5
+    function chainWeight(v) {
+      let w = 0;
+      for (const m of String(v).matchAll(/([a-zA-Z-]+)\s*\(\s*(?:['"]?#([\w.:-]+))?/g)) {
+        const f = m[1].toLowerCase();
+        w += f === 'url' ? filterWeight(m[2] && byId.get(m[2])) : f === 'blur' ? 4 : f === 'drop-shadow' ? 5 : 1;
+      }
+      return w;
+    }
+    function weight(el) {
+      let w = el.hasAttribute('filter') ? chainWeight(el.getAttribute('filter')) : 0;
+      for (const d of String(el.getAttribute('style') || '').split(';')) {
+        const m = FILTER_PROPS.exec(d);
+        if (!m) continue;
+        const v = d.slice(m[0].length);
+        if (/^\s*none\s*$/i.test(v)) continue;
+        // a shadow costs a blur each (a comma outside parentheses each)
+        w += /shadow$/i.test(m[1]) ? 4 * (v.replace(/\([^)]*\)/g, '').split(',').length) : chainWeight(v);
+      }
+      return w;
+    }
+    // the copies of EL rendered: where it is in the tree, and uses of it
+    const memo = new Map();
+    function renders(el) {
+      if (memo.has(el)) return memo.get(el);
+      memo.set(el, 0);                    // limitUses dropped cycles
+      const p = el.parentElement;
+      let n = !p || p === root ? 1 : NOT_RENDERED.has(p.localName) ? viaUses(p) : renders(p);
+      n += viaUses(el);
+      memo.set(el, n);
+      return n;
+    }
+    function viaUses(el) {
+      let n = 0;
+      for (const u of usesOf.get(el) || []) n += renders(u);
+      return n;
+    }
+    function repainted(el) {
+      for (let a = el.parentElement; a && a !== root; a = a.parentElement) if (REPAINTED.has(a.localName)) return true;
+      return false;
+    }
+    let total = 0;
+    for (const el of els) {
+      if (!el.hasAttribute('filter') && !el.hasAttribute('style')) continue;
+      const w = weight(el);
+      if (!w) continue;
+      const cost = repainted(el) ? Infinity : w * renders(el);
+      if (total + cost <= FILTER_BUDGET) { total += cost; continue; }
+      el.removeAttribute('filter');
+      if (el.hasAttribute('style')) {
+        const kept = el.getAttribute('style').split(';').filter(d => !FILTER_PROPS.test(d)).join(';');
+        if (kept.trim()) el.setAttribute('style', kept); else el.removeAttribute('style');
+      }
+    }
+  }
+
   function sanitizeMarkup(str, kind, idPrefix, doc) {
     doc = doc || document;
     const prefix = idPrefix || '';
     const frag = doc.createDocumentFragment();
     const P = new (doc.defaultView && doc.defaultView.DOMParser || DOMParser)();
+    // as many elements from uses as the markup has characters
+    const budget = Math.max(2000, String(str).length);
     if (kind === 'svg') {
       const d = P.parseFromString(String(str), 'image/svg+xml');
       if (d.getElementsByTagName('parsererror').length || !d.documentElement || d.documentElement.namespaceURI !== SVG_NS)
@@ -648,11 +835,15 @@
       const wrap = d.createElement('x');      // so that rebuild sees the root as a child
       wrap.appendChild(d.documentElement);
       rebuild(doc, wrap, holder, prefix, 0);
+      limitUses(holder, budget);
+      limitFilters(holder);
       while (holder.firstChild) frag.appendChild(holder.firstChild);
       return frag;
     }
     const d = P.parseFromString('<!doctype html><html><head></head><body>' + String(str), 'text/html');
     rebuild(doc, d.body, frag, prefix, 0);
+    limitUses(frag, budget);
+    limitFilters(frag);
     return frag;
   }
 
@@ -792,7 +983,10 @@
 
   const MIMES = new Set(['text/plain', 'text/html', 'image/svg+xml', 'text/markdown',
                          'image/png', 'image/jpeg', 'image/gif', 'image/webp']);
-  const LIMITS = { file: 5 * 1024 * 1024, cells: 5000, source: 1024 * 1024 };
+  // what Import accepts; a cell may be as large as the file (and keeps
+  // at most OUTPUTS outputs, see limitOutputs)
+  const LIMITS = { file: 5 * 1024 * 1024, cells: 5000, source: 5 * 1024 * 1024, outputs: 1000 };
+  const NO_LIMITS = { file: Infinity, cells: Infinity, source: Infinity, outputs: Infinity };
   const str = (x, max) => typeof x === 'string' && x.length <= (max || Infinity);
   const strOrNull = x => x === null || x === undefined ? null : typeof x === 'string' ? x.slice(0, 4096) : null;
 
@@ -846,9 +1040,22 @@
     });
   }
 
-  function fromJson(text) {
+  // At most MAX outputs: the first ones, a note saying how many were
+  // left out, and the last one (which may be the error that ended the
+  // cell).  OUTS itself when it has no more.
+  function limitOutputs(outs, max) {
+    if (!Array.isArray(outs) || outs.length <= max) return outs;
+    if (max < 3) return outs.slice(0, max);
+    const omitted = outs.length - (max - 1);
+    return outs.slice(0, max - 2).concat([{ k: 'note', text: '… ' + omitted + ' outputs were left out' }],
+                                         outs.slice(-1));
+  }
+
+  // OPTS.limits false: no limits, for what the page saved itself
+  function fromJson(text, opts) {
+    const lim = opts && opts.limits === false ? NO_LIMITS : LIMITS;
     if (typeof text !== 'string') throw new Error('not a notebook');
-    if (text.length > LIMITS.file) throw new Error('the file is larger than 5 MB');
+    if (text.length > lim.file) throw new Error('the file is larger than 5 MB');
     let j;
     try { j = JSON.parse(text); } catch (e) { throw new Error('not valid JSON: ' + e.message); }
     if (!j || typeof j !== 'object' || j.format !== 'chicken-notebook' || !Array.isArray(j.cells))
@@ -856,13 +1063,13 @@
     const warnings = [];
     if (typeof j.version === 'number' && j.version > 1)
       warnings.push('This notebook was saved by a newer version (format ' + j.version + '); it was imported as far as possible.');
-    if (j.cells.length > LIMITS.cells) throw new Error('more than ' + LIMITS.cells + ' cells');
+    if (j.cells.length > lim.cells) throw new Error('more than ' + lim.cells + ' cells');
     const meta = j.meta && typeof j.meta === 'object' ? j.meta : {};
     const seen = new Set();
     const cells = [];
-    let dropped = 0;
+    let dropped = 0, cut = 0;
     for (const c of j.cells) {
-      if (!c || typeof c !== 'object' || (c.type !== 'code' && c.type !== 'markdown') || !str(c.source, LIMITS.source)) { dropped++; continue; }
+      if (!c || typeof c !== 'object' || (c.type !== 'code' && c.type !== 'markdown') || !str(c.source, lim.source)) { dropped++; continue; }
       let id = typeof c.id === 'string' && ID_RE.test(c.id) && !seen.has(c.id) ? c.id : newId();
       while (seen.has(id)) id = newId();
       seen.add(id);
@@ -870,12 +1077,16 @@
       if (c.type === 'code' && Number.isInteger(c.count) && c.count > 0 && c.count < 1e9) cell.count = c.count;
       if (c.type === 'code' && FAILED.has(c.status)) cell.status = c.status;
       if (Array.isArray(c.outputs)) {
-        const outs = c.outputs.slice(0, 1000).map(cleanOutput).filter(Boolean);
+        const all = c.outputs.map(cleanOutput).filter(Boolean);
+        const outs = limitOutputs(all, lim.outputs);
+        if (outs !== all) cut++;
         if (outs.length) cell.outputs = outs;
       }
       cells.push(cell);
     }
     if (dropped) warnings.push(dropped + ' invalid cell' + (dropped > 1 ? 's were' : ' was') + ' skipped.');
+    if (cut) warnings.push(cut + (cut > 1 ? ' cells had' : ' cell had') + ' more than ' + lim.outputs +
+                           ' outputs, so some were left out.');
     return {
       title: typeof meta.title === 'string' ? meta.title.slice(0, 200) : '',
       created: cleanDate(meta.created), modified: cleanDate(meta.modified),
@@ -884,5 +1095,5 @@
   }
 
   return { renderMarkdown, sanitizeMarkup, splitPercent, toPercent, toJson, fromJson, balance, splitForms,
-           newId, safeHref, safeImageSrc, slug, LIMITS };
+           newId, safeHref, safeImageSrc, slug, LIMITS, limitOutputs };
 });

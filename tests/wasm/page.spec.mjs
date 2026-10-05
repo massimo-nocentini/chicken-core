@@ -37,7 +37,9 @@
 //                      desktop and 360 px wide)
 //
 // The usual Playwright variables apply (PLAYWRIGHT_BROWSERS_PATH, ...).
-// Exits with status 1 if any check fails or the page logs a console error.
+// Exits with status 1 if any check fails or the page logs a console error
+// (or, for a build with exnref, the warning about legacy exception
+// handling that Firefox gives).
 
 import { createRequire } from 'node:module';
 import http from 'node:http';
@@ -52,6 +54,10 @@ const shots = process.env.SHOTS ? path.resolve(process.env.SHOTS) : null;
 const arch = (/<meta name="chicken-wasm-arch" content="([^"]*)">/
               .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
 if (arch !== 'wasm64' && arch !== 'wasm32') throw new Error('no wasm arch in ' + webDir + '/index.html');
+// how setjmp/longjmp were built (make wasm WASM_SJLJ=...): exnref, legacy or none
+const eh = (/<meta name="chicken-wasm-eh" content="([^"]*)">/
+            .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
+if (!['exnref', 'legacy', 'none'].includes(eh)) throw new Error('no wasm EH mode in ' + webDir + '/index.html');
 const browsers = (process.env.BROWSERS || 'chromium').split(',').map(s => s.trim()).filter(Boolean);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -83,14 +89,85 @@ async function check(name, f) {
 }
 function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
 
+// WebAssembly.validate rejecting the page's probe for a feature (see
+// missingFeature in repl.js), as in an engine without it: a memory section
+// declaring a 64-bit memory (flags 0x04 or 0x05), or a try_table.
+async function lackFeature(page, feature) {
+  await page.addInitScript(feature => {
+    const lacks = b => {
+      for (let i = 8; i + 3 < b.length; i++) {
+        if (feature === 'memory64' && b[i] === 0x05 && b[i + 2] === 0x01 && (b[i + 3] & ~1) === 0x04) return true;
+        if (feature === 'exnref' && b[i] === 0x1f && b[i + 1] === 0x40 && b[i + 2] === 0x00 && b[i + 3] === 0x0b) return true;
+      }
+      return false;
+    };
+    const validate = WebAssembly.validate;
+    WebAssembly.validate = function (bytes) {
+      if (lacks(new Uint8Array(bytes.buffer || bytes))) return false;
+      return validate.apply(this, arguments);
+    };
+  }, feature);
+}
+// The page and the notebook are locked out (file://, no memory64, ...):
+// nothing that would start an interpreter may look enabled.
+async function assertLockedOut(f, what) {
+  assert(await f.isDisabled('#line'), what + ': input disabled');
+  assert(await f.isDisabled('#restart'), what + ': Restart disabled');
+  assert(await f.isHidden('#notice-restart'), what + ': no Restart in the notice');
+  assert(await f.isDisabled('#compile'), what + ': Compile disabled');
+  assert(await f.isDisabled('#upload-btn'), what + ': Upload disabled');
+  assert(await f.getAttribute('#nb-menu [data-act="upload"]', 'aria-disabled') === 'true',
+         what + ': the notebook\'s Upload disabled');
+  assert(await f.isDisabled('#nb-run-all'), what + ': Run all disabled');
+  assert(await f.isDisabled('#nb-restart'), what + ': Restart kernel disabled');
+  assert(await f.getAttribute('#nb-menu [data-act="restart-run"]', 'aria-disabled') === 'true',
+         what + ': Restart & run all disabled');
+  // a forced click does nothing either
+  const notice = await f.textContent('#notice-text');
+  await f.click('#restart', { force: true });
+  await new Promise(r => setTimeout(r, 300));
+  assert(await f.$eval('#status', e => e.dataset.state) === 'error', what + ': still unavailable after Restart');
+  assert(await f.textContent('#notice-text') === notice, what + ': notice unchanged');
+  // nor does an upload (the input is still there for a drop)
+  await f.setInputFiles('#upload', { name: 'up.scm', mimeType: 'text/plain', buffer: Buffer.from('(define up 1)\n') });
+  await new Promise(r => setTimeout(r, 300));
+  assert(!/uploaded/.test(await f.textContent('#term')), what + ': no upload: ' + await f.textContent('#term'));
+}
+
+// the notebook in the lockout: a short status, the whole message (with
+// what to do) in its notice; Run starts nothing and keeps it so
+async function assertNotebookLockedOut(f, what, re) {
+  await f.setViewportSize({ width: 320, height: 640 });
+  await f.click('#tab-notebook');
+  const notice = async () => f.textContent('#nb-notice-text');
+  assert(re.test(await notice()), what + ': nb notice: ' + await notice());
+  await f.locator('#nb-cells > li[data-type="code"] .nb-src').first().press('Shift+Enter');
+  await new Promise(r => setTimeout(r, 500));
+  assert(!f.workers().length, what + ': no worker: ' + f.workers().map(w => w.url()));
+  assert(await f.textContent('#nb-status-text') === 'unavailable', what + ': status: ' + await f.textContent('#nb-status-text'));
+  assert(re.test(await notice()) && await f.isVisible('#nb-notice'), what + ': nb notice after Run: ' + await notice());
+  const panel = await f.$eval('#panel-notebook', e => [e.scrollWidth, e.clientWidth]);
+  assert(panel[0] <= panel[1], what + ': the notebook scrolls sideways: ' + panel);
+}
+
 async function runBrowser(name) {
   const browser = await pw[name].launch();
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, acceptDownloads: true });
   const page = await context.newPage();
   const errors = [];
-  page.on('console', m => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+  // Firefox warns once per module compiled with legacy exception handling
+  // ("The WebAssembly exception handling 'try' instruction is deprecated")
+  const legacyEh = [];
+  const isLegacyEh = m => m.type() === 'warning' && /exception handling 'try' instruction is deprecated/.test(m.text());
+  page.on('console', m => {
+    if (m.type() === 'error') errors.push('console: ' + m.text());
+    if (isLegacyEh(m)) legacyEh.push(m.text());
+  });
   page.on('pageerror', e => errors.push('pageerror: ' + e.message));
-  page.on('worker', w => { if (typeof w.on === 'function') w.on('console', m => { if (m.type() === 'error') errors.push('worker console: ' + m.text()); }); });
+  page.on('worker', w => { if (typeof w.on === 'function') w.on('console', m => {
+    if (m.type() === 'error') errors.push('worker console: ' + m.text());
+    if (isLegacyEh(m)) legacyEh.push(m.text());
+  }); });
   page.on('requestfailed', r => errors.push('request failed: ' + r.url()));
 
   const P = name + ': ';
@@ -185,6 +262,19 @@ async function runBrowser(name) {
     await waitStatus('ready');
   });
 
+  // The worker answers a Stop at once, often within the same tick of a
+  // coarse clock (1 ms in Firefox): that must not count as no answer.
+  await check(P + 'Esc and Stop at an idle prompt keep the state', async () => {
+    await evalTo('(define kept 42)', /#;\d+> $/);
+    for (const how of ['Esc', 'Stop']) {
+      await mark();
+      if (how === 'Esc') await page.press('#line', 'Escape'); else await page.click('#stop');
+      await page.waitForTimeout(3600);    // past the 3 s watchdog
+      assert(!/restarted/.test(await since()), how + ': restarted: ' + (await since()).slice(-300));
+      await evalTo('kept', /\n42\n/);
+    }
+  });
+
   await check(P + 'Stop in a long non-yielding primitive restarts the worker', async () => {
     // bignum expt runs in library code with interrupts disabled: no slices,
     // no messages, so the 3 s liveness watchdog replaces the worker
@@ -199,6 +289,21 @@ async function runBrowser(name) {
     console.log('  # replaced in ' + ms + ' ms');
     assert(ms >= 2900, 'not before the 3 s watchdog');
     await evalTo('(+ 5 5)', /\n10\n/);
+  });
+
+  await check(P + 'Stop after a sleep, in a non-yielding primitive, restarts the worker', async () => {
+    // the page last heard "sleeping": the slice that woke up is in the
+    // primitive, and reports nothing
+    await enter('(begin (sleep 1) (define big (expt 7 60000000)))');
+    await waitStatus('sleeping', 3000);
+    await page.waitForTimeout(1500);
+    const t = Date.now();
+    await page.click('#stop');
+    await waitSince(/interpreter restarted \(state lost\)[\s\S]*#;1> $/, 20000);
+    await waitStatus('ready');
+    const ms = Date.now() - t;
+    assert(ms >= 2900, 'not before the 3 s watchdog: ' + ms);
+    await evalTo('(+ 5 6)', /\n11\n/);
   });
 
   await check(P + 'sleep shows the sleeping state and returns', async () => {
@@ -673,6 +778,21 @@ async function runBrowser(name) {
     assert((await nbValues(j)).join() === '2' && Date.now() - t < 5000, 'responsive');
   });
 
+  await check(P + 'notebook: a flood of shows is capped while the cell runs; ids still update', async () => {
+    const i = await nbEval('(import notebook) (show "p0" \'p) (do ((i 0 (+ i 1))) ((= i 3000)) (show i)) ' +
+                           '(show "p1" \'p) \'done', 120000);
+    const r = await page.$eval(`#nb-cells > li:nth-child(${i + 1})`, e => ({
+      outs: e.querySelector('.nb-out').children.length,
+      rich: [...e.querySelectorAll('.nb-rich')].map(d => d.textContent),
+      note: [...e.querySelectorAll('.nb-note')].map(n => n.textContent).join(' '),
+    }));
+    assert(r.outs === 1002, r.outs + ' outputs');      // 500, the note, 500, the value
+    assert(r.rich.length === 1000 && r.rich[0] === 'p1' && r.rich[1] === '0' && r.rich[999] === '2999',
+           'displays ' + JSON.stringify([r.rich.length, r.rich.slice(0, 2), r.rich.slice(-1)]));
+    assert(/^… 2,001 outputs omitted …$/.test(r.note), 'note ' + r.note);
+    assert((await nbValues(i)).join() === 'done', 'value');
+  });
+
   await check(P + 'notebook: markup is sanitized (outputs, markdown cells, imports)', async () => {
     const requests = [], dialogs = [];
     const onReq = r => { const u = r.url(); if (!u.startsWith(base) && !/^(data|blob):/.test(u)) requests.push(u); };
@@ -699,6 +819,11 @@ async function runBrowser(name) {
           'aria-activedescendant="nb-title" aria-flowto="tab-repl">own</div>',
         '<svg><a href="https://example.com/" tabindex="1"><text y="20">t</text></a>' +
           '<rect tabindex="2" width="5" height="5"/></svg>',
+        // images through CSS functions other than url(), and escapes
+        '<svg><rect width="5" height="5" mask="image-set(\'http://example.invalid/m.png\' 1x)"/>' +
+          '<rect width="5" height="5" mask="-webkit-image-set(\'http://example.invalid/w.png\' 1x)"/>' +
+          '<rect width="5" height="5" fill="\\75 rl(http://example.invalid/f.png)"/></svg>',
+        '<div style="background:image(\'http://example.invalid/i.png\')">i</div>',
       ];
       const svgs = html.filter(s => s.startsWith('<svg'));
       const md = ['[x](javascript:window.__pwned=1)', '![x](http://example.invalid/t.png)', ...html];
@@ -730,6 +855,10 @@ async function runBrowser(name) {
           if (Number(e.getAttribute('tabindex')) > 0) bad.push(e.localName + ' tabindex');
           const st = e.getAttribute('style') || '';
           if (/url\(/i.test(st)) bad.push('style ' + st);
+          // (markdown links the URLs in the text: links load nothing)
+          if (e.closest('.nb-rich, .nb-md')) for (const a of e.attributes)
+            if (/example\.invalid|image-set|\\/i.test(a.value) && !(e.localName === 'a' && a.name === 'href'))
+              bad.push(e.localName + '[' + a.name + ']=' + a.value);
           const box = e.closest('.nb-rich, .nb-md');
           if (box) for (const a of e.attributes) {
             if (!/^aria-/.test(a.name)) continue;
@@ -776,6 +905,132 @@ async function runBrowser(name) {
     assert(await nbSrc(i).isVisible() && await nbSrc(i).evaluate(e => e === document.activeElement), 'double-click edits');
     await nbSrc(i).press('Shift+Enter');
     assert(await nbCell(i).locator('.nb-md h2').isVisible(), 'rendered again');
+    // time linear in the source (a reload renders every saved cell):
+    // about 500 KB of input each
+    const slow = await page.evaluate(() => {
+      const L = window.ChickenNotebookLib;
+      const inputs = {
+        'backtick runs, longest first': Array.from({ length: 1000 }, (_, i) => '`'.repeat(1000 - i)).join('a'),
+        'backtick runs, shortest first': Array.from({ length: 1000 }, (_, i) => '`'.repeat(i + 1)).join('a'),
+        'unclosed backticks and brackets': '`[a'.repeat(170000),
+        'unclosed emphasis': '*a _b ~~c '.repeat(50000),
+        'nested brackets': '['.repeat(250000) + ']'.repeat(250000),
+      };
+      const r = [];
+      for (const [k, s] of Object.entries(inputs)) {
+        const t = performance.now();
+        L.renderMarkdown(s, document, 'perf-');
+        const ms = performance.now() - t;
+        if (ms > 1000) r.push(k + ': ' + Math.round(ms) + ' ms');
+      }
+      // short table rows: one cell for the missing ones, not N each
+      const N = 3000, t = performance.now();
+      const table = L.renderMarkdown('|a'.repeat(N) + '\n' + '|-'.repeat(N) + '\n' + '|\n'.repeat(N),
+                                     document, 'perf-');
+      const tableMs = performance.now() - t, tds = table.querySelectorAll('td');
+      if (tableMs > 1000) r.push('short table rows: ' + Math.round(tableMs) + ' ms');
+      const ragged = [...L.renderMarkdown('|a|b|c|\n|-|-|-|\n|1|\n|1|2|3|4|', document, 'perf-')
+        .querySelectorAll('tbody tr')].map(tr => [...tr.children].map(td => td.textContent + '/' + td.colSpan).join(' '));
+      // a closer must be as long as the opener
+      const code = [...L.renderMarkdown('`a``b` and ``c`d``', document, 'perf-').querySelectorAll('code')]
+        .map(e => e.textContent);
+      return { r, code, tds: tds.length, ragged };
+    });
+    assert(!slow.r.length, 'slow markdown: ' + slow.r.join('; '));
+    assert(slow.tds === 6000, 'short table rows: ' + slow.tds + ' cells');
+    assert(JSON.stringify(slow.ragged) === JSON.stringify(['1/1 /2', '1/1 2/1 3/1']), 'ragged rows ' + JSON.stringify(slow.ragged));
+    assert(JSON.stringify(slow.code) === JSON.stringify(['a``b', 'c`d']), 'code spans ' + JSON.stringify(slow.code));
+  });
+
+  // ten uses of a group of ten uses of ...: 10^5 elements from 1.2 KB
+  await check(P + 'notebook: nested <use> in markup is bounded', async () => {
+    const r = await page.evaluate(async () => {
+      const L = window.ChickenNotebookLib;
+      const bomb = lv => {
+        let s = '<defs><g id="l0"><rect width="1" height="1"/></g>';
+        for (let k = 1; k <= lv; k++) s += `<g id="l${k}">` + `<use href="#l${k - 1}"/>`.repeat(10) + '</g>';
+        return s + `</defs><use href="#l${lv}"/>`;
+      };
+      const sprite = '<defs><symbol id="s"><rect width="2" height="2"/><circle r="1"/></symbol>' +
+        '<g id="t"><use href="#s"/><use href="#s" x="3"/></g></defs>' +
+        Array.from({ length: 100 }, (_, i) => `<use href="#t" y="${i * 3}"/>`).join('') +
+        '<g id="c"><use href="#c"/></g>';
+      const doc = s => '<svg xmlns="http://www.w3.org/2000/svg">' + s + '</svg>';
+      const out = {};
+      const cases = {
+        svg: [doc(bomb(5)), 'svg'], html: ['<p>a</p><svg>' + bomb(5) + '</svg>', 'html'], sprite: [doc(sprite), 'svg'],
+      };
+      for (const [k, [src, kind]] of Object.entries(cases)) {
+        const box = document.createElement('div');
+        box.className = 'nb-rich';
+        document.body.appendChild(box);
+        const t = performance.now();
+        box.appendChild(L.sanitizeMarkup(src, kind, 'use-' + k + '-'));
+        box.getBoundingClientRect();
+        await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+        // the elements rendered, each use counting what it copies
+        const inst = (el, d) => {
+          if (d > 32) return Infinity;
+          let n = 1;
+          const t = el.localName === 'use' && document.getElementById((el.getAttribute('href') || '').slice(1));
+          if (t) n += inst(t, d + 1);
+          for (const c of el.children) n += inst(c, d);
+          return n;
+        };
+        out[k] = { ms: Math.round(performance.now() - t), uses: box.querySelectorAll('use').length,
+                   top: box.querySelectorAll('svg > use').length, rendered: inst(box, 0) };
+        box.remove();
+      }
+      return out;
+    });
+    // (the budget is 2000 here; the uses in <defs> are counted too)
+    for (const k of ['svg', 'html']) {
+      assert(r[k].ms < 1000, k + ' bomb rendered in ' + r[k].ms + ' ms');
+      assert(r[k].rendered < 5000, k + ' bomb kept ' + JSON.stringify(r[k]));
+    }
+    // a sprite well under the budget is kept whole; a cycle is dropped
+    assert(r.sprite.uses === 102 && r.sprite.top === 100, 'sprite ' + JSON.stringify(r.sprite));
+  });
+
+  // twenty 800x800 rects sharing five blurs and dilations: minutes a paint
+  await check(P + 'notebook: filters in markup are bounded', async () => {
+    const r = await page.evaluate(() => {
+      const L = window.ChickenNotebookLib;
+      const doc = s => '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800">' + s + '</svg>';
+      const heavy = '<filter id="f">' +
+        '<feGaussianBlur stdDeviation="30"/><feMorphology operator="dilate" radius="40"/>'.repeat(5) + '</filter>';
+      const shadow = '<filter id="s"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dx="2" dy="2"/>' +
+        '<feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>';
+      const rects = (n, f) => `<rect width="800" height="800" filter="url(#${f})"/>`.repeat(n);
+      const cases = {
+        heavy: [doc(heavy + rects(20, 'f')), 'svg'],
+        shadows: [doc(shadow + rects(20, 's')), 'svg'],
+        uses: [doc(shadow + '<defs><g id="g"><rect width="9" height="9" filter="url(#s)"/></g></defs>' +
+                   '<use href="#g"/>'.repeat(20)), 'svg'],
+        mask: [doc(shadow + '<mask id="m"><rect width="9" height="9" fill="white" filter="url(#s)"/></mask>' +
+                   '<rect width="9" height="9" mask="url(#m)"/>'), 'svg'],
+        css: ['<div style="width:800px;height:800px;filter:' + 'blur(30px) '.repeat(40) + '">x</div>' +
+              '<p style="color:red;text-shadow:' + Array(40).fill('0 0 9px red').join(',') + '">t</p>' +
+              '<svg width="800" height="800"><rect width="800" height="800" filter="' + 'blur(9px) '.repeat(40) + '"/></svg>' +
+              '<p style="filter:blur(1px)">kept</p>', 'html'],
+      };
+      const out = {};
+      for (const [k, [src, kind]] of Object.entries(cases)) {
+        const box = document.createElement('div');
+        box.appendChild(L.sanitizeMarkup(src, kind, 'flt-' + k + '-'));
+        out[k] = { filtered: box.querySelectorAll('[filter]').length,
+                   styles: [...box.querySelectorAll('[style]')].map(e => e.getAttribute('style')) };
+      }
+      return out;
+    });
+    const J = x => JSON.stringify(x);
+    assert(r.heavy.filtered === 0, 'heavy ' + J(r.heavy));
+    // a drop shadow weighs 7: nine of them fit
+    assert(r.shadows.filtered === 9, 'shadows ' + J(r.shadows));
+    assert(r.uses.filtered === 0, 'one filtered element, copied 20 times ' + J(r.uses));
+    assert(r.mask.filtered === 0, 'in a mask ' + J(r.mask));
+    assert(r.css.filtered === 0 && J(r.css.styles) === J(['width:800px; height:800px', 'color:red', 'filter:blur(1px)']),
+           'css ' + J(r.css));
   });
 
   await check(P + 'notebook: command mode keys', async () => {
@@ -888,6 +1143,23 @@ async function runBrowser(name) {
     assert((await nbValues(j)).join() === '10', '(+ 5 5)');
   });
 
+  // the client last heard "sleeping": the slice that woke up is in the
+  // primitive, and reports nothing
+  await check(P + 'notebook: Stop after a sleep, in a non-yielding primitive, restarts the kernel', async () => {
+    const i = await nbNew('(sleep 1) (define big (expt 7 60000000))');
+    await nbRun(i);
+    await waitNbStatus(/^sleeping$/);
+    await page.waitForTimeout(1500);
+    const t = Date.now();
+    await page.click('#nb-stop');
+    await nbWait(i, /^error$/, 20000);
+    const ms = Date.now() - t;
+    assert(ms >= 2900, 'not before the 3 s watchdog: ' + ms);
+    assert(/did not respond/.test(await nbOut(i)), 'note: ' + await nbOut(i));
+    const j = await nbEval('(+ 5 6)', 60000);
+    assert((await nbValues(j)).join() === '11', '(+ 5 6)');
+  });
+
   await check(P + 'notebook: Restart resets the counter and the state', async () => {
     const a = await nbEval('(define before-restart 1)');
     await page.click('#nb-restart');
@@ -933,6 +1205,80 @@ async function runBrowser(name) {
     assert(r.crlf.join('|') === 'code:(+ 1 2)|markdown:# T', 'crlf ' + r.crlf);
     assert(r.marks, 'marker-like lines round trip');
     assert(r.n === 2 && r.ids[0] === 'd1' && r.ids[1] !== 'd1' && r.outs === 1 && !r.count, 'json ' + JSON.stringify(r));
+  });
+
+  // Export .json keeps every output only while Import can read the file
+  // back (5 MB)
+  await check(P + 'notebook: an export with more than 5 MB of outputs imports again', async () => {
+    const i = await nbEval('(import notebook) (do ((i 0 (+ i 1))) ((= i 6)) (show (text (make-string 1000000 #\\x))))', 60000);
+    assert(await nbStatus(i) === 'ok', 'status ' + await nbStatus(i));
+    const n = await nbCells();
+    const [dl] = await Promise.all([page.waitForEvent('download'), menu('Export .json')]);
+    const file = await dl.path();
+    const size = fs.statSync(file).size;
+    assert(size > 900000 && size <= 5 * 1024 * 1024, 'exported ' + size + ' bytes');
+    await page.waitForFunction(() => /left out/.test(document.getElementById('nb-toast').textContent), null, { timeout: 5000 });
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'big.json', mimeType: 'application/json', buffer: fs.readFileSync(file) }));
+    await page.waitForFunction(n => document.querySelectorAll('#nb-cells > li').length === n, n);
+    assert(await page.isHidden('#nb-notice') || !/Could not import/.test(await page.textContent('#nb-notice-text')),
+           'notice: ' + await page.textContent('#nb-notice-text'));
+    const out = await nbOut(i);
+    assert(/more output was not saved/.test(out) && out.length > 900000, 'outputs after the import: ' + out.length);
+    await nbCell(i).locator('[data-act="del"]').click();
+  });
+
+  // A cell may have more outputs than Import keeps (1000): its own save
+  // brings back all of them, an export keeps the last one (the error).
+  await check(P + 'notebook: more than 1000 outputs survive a reload; an export keeps the error', async () => {
+    const i = await nbEval('(do ((i 0 (+ i 1))) ((= i 600)) (display i) (flush-output) ' +
+                           '(display i (current-error-port)) (flush-output (current-error-port))) (car 1)', 60000);
+    const outs = () => page.$eval(`#nb-cells > li:nth-child(${i + 1}) .nb-out`,
+                                  o => [o.children.length, o.lastElementChild.textContent]);
+    const before = await outs();
+    assert(before[0] > 1000 && /bad argument type/.test(before[1]), 'before: ' + before);
+    await page.keyboard.press('Control+s');
+    await page.reload();
+    await page.click('#tab-notebook');
+    const after = await outs();
+    assert(after[0] === before[0] && after[1] === before[1], 'after the reload: ' + after);
+    await waitNbStatus(/^ready$/, 60000);
+    await waitStatus('ready', 60000);
+    const [dl] = await Promise.all([page.waitForEvent('download'), menu('Export .json')]);
+    const o = JSON.parse(fs.readFileSync(await dl.path(), 'utf8')).cells[i].outputs;
+    assert(o.length === 1000 && o[999].k === 'error' && /outputs were left out/.test(o[998].text),
+           'exported: ' + o.length + ' ' + JSON.stringify(o.slice(-2)).slice(0, 300));
+    await page.waitForFunction(() => /at most 1000 per cell/.test(document.getElementById('nb-toast').textContent),
+                               null, { timeout: 5000 });
+    await nbCell(i).locator('[data-act="del"]').click();
+  });
+
+  // The other tab saved, this one autosaved over it before the choice
+  // was made: Load theirs still loads theirs.
+  await check(P + 'notebook: Load theirs loads what the other tab saved', async () => {
+    await page.keyboard.press('Control+s');
+    const setLast = (p, v) => p.evaluate(v => {
+      const t = [...document.querySelectorAll('#nb-cells > li[data-type="code"] .nb-src')].pop();
+      t.value = v;
+      t.dispatchEvent(new Event('input'));
+    }, v);
+    const saved = (p, re) => p.waitForFunction(([s, f]) => new RegExp(s, f).test(localStorage.getItem('chicken-repl.notebook')),
+                                               [re.source, re.flags], { timeout: 5000 });
+    const f = await context.newPage();
+    await f.goto(base + 'index.html');
+    await f.click('#tab-notebook');
+    await setLast(f, '(theirs)');
+    await saved(f, /\(theirs\)/);
+    await f.close();
+    await page.waitForFunction(() => !document.getElementById('nb-notice').hidden &&
+                               /changed in another tab/.test(document.getElementById('nb-notice-text').textContent),
+                               null, { timeout: 5000 });
+    await setLast(page, '(mine)');
+    await saved(page, /\(mine\)/);
+    await page.click('#nb-notice-action');
+    const last = await page.$$eval('#nb-cells > li[data-type="code"] .nb-src', l => l.map(t => t.value).pop());
+    assert(last === '(theirs)', 'loaded: ' + last);
+    await saved(page, /\(theirs\)/);
+    await waitNbStatus(/^ready$/, 60000);
   });
 
   await check(P + 'notebook: Ctrl+C on selected output copies; the running cell goes on', async () => {
@@ -1029,6 +1375,20 @@ async function runBrowser(name) {
     assert(await page.isVisible('#nb-notice') && /Restored/.test(await page.textContent('#nb-notice-text')), 'restored notice');
     await waitNbStatus(/^ready$/, 60000);
     await waitStatus('ready', 60000);
+    // a cell larger than 1 MB, which autosave keeps, is restored too
+    const b = await nbNew(';' + 'x'.repeat(1100000));
+    await nbNew('(define after-big 2)');
+    await page.keyboard.press('Control+s');
+    const n = await nbCells();
+    await page.reload();
+    await page.click('#tab-notebook');
+    const big = await page.$$eval('#nb-cells > li .nb-src', l => l.map(e => e.value.length));
+    assert(big.length === n && big[b] === 1100001, 'cells after the reload: ' + big.length + ' of ' + n + ', big ' + big[b]);
+    assert(!/skipped/.test(await page.textContent('#nb-notice-text')), 'notice: ' + await page.textContent('#nb-notice-text'));
+    await nbCell(b).locator('[data-act="del"]').click();
+    await page.keyboard.press('Control+s');
+    await waitNbStatus(/^ready$/, 60000);
+    await waitStatus('ready', 60000);
     // no localStorage at all, then a full one
     for (const mode of ['blocked', 'full']) {
       const f = await context.newPage();
@@ -1059,21 +1419,41 @@ async function runBrowser(name) {
     }
   });
 
+  // Import reads at most 5000 cells, from a .json or a .scm file; Export
+  // says when a notebook has more
+  await check(P + 'notebook: more than 5000 cells', async () => {
+    const forms = n => Array.from({ length: n }, (_, i) => '(+ ' + i + ' 1)').join('\n\n');
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'many.scm', mimeType: 'text/plain', buffer: Buffer.from(forms(5001)) }));
+    assert(/Could not import many\.scm: more than 5000 cells/.test(await page.textContent('#nb-notice-text')),
+           'notice: ' + await page.textContent('#nb-notice-text'));
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'most.scm', mimeType: 'text/plain', buffer: Buffer.from(forms(5000)) }));
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 5000, null, { timeout: 20000 });
+    await nbNew('(+ 1 1)');
+    for (const fmt of ['.json', '.scm']) {
+      if (await page.isVisible('#nb-notice')) await page.click('#nb-notice-close');
+      await page.waitForFunction(() => document.getElementById('nb-notice').hidden, null, { timeout: 5000 });
+      const [dl] = await Promise.all([page.waitForEvent('download'), menu('Export ' + fmt)]);
+      assert(/more than 5000 cells: Import cannot read the file back/.test(await page.textContent('#nb-notice-text')) &&
+             await page.isVisible('#nb-notice'), fmt + ' export notice: ' + await page.textContent('#nb-notice-text'));
+      // and Import does refuse it
+      const back = fs.readFileSync(await dl.path());
+      await accepting(() => page.setInputFiles('#nb-file', { name: 'back' + fmt, mimeType: 'text/plain', buffer: back }));
+      assert(new RegExp('Could not import back\\' + fmt + ': more than 5000 cells').test(await page.textContent('#nb-notice-text')),
+             fmt + ' import back: ' + await page.textContent('#nb-notice-text'));
+    }
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'small.scm', mimeType: 'text/plain', buffer: Buffer.from('(+ 1 2)') }));
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1, null, { timeout: 20000 });
+  });
+
   await check(P + 'from file:// the page explains that it needs HTTP', async () => {
     const f = await context.newPage();
     f.on('pageerror', e => errors.push('file:// pageerror: ' + e.message));
     await f.goto('file://' + path.join(webDir, 'index.html'));
     await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
     assert(/served over HTTP/.test(await f.textContent('#notice-text')), 'notice: ' + await f.textContent('#notice-text'));
-    assert(await f.isDisabled('#line'), 'input disabled');
+    await assertLockedOut(f, 'file://');
     // the notebook says so too, and starts nothing
-    await f.click('#tab-notebook');
-    assert(/served over HTTP/.test(await f.textContent('#nb-notice-text')), 'nb notice: ' + await f.textContent('#nb-notice-text'));
-    assert(await f.isDisabled('#nb-run-all'), 'Run all disabled');
-    await f.locator('#nb-cells > li[data-type="code"] .nb-src').first().press('Shift+Enter');
-    await new Promise(r => setTimeout(r, 500));
-    assert(!f.workers().length, 'no worker: ' + f.workers().map(w => w.url()));
-    assert(/served over HTTP/.test(await f.textContent('#nb-status-text')), 'status: ' + await f.textContent('#nb-status-text'));
+    await assertNotebookLockedOut(f, 'file://', /served over HTTP.*file:\/\/ URLs/);
     await f.close();
   });
 
@@ -1085,27 +1465,16 @@ async function runBrowser(name) {
     const wasmFetched = [];
     f.on('pageerror', e => errors.push('no-memory64 pageerror: ' + e.message));
     f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
-    await f.addInitScript(() => {
-      const validate = WebAssembly.validate;
-      WebAssembly.validate = function (bytes) {
-        const b = new Uint8Array(bytes.buffer || bytes);
-        // a memory section declaring a 64-bit memory: flags 0x04 or 0x05
-        for (let i = 8; i + 3 < b.length; i++)
-          if (b[i] === 0x05 && b[i + 2] === 0x01 && (b[i + 3] & ~1) === 0x04) return false;
-        return validate.apply(this, arguments);
-      };
-    });
+    await lackFeature(f, 'memory64');
     await f.goto(base + 'index.html');
     if (arch === 'wasm64') {
       await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
       assert(/64-bit WebAssembly \(memory64\)/.test(await f.textContent('#notice-text')),
              'notice: ' + await f.textContent('#notice-text'));
       assert(/WASM_ARCH=wasm32/.test(await f.textContent('#term')), 'term suggests a wasm32 build');
-      assert(await f.isDisabled('#line'), 'input disabled');
-      assert(await f.isDisabled('#compile'), 'compile disabled');
-      await f.click('#restart');
-      await new Promise(r => setTimeout(r, 500));
-      assert(await f.$eval('#status', e => e.dataset.state) === 'error', 'still unavailable after Restart');
+      assert(new RegExp('Chrome or Edge ' + (eh === 'exnref' ? 137 : 133)).test(await f.textContent('#term')),
+             'browser versions: ' + await f.textContent('#term'));
+      await assertLockedOut(f, 'no memory64');
       // Ctrl+Enter in the editor must not get past the disabled Compile button
       await f.click('#tab-compile');
       await f.click('#src');
@@ -1113,10 +1482,7 @@ async function runBrowser(name) {
       await new Promise(r => setTimeout(r, 500));
       assert(await f.isDisabled('#compile'), 'compile still disabled after Ctrl+Enter');
       assert(/memory64/.test(await f.textContent('#cstatus')), 'cstatus: ' + await f.textContent('#cstatus'));
-      await f.click('#tab-notebook');
-      assert(/memory64/.test(await f.textContent('#nb-notice-text')), 'nb notice: ' + await f.textContent('#nb-notice-text'));
-      await f.locator('#nb-cells > li[data-type="code"] .nb-src').first().press('Shift+Enter');
-      await new Promise(r => setTimeout(r, 500));
+      await assertNotebookLockedOut(f, 'no memory64', /memory64.*Chrome or Edge.*WASM_ARCH=wasm32/);
       assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
     } else {
       await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
@@ -1130,8 +1496,42 @@ async function runBrowser(name) {
     await f.close();
   });
 
+  // Engines without exnref (Chrome 133 to 136, Safari before 18.4): a
+  // build with WASM_SJLJ=wasm must say so, any other must still start.
+  await check(P + `without exnref the ${arch} ${eh}-EH page ` +
+              (eh === 'exnref' ? 'explains what it needs' : 'still works'), async () => {
+    const f = await context.newPage();
+    const wasmFetched = [];
+    f.on('pageerror', e => errors.push('no-exnref pageerror: ' + e.message));
+    f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
+    await lackFeature(f, 'exnref');
+    await f.goto(base + 'index.html');
+    if (eh === 'exnref') {
+      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
+      assert(/exception handling with exnref/.test(await f.textContent('#notice-text')),
+             'notice: ' + await f.textContent('#notice-text'));
+      assert(/Chrome or Edge 137/.test(await f.textContent('#term')) && /WASM_SJLJ=wasm-legacy/.test(await f.textContent('#term')),
+             'term: ' + await f.textContent('#term'));
+      await assertLockedOut(f, 'no exnref');
+      await assertNotebookLockedOut(f, 'no exnref', /exnref.*Chrome or Edge 137.*WASM_SJLJ=wasm-legacy/);
+      assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
+    } else {
+      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+    }
+    await f.close();
+  });
+
   await check(P + 'zero console errors', async () => {
     assert(!errors.length, errors.join('\n'));
+  });
+
+  // Firefox deprecates the legacy "try" instruction: a build with exnref
+  // must not use it in any of its modules.
+  await check(P + (eh === 'exnref' ? 'no legacy exception handling warnings'
+                   : 'legacy exception handling warnings counted'), async () => {
+    if (eh === 'exnref') assert(!legacyEh.length, legacyEh.length + ' warnings: ' + legacyEh[0]);
+    else console.log('  # ' + legacyEh.length + ' legacy exception handling warnings (WASM_SJLJ=' +
+                     (eh === 'legacy' ? 'wasm-legacy' : 'emscripten') + ')');
   });
 
   await browser.close();

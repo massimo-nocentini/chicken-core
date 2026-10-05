@@ -58,11 +58,16 @@ WASM_DEFAULT_MAXIMUM_MEMORY = 17179869184
 # 10000 arguments needs 320 KB), but the engine's frames are bigger:
 # a larger pad keeps the frame count low (see C_WASM_MAX_NURSERY).
 WASM_DEFAULT_FRAME_PAD = 128
+# exnref: all memory64 engines have it but Chrome and Edge 133 to 136
+# and node 24.0 to 24.14
+WASM_DEFAULT_SJLJ = wasm
 else ifeq ($(WASM_ARCH),wasm32)
 WASM_ARCH_FLAG = -m32
 # 2 GB, not 4: pointers stay below 2^31, which JS glue may see signed.
 WASM_DEFAULT_MAXIMUM_MEMORY = 2147483648
 WASM_DEFAULT_FRAME_PAD = 64
+# the compatibility build: legacy EH runs in older engines too
+WASM_DEFAULT_SJLJ = wasm-legacy
 else
 $(error WASM_ARCH must be wasm64 or wasm32, not "$(WASM_ARCH)")
 endif
@@ -79,12 +84,29 @@ LIBRARIAN_OPTIONS = crs
 
 # knobs (normally recorded in config.make by "make wasm")
 
-WASM_SJLJ ?= wasm
+WASM_SJLJ ?= $(WASM_DEFAULT_SJLJ)
 WASM_STACK_SIZE ?= 4194304
 WASM_MAXIMUM_MEMORY ?= $(WASM_DEFAULT_MAXIMUM_MEMORY)
 WASM_INITIAL_MEMORY ?= 33554432
 WASM_FRAME_PAD ?= $(WASM_DEFAULT_FRAME_PAD)
-WASM_EMFLAGS = $(WASM_ARCH_FLAG) -sSUPPORT_LONGJMP=$(WASM_SJLJ)
+# setjmp/longjmp (minor GCs, restarts): "wasm" lowers them to wasm
+# exception handling with the standard exnref instructions (try_table),
+# "wasm-legacy" with the legacy ones (try, which Firefox reports as
+# deprecated), "emscripten" to JS exceptions.  The flags apply to
+# compiling and linking alike.  WASM_EH tells the page what to check for.
+ifeq ($(WASM_SJLJ),wasm)
+WASM_SJLJ_FLAGS = -sSUPPORT_LONGJMP=wasm -sWASM_LEGACY_EXCEPTIONS=0
+WASM_EH = exnref
+else ifeq ($(WASM_SJLJ),wasm-legacy)
+WASM_SJLJ_FLAGS = -sSUPPORT_LONGJMP=wasm -sWASM_LEGACY_EXCEPTIONS=1
+WASM_EH = legacy
+else ifeq ($(WASM_SJLJ),emscripten)
+WASM_SJLJ_FLAGS = -sSUPPORT_LONGJMP=emscripten
+WASM_EH = none
+else
+$(error WASM_SJLJ must be wasm, wasm-legacy or emscripten, not "$(WASM_SJLJ)")
+endif
+WASM_EMFLAGS = $(WASM_ARCH_FLAG) $(WASM_SJLJ_FLAGS)
 
 # WASM_EGGS and the host tools that build them, recorded apart (see
 # "eggs" below)
@@ -388,14 +410,14 @@ $(addprefix $(WEB_DIR)/,$(WEB_ASSETS)): $(WEB_DIR)/%: %
 	mkdir -p $(WEB_DIR)
 	cp $< $@
 
-# @ARCH@ tells the page to check for memory64 (wasm64).
+# @ARCH@ tells the page to check for memory64 (wasm64), @EH@ for exnref.
 # The page passes @BUILD@ as ?v= on every URL it loads, so browsers never
 # mix cached files of two builds: the build id alone would not change
 # between rebuilds of an uncommitted tree, hence the checksum.
 $(WEB_DIR)/index.html: index.html buildid $(addprefix $(WEB_DIR)/,$(WEB_ASSETS) $(filter %.js,$(WEB_MODULES)))
 	mkdir -p $(WEB_DIR)
 	v="$$(cat buildid)-$$(cat $(filter $(WEB_DIR)/%,$^) $(WEB_DIR)/*.wasm | cksum | cut -d' ' -f1)"; \
-	  sed -e "s/@BUILD@/$$v/g" -e "s/@ARCH@/$(WASM_ARCH)/g" $< >$@
+	  sed -e "s/@BUILD@/$$v/g" -e "s/@ARCH@/$(WASM_ARCH)/g" -e "s/@EH@/$(WASM_EH)/g" $< >$@
 
 # SDK: compile user programs (translated by a host chicken) to wasm
 

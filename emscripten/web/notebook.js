@@ -33,7 +33,8 @@
  *   sanitizer and the file formats; nb-kernel.js the kernel client.
  * - The kernel starts on the first visit to the tab (or the first run).
  * - Kernel output is queued per cell and rendered once per animation
- *   frame; streams keep their first and last 512 KB.
+ *   frame; while a cell runs, its outputs keep their first and last 512
+ *   KB of streams and 500 outputs (a note says how much was left out).
  * - Rich outputs (HTML, SVG, Markdown) are rebuilt from an allowlist by
  *   notebook-lib.js; no untrusted string ever reaches innerHTML.
  * - The notebook is saved to localStorage (debounced), outputs capped at
@@ -47,7 +48,7 @@
   if (!panel) return;
   const P = window.ChickenPage, L = window.ChickenNotebookLib, K = window.ChickenNotebookKernel;
 
-  const STREAM_HEAD = 512 * 1024, STREAM_TAIL = 512 * 1024;
+  const STREAM_HEAD = 512 * 1024, STREAM_TAIL = 512 * 1024, OUT_HEAD = 500, OUT_TAIL = 500;
   const VALUE_MAX = 64 * 1024, VALUE_LINES = 30;
   const DISPLAY_MAX = 4 * 1024 * 1024;
   const SAVE_OUT_MAX = 64 * 1024, SAVE_MAX = 2 * 1024 * 1024, SAVE_KEY = 'chicken-repl.notebook';
@@ -61,6 +62,8 @@
     $('nb-notice-text').textContent = msg;
     $('nb-notice').hidden = false;
     for (const id of ['nb-run-all', 'nb-stop', 'nb-restart']) { const b = $(id); if (b) b.disabled = true; }
+    const rr = document.querySelector('#nb-menu [data-act="restart-run"]');
+    if (rr) rr.setAttribute('aria-disabled', 'true');
     statusEl.dataset.state = 'error';
     statusText.textContent = 'unavailable';
   }
@@ -217,7 +220,8 @@
       const op = ops[i];
       if (op.type === 'stream') {
         let text = op.text;
-        while (i + 1 < ops.length && ops[i + 1].type === 'stream' && ops[i + 1].name === op.name) text += ops[++i].text;
+        while (i + 1 < ops.length && ops[i + 1].type === 'stream' && ops[i + 1].name === op.name &&
+               text.length < STREAM_TAIL) text += ops[++i].text;
         appendStream(cell, op.name, text);
       } else if (op.type === 'display') addDisplay(cell, op);
       else if (op.type === 'clear') clearOutputs(cell);
@@ -344,7 +348,7 @@
 
   function clearOutputs(cell) {
     cell.outputs = [];
-    cell.rt = { head: 0, tail: 0, omitted: 0, note: null };
+    cell.rt = null;
     const v = views.get(cell.id);
     if (v) v.out.textContent = '';
   }
@@ -382,16 +386,27 @@
       return pre;
     }
     case 'value': return renderValue(o.text);
-    case 'note': return h('p', { class: 'nb-note' + (o.bad ? ' bad' : ''), text: o.text });
+    case 'note': return h('p', { class: 'nb-note' + (o.bad ? ' bad' : ''), text: o.text, hidden: o.text ? null : '' });
     case 'error': return renderError(cell, o.error);
     case 'display': return renderDisplay(cell, o);
     }
     return h('p', { class: 'nb-note', text: 'unsupported output' });
   }
 
+  // While a cell runs, its outputs are its first STREAM_HEAD characters
+  // of streams and OUT_HEAD outputs, a note, and then its last
+  // STREAM_TAIL characters and OUT_TAIL outputs: a flood of output, or
+  // of shows, would swamp the page.  (Values and errors come after.)
+  function runState(cell) {
+    return cell.rt || (cell.rt = { head: 0, headN: 0, tail: 0, tailN: 0, omitted: 0, omittedN: 0, note: null });
+  }
+  const continues = (cell, name) => {
+    const last = cell.outputs[cell.outputs.length - 1];
+    return !!last && last.k === 'stream' && last.name === name;
+  };
   function appendRaw(cell, name, text) {
     const last = cell.outputs[cell.outputs.length - 1];
-    if (last && last.k === 'stream' && last.name === name) {
+    if (continues(cell, name)) {
       last.text += text;
       if (last._t) last._t.appendData(text);
       return;
@@ -399,36 +414,65 @@
     addOutput(cell, { k: 'stream', name, text });
   }
   function appendStream(cell, name, text) {
-    const rt = cell.rt || (cell.rt = { head: 0, tail: 0, omitted: 0, note: null });
+    const rt = runState(cell);
     if (!rt.note) {
-      if (rt.head + text.length <= STREAM_HEAD) { rt.head += text.length; appendRaw(cell, name, text); return; }
-      const room = STREAM_HEAD - rt.head;
-      if (room > 0) appendRaw(cell, name, text.slice(0, room));
-      text = text.slice(Math.max(0, room));
-      rt.head = STREAM_HEAD;
-      rt.note = addOutput(cell, { k: 'note', text: '' });
+      const fits = continues(cell, name) || rt.headN < OUT_HEAD;
+      const room = fits ? Math.min(text.length, STREAM_HEAD - rt.head) : 0;
+      if (room > 0) {
+        if (!continues(cell, name)) rt.headN++;
+        rt.head += room;
+        appendRaw(cell, name, room < text.length ? text.slice(0, room) : text);
+      }
+      if (room === text.length) return;
+      text = text.slice(room);
+      openNote(cell, rt);
     }
+    if (text.length > STREAM_TAIL) {    // never more than the tail in the page
+      rt.omitted += text.length - STREAM_TAIL;
+      text = text.slice(-STREAM_TAIL);
+    }
+    if (!continues(cell, name)) rt.tailN++;
     appendRaw(cell, name, text);
     rt.tail += text.length;
+    trimTail(cell, rt);
+  }
+  function openNote(cell, rt) {
+    rt.note = addOutput(cell, { k: 'note', text: '' });      // hidden while empty
+  }
+  // a display (or the note of one too large, which has an id, maybe null)
+  const shown = o => o.k === 'display' || o.k === 'note' && o.id !== undefined;
+  // drops what is over the tail's budgets, from the start of the tail
+  function trimTail(cell, rt) {
     let excess = rt.tail - STREAM_TAIL;
-    while (excess > 0) {
-      const i = cell.outputs.indexOf(rt.note);
-      let o = null;
-      for (let j = i + 1; j < cell.outputs.length; j++) if (cell.outputs[j].k === 'stream') { o = cell.outputs[j]; break; }
+    const outs = cell.outputs;
+    const i = excess > 0 || rt.tailN > OUT_TAIL ? outs.indexOf(rt.note) : -1;
+    while (i >= 0 && (rt.tailN > OUT_TAIL || excess > 0)) {
+      // too many outputs: the first one goes; too many characters: the
+      // first stream, or its start
+      const count = rt.tailN > OUT_TAIL;
+      let j = i + 1;
+      while (j < outs.length && !(outs[j].k === 'stream' || count && shown(outs[j]))) j++;
+      const o = outs[j];
       if (!o) break;
-      if (o.text.length <= excess) {
-        excess -= o.text.length; rt.tail -= o.text.length; rt.omitted += o.text.length;
-        removeOutput(cell, o);
-      } else {
+      if (o.k === 'stream' && !count && o.text.length > excess) {
         o.text = o.text.slice(excess);
         if (o._t) o._t.deleteData(0, excess);
         rt.tail -= excess; rt.omitted += excess;
-        excess = 0;
+        break;
       }
+      if (o.k === 'stream') { rt.tail -= o.text.length; rt.omitted += o.text.length; excess -= o.text.length; }
+      else rt.omittedN++;
+      rt.tailN--;
+      removeOutput(cell, o);
     }
-    rt.note.text = '… ' + fmtNum(rt.omitted) + ' characters omitted …';
+    const parts = [];
+    if (rt.omitted) parts.push(fmtNum(rt.omitted) + ' characters');
+    if (rt.omittedN) parts.push(fmtNum(rt.omittedN) + (rt.omittedN === 1 ? ' output' : ' outputs'));
+    const text = parts.length ? '… ' + parts.join(' and ') + ' omitted …' : '';
+    if (text === rt.note.text) return;
+    rt.note.text = text;
     const el = els.get(rt.note);
-    if (el) el.textContent = rt.note.text;
+    if (el) { el.textContent = text; el.hidden = !text; }
   }
 
   function renderValue(text) {
@@ -508,8 +552,7 @@
     const n = indexOf(cell) + 1;
     const div = h('div', { class: 'nb-rich', 'data-mime': o.mime });
     const data = String(o.data);
-    if (data.length > DISPLAY_MAX)
-      return h('p', { class: 'nb-note', text: 'Output too large to show (' + (data.length / 1048576).toFixed(1) + ' MB of ' + o.mime + ').' });
+    if (data.length > DISPLAY_MAX) return h('p', { class: 'nb-note', text: tooLarge(o.mime, data.length) });
     const prefix = 'o' + (++outSeq) + '-';
     try {
       switch (o.mime) {
@@ -531,10 +574,14 @@
     }
     return div;
   }
+  const tooLarge = (mime, n) => 'Output too large to show (' + (n / 1048576).toFixed(1) + ' MB of ' + mime + ').';
   function addDisplay(cell, ev) {
-    const o = { k: 'display', mime: ev.mime, data: ev.data, id: ev.id == null ? null : String(ev.id) };
-    if (o.id != null) {
-      const prev = cell.outputs.find(x => x.k === 'display' && x.id === o.id);
+    const id = ev.id == null ? null : String(ev.id);
+    // data too large for the kernel to send: a note (which is saved)
+    const o = ev.size != null ? { k: 'note', text: tooLarge(ev.mime, ev.size), id }
+      : { k: 'display', mime: ev.mime, data: ev.data, id };
+    if (id != null) {
+      const prev = cell.outputs.find(x => (x.k === 'display' || x.k === 'note') && x.id === id);
       if (prev) {
         const i = cell.outputs.indexOf(prev);
         removeOutput(cell, prev);
@@ -542,7 +589,14 @@
         return;
       }
     }
+    const rt = runState(cell);
+    if (!rt.note) {
+      if (rt.headN < OUT_HEAD) { rt.headN++; addOutput(cell, o); return; }
+      openNote(cell, rt);
+    }
+    rt.tailN++;
     addOutput(cell, o);
+    trimTail(cell, rt);
   }
 
   // ---- stdin
@@ -710,12 +764,19 @@
     ta.style.height = 'auto';
     ta.style.height = ta.scrollHeight + 'px';
   }
+  // all at once: the heights are written, read and written again in
+  // three passes, so that the page is laid out once, not once per cell
+  // (5000 cells took half a minute)
   let sizeFrame = 0;
   function resizeAll() {
     if (sizeFrame) return;
     sizeFrame = requestAnimationFrame(() => {
       sizeFrame = 0;
-      for (const v of views.values()) autosize(v);
+      if (panel.hidden) return;
+      const tas = [...views.values()].map(v => v.src).filter(ta => ta.isConnected);
+      for (const ta of tas) ta.style.height = 'auto';
+      const hs = tas.map(ta => ta.scrollHeight);
+      tas.forEach((ta, i) => { ta.style.height = hs[i] + 'px'; });
     });
   }
   addEventListener('resize', resizeAll);
@@ -937,8 +998,14 @@
     }
     return cell.source;
   }
+  // why nothing runs, with what to do about it (repl.js says it in two lines)
+  const unavailableText = () => String(P.unavailableDetail || P.unavailable).replace(/\n/g, ' ');
   function unavailableNow() {
-    if (P.unavailable) { setStatus('error', P.unavailable); return true; }
+    if (P.unavailable) {
+      setStatus('error', 'unavailable');
+      showNotice('unavailable', unavailableText());
+      return true;
+    }
     if (!K) { setStatus('error', 'kernel unavailable'); return true; }
     return false;
   }
@@ -1206,7 +1273,7 @@
   });
   menu.addEventListener('click', e => {
     const b = e.target.closest('[role="menuitem"]');
-    if (!b) return;
+    if (!b || b.getAttribute('aria-disabled') === 'true') return;   // disabled items stay focusable
     closeMenu(true);
     menuAction(b.dataset.act);
   });
@@ -1239,8 +1306,8 @@
       load(example());
       break;
     case 'import': $('nb-file').click(); break;
-    case 'export-scm': download(fileName('.scm'), L.toPercent(snapshot(false)), 'text/plain'); break;
-    case 'export-json': download(fileName('.json'), L.toJson(snapshot(true, Infinity)), 'application/json'); break;
+    case 'export-scm': exportScm(); break;
+    case 'export-json': exportJson(); break;
     case 'upload': $('nb-upload').click(); break;
     case 'settings': P.openSettings(); break;
     case 'keys': openShortcuts(); break;
@@ -1365,6 +1432,7 @@
     try {
       const text = await f.text();
       res = /\.json$/i.test(f.name) || /^\s*\{/.test(text) ? L.fromJson(text) : L.splitPercent(text);
+      if (res.cells.length > L.LIMITS.cells) throw new Error('more than ' + L.LIMITS.cells + ' cells');
     } catch (err) {
       showNotice('import', 'Could not import ' + f.name + ': ' + ((err && err.message) || err));
       return;
@@ -1377,7 +1445,7 @@
   });
 
   async function upload(files) {
-    if (!files.length) return;
+    if (!files.length || (P.unavailable && unavailableNow())) return;
     await P.uploadFiles(files);
     const names = files.map(f => f.name.replace(/^.*[\\/]/, ''));
     toast('Uploaded ' + clip(names.join(', '), 60) + '. Load it with (load "' + names[0] + '").', null, null, 6000);
@@ -1457,6 +1525,50 @@
     };
   }
 
+  // Export .json: every output, unless the file would be larger than
+  // Import accepts (L.LIMITS.file, in UTF-8 bytes as File.size counts
+  // them); then the outputs are capped per cell, as little as needed.
+  const EXPORT_CAPS = [Infinity, 1024 * 1024, 256 * 1024, SAVE_OUT_MAX, 16 * 1024, 4096, 0];
+  // Nor more outputs per cell than Import keeps (L.LIMITS.outputs): the
+  // first ones, a note and the last one, as Import would.
+  const utf8Bytes = s => new TextEncoder().encode(s).length;
+  // after an export: a notice if Import would refuse the file (TOOBIG,
+  // the notice for a file over 5 MB, or more than 5000 CELLS); true then
+  function exportRefused(tooBig, cells) {
+    if (tooBig) showNotice('export', tooBig);
+    else if (cells > L.LIMITS.cells)
+      showNotice('export', 'This notebook has more than ' + L.LIMITS.cells + ' cells: Import cannot read the file back.');
+    else return false;
+    return true;
+  }
+  function exportScm() {
+    const s = L.toPercent(snapshot(false));
+    download(fileName('.scm'), s, 'text/plain');
+    const big = utf8Bytes(s) > L.LIMITS.file;   // else: the cells Import finds in it
+    exportRefused(big && 'This notebook is larger than 5 MB: Import cannot read the file back.',
+                  big ? 0 : L.splitPercent(s).cells.length);
+  }
+  function exportJson() {
+    let s, cap, fits = false, cut = false;
+    for (cap of EXPORT_CAPS) {
+      const snap = cap ? snapshot(true, cap) : snapshot(false);
+      cut = false;
+      for (const c of snap.cells) {
+        const outs = L.limitOutputs(c.outputs, L.LIMITS.outputs);
+        if (outs !== c.outputs) { c.outputs = outs; cut = true; }
+      }
+      s = L.toJson(snap);
+      if ((fits = utf8Bytes(s) <= L.LIMITS.file)) break;
+    }
+    download(fileName('.json'), s, 'application/json');
+    if (exportRefused(!fits && 'This notebook is larger than 5 MB even without its outputs: Import cannot read the file back.',
+                      nb.cells.length)) return;
+    if (cap !== Infinity)
+      toast('Some outputs were left out, to keep the file within the 5 MB that Import reads.', null, null, 6000);
+    else if (cut)
+      toast('Some outputs were left out: Import reads at most ' + L.LIMITS.outputs + ' per cell.', null, null, 6000);
+  }
+
   let saveTimer = 0, saveFailed = false, lastSaved = null;
   function scheduleSave() {
     clearTimeout(saveTimer);
@@ -1494,12 +1606,12 @@
   }
   addEventListener('storage', e => {
     if (e.key !== SAVE_KEY || !e.newValue || sameSave(e.newValue, lastSaved)) return;
+    // Load theirs loads what the other tab saved then, not what storage
+    // holds when it is clicked: this tab's autosave may have replaced it
+    // since (and the other tab may be gone), so it is saved again.
+    const theirs = e.newValue;
     showNotice('storage', 'This notebook was changed in another tab.',
-               ['Load theirs', () => {
-                 let v = null;
-                 try { v = localStorage.getItem(SAVE_KEY); } catch (err) { v = null; }
-                 if (v) restore(v, false);
-               }],
+               ['Load theirs', () => { if (restore(theirs, false)) write(theirs); }],
                ['Keep mine', () => saveNow()]);
   });
 
@@ -1548,9 +1660,10 @@
     scheduleSave();
   }
 
+  // the page's own save, which Import's size limits do not apply to
   function restore(text, first) {
     let res;
-    try { res = L.fromJson(text); } catch (e) { return false; }
+    try { res = L.fromJson(text, { limits: false }); } catch (e) { return false; }
     if (!res.cells.length) return false;
     load({ title: res.title, created: res.created, cells: res.cells }, true);
     // it is what is saved: writing it again would tell the other tabs it changed
@@ -1558,7 +1671,8 @@
     saveTimer = 0;
     lastSaved = text;
     nb.modified = res.modified;
-    if (nb.cells.some(c => c.stale))
+    if (res.warnings.length) showNotice('restored', 'Restored from your last visit. ' + res.warnings.join(' '));
+    else if (nb.cells.some(c => c.stale))
       showNotice('restored', 'Restored from your last visit. Outputs are from an earlier session.', ['Run all', runAll]);
     else if (!first) hideNotice('storage');
     return true;
@@ -1636,9 +1750,11 @@
 
   if (P.unavailable) {
     for (const id of ['nb-run-all', 'nb-restart']) $(id).disabled = true;
+    menu.querySelector('[data-act="restart-run"]').setAttribute('aria-disabled', 'true');
     $('nb-stop').setAttribute('aria-disabled', 'true');
+    menu.querySelector('[data-act="upload"]').setAttribute('aria-disabled', 'true');
     setStatus('error', 'unavailable');
-    showNotice('unavailable', P.unavailable);
+    showNotice('unavailable', unavailableText());
   } else if (!K) {
     fail('The notebook kernel (nb-kernel.js) did not load. Reload the page.');
   }

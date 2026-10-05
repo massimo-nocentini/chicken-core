@@ -38,7 +38,8 @@
 #   WASM_SMOKE_ALLOW_UNSUPPORTED=1  tolerate "unsupported syscall"
 #              diagnostics (DEBUGBUILD lane only)
 #   WASM_SMOKE_LANE_W=0  skip lane W (worst-case engine stack)
-#   WASM_SMOKE_BIG=0     skip S25 (a 2 GB block on wasm64, about 4.5 GB of memory)
+#   WASM_SMOKE_BIG=0     skip S25 and S26 (blocks of 2 and 4 GB on wasm64,
+#                        and a heap regrown to 7 GB: up to 8 GB of memory)
 #
 # Every check compares stdout and/or the exit status.  Any engine-level
 # failure on stderr (RangeError, RuntimeError, Aborted) fails the check.
@@ -275,7 +276,53 @@ expect_status S24b 0 "$WASM_DIR/chicken-profile" -version
 if test "$WASM_ARCH" = wasm64 && test "${WASM_SMOKE_BIG:-1}" != 0; then
     expect S25 '2306867200 7 9 99999 100000' $C -e \
 	'(import (chicken bytevector) (chicken gc)) (define b (make-bytevector (* 2200 1024 1024) 7)) (bytevector-u8-set! b (- (bytevector-length b) 1) 9) (define l (let loop ((i 0) (a (quote ()))) (if (< i 100000) (loop (+ i 1) (cons (vector i) a)) a))) (gc #t) (gc #t) (print (bytevector-length b) " " (bytevector-u8-ref b 0) " " (bytevector-u8-ref b (- (bytevector-length b) 1)) " " (vector-ref (car l) 0) " " (length l))'
+    # S25b: the heap dump counts those bytes in full (it once summed
+    # them in an int and printed no total past 2 GB)
+    s25b() {
+	$C -e '(import (chicken bytevector)) (define b (make-bytevector (* 2200 1024 1024) 0)) (##sys#dump-heap-state) (print (bytevector-length b))'
+    }
+    run S25b s25b && if test "$status" -eq 0 &&
+	    grep -Eq '^bytevector[[:space:]]+[0-9]+[[:space:]]+23068[0-9]{5} bytes$' smoke.err; then
+	echo "ok   [$lane] S25b"
+    else
+	fail S25b "no 2306867200-byte bytevector total in the heap dump (status $status)"
+    fi
+    # S26: the heap grows to hold a single object of more than 4 GB
+    # (it once stopped there with "cannot allocate next heap segment",
+    # unaware of the memory limit); a much larger one ends in a clean
+    # panic before it is attempted.  Needs about 4.5 GB of memory.
+    expect S26 4404019200 $C -e \
+	'(import (chicken bytevector)) (print (bytevector-length (make-bytevector (* 4200 1024 1024))))'
+    expect_error S26b 'heap has reached its maximum size \(WebAssembly memory is limited' $C -e \
+	'(import (chicken bytevector)) (print (bytevector-length (make-bytevector (* 12 1024 1024 1024))))'
+    # S26d: after the heap grew and shrank, it grows as far again, into
+    # the memory malloc holds free (it once stopped early, counting only
+    # the memory above the break): one object of 3.4 GB, then 3500 of
+    # 1 MB.  Needs about 8 GB of memory.
+    expect S26d 3565158400 $C -e \
+	'(import (chicken bytevector) (chicken gc)) (define v (make-bytevector (* 3400 1024 1024))) (set! v #f) (do ((i 0 (+ i 1))) ((= i 60)) (gc #t)) (define w (make-bytevector (* 3400 1024 1024))) (print (bytevector-length w))'
+    expect S26e 3500 $C -e \
+	'(import (chicken bytevector) (chicken gc)) (define (fill n) (let loop ((i 0) (l (quote ()))) (if (= i n) l (loop (+ i 1) (cons (make-bytevector (* 1024 1024)) l))))) (define v (fill 3500)) (set! v #f) (do ((i 0 (+ i 1))) ((= i 60)) (gc #t)) (print (length (fill 3500)))'
 fi
+
+# S26c (wasm32): filling the 2 GB of memory ends in the same clean panic
+if test "$WASM_ARCH" = wasm32; then
+    expect_error S26c 'heap has reached its maximum size \(WebAssembly memory is limited' $C -e \
+	'(import (chicken bytevector)) (let loop ((l (quote ()))) (loop (cons (make-bytevector (* 8 1024 1024)) l)))'
+fi
+
+# S27: without TZ, the runtime sets it to the engine's time zone (a
+# name like "Europe/Rome" rather than emscripten's "UTC+0200", which
+# the locale egg, used by srfi-19, cannot parse); a TZ given is kept.
+host_zone=$(unset TZ; "$NODE" -e 'console.log(Intl.DateTimeFormat().resolvedOptions().timeZone || "")')
+s27() {
+    (unset TZ; csi_run -n -e '(import (chicken process-context)) (print (get-environment-variable "TZ"))')
+}
+if test -n "$host_zone"; then
+    expect S27 "$host_zone" s27
+fi
+expect S27b Asia/Tokyo env TZ=Asia/Tokyo "$WASM_DIR/csi" -n -e \
+    '(import (chicken process-context)) (print (get-environment-variable "TZ"))'
 
 # Lane W: worst-case engine stack.  Liftoff frames are the largest; a
 # browser worker gets about 1 MB of native stack.

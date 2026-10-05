@@ -232,16 +232,28 @@
   - The WebAssembly target is 64-bit by default: `make wasm' builds for
     wasm64 (emscripten's memory64), where CHICKEN has 62-bit fixnums and
     16 GB of linear memory (a heap that can grow past 4 GB, with
-    single objects of up to about 4 GB).  It needs Chrome or Edge
-    133, Firefox 134 or node 24; Safari does not support it yet, and
-    the REPL page tells a browser without memory64 to use another or
-    a wasm32 build.
+    single objects of up to nearly 8 GB).  It needs Chrome or Edge
+    137, Firefox 134 or node 24.15 (see WASM_SJLJ below); Safari does
+    not support it yet, and the REPL page tells a browser without
+    memory64 to use another or a wasm32 build.
     `make wasm WASM_ARCH=wasm32' builds the 32-bit target.  The
     frame pad and the nursery limit that protect the engine's native
     stack were re-measured per architecture: 128 bytes and 384 KB on
     wasm64, 64 bytes and 256 KB on wasm32 (was 320 KB), for a margin
     of 1.6 to 1.9.  In node, wasm64 code runs 7% to 17% slower than
     wasm32, except bignum arithmetic (about 20% faster).
+  - On WebAssembly the heap grows only as far as both its halves can be
+    allocated in the linear memory that is left (or that malloc holds
+    free, as after the heap shrank), and then stops with
+    "out of memory - heap has reached its maximum size (WebAssembly
+    memory is limited to N bytes)", before copying anything; the growth
+    that overshot used to end, after the copy, in "cannot allocate next
+    heap segment" (on wasm64 with an object just over 4 GB).
+  - On WebAssembly, when TZ is not set, the runtime sets it to the
+    JavaScript engine's time zone (such as "Europe/Rome"): emscripten's
+    C library ignores TZ and names the zone "UTC+0200", which the
+    locale egg could not parse, so (import srfi-19) failed in the node
+    csi and in the browser REPL.
   - The browser REPL page has a "Notebook" tab: code and Markdown
     cells run one at a time in a second csi of its own, started on
     the first visit, with streaming output, cell stdin, Stop, call
@@ -249,8 +261,18 @@
     Markdown, images and tables, rebuilt from an allowlist) through
     an `(import notebook)' module.  Notebooks are saved in the
     browser and can be exported and imported as .scm (cells start
-    at `;; %%' comment lines) or .json.  The kernel is the compiled unit
+    at `;; %%' comment lines) or .json (with the outputs, as far as
+    the 5 MB, 5000 cells and 1000 outputs per cell that Import reads
+    allow).  The kernel is the compiled unit
     emscripten/webnb.scm, entered with `csi -e (##webnb#kernel)'.
+  - On wasm64, setjmp/longjmp use the standard WebAssembly exception
+    handling (exnref, `try_table') by default, since Firefox reports
+    the legacy instructions (`try') as deprecated, with a console
+    warning for every module; this needs Chrome or Edge 137 and node
+    24.15 (Firefox 134 has exnref).  WASM_SJLJ selects "wasm" (exnref),
+    "wasm-legacy" (the default on wasm32, which keeps running in older
+    engines) or "emscripten", and is recorded in the build directory.
+    The REPL page tells a browser without exnref what the build needs.
 
 6.0.0
 

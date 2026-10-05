@@ -90,7 +90,7 @@ async function check(name, f) {
 // for fds 1 and 2 (adjacent chunks merged) and {ev} for each event.
 async function kernel(opts = {}) {
   const s = { items: [], states: [], exit: null, crash: null, carry: '', rid: 0,
-              unacked: 0, high: Infinity, onEvent: null };
+              unacked: 0, high: Infinity, onEvent: null, maxChunk: 0 };
   s.drv = await Driver.start(createChickenRepl, {
     args: opts.args || Kernel.kernelArgs(opts.argString || ''),
     csirc: opts.csirc == null ? null : opts.csirc,
@@ -102,6 +102,7 @@ async function kernel(opts = {}) {
     canRun: () => s.unacked < s.high,
     onOutput: (fd, t) => {
       s.unacked += t.length;
+      s.maxChunk = Math.max(s.maxChunk, t.length);
       if (fd !== 3) {
         const last = s.items[s.items.length - 1];
         if (last && last.fd === fd) last.text += t; else s.items.push({ fd, text: t });
@@ -204,6 +205,37 @@ async function partK() {
     eq(r.done.status, 'incomplete', 'unterminated string');
     r = await K.run('(+ 1\n 2\n (* 3');
     assert(r.done.status === 'incomplete' && r.done.error.line === 3, 'line 3: ' + J(r.done.error));
+    // a dotted tail at the end ("missing list terminator"), a quote with
+    // nothing after it: incomplete too
+    for (const src of ['(display 7) \'(1 . 2', '(display 8) (define al \'((a . 1) (b . ',
+                       '(display 9) #(1 2 . 3\n\n', '(display 1) \'', '(display 2) `  \n', '(display 3) ,@']) {
+      r = await K.run(src);
+      eq(r.done.status, 'incomplete', src);
+      eq(r.out, '', src + ': stdout');
+    }
+    // the same error in the middle, and a quoted end of file, are not
+    r = await K.run('(display 4) \'(a . b c)');
+    assert(r.done.status === 'error' && r.done.error.form === 2 && r.out === '4', 'mid-input: ' + J(r.done));
+    r = await ok(K, '(display 5) \'#!eof', ['#!eof']);
+    eq(r.out, '5', 'quoted #!eof');
+    // a quote at the end followed by comments only, "#`", "#$", and a
+    // "#;" or "#\" with nothing after it (but comments) are incomplete
+    await ok(K, '(define k5n 0)');
+    for (const src of ['(set! k5n 1) \'\n; comment', '(set! k5n 1) \' #| c |#', '(set! k5n 1) `#;1',
+                       '(set! k5n 1) #`', '(set! k5n 1) #$', '(set! k5n 1) #;', '(set! k5n 1) #; ; c\n',
+                       '(set! k5n 1) #; \'', '(set! k5n 1) #;#;1', '(set! k5n 1) #\\', '(set! k5n 1) \'#\\']) {
+      r = await K.run(src);
+      eq(r.done.status, 'incomplete', J(src));
+    }
+    r = await K.run('(set! k5n 1) #;');
+    assert(/unexpected end of input$/.test(r.done.error.text), '#; message: ' + J(r.done.error));
+    await ok(K, 'k5n', ['0']);
+    // complete ones
+    await ok(K, '(+ 1 2) #;(oops) ; c', ['3']);
+    await ok(K, '1 #\\a', ['#\\a']);
+    await ok(K, '\'#!eof ; c', ['#!eof']);
+    await ok(K, '\'; c\n#!eof', ['#!eof']);
+    await ok(K, '1 #!eof (oops', ['1']);
   });
 
   await check('K6 errors: text, kind, location, form and the call history of this cell only', async () => {
@@ -282,6 +314,14 @@ async function partK() {
     await ok(K, '(define (nest8 n) (let loop ((i 0) (acc \'())) (if (= i n) acc (loop (+ i 1) (list i acc)))))');
     r = await ok(K, '(nest8 400)');
     assert(/^\(399 \(398 .*\)\.\.\.$/.test(r.done.values[0]), 'truncated: ' + r.done.values[0].slice(-40));
+    // a record printer that resets while the error is reported (after
+    // the cell): the fallback error, and the kernel goes on
+    await ok(K, '(define k8 8)');
+    r = await K.run('(import (scheme base) (chicken repl)) (define-record-type k8r (make-k8r) k8r?) ' +
+                    '(set-record-printer! k8r (lambda (x p) (reset))) (raise (make-k8r))');
+    eq(r.done.status, 'error', 'reset while reporting: status');
+    assert(/while reporting an error/.test(r.done.error.text), 'fallback: ' + r.done.error.text);
+    await ok(K, '(list k8 (k8r? (make-k8r)))', ['(8 #t)']);
   });
 
   await check('K9 Stop: a loop, a sleep and a read-line are interrupted, then cells go on', async () => {
@@ -299,6 +339,16 @@ async function partK() {
       assert(now() - t < 2000, 'within 2 s');
       await ok(K, '(* 6 7)', ['42']);
     }
+    // a nested repl waits at its own prompt: Stop interrupts it too
+    // (the REPL's stale-Stop rule for a fresh prompt does not apply)
+    const from = K.states.length;
+    const rid = K.post('(import (chicken repl)) (repl)');
+    await K.stateSeen(WAITING, from);
+    K.drv.interrupt();
+    const r = await K.result(rid, 2000);
+    eq(r.done.status, 'interrupted', 'nested repl');
+    assert(/^#;\d+> $/.test(r.out), 'its prompt: ' + J(r.out));
+    await ok(K, '(* 6 7)', ['42']);
   });
 
   await check('K10 stale Stops: after done, and while idle', async () => {
@@ -551,6 +601,48 @@ async function partK() {
     X.drv.post('run 99 In[99]\n(exit 0)');
     current = K;
   });
+
+  await check('K27 a cell that closes a standard port: the ports work again in the next cell', async () => {
+    await ok(K, '(import (scheme base)) (define k27 27)');
+    let r = await ok(K, '(call-with-port (current-output-port) (lambda (p) (write "hi" p)))', null);
+    eq(r.out, '"hi"', 'written before the close');
+    r = await ok(K, '(display "again") k27', ['27']);
+    eq(r.out, 'again', 'stdout again');
+    r = await ok(K, '(close-output-port (current-error-port)) 1', ['1']);
+    r = await ok(K, '(display k27 (current-error-port))');
+    eq(r.err, '27', 'stderr again');
+    // writing to it after the close, in the same cell, is an error, as natively
+    r = await K.run('(close-output-port (current-output-port)) (display 5)');
+    assert(r.done.status === 'error' && /port already closed/.test(r.done.error.text), 'closed: ' + J(r.done));
+    await ok(K, '(display "ok")');
+    // stdin as well
+    let from = K.states.length;
+    let rid = K.post('(import (chicken io)) (call-with-port (current-input-port) read-line)');
+    await K.stateSeen(WAITING, from);
+    K.drv.feed('hello\n');
+    eq((await K.result(rid)).done.values, ['"hello"'], 'read-line through call-with-port');
+    from = K.states.length;
+    rid = K.post('(read-line)');
+    await K.stateSeen(WAITING, from);
+    K.drv.feed('again\n');
+    eq((await K.result(rid)).done.values, ['"again"'], 'stdin again');
+    r = await K.run('(close-input-port (current-input-port)) (read-char)');
+    assert(r.done.status === 'error' && /port already closed/.test(r.done.error.text), 'stdin closed: ' + J(r.done));
+    await ok(K, '(char-ready?)', ['#f']);
+  });
+
+  await check('K28 a write over 1 MB reaches JS in pieces; a display over 4 MB as its size only', async () => {
+    K.maxChunk = 0;
+    let r = await ok(K, '(display (make-string 3000000 #\\a)) (display "after") 1', ['1']);
+    eq([r.out.length, r.out.slice(-7)], [3000005, 'aaafter'], 'stdout');
+    assert(K.maxChunk <= 1 << 20, 'pieces of ' + K.maxChunk);
+    // pieces end on a character: none is broken in two
+    r = await ok(K, '(display (make-string 1500001 #\\x3bb)) 2', ['2']);
+    assert(r.out.length === 1500001 && /^\u03bb+$/.test(r.out), 'lambdas: ' + r.out.length);
+    r = await ok(K, '(import notebook) (show (make-string 4194305 #\\x)) (show (text "small")) ' +
+                    '(text (make-string 4194304 #\\y))', null);
+    eq(r.displays.map(d => [d.data.length, d.size]), [[0, 4194305], [5, undefined], [4194304, undefined]], 'displays');
+  });
 }
 
 async function eggs() {
@@ -760,13 +852,24 @@ async function partC() {
     assert(C.states.includes('sleeping'), 'sleeping seen');
   });
 
+  await check('C11b a display too large to send has its size', async () => {
+    const d = await C.k.run('big', '(import notebook) (show (svg (make-string 5000000 #\\x))) 1');
+    eq(d.values, ['1'], 'value');
+    eq(C.cells.big.filter(e => e.type === 'display'), [{ type: 'display', mime: 'image/svg+xml', data: '', id: null, size: 5000000 }], 'display');
+  });
+
   await check('C12 .csirc and uploads through the client; the startup log', async () => {
-    const U = client({ csirc: () => '(display "from rc")\n(define rc 1)\n',
+    const U = client({ csirc: () => '(display "from rc")\n(define rc 1)\n' +
+                                     '(import notebook) (show "rc show") (show (html "<b>x</b>"))\n',
                        files: () => [{ path: '/home/web_user/up.scm', data: new TextEncoder().encode('(define up 2)') }] });
     const d = await U.k.run('u', '(load "up.scm") (+ rc up)');
     eq(d.values, ['3'], 'values');
     assert(U.logs.some(([k, t]) => k === 'csirc' && t === '~/.csirc loaded'), 'csirc log ' + J(U.logs));
     assert(U.logs.some(([k, t]) => k === 'stdout' && /from rc/.test(t)), 'rc output in the log');
+    // displays have no cell: logged, text as stdout
+    assert(U.logs.some(([k, t]) => k === 'stdout' && t === 'rc show\n'), 'rc show in the log ' + J(U.logs));
+    assert(U.logs.some(([k, t]) => k === 'display' && t === 'text/html output not shown (8 characters)'), 'rc html ' + J(U.logs));
+    assert(!U.logs.some(([k]) => k === 'protocol'), 'no protocol error ' + J(U.logs));
     U.k.writeFile('/home/web_user/w.scm', new TextEncoder().encode('(define w 3)'));
     eq((await U.k.run('w', '(load "w.scm") w')).values, ['3'], 'writeFile');
     U.k.dispose();
@@ -805,6 +908,118 @@ async function partC() {
     assert(F.logs.some(([k, t]) => k === 'stderr' && /no-such-extension-here/.test(t)), 'stderr logged ' + J(F.logs));
     eq((await F.k.run('x', '1')).reason, 'kernel exited', 'run cancelled');
     F.k.dispose();
+    current = C;
+  });
+
+  // The slice that wakes from a sleep, or gets the input, runs into a
+  // long primitive without reporting: the client still says sleeping or
+  // input, and Stop must kill the kernel all the same.
+  await check('C16 watchdog: Stop after a sleep, in a long primitive, kills the kernel', async () => {
+    const W = client({ watchdogMs: 1000 });
+    const p = W.k.run('big', '(sleep 1) (define big (expt 7 60000000))');
+    await waitFor('sleeping', () => W.k.state === 'sleeping');
+    await sleep(1500);
+    eq(W.k.state, 'sleeping', 'still sleeping for the client');
+    const t = now();
+    W.k.stop();
+    const d = await p;
+    eq([d.status, d.reason], ['killed', 'unresponsive'], 'killed');
+    assert(now() - t >= 1000 && now() - t < 5000, 'after watchdogMs: ' + (now() - t));
+    eq((await W.k.run('after', '(+ 1 2)')).values, ['3'], 'respawned');
+    W.k.dispose();
+    current = C;
+  });
+
+  await check('C17 input: busy once it is sent; Stop in the primitive that follows kills the kernel', async () => {
+    const W = client({ watchdogMs: 1000 });
+    const p = W.k.run('in', '(import (chicken io)) (read-line) (define big (expt 7 60000000))');
+    await waitFor('input', () => W.k.state === 'input');
+    W.k.input('x\n');
+    eq(W.k.state, 'busy', 'busy at once');
+    await waitFor('the stdin box goes', () => W.cells.in.filter(e => e.type === 'input').length === 2);
+    eq(W.cells.in.filter(e => e.type === 'input').map(e => e.waiting), [true, false], 'waiting flags');
+    const t = now();
+    W.k.stop();
+    const d = await p;
+    eq([d.status, d.reason], ['killed', 'unresponsive'], 'killed');
+    assert(now() - t >= 1000 && now() - t < 5000, 'after watchdogMs: ' + (now() - t));
+    W.k.dispose();
+    current = C;
+  });
+
+  await check('C18 input read twice: the stdin box stays up between the lines', async () => {
+    const p = C.k.run('in2x', '(import (chicken io)) (list (read-line) (read-line))');
+    await waitFor('input', () => C.k.state === 'input');
+    C.k.input('a\n');
+    await waitFor('input again', () => C.k.state === 'input');
+    C.k.input('b\n');
+    eq((await p).values, ['("a" "b")'], 'values');
+    eq(C.cells.in2x.filter(e => e.type === 'input').map(e => e.waiting), [true, false], 'waiting flags');
+  });
+
+  await check('C19 a cell re-entering a continuation of the .csirc ends; the kernel goes on', async () => {
+    const R = client({ csirc: () => '(define kk #f)\n(call-with-current-continuation (lambda (k) (set! kk k)))\n' });
+    const d = await R.k.run('a', '(kk #f) (display "after")');
+    eq([d.type, d.count], ['done', 1], 'done');
+    eq(R.logs.filter(([k]) => k === 'csirc').length, 1, 'one csirc event: ' + J(R.logs));
+    assert(!R.logs.some(([k]) => k === 'protocol'), 'no protocol error: ' + J(R.logs));
+    eq((await R.k.run('b', '(+ 1 2)')).values, ['3'], 'the next cell runs');
+    eq(R.k.state, 'idle', 'idle');
+    R.k.dispose();
+    current = C;
+  });
+
+  // More input sent just after the read (the stdin box stays up for a
+  // while) reaches a kernel already at IDLE: the worker reports IDLE
+  // again for a slice that ran nothing.  The shim holds that second
+  // input until the cell's done arrives, and the client sees done only
+  // after both IDLE states, behind which the next cell is posted.
+  await check('C20 IDLE from input sent after a cell ended does not end the next cell', async () => {
+    let held = null, inputs = 0, hold = null, states = 0;
+    const S = client({
+      createWorker: () => {
+        const w = createWorker(), real = w.postMessage;
+        w.postMessage = m => {
+          if (m.type === 'input' && ++inputs === 2) held = m; else real(m);
+        };
+        const shim = { onmessage: null, onerror: null, postMessage: m => w.postMessage(m),
+                       terminate: () => w.terminate() };
+        w.onerror = e => shim.onerror && shim.onerror(e);
+        w.onmessage = e => {
+          const m = e.data;
+          if (!hold && held && m.type === 'output' && m.fd === 3 && m.text.includes('"ev":"done"')) {
+            hold = [];
+            real(held);
+          }
+          if (hold) {
+            hold.push(e);
+            if (m.type === 'state' && ++states === 2) {
+              const q = hold;
+              hold = held = null;
+              for (const x of q) shim.onmessage && shim.onmessage(x);
+            }
+            return;
+          }
+          if (shim.onmessage) shim.onmessage(e);
+        };
+        return shim;
+      },
+    });
+    const pa = S.k.run('a', '(import (chicken io)) (read-line) (display "A ran") 1');
+    const pb = S.k.run('b', '(display "B ran") 42');
+    const pc = S.k.run('c', '(+ 1 2)');
+    await waitFor('input', () => S.k.state === 'input');
+    S.k.input('x\n');
+    S.k.input('', true);                      // the box is still up: posted
+    eq(inputs, 2, 'both inputs posted');
+    const a = await pa, b = await pb, c = await pc;
+    eq([a.status, S.stream('a')], ['ok', 'A ran'], 'a');
+    eq([b.status, b.values, S.stream('b')], ['ok', ['42'], 'B ran'], 'b');
+    eq([c.status, c.values], ['ok', ['3']], 'c');
+    eq(states, 2, 'both IDLE states held');
+    assert(!S.logs.some(([k]) => k === 'protocol'), 'no protocol error: ' + J(S.logs));
+    eq(S.k.state, 'idle', 'idle');
+    S.k.dispose();
     current = C;
   });
 
