@@ -37,10 +37,12 @@ Using it
                 recall history.  ,? lists csi's toplevel commands.
   Upload        puts files in the REPL's home directory; load them with
                 ,l name.scm  (plain-Scheme eggs can be loaded this way).
-  Notebook      code and Markdown cells; Shift+Enter runs a cell and moves on,
-                Ctrl+Enter runs it in place, Run all / Stop / Restart kernel.
-                (import notebook) gives rich output: html, svg, markdown,
-                table, image.  Saved in the browser; export/import from More.
+  Notebook      code and Markdown cells, Scheme syntax-highlighted; Shift+Enter
+                runs a cell and moves on, Ctrl+Enter runs it in place, Run all /
+                Stop / Restart kernel.  (import notebook) gives rich output:
+                html, svg, markdown, table, image.  Saved in the browser;
+                export (.scm, .json, or .html: a static page with no scripts)
+                and import (.scm, .json) from More.
   Compile to C  translates Scheme to C with the CHICKEN compiler itself.
   Settings      .csirc contents, extra csi options, theme, WebAssembly build.
 

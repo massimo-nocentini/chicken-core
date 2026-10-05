@@ -41,13 +41,13 @@
 <meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
 <meta name="description" content="CHICKEN Scheme's csi running in your browser, compiled to WebAssembly.">
-<meta name="chicken-build" content="ea071a4d-1597843425">
+<meta name="chicken-build" content="ea071a4d-2450614792">
 <meta name="chicken-wasm-arch" content="wasm64">
 <meta name="chicken-wasm-eh" content="exnref">
 <meta name="chicken-wasm-builds" content="wasm64:exnref wasm32:legacy">
 <title>CHICKEN Scheme REPL</title>
-<link rel="icon" type="image/png" href="chicken.png?v=ea071a4d-1597843425">
-<style>
+<link rel="icon" type="image/png" href="chicken.png?v=ea071a4d-2450614792">
+<style id="page-style">
 :root {
   --bg: #f5f3ee;
   --surface: #ffffff;
@@ -71,9 +71,17 @@
   --wait: #1d4ed8;
   --sleep: #7c3aed;
   --bad: #b42318;
+  --syn-comment: #676258;
+  --syn-string: #3a7018;
+  --syn-special: #a3470a;
+  --syn-number: #a12f62;
+  --syn-constant: #7a3fb8;
+  --syn-keyword: #0d6d64;
+  --syn-quote: #2a6590;
+  --syn-paren: #5c574d;
   --shadow: 0 1px 2px rgb(40 30 10 / .06), 0 4px 16px rgb(40 30 10 / .06);
   --radius: 10px;
-  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Cascadia Code", Menlo, Consolas, "DejaVu Sans Mono", "Liberation Mono", monospace;
+  --mono: ui-monospace, "Noto Sans Mono", "Noto Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
@@ -101,6 +109,14 @@
     --wait: #7aa7ff;
     --sleep: #c4a5ff;
     --bad: #ff8a80;
+    --syn-comment: #928c80;
+    --syn-string: #a8cc7a;
+    --syn-special: #f5a524;
+    --syn-number: #f28db2;
+    --syn-constant: #c4a5ff;
+    --syn-keyword: #5ccfbf;
+    --syn-quote: #82b8e8;
+    --syn-paren: #a29d91;
     --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .3);
     color-scheme: dark;
   }
@@ -128,6 +144,14 @@
   --wait: #7aa7ff;
   --sleep: #c4a5ff;
   --bad: #ff8a80;
+  --syn-comment: #928c80;
+  --syn-string: #a8cc7a;
+  --syn-special: #f5a524;
+  --syn-number: #f28db2;
+  --syn-constant: #c4a5ff;
+  --syn-keyword: #5ccfbf;
+  --syn-quote: #82b8e8;
+  --syn-paren: #a29d91;
   --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .3);
   color-scheme: dark;
 }
@@ -535,7 +559,6 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 }
 .nb-cell.is-selected { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
 .nb-cell.is-selected::before { background: var(--accent); }
-.nb-cell:focus-visible { box-shadow: 0 0 0 2px var(--focus); }
 .nb-cell[data-status="running"]::before, .nb-cell[data-status="waiting"]::before { background: var(--busy); animation: pulse 1.2s ease-in-out infinite; }
 .nb-cell[data-status="waiting"]::before { background: var(--wait); animation: none; }
 .nb-cell[data-status="error"]::before { background: var(--bad); }
@@ -572,13 +595,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 .nb-body { grid-area: body; min-width: 0; }
 .nb-editor {
   position: relative;
+  overflow: clip;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--term-bg);
-  transition: border-color .12s, box-shadow .12s;
+  transition: border-color .12s;
 }
 .nb-cell.is-selected .nb-editor { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
-.nb-editor:focus-within { border-color: var(--focus) !important; box-shadow: 0 0 0 1px var(--focus); }
 .nb-src, .nb-hl {
   display: block;
   width: 100%;
@@ -601,8 +624,29 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   outline: none;
 }
 .nb-src::placeholder { color: var(--muted); opacity: .75; }
-.nb-hl { position: absolute; inset: 0; color: transparent; pointer-events: none; overflow: hidden; }
-.nb-hl mark { color: transparent; background: color-mix(in srgb, var(--term-err) 18%, transparent); border-radius: 3px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--term-err) 18%, transparent); }
+/* the overlay's height is its own (not the editor's): sizing the editor
+   does not lay out its text again */
+.nb-hl { position: absolute; top: 0; left: 0; right: 0; color: transparent; pointer-events: none; overflow: hidden; }
+.nb-hl > div { min-height: 1.55em; }
+.nb-hl mark { color: inherit; background: color-mix(in srgb, var(--term-err) 18%, transparent); border-radius: 3px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--term-err) 18%, transparent); }
+/* syntax colors: the overlay shows the text, the editor only its caret
+   and selection (no bold or italics: the glyphs must line up); the line
+   of an error keeps the plain text color, which is readable on its tint */
+.nb-editor.syn .nb-hl { color: var(--term-fg); }
+.nb-editor.syn .nb-hl mark * { color: inherit; }
+.nb-editor.syn .nb-src { color: transparent; caret-color: var(--term-fg); }
+.nb-editor.syn .nb-src::selection { color: transparent; background: color-mix(in srgb, var(--focus) 18%, transparent); }
+/* an IME draws what it composes in the editor's text color */
+.nb-editor.syn.ime .nb-src { color: var(--term-fg); }
+.nb-editor.ime .nb-hl { visibility: hidden; }
+.syn-comment { color: var(--syn-comment); }
+.syn-string, .syn-char { color: var(--syn-string); }
+.syn-special { color: var(--syn-special); }
+.syn-number { color: var(--syn-number); }
+.syn-constant { color: var(--syn-constant); }
+.syn-keyword { color: var(--syn-keyword); }
+.syn-quote { color: var(--syn-quote); }
+.syn-paren { color: var(--syn-paren); }
 .nb-bal {
   position: absolute;
   right: 6px; bottom: 4px;
@@ -872,6 +916,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   .nb-cell[data-status="error"] { outline: 2px solid Mark; }
   .nb-editor { border-color: CanvasText; }
   .nb-hl mark { background: Mark; forced-color-adjust: none; }
+  .nb-editor.syn .nb-hl, .nb-editor.syn .nb-hl * { forced-color-adjust: none; color: transparent; }
 }
 @media print {
   .top, .bar, .nb-gutter .nb-run, .nb-tools, .nb-add, .hints, .notice, .nb-log, .nb-toast, .nb-stdin, .nb-bal, .nb-more { display: none !important; }
@@ -888,7 +933,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 <div class="app">
   <header class="top">
     <a class="brand" href="https://call-cc.org/" title="call-cc.org">
-      <img src="chicken.png?v=ea071a4d-1597843425" alt="" width="34" height="34">
+      <img src="chicken.png?v=ea071a4d-2450614792" alt="" width="34" height="34">
       <div>
         <h1>CHICKEN Scheme</h1>
         <p>csi, compiled to WebAssembly, running in your browser</p>
@@ -951,6 +996,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
         <button type="button" role="menuitem" tabindex="-1" data-act="import">Import…</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-scm">Export .scm</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-json">Export .json</button>
+        <button type="button" role="menuitem" tabindex="-1" data-act="export-html">Export .html</button>
         <div role="separator"></div>
         <button type="button" role="menuitem" tabindex="-1" data-act="upload">Upload files</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="settings">Settings</button>
@@ -1007,7 +1053,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <button class="btn" id="nb-end-code" type="button">+ Code</button>
           <button class="btn" id="nb-end-text" type="button">+ Text</button>
         </div>
-        <p class="hints" id="nb-keys"><kbd>Shift</kbd>+<kbd>Enter</kbd> runs a cell and moves on, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs it in place, <kbd>Esc</kbd> then <kbd>?</kbd> lists every shortcut. The notebook is saved in this browser; export it from More.</p>
+        <p class="hints" id="nb-keys"><kbd>Shift</kbd>+<kbd>Enter</kbd> runs a cell and moves on, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs it in place, <kbd>Esc</kbd> then <kbd>?</kbd> lists every shortcut. The notebook is saved in this browser; export it from More as .scm, .json or .html.</p>
       </div>
       <div class="sr-only" id="nb-live" aria-live="polite"></div>
       <div class="nb-toast" id="nb-toast" role="status" hidden>
@@ -1148,9 +1194,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 </dialog>
 
 <noscript><p style="padding:16px">This REPL needs JavaScript and WebAssembly.</p></noscript>
-<script src="repl.js?v=ea071a4d-1597843425"></script>
-<script src="notebook-lib.js?v=ea071a4d-1597843425"></script>
-<script src="nb-kernel.js?v=ea071a4d-1597843425"></script>
-<script src="notebook.js?v=ea071a4d-1597843425"></script>
+<script src="repl.js?v=ea071a4d-2450614792"></script>
+<script src="notebook-lib.js?v=ea071a4d-2450614792"></script>
+<script src="nb-kernel.js?v=ea071a4d-2450614792"></script>
+<script src="notebook.js?v=ea071a4d-2450614792"></script>
 </body>
 </html>

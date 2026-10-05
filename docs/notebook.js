@@ -35,10 +35,13 @@
  * - Kernel output is queued per cell and rendered once per animation
  *   frame; while a cell runs, its outputs keep their first and last 512
  *   KB of streams and 500 outputs (a note says how much was left out).
+ * - Code cells are colored by notebook-lib.js's highlighter, in an
+ *   overlay behind each editor, painted as cells come into view.
  * - Rich outputs (HTML, SVG, Markdown) are rebuilt from an allowlist by
  *   notebook-lib.js; no untrusted string ever reaches innerHTML.
  * - The notebook is saved to localStorage (debounced), outputs capped at
- *   64 KB per cell; it can be exported as .scm (percent format) or .json. */
+ *   64 KB per cell; it can be exported as .scm (percent format), .json
+ *   (with outputs) or .html (a static page of what the notebook shows). */
 
 (function () {
   'use strict';
@@ -660,7 +663,7 @@
     const src = h('textarea', { class: 'nb-src', rows: '1', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off',
                                 autocorrect: 'off', wrap: 'soft' });
     src.value = cell.source;
-    const hl = h('div', { class: 'nb-hl', 'aria-hidden': 'true' });
+    const hl = h('div', { class: 'nb-hl', 'aria-hidden': 'true', inert: true });
     const bal = h('span', { class: 'nb-bal', 'aria-hidden': 'true', hidden: true });
     const editor = h('div', { class: 'nb-editor' }, hl, src, bal);
     const md = h('div', { class: 'nb-md' });
@@ -674,8 +677,10 @@
     const tools = h('div', { class: 'nb-tools', role: 'toolbar' }, up, down, kind, del);
     // the tools come before the editor, which keeps Tab for indenting
     li.append(h('div', { class: 'nb-gutter' }, run, count), tools, body);
-    const v = { li, run, count, src, hl, bal, editor, md, out, showOut, body, tools, up, down, kind, del, stdin: null, stdinText: null };
+    const v = { li, run, count, src, hl, bal, editor, md, out, showOut, body, tools, up, down, kind, del, stdin: null, stdinText: null,
+                near: false, dirty: false, mark: 0, keys: null, mdSyn: false };
     views.set(cell.id, v);
+    if (nearby) nearby.observe(li);
 
     run.addEventListener('click', () => { select(cell.id); runOne(cell, cell.type === 'markdown' ? 'cell' : null); });
     up.addEventListener('click', () => moveCell(cell, -1, 'button'));
@@ -684,9 +689,14 @@
     del.addEventListener('click', () => deleteCell(cell));
     showOut.addEventListener('click', () => toggleOutput(cell));
     src.addEventListener('input', () => onEdit(cell));
+    // while an IME composes, the editor shows its own text: the browser
+    // draws the composition in the text's color, over the overlay
+    src.addEventListener('compositionstart', () => editor.classList.add('ime'));
+    src.addEventListener('compositionend', () => { editor.classList.remove('ime'); paint(cell, true); });
     md.addEventListener('dblclick', () => editCell(cell));
     for (const o of cell.outputs) { const el = renderOutput(cell, o); els.set(o, el); out.appendChild(el); }
     if (cell.type === 'markdown') renderMd(cell);
+    paint(cell);
     chrome(cell);
     return li;
   }
@@ -701,10 +711,12 @@
     const v = views.get(cell.id);
     if (!v) return;
     releaseMdIds(cell);
-    const frag = L.renderMarkdown(cell.source, document, 'nb-h-', mdIds);
+    const frag = L.renderMarkdown(cell.source, document, 'nb-h-', mdIds, true);
     mdIdsOf.set(cell.id, Array.from(frag.querySelectorAll('[id]'), el => el.id));
     v.md.replaceChildren(frag);
     v.md.classList.toggle('empty', !cell.source.trim());
+    v.mdSyn = !!v.md.querySelector('code[data-syn]');
+    if (v.mdSyn) paint(cell);
   }
 
   const STATUS_WORDS = {
@@ -785,7 +797,8 @@
     const v = views.get(cell.id);
     cell.source = v.src.value;
     autosize(v);
-    clearHighlight(cell);
+    v.mark = 0;
+    paint(cell, true);
     updateBalance(cell);
     chrome(cell);
     scheduleSave();
@@ -798,24 +811,86 @@
     let t = '';
     if (b.open) t = 'unclosed string or comment';
     else if (b.stray) t = b.stray + ' extra )';
+    else if (b.mismatch) t = b.mismatch + ' mismatched bracket' + (b.mismatch > 1 ? 's' : '');
     else if (b.depth) t = b.depth + ' unclosed (';
     v.bal.textContent = t;
     v.bal.hidden = !t;
   }
 
-  // a highlighted line behind the editor (the overlay mirrors its text)
-  function highlightLine(cell, line) {
+  // The overlay behind the editor mirrors its text: in colored spans for
+  // a code cell (class syn: the editor's own text is transparent), and
+  // with the line of an error in a <mark>.  It is inert, so that find in
+  // page does not see its text a second time.  Cells are painted when
+  // they come near the visible part of the notebook, so that a big one
+  // loads without building the spans (or coloring the code blocks of a
+  // text cell) out of sight; a source of more than SYN_MAX characters is
+  // left plain.  A code cell's overlay has a block per line, and an edit
+  // replaces those of the lines that changed only (v.keys: one per line
+  // shown): a big cell is not laid out anew.
+  const SYN_MAX = 32 * 1024;
+  const nearby = typeof IntersectionObserver === 'function' ? new IntersectionObserver(es => {
+    for (const e of es) {
+      const v = views.get(e.target.dataset.id);
+      if (!v || v.li !== e.target) continue;
+      v.near = e.isIntersecting;
+      if (v.near && v.dirty) paint(byId(e.target.dataset.id));
+    }
+  }, { root: panel, rootMargin: '1000px 0px' }) : null;
+  function lineNode(line, marked) {
+    const div = document.createElement('div'), to = marked ? div.appendChild(document.createElement('mark')) : div;
+    for (const [k, s] of line) {
+      if (!k) { to.appendChild(document.createTextNode(s)); continue; }
+      const e = to.appendChild(document.createElement('span'));
+      e.className = 'syn-' + k;
+      e.textContent = s;
+    }
+    if (marked && !line.length) to.textContent = ' ';
+    return div;
+  }
+  function paint(cell, now) {
     const v = views.get(cell.id);
     if (!v) return;
-    const lines = cell.source.split('\n');
-    if (line < 1 || line > lines.length) return;
-    const before = lines.slice(0, line - 1).join('\n') + (line > 1 ? '\n' : '');
-    const after = (line < lines.length ? '\n' : '') + lines.slice(line).join('\n');
-    v.hl.replaceChildren(document.createTextNode(before), h('mark', { text: lines[line - 1] || ' ' }), document.createTextNode(after));
+    if (nearby && !v.near && !now) { v.dirty = true; return; }
+    v.dirty = false;
+    if (v.mdSyn) { v.mdSyn = false; L.colorCode(v.md, document); }
+    // the editor's text: its line breaks are \n whatever the source had
+    const text = v.src.value, syn = cell.type === 'code' && text.length <= SYN_MAX;
+    v.editor.classList.toggle('syn', syn);
+    if (syn) {
+      const lines = L.highlightLines(L.highlight(text));
+      if (v.mark > lines.length) v.mark = 0;
+      const keys = lines.map((l, k) => (k + 1 === v.mark ? '!' : '') + l.map(p => p[0] + '\u0001' + p[1]).join('\u0002'));
+      const old = v.keys || [];
+      if (!v.keys) v.hl.textContent = '';
+      let p = 0, q = 0;
+      while (p < old.length && p < keys.length && old[p] === keys[p]) p++;
+      while (q < old.length - p && q < keys.length - p && old[old.length - 1 - q] === keys[keys.length - 1 - q]) q++;
+      // siblings, not childNodes[k]: removing through that index is quadratic in Firefox
+      let node = v.hl.childNodes[p] || null;
+      for (let k = p; k < old.length - q; k++) { const next = node.nextSibling; node.remove(); node = next; }
+      const frag = document.createDocumentFragment();
+      for (let k = p; k < keys.length - q; k++) frag.appendChild(lineNode(lines[k], k + 1 === v.mark));
+      v.hl.insertBefore(frag, node);
+      v.keys = keys;
+      return;
+    }
+    v.keys = null;
+    const lines = v.mark ? text.split('\n') : [];
+    if (v.mark > lines.length) v.mark = 0;
+    if (!v.mark) { if (v.hl.firstChild) v.hl.textContent = ''; return; }
+    const before = lines.slice(0, v.mark - 1).join('\n') + (v.mark > 1 ? '\n' : '');
+    const after = (v.mark < lines.length ? '\n' : '') + lines.slice(v.mark).join('\n');
+    v.hl.replaceChildren(document.createTextNode(before), h('mark', { text: lines[v.mark - 1] || ' ' }), document.createTextNode(after));
+  }
+  function highlightLine(cell, line) {
+    const v = views.get(cell.id);
+    if (!v || line < 1 || line > cell.source.split('\n').length) return;
+    v.mark = line;
+    paint(cell, true);
   }
   function clearHighlight(cell) {
     const v = views.get(cell.id);
-    if (v && v.hl.firstChild) v.hl.textContent = '';
+    if (v && v.mark) { v.mark = 0; paint(cell); }
   }
   function selectLine(cell, line) {
     const v = views.get(cell.id);
@@ -838,6 +913,7 @@
     const next = nb.cells[at + 1];
     cellsEl.insertBefore(li, next ? views.get(next.id).li : null);
     autosize(views.get(cell.id));
+    paint(cell, true);
     if (!quiet) { chromeAll(); scheduleSave(); }
     return cell;
   }
@@ -852,8 +928,10 @@
                                            status: cell.status === 'running' || cell.status === 'waiting' || cell.status === 'queued' ? 'idle' : cell.status });
     trash.push({ cell: snap, index: i });
     if (trash.length > TRASH_MAX) trash.shift();
-    const hadFocus = panel.contains(document.activeElement) && views.get(cell.id).li.contains(document.activeElement);
-    views.get(cell.id).li.remove();
+    const v = views.get(cell.id);
+    const hadFocus = panel.contains(document.activeElement) && v.li.contains(document.activeElement);
+    if (nearby) nearby.unobserve(v.li);
+    v.li.remove();
     views.delete(cell.id);
     releaseMdIds(cell);
     nb.cells.splice(i, 1);
@@ -877,6 +955,7 @@
     const next = nb.cells[at + 1];
     cellsEl.insertBefore(li, next ? views.get(next.id).li : null);
     autosize(views.get(cell.id));
+    paint(cell, true);
     chromeAll();
     select(cell.id, { focus: 'cell' });
     hideToast();
@@ -919,9 +998,11 @@
     cell.stale = false;
     cell.ranSource = null;
     cell.editing = type === 'markdown' && !cell.source.trim();
+    if (nearby) nearby.unobserve(v.li);
     const li = makeView(cell);
     v.li.replaceWith(li);
     autosize(views.get(cell.id));
+    paint(cell, true);
     chromeAll();
     select(cell.id, { focus: hadFocus ? 'cell' : null });
     announce('Cell ' + (indexOf(cell) + 1) + ' is now a ' + (type === 'code' ? 'code' : 'text') + ' cell');
@@ -993,7 +1074,7 @@
       if (s !== cell.source) {
         cell.source = s;
         const v = views.get(cell.id);
-        if (v) { const a = v.src.selectionStart; v.src.value = s; v.src.setSelectionRange(a, a); }
+        if (v) { const a = v.src.selectionStart; v.src.value = s; v.src.setSelectionRange(a, a); paint(cell); }
       }
     }
     return cell.source;
@@ -1308,6 +1389,7 @@
     case 'import': $('nb-file').click(); break;
     case 'export-scm': exportScm(); break;
     case 'export-json': exportJson(); break;
+    case 'export-html': exportHtml(); break;
     case 'upload': $('nb-upload').click(); break;
     case 'settings': P.openSettings(); break;
     case 'keys': openShortcuts(); break;
@@ -1569,6 +1651,203 @@
       toast('Some outputs were left out: Import reads at most ' + L.LIMITS.outputs + ' per cell.', null, null, 6000);
   }
 
+  // Export .html: the notebook as the page shows it, as a static page of
+  // its own (no script, nothing loaded from elsewhere).  Its DOM is made
+  // of trees the page already trusts: markdown rendered again (all code
+  // blocks colored), the sources highlighted (up to SYN_MAX characters
+  // each, as in the editor, and HTML_SYN_MAX in all) and copies of the
+  // output areas without their buttons; it is serialized, never assembled
+  // from strings, and read back before it is saved (see settle).  Its
+  // style is the page's own rules for these parts, taken from the text of
+  // index.html's <style id="page-style"> (the code as the editor shows it:
+  // CSS_CODE), and a few for the layout of a static page.
+  const HTML_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
+  const HTML_SYN_MAX = 1024 * 1024;
+  // the page's rules kept: tokens, the cells, their counts and status
+  // bars, markdown, outputs and colors; not those of the editor, the
+  // controls or the selection
+  const CSS_KEEP = /^(?::root(?::not\(\[data-theme=.light.\]\))?|code|kbd|details > summary)$|\.(?:nb-(?:cell|gutter|body|md|out|rich|stream|value|note|error|trace|count)|md-|syn-)/;
+  const CSS_DROP = /nb-(?:editor|src|hl|bal|run|tools|stdin|more|hidden-out)|is-selected|is-editing|:hover|button|\.empty/;
+  // the exported code (.nb-code) has the frame of the editor and the text
+  // of its textarea: these properties of their rules
+  const CSS_CODE = { '.nb-editor': /^(?:border|border-[\w-]+|background)$/,
+                     '.nb-src': /^(?:margin|padding|font|font-[\w-]+|color|white-space|overflow-wrap|tab-size|letter-spacing)$/ };
+  const EXPORT_CSS = `
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(--sans); -webkit-text-size-adjust: 100%; }
+.nbx { max-width: 1120px; margin: 0 auto; padding: 0 max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+.nbx-head { margin: 0 0 10px 60px; padding: 14px 0 8px; border-bottom: 1px solid var(--border); }
+.nbx-title { margin: 0; color: var(--muted); font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.nb-gutter { padding-top: 11px; }
+.nb-code code { font: inherit; white-space: inherit; }
+.nb-out { content-visibility: visible; }
+.nbx-hidden > summary { margin: 4px 0 0 12px; color: var(--muted); font: 12.5px/1.6 var(--sans); }
+.nbx-foot { margin: 20px 0 0 60px; padding-top: 10px; border-top: 1px solid var(--border); color: var(--muted); font-size: 12.5px; }
+@media (max-width: 640px) {
+  .nbx-head, .nbx-foot { margin-left: 0; }
+  .nb-gutter { padding: 0 0 2px; }
+}
+@media print {
+  body { background: none; }
+  .nbx { max-width: none; padding: 0; }
+  .nb-md pre, .nb-rich pre, .nb-value { overflow: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .nb-md pre code, .nb-rich pre code { white-space: pre-wrap; }
+}`;
+  // [prelude, body] of each top-level block of CSS text (the source, not
+  // the CSSOM: Chrome serializes a shorthand with var() and a longhand
+  // after it as empty longhands)
+  function cssBlocks(t) {
+    const out = [];
+    let q = null, depth = 0, start = 0, open = 0;
+    for (let j = 0; j < t.length; j++) {
+      const c = t[j];
+      if (q) { if (c === '\\') j++; else if (c === q) q = null; }
+      else if (c === '"' || c === '\'') q = c;
+      else if (c === '{') { if (!depth++) open = j; }
+      else if (c === '}') { if (depth && !--depth) { out.push([t.slice(start, open).trim(), t.slice(open + 1, j)]); start = j + 1; } }
+      else if (c === ';' && !depth) start = j + 1;
+    }
+    return out;
+  }
+  // the selectors of a list (not split at the commas of :is(a, b) or [x="a,b"])
+  function selectors(t) {
+    const out = [];
+    let depth = 0, start = 0;
+    for (let j = 0; j < t.length; j++) {
+      const c = t[j];
+      if (c === '(' || c === '[') depth++;
+      else if ((c === ')' || c === ']') && depth) depth--;
+      else if (c === ',' && !depth) { out.push(t.slice(start, j)); start = j + 1; }
+    }
+    out.push(t.slice(start));
+    return out.map(s => s.trim().replace(/\s+/g, ' '));
+  }
+  function exportCss() {
+    const style = document.getElementById('page-style'), light = [];
+    const keep = text => {
+      const out = [];
+      for (const [head, body] of cssBlocks(text)) {
+        const decls = body.trim().replace(/\s+/g, ' ');
+        if (/^@(?:media|supports|container|layer)\b/.test(head)) {
+          const inner = keep(body);
+          if (inner.length) out.push(head.replace(/\s+/g, ' ') + ' {\n  ' + inner.join('\n  ') + '\n}');
+        } else if (head[0] !== '@') {
+          const all = selectors(head), sel = all.filter(s => CSS_KEEP.test(s) && !CSS_DROP.test(s));
+          if (sel.length) out.push(sel.join(', ') + ' { ' + decls + ' }');
+          for (const s of all) {
+            const code = CSS_CODE[s] && decls.split(';').map(d => d.trim()).filter(d => CSS_CODE[s].test(d.slice(0, d.indexOf(':')).trim()));
+            if (code && code.length) out.push('.nb-code { ' + code.join('; ') + '; }');
+          }
+          if (head === ':root') light.push(decls);
+        }
+      }
+      return out;
+    };
+    const out = style ? keep(style.textContent.replace(/\/\*[\s\S]*?\*\//g, '')) : [];
+    // printed light, whatever the scheme: no dark page on paper
+    if (light.length) out.push('@media print {\n  :root:not([data-theme="light"]) { ' + light.join(' ') + ' }\n}');
+    return out.join('\n') + EXPORT_CSS + '\n';
+  }
+  // a copy of what an output area shows, without its controls
+  function staticOutputs(cell, v) {
+    const out = v.out.cloneNode(true);
+    out.hidden = false;
+    for (const e of out.querySelectorAll('[hidden]')) e.remove();
+    for (const b of out.querySelectorAll('button.where')) b.replaceWith(h('span', { class: 'where', text: b.textContent }));
+    for (const b of out.querySelectorAll('button')) b.remove();
+    for (const e of out.querySelectorAll('.nb-value.clamped')) e.classList.remove('clamped');
+    if (!out.firstChild) return null;
+    return cell.collapsed ? h('details', { class: 'nbx-hidden' }, h('summary', { text: 'Output hidden' }), out) : out;
+  }
+  // the text of the page; the parser drops a newline right after <pre>,
+  // so one more goes before a newline that starts one
+  function pageText(doc) {
+    const added = [];
+    for (const p of doc.querySelectorAll('pre')) {
+      const t = p.firstChild;
+      if (t && t.nodeType === 3 && t.data[0] === '\n') { t.insertData(0, '\n'); added.push(t); }
+    }
+    const s = '<!doctype html>\n' + doc.documentElement.outerHTML + '\n';
+    for (const t of added) t.deleteData(0, 1);
+    return s;
+  }
+  // the text of DOC, made to read back as DOC.  The parser reads a CR as
+  // a newline (the page shows it as a space) and drops a NUL, so they go
+  // first.  And a tree built with the DOM may parse into another: an <li>
+  // in a <div> in an <li>, with no list between, closes the outer <li>,
+  // and its </div> then a <div> of the page.  Until the text reads back
+  // the same, the first cell that does not loses its outputs (.nb-rich)
+  // that do not read back alone, or else all it shows.
+  function settle(doc, list) {
+    doc.normalize();
+    const w = doc.createTreeWalker(doc.documentElement, NodeFilter.SHOW_TEXT);
+    for (let t; (t = w.nextNode());)
+      if (/[\r\0]/.test(t.data)) t.data = t.data.replace(/\r\n/g, '\n').replace(/\r/g, ' ').replace(/\0/g, '');
+    doc.normalize();
+    const P = new DOMParser(), read = s => P.parseFromString(s, 'text/html');
+    const same = (a, b) => a.head.isEqualNode(b.head) && b.body.childElementCount === 1 && a.body.firstElementChild.isEqualNode(b.body.firstElementChild);
+    const alone = e => {
+      const d = document.implementation.createHTMLDocument();
+      d.body.appendChild(d.importNode(e, true));
+      return same(d, read(pageText(d)));
+    };
+    const note = () => h('p', { class: 'nb-note bad', text: 'output left out: its markup does not read back the same in a static page' });
+    for (let tries = 2 * list.children.length + 2; tries-- > 0;) {
+      const text = pageText(doc), back = read(text);
+      if (same(doc, back)) return text;
+      const ours = list.children, got = (back.querySelector('.nb-cells') || back.body).children;
+      let j = 0;
+      while (j < ours.length && got[j] && ours[j].isEqualNode(got[j])) j++;
+      if (j === ours.length) break;
+      const bad = [...ours[j].querySelectorAll('.nb-rich')].filter(e => !alone(e));
+      if (bad.length) for (const e of bad) e.replaceWith(note());
+      else ours[j].querySelector('.nb-body').replaceChildren(note());
+    }
+    return pageText(doc);
+  }
+  function exportHtml() {
+    const doc = document.implementation.createHTMLDocument('');
+    const ids = new Set(), list = h('div', { class: 'nb-cells' });
+    let heading = '', syn = HTML_SYN_MAX;
+    // colored while the budget lasts (a big notebook is not frozen)
+    const colors = s => s.length <= syn && (syn -= s.length, true);
+    for (const cell of nb.cells) {
+      const v = views.get(cell.id);
+      if (!v) continue;
+      // cells are not <li>: the markup of an output cannot close one
+      const div = h('div', { class: 'nb-cell', 'data-type': cell.type });
+      if (cell.type === 'markdown') {
+        if (!cell.source.trim()) continue;
+        const md = h('div', { class: 'nb-md' }, L.renderMarkdown(cell.source, document, 'nb-h-', ids, !colors(cell.source)));
+        const hd = !heading && md.querySelector('h1, h2, h3, h4, h5, h6');
+        if (hd) heading = hd.textContent.trim();
+        div.append(h('div', { class: 'nb-body' }, md));
+      } else {
+        const out = staticOutputs(cell, v);
+        if (!cell.source.trim() && !out) continue;
+        for (const k of ['status', 'stale', 'edited']) if (v.li.dataset[k]) div.dataset[k] = v.li.dataset[k];
+        const code = h('code', null, cell.source.length <= SYN_MAX && colors(cell.source) ? L.highlightDom(cell.source, document) : cell.source);
+        div.append(h('div', { class: 'nb-gutter' }, h('span', { class: 'nb-count', text: v.count.textContent })),
+                   h('div', { class: 'nb-body' }, h('pre', { class: 'nb-code' }, code), out));
+      }
+      list.appendChild(div);
+    }
+    const title = heading || (nb.title.trim() && nb.title.trim() !== 'Untitled' ? nb.title.trim() : '') || 'CHICKEN notebook';
+    const now = new Date();
+    doc.documentElement.lang = 'en';
+    doc.head.replaceChildren(h('meta', { charset: 'utf-8' }), h('meta', { 'http-equiv': 'Content-Security-Policy', content: HTML_CSP }),
+                             h('meta', { name: 'viewport', content: 'width=device-width, initial-scale=1' }),
+                             h('meta', { name: 'color-scheme', content: 'light dark' }),
+                             h('title', { text: title }), h('style', { text: exportCss() }));
+    doc.body.appendChild(h('div', { class: 'nbx' },
+      h('header', { class: 'nbx-head' }, h('p', { class: 'nbx-title', text: title })),
+      h('main', null, list),
+      h('footer', { class: 'nbx-foot' }, 'Exported from the CHICKEN Scheme notebook on ',
+        h('time', { datetime: now.toISOString(), text: now.toLocaleString(undefined, { dateStyle: 'long', timeStyle: 'short' }) }))));
+    download(fileName('.html'), settle(doc, list), 'text/html');
+  }
+
   let saveTimer = 0, saveFailed = false, lastSaved = null;
   function scheduleSave() {
     clearTimeout(saveTimer);
@@ -1627,13 +1906,15 @@
     mdIdsOf.clear();
     for (const v of views.values()) v.li.remove();
     views.clear();
+    if (nearby) nearby.disconnect();
     dirty.clear();
     nb.title = doc.title || 'Untitled';
     nb.created = doc.created || null;
     nb.cells = [];
     const seen = new Set();
     for (const d of doc.cells) {
-      const c = newCell(d.type === 'markdown' ? 'markdown' : 'code', d.source);
+      // as the editor has it: a lone \r would be a line break there, not in the overlay
+      const c = newCell(d.type === 'markdown' ? 'markdown' : 'code', String(d.source || '').replace(/\r\n?/g, '\n'));
       if (d.id && !seen.has(d.id)) c.id = d.id;
       seen.add(c.id);
       c.editing = c.type === 'markdown' && !c.source.trim();
@@ -1690,7 +1971,7 @@
          'as in one long REPL session.\n\n' +
          '- The notebook has its own interpreter: what you define here is not visible in the **REPL** tab, and the other way round.\n' +
          '- Press **Esc** for command mode, then **?** for every shortcut.\n' +
-         '- The notebook is saved in this browser as you type. **More → Export** keeps a copy as `.scm` or as `.json` (with outputs).'),
+         '- The notebook is saved in this browser as you type. **More → Export** keeps a copy as `.scm`, as `.json` (with outputs) or as a `.html` page to read or print.'),
       code('(import notebook (chicken io) (chicken string))'),
       code('(define (fact n)\n  (if (= n 0) 1 (* n (fact (- n 1)))))\n\n(fact 30)'),
       code('(for-each (lambda (i) (print i " squared is " (* i i)))\n          \'(1 2 3 4 5))'),
@@ -1727,6 +2008,7 @@
          '- csi\'s toplevel commands work in cells: `,d x` describes a value, `,x form` shows a macro expansion.\n' +
          '- **More → Upload files** (or dropping files here) copies them into the home directory; then `(load "file.scm")`.\n' +
          '- **More → Export .scm** gives a plain Scheme file; without the `notebook` module it also runs with `csi -s`.\n' +
+         '- **More → Export .html** gives a page of the notebook as you see it, outputs included, that opens without this site.\n' +
          '- SRFI-18 threads only make progress while some cell is running.'),
     ] };
   }

@@ -28,14 +28,17 @@
  * page.  No dependencies; the DOM is only touched through the document
  * passed in (renderMarkdown, sanitizeMarkup).
  *
- *   renderMarkdown(src, doc, idPrefix, ids?) -> DocumentFragment
+ *   renderMarkdown(src, doc, idPrefix, ids?, lazy?) -> DocumentFragment
  *   sanitizeMarkup(str, 'html'|'svg', idPrefix) -> DocumentFragment
  *   splitPercent(text) -> {title, cells}  toPercent(nb) -> string
  *   toJson(nb) -> string                  fromJson(text) -> {title, created,
  *                                           modified, cells, warnings}
  *   limitOutputs(outputs, max) -> outputs (as Import keeps them)
- *   balance(text) -> {depth, ok, stray, open}
+ *   balance(text) -> {depth, ok, stray, mismatch, open}
  *   splitForms(text) -> [string]          newId() -> string
+ *   highlight(text) -> [[kind, text]]     highlightLines(pieces) -> [[[kind, text]]]
+ *   highlightDom(text, doc) -> DocumentFragment
+ *   colorCode(root, doc)                  (the code blocks of a lazy renderMarkdown)
  *
  * Untrusted markup is parsed inertly (DOMParser) and rebuilt element by
  * element from an allowlist; nothing is ever serialized back into
@@ -373,9 +376,11 @@
           i++;
         }
         i++;
-        const pre = doc.createElement('pre'), code = doc.createElement('code');
+        const pre = doc.createElement('pre'), code = doc.createElement('code'), text = body.join('\n');
         if (m[3]) code.setAttribute('data-lang', m[3].slice(0, 32));
-        code.textContent = body.join('\n');
+        code.textContent = text;
+        // Scheme (or no language), to be colored by colorCode()
+        if (/^(?:scheme|scm|chicken|lisp)?$/i.test(m[3] || '')) code.setAttribute('data-syn', '');
         pre.appendChild(code);
         out.appendChild(pre);
         continue;
@@ -519,8 +524,9 @@
     }
   }
 
-  // ids: heading ids taken (by other cells), and given to the new ones
-  function renderMarkdown(src, doc, idPrefix, ids) {
+  // ids: heading ids taken (by other cells), and given to the new ones;
+  // lazy: the Scheme code blocks are left for colorCode()
+  function renderMarkdown(src, doc, idPrefix, ids, lazy) {
     const frag = doc.createDocumentFragment();
     const prefix = idPrefix || '';
     const lines = String(src == null ? '' : src).replace(/\r\n?/g, '\n').split('\n');
@@ -528,6 +534,7 @@
     // "#slug" links go to the headings, whose ids carry the prefix
     for (const a of frag.querySelectorAll('a[href^="#"]'))
       a.setAttribute('href', '#' + prefix + a.getAttribute('href').slice(1));
+    if (!lazy) colorCode(frag, doc);
     return frag;
   }
 
@@ -639,6 +646,10 @@
       if (n.nodeType !== 1) continue;
       const ns = n.namespaceURI;
       const svg = ns === SVG_NS;
+      // in SVG only SVG (there is no foreignObject): an HTML element in
+      // it, which only XML can make, shows nothing and would be parsed
+      // out of the SVG if the markup were read again (Export .html)
+      if (!svg && parent.namespaceURI === SVG_NS) continue;
       const tag = svg ? n.localName : String(n.localName).toLowerCase();
       let ok;
       if (svg) ok = SVG_OK.has(tag);
@@ -850,10 +861,12 @@
   // ---- Scheme text scanning
 
   // Calls f(kind, i) for parens outside strings, comments and chars;
-  // returns the scanner state at the end.
+  // returns the scanner state at the end.  As in CHICKEN's reader, #|,
+  // #; and "#! " (a script's first line) are comments at the start of a
+  // token only: in an atom, # is a constituent ("a#;b" is a# and a ; comment).
   function scan(text, f) {
-    let depth = 0, stray = 0, inStr = false, inBar = false, block = 0;
-    const n = text.length;
+    let depth = 0, stray = 0, mismatch = 0, inStr = false, inBar = false, block = 0, atom = false;
+    const n = text.length, opens = [];
     for (let i = 0; i < n; i++) {
       const c = text[i];
       if (block) {
@@ -863,21 +876,36 @@
       }
       if (inStr) { if (c === '\\') i++; else if (c === '"') inStr = false; continue; }
       if (inBar) { if (c === '\\') i++; else if (c === '|') inBar = false; continue; }
+      const d = text[i + 1], was = atom;
+      atom = false;
       if (c === '"') inStr = true;
-      else if (c === '|') inBar = true;
-      else if (c === ';') { const j = text.indexOf('\n', i); i = j < 0 ? n : j - 1; if (f) f('comment', i); }
-      else if (c === '#' && text[i + 1] === '|') { block = 1; i++; }
-      else if (c === '#' && text[i + 1] === '\\') { i += 2; }
-      else if (c === '(' || c === '[') { depth++; if (f) f('open', i); }
-      else if (c === ')' || c === ']') { if (depth) depth--; else stray++; if (f) f('close', i); }
-      else if (c === '\n' && f) f('newline', i, depth);
+      else if (c === '|') inBar = atom = true;
+      else if (c === ';' || (c === '#' && d === '!' && !was && /[\s/]/.test(text[i + 2] || ''))) {
+        const j = text.indexOf('\n', i);
+        i = j < 0 ? n : j - 1;
+        if (f) f('comment', i);
+      }
+      else if (c === '#' && d === '|' && !was) { block = 1; i++; }
+      else if (c === '#' && d === ';' && !was) i++;     // a datum comment: its datum is read as any other
+      else if (c === '#' && d === '\\') { i += 2; atom = /\w/.test(text[i] || ''); }   // #\space goes on, #\( does not
+      else if (OPEN.includes(c)) { opens.push(c); depth++; if (f) f('open', i); }
+      else if (CLOSE.includes(c)) {
+        if (!depth) stray++;
+        else { if (OPEN.indexOf(opens.pop()) !== CLOSE.indexOf(c)) mismatch++; depth--; }   // "(a]": an error, it closes all the same
+        if (f) f('close', i);
+      }
+      else if (c === '\n') { if (f) f('newline', i, depth); }
+      else atom = !DELIM.test(c) && (was || c !== '`');   // a ` starting a token quotes it
     }
-    return { depth, stray, inStr: inStr || inBar, block: block > 0 };
+    return { depth, stray, mismatch, inStr: inStr || inBar, block: block > 0 };
   }
+  // CHICKEN reads {} as () and [], and ends a token at these
+  const OPEN = '([{', CLOSE = ')]}', DELIM = /[\s()[\]{}";',]/, SPACE = /\s/;
 
   function balance(text) {
     const s = scan(String(text || ''));
-    return { depth: s.depth, stray: s.stray, open: s.inStr || s.block, ok: !s.depth && !s.stray && !s.inStr && !s.block };
+    return { depth: s.depth, stray: s.stray, mismatch: s.mismatch, open: s.inStr || s.block,
+             ok: !s.depth && !s.stray && !s.mismatch && !s.inStr && !s.block };
   }
 
   // one string per blank-line separated group of top-level forms
@@ -898,6 +926,174 @@
     return out.map(trimBlankLines).filter(s => s.trim());
   }
   function trimBlankLines(s) { return s.replace(/^(?:[ \t]*\n)+/, '').replace(/(?:\n[ \t]*)+$/, '').replace(/[ \t]+$/, ''); }
+
+  // ---- Scheme syntax highlighting
+
+  const HIGHLIGHT_MAX = 32 * 1024;      // code colored per renderMarkdown()/colorCode(); the rest is left plain
+
+  // the special forms and core macros of R7RS and CHICKEN (and any
+  // define...), colored at the head of a form only: elsewhere they are
+  // variables or data
+  const SPECIAL = new Set((': and and-let* assert assume begin begin-for-syntax case case-lambda compiler-typecase cond ' +
+    'cond-expand condition-case current-module cut cute declare delay delay-force do else er-macro-transformer eval-when ' +
+    'export export/rename fluid-let foreign-code foreign-declare foreign-lambda foreign-lambda* foreign-primitive ' +
+    'foreign-safe-lambda foreign-safe-lambda* foreign-type-size foreign-value functor guard handle-exceptions if import ' +
+    'import-for-syntax import-syntax import-syntax-for-syntax include include-ci include-relative ir-macro-transformer ' +
+    'lambda let let* let*-values let-compiler-syntax let-location let-optionals let-optionals* let-syntax let-values ' +
+    'letrec letrec* letrec-syntax letrec-values location module named-lambda nth-value optional or parameterize ' +
+    'quasiquote quote rec receive reexport require-extension require-library rsc-macro-transformer select set! ' +
+    'set!-values syntax syntax-error syntax-rules the time unless unquote unquote-splicing when').split(' '));
+  // numbers: radix and exactness prefixes, then a real or a complex
+  // number (decimals and exponents in radix 10 only)
+  const NUMBER = (() => {
+    const num = (radix, u) => {
+      const real = '(?:[+-]?' + u + '|[+-](?:inf|nan)\\.0)', imag = '[+-](?:' + u + '|(?:inf|nan)\\.0)?i';
+      return '(?:#[ei])?' + radix + '(?:#[ei])?(?:' + real + '(?:' + imag + '|@' + real + ')?|' + imag + ')';
+    };
+    return new RegExp('^(?:' + [num('(?:#d)?', '(?:\\d+(?:/\\d+)?|\\d+\\.\\d*|\\.\\d+)(?:e[+-]?\\d+)?'),
+                                num('#x', '[\\da-f]+(?:/[\\da-f]+)?'), num('#o', '[0-7]+(?:/[0-7]+)?'),
+                                num('#b', '[01]+(?:/[01]+)?')].join('|') + ')$', 'i');
+  })();
+  function atomKind(s) {
+    if (s.includes('|')) return '';
+    if (NUMBER.test(s)) return 'number';
+    if (s[0] === '#') return /^#(?:[tf]|true|false|!.+)$/i.test(s) ? 'constant' : /^#:./.test(s) ? 'keyword' : '';
+    return s.length > 1 && s.endsWith(':') ? 'keyword' : '';
+  }
+
+  // [kind, text] pieces whose texts add up to the Scheme source, in
+  // linear time.  Kinds: '' (spaces, symbols), comment (also a #; datum),
+  // string, char, number, constant (#t, #!eof), keyword (#:k, k:),
+  // special (the head of a special form, not in quoted data), quote
+  // (' ` , ,@ and a quoted symbol), paren.  Strings, comments, characters
+  // and parens are found as scan() finds them; unterminated ones run to
+  // the end.
+  function highlight(text) {
+    const t = String(text), n = t.length, out = [];
+    // data: per open list, whether it is quoted data; pre: the prefix
+    // before the next datum, q(uote) or u(nquote); saved: head and pre
+    // before a #; datum, which the reader drops
+    const data = [];
+    let i = 0, head = false, pre = '', dc = 0, dcAt = 0, saved = null;
+    // the end of an atom from j, through |...| parts and #\x, as scan() reads them
+    const atomEnd = j => {
+      while (j < n) {
+        const c = t[j];
+        if (c === '|') {
+          for (j++; j < n && t[j] !== '|'; j++) if (t[j] === '\\') j++;
+          j++;
+        } else if (c === '#' && t[j + 1] === '\\') j += 3;
+        else if (DELIM.test(c)) break;
+        else j++;
+      }
+      return Math.min(j, n);
+    };
+    const put = (k, j) => {
+      const last = out[out.length - 1];
+      if (last && last[0] === k) last[2] = j; else out.push([k, i, j]);
+      i = j;
+    };
+    while (i < n) {
+      const c = t[i], d = t[i + 1];
+      let j = i + 1, k = '', datum = false;
+      if (SPACE.test(c)) {
+        while (j < n && SPACE.test(t[j])) j++;
+        put(dc ? 'comment' : '', j);
+        continue;
+      }
+      if (c === ';' || (c === '#' && d === '!' && /[\s/]/.test(t[i + 2] || ''))) {
+        j = t.indexOf('\n', i);
+        put('comment', j < 0 ? n : j);
+        continue;
+      }
+      if (c === '#' && d === '|') {
+        let nest = 1;
+        for (j = i + 2; j < n && nest; j++) {
+          if (t[j] === '|' && t[j + 1] === '#') { nest--; j++; }
+          else if (t[j] === '#' && t[j + 1] === '|') { nest++; j++; }
+        }
+        put('comment', Math.min(j, n));
+        continue;
+      }
+      const depth = data.length;
+      if (c === '#' && d === ';') {
+        if (!dc) { dcAt = depth; saved = [head, pre]; }
+        if (depth === dcAt) dc++;
+        put('comment', i + 2);
+        continue;
+      }
+      if (OPEN.includes(c)) { k = 'paren'; data.push(pre === 'q' || (pre !== 'u' && !!data[depth - 1])); }
+      else if (CLOSE.includes(c)) {
+        k = 'paren';
+        if (dc && depth === dcAt) dc = 0;            // "(a #;)": nothing to comment out
+        data.pop();
+        datum = true;
+      } else if (c === '"') {
+        for (; j < n && t[j] !== '"'; j++) if (t[j] === '\\') j++;
+        j = Math.min(j + 1, n);
+        k = 'string'; datum = true;
+      } else if (c === '\'' || c === '`') k = 'quote';
+      else if (c === ',') { if (d === '@') j = i + 2; k = 'quote'; }
+      else if (c === '#' && d === '\\') {
+        j = Math.min(i + 3, n);
+        const x = t.charCodeAt(i + 2), y = t.charCodeAt(i + 3);
+        if (x >= 0xd800 && x < 0xdc00 && y >= 0xdc00 && y < 0xe000) j = i + 4;   // a surrogate pair
+        else if (/\w/.test(t[i + 2] || '')) j = atomEnd(j);   // #\space, #\x41
+        k = 'char'; datum = true;
+      } else if (c === '#' && d === '(') { j = i + 2; k = 'paren'; data.push(pre !== 'u'); }
+      else if (c === '#' && /^#u8\(/i.test(t.slice(i, i + 4))) { j = i + 4; k = 'paren'; data.push(true); }
+      else if (c === '#' && (d === '\'' || d === '`' || d === ',')) { j = t[i + 2] === '@' && d === ',' ? i + 3 : i + 2; k = 'quote'; }
+      else {
+        j = Math.max(atomEnd(c === '#' ? i + 1 : i), i + 1);
+        const s = t.slice(i, j);
+        k = atomKind(s);
+        if (!k && head && !data[depth - 1] && (SPECIAL.has(s) || /^define(?:-|$)/.test(s))) k = 'special';
+        else if (!k && pre) k = 'quote';
+        datum = true;
+      }
+      head = k === 'paren' && OPEN.includes(c);
+      pre = k === 'quote' && !datum ? (t[j - 1] === ',' || t[j - 1] === '@' ? 'u' : 'q') : '';
+      put(dc ? 'comment' : k, j);
+      if (datum && dc && data.length === dcAt && !--dc) [head, pre] = saved;
+    }
+    return out.map(([k, a, b]) => [k, t.slice(a, b)]);
+  }
+
+  // the pieces of highlight() line by line, without the newlines
+  function highlightLines(pieces) {
+    const lines = [[]];
+    for (const [k, s] of pieces) {
+      const parts = s.split('\n');
+      parts.forEach((x, j) => { if (j) lines.push([]); if (x) lines[lines.length - 1].push([k, x]); });
+    }
+    return lines;
+  }
+
+  // highlight() as DOM: spans of class syn-KIND, text nodes for plain text
+  function highlightDom(text, doc) {
+    const frag = doc.createDocumentFragment();
+    for (const [k, s] of highlight(String(text))) {
+      if (!k) { frag.appendChild(doc.createTextNode(s)); continue; }
+      const e = doc.createElement('span');
+      e.className = 'syn-' + k;
+      e.textContent = s;
+      frag.appendChild(e);
+    }
+    return frag;
+  }
+
+  // colors the Scheme code blocks of renderMarkdown(src, doc, prefix,
+  // ids, true) under root, up to HIGHLIGHT_MAX characters in all
+  function colorCode(root, doc) {
+    let budget = HIGHLIGHT_MAX;
+    for (const code of root.querySelectorAll('code[data-syn]')) {
+      code.removeAttribute('data-syn');
+      const text = code.textContent;
+      if (text.length > budget) continue;
+      budget -= text.length;
+      code.replaceChildren(highlightDom(text, doc));
+    }
+  }
 
   // ---- ids
 
@@ -1095,5 +1291,5 @@
   }
 
   return { renderMarkdown, sanitizeMarkup, splitPercent, toPercent, toJson, fromJson, balance, splitForms,
-           newId, safeHref, safeImageSrc, slug, LIMITS, limitOutputs };
+           highlight, highlightLines, highlightDom, colorCode, scan, newId, safeHref, safeImageSrc, slug, LIMITS, limitOutputs };
 });
