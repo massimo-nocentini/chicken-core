@@ -6771,7 +6771,8 @@ EOF
                                 " but rest list length is " (##sys#number->string c) )
 		 (if fn (list fn) '()))))
         ((57) (apply ##sys#signal-hook #:type-error loc "string contains invalid UTF-8 sequence" args))
-        ((58) (apply ##sys#signal-hook #:type-error loc "bad argument type - numeric value exceeds range" args))
+        ((58) (apply ##sys#signal-hook #:type-error loc "string contains un-encodable character" args))
+        ((59) (apply ##sys#signal-hook #:type-error loc "bad argument type - numeric value exceeds range" args))
 	(else (apply ##sys#signal-hook #:runtime-error loc "unknown internal error" args)) ) ) ) )
 
 ) ; chicken.condition

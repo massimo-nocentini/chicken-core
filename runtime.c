@@ -1982,6 +1982,11 @@ void barf(int code, char *loc, ...)
     c = 2;
     break;
 
+  case C_ENCODING_ERROR:
+    msg = C_text("string contains unencodable character");
+    c = 2;
+    break;
+
   case C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR:
     msg = C_text("bad argument type - value exceeds numeric range");
     c = 1;
@@ -4220,6 +4225,13 @@ void
 C_decoding_error(C_word str, C_word index)
 {
   barf(C_DECODING_ERROR, NULL, str, index);
+}
+
+
+void
+C_encoding_error(C_word bv, C_word index)
+{
+  barf(C_ENCODING_ERROR, NULL, bv, index);
 }
 
 

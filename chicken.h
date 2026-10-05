@@ -653,7 +653,8 @@ void *alloca ();
 #define C_BAD_ARGUMENT_TYPE_COMPLEX_ABS               55
 #define C_REST_ARG_OUT_OF_BOUNDS_ERROR                56
 #define C_DECODING_ERROR                              57
-#define C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR	58
+#define C_ENCODING_ERROR                                58
+#define C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR	59
 
 /* Platform information */
 #if defined(C_BIG_ENDIAN)
@@ -1866,6 +1867,7 @@ C_fctexport void C_save_and_reclaim_args(void *trampoline, int n, ...) C_noret;
 C_fctexport void C_rereclaim2(C_uword size, int relative_resize) C_regparm;
 C_fctexport void C_unbound_variable(C_word sym);
 C_fctexport void C_decoding_error(C_word str, C_word index);
+C_fctexport void C_encoding_error(C_word bv, C_word index);
 C_fctexport C_word C_retrieve2(C_word val, char *name) C_regparm;
 C_fctexport void *C_retrieve2_symbol_proc(C_word val, char *name) C_regparm;
 C_fctexport int C_in_stackp(C_word x) C_regparm;

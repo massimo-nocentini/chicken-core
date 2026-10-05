@@ -659,6 +659,7 @@ C_regparm C_word C_utf_to_latin(C_word from, C_word to, C_word start, C_word ble
     int e;
     while(n > 0) {
         pf2 = utf8_decode(pf, &c, &e);
+        if(c > 255) C_encoding_error(from, C_fix(C_unfix(start) + C_unfix(blen) - n));
         n -= pf2 - pf;
         pf = pf2;
         *(pt++) = c & 0xff;
