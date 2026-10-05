@@ -159,6 +159,10 @@ tests/wasm/eggs/wasm-egg-b/wasm-egg-b.scm
 tests/wasm/eggs/wasm-egg-b/b-core.scm
 tests/wasm/eggs/wasm-egg-b/b-helpers.scm
 tests/wasm/eggs/wasm-egg-custom/wasm-egg-custom.egg
+tests/wasm/eggs/wasm-egg-c/wasm-egg-c.egg
+tests/wasm/eggs/wasm-egg-c/wasm-egg-c.scm
+tests/wasm/eggs/wasm-egg-tool/wasm-egg-tool.egg
+tests/wasm/eggs/wasm-egg-tool/wasm-egg-tool.scm
 tests/runbench.sh
 tests/srfi-4-tests.scm
 tests/srfi-45-tests.scm

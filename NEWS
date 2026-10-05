@@ -218,6 +218,17 @@
     in the repository image, so that a plain (import srfi-1) works.
     The units are initialised on first import, and the SDK gets them
     as libchicken-eggs.a.  Eggs with custom build scripts are refused.
+    The files of c-include and scheme-include components are installed
+    into the SDK too (csc-wasm and the node tools find the Scheme ones
+    on their include path), and the Scheme ones into the browser image.
+    Build-dependencies are used on the host at build time, so they must
+    be installed in the host repository; they are also built for
+    WebAssembly when they can be (importing a compiled module needs
+    its unit), and else only used on the host, with a warning.  A new
+    chicken-install cache (CHICKEN_EGG_CACHE) is recorded and planned
+    with, like the other host settings.
+    The SDK's lib/libchicken.a is the static library, so `wasm-csc'
+    of `make wasm-cross' also links programs without -static.
   - The WebAssembly target is 64-bit by default: `make wasm' builds for
     wasm64 (emscripten's memory64), where CHICKEN has 62-bit fixnums and
     16 GB of linear memory (a heap that can grow past 4 GB, with

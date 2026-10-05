@@ -152,12 +152,110 @@ rm -rf host-only && mkdir host-only
 echo '((components (host (extension host-only))))' >host-only/host-only.egg
 expect E15 'no extension for the target
 $(WASM_EGG_DIR)/host-only/src.stamp' host_only
+# include files installed by an egg are in the SDK, for programs (C
+# headers on emcc's include path, Scheme files on the compiler's), and
+# on the include path of the node csi
+expect E17 'ok' sh -c "ls '$SDK/share/chicken/wasm-egg-a-shared.scm' \
+    '$SDK/include/chicken/wasm-egg-a.h' >/dev/null && echo ok"
+cat >incprog.scm <<'EOF'
+(import (chicken foreign))
+(include "wasm-egg-a-shared.scm")
+(foreign-declare "#include \"wasm-egg-a.h\"")
+(print (list egg-a-shared-value (foreign-value "WASM_EGG_A_HEADER_VALUE" int)))
+EOF
+expect E18 '(7 11)' sh -c "'$SDK/bin/csc-wasm' -node incprog.scm -o incprog.js && '$NODE' incprog.js"
+expect E19 '7' csi -e '(include "wasm-egg-a-shared.scm") (print egg-a-shared-value)'
+# a file in a subdirectory is installed at the same path below the
+# destination, as chicken-install does; Scheme files on the include
+# path are listed for the web image
+include_plan() {
+    plan "$PWD/inc" >/dev/null && grep -E '^WASM_EGG_(WEB_INCLUDES|INCLUDE_LISTS) =' plan.mk &&
+	grep -o 'echo [^;]*;' plan.mk
+}
+rm -rf inc && mkdir -p inc/sub
+echo '((components (scheme-include inc-s (files "top.scm" "sub/inc.scm"))
+  (c-include inc-c (files "sub/inc.h") (destination "include/inc"))))' >inc/inc.egg
+: >inc/top.scm; : >inc/sub/inc.scm; : >inc/sub/inc.h
+expect E20 'WASM_EGG_INCLUDE_LISTS = $(WASM_EGG_DIR)/inc/includes.list
+WASM_EGG_WEB_INCLUDES = top.scm sub/inc.scm
+echo share/chicken/top.scm;
+echo share/chicken/sub/inc.scm;
+echo include/inc/sub/inc.h;' include_plan
+echo '((components (scheme-include bad (files "../x.scm"))))' >inc/inc.egg
+expect_error E21 "egg .inc.: file of .bad. must be inside the egg" plan "$PWD/inc"
+# a build-dependency is used on the host, at build time, where it must
+# be installed (HOST_REPO holds the compiled import library of
+# wasm-egg-tool, whose import needs its unit); found in the egg cache,
+# it is built for the target too
+HOST_REPO=$EGG_BUILD/host-repository
+expect E22 '42' csi -e '(import wasm-egg-c) (print (egg-c-answer))'
+expect E32 '42' csi -e '(import wasm-egg-tool) (print (tool-double 21))'
+printf '(import wasm-egg-c)\n(print (egg-c-answer))\n' >toolprog.scm
+expect E33 '42' sh -c "'$SDK/bin/csc-wasm' -node toolprog.scm \
+    '$SDK/lib/libchicken-eggs.a' -o toolprog.js && '$NODE' toolprog.js"
+# plan_in CACHE REPOSITORY EGG ...: plan with that egg cache and host
+# repository, offline; plan_host REPOSITORY EGG ...: with no egg cache
+plan_in() {
+    c=$1; r=$2; shift 2
+    WASM_EGGS_HOST_REPOSITORY="$r" CHICKEN_EGG_CACHE="$c" WASM_EGGS_CHICKEN_INSTALL= \
+	plan "$@" >/dev/null && grep '^WASM_EGG_NAMES =' plan.mk
+}
+plan_host() { plan_in "$PWD/no-cache" "$@"; }
+expect E34 'WASM_EGG_NAMES = wasm-egg-tool wasm-egg-c' plan_in "$EGG_BUILD/egg-cache" "$HOST_REPO" \
+    "$EGGS/wasm-egg-c"
+# one that cannot be built for the target (not in the cache) is only
+# used on the host, with a warning
+expect E23 'WASM_EGG_NAMES = wasm-egg-c' plan_host "$PWD/no-repo:$HOST_REPO" \
+    "$EGGS/wasm-egg-c"
+expect_error E24 "egg .wasm-egg-c.: build-dependency .wasm-egg-tool. is not installed in the host repository \\($PWD/no-repo\\)" \
+    plan_host "$PWD/no-repo" "$EGGS/wasm-egg-c"
+rm -rf newer && mkdir newer
+echo '((build-dependencies (wasm-egg-tool "2.0")) (components (extension newer)))' >newer/newer.egg
+plan_warnings() {
+    plan_host "$@" 2>&1 >/dev/null | sed -n 's/^wasm-eggs: warning: //p'
+}
+expect E25 "build-dependency \`wasm-egg-tool' of \`newer' is not built for WebAssembly, only used from the host repository: egg \`wasm-egg-tool' is not in the cache $PWD/no-cache (needed by newer)
+egg \`newer' needs version 2.0 of \`wasm-egg-tool' on the host, but $HOST_REPO/wasm-egg-tool.egg-info has version 1.1" \
+    plan_warnings "$HOST_REPO" "$PWD/newer"
+rm -rf both && mkdir both
+echo '((dependencies wasm-egg-a) (build-dependencies wasm-egg-a) (components (extension both)))' \
+    >both/both.egg
+expect E26 'WASM_EGG_NAMES = wasm-egg-a both' plan_host '' "$EGGS/wasm-egg-a" "$PWD/both"
+# the planner runs again when the egg cache changes (it is recorded
+# with the host settings), and only then
+replan() {
+    MAKEFLAGS= ${MAKE:-make} --no-print-directory -C "$EGG_BUILD" -f "$TEST_DIR/../GNUmakefile" \
+	wasm-eggs.mk | grep -c 'wasm-eggs: egg' || :
+}
+cp "$EGG_BUILD/config-host.make" config-host.save
+expect E27 '0' replan
+rm -rf other-cache && cp -R "$EGG_BUILD/egg-cache" other-cache
+echo "WASM_EGG_CACHE = $PWD/other-cache" >>"$EGG_BUILD/config-host.make"
+expect E28 '4' replan
+expect E29 '0' replan
+cp config-host.save "$EGG_BUILD/config-host.make"
+replan >/dev/null
 # the web REPL
+expect E30 '(shared 7)' sh -c "'$NODE' '$TEST_DIR/wasm/egg-harness.js' '$EGG_BUILD/web' \
+    '(include \"wasm-egg-a-shared.scm\") (list (quote shared) egg-a-shared-value)' '(shared 7)' \
+    >harness.out && echo '(shared 7)' || { cat harness.out; exit 1; }"
 expect E9 'ok' sh -c "'$NODE' '$TEST_DIR/wasm/egg-harness.js' '$EGG_BUILD/web' >harness.out \
     && echo ok || { cat harness.out; exit 1; }"
 # the web notebook kernel
 expect E16 'ok' sh -c "'$NODE' '$TEST_DIR/wasm/notebook-harness.js' '$EGG_BUILD/web' --eggs \
     >harness.out && echo ok || { cat harness.out; exit 1; }"
+# a build directory without the list of an egg's include files (made
+# before the lists were) installs them again, into the SDK too
+reinstall_includes() {
+    rm -f "$EGG_BUILD/eggs/wasm-egg-a/includes.list" "$SDK/include/chicken/wasm-egg-a.h" \
+	"$SDK/share/chicken/wasm-egg-a-shared.scm"
+    MAKEFLAGS= ${MAKE:-make} --no-print-directory -C "$EGG_BUILD" -f "$TEST_DIR/../GNUmakefile" \
+	wasm-eggs-repo.stamp >reinstall.log 2>&1 || { cat reinstall.log; exit 1; }
+    ls "$SDK/include/chicken/wasm-egg-a.h" "$SDK/share/chicken/wasm-egg-a-shared.scm" >/dev/null &&
+	cat "$EGG_BUILD/eggs/wasm-egg-a/includes.list"
+}
+expect E31 'share/chicken/wasm-egg-a-shared.scm
+include/chicken/wasm-egg-a.h' reinstall_includes
 
 rm -f eggs.out eggs.err
 echo

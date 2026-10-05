@@ -41,13 +41,20 @@
 ; (custom build scripts, generated sources, extensions without static
 ; linkage) is an error.  Programs are not built and data files are not
 ; installed (with a warning); c-include and scheme-include files are
-; installed where the eggs built after them find them, but not into
-; the images.  Dependency versions are not enforced: a warning says
-; when the egg found is older than the one asked for.
+; installed where the eggs built after them find them, and listed for
+; the SDK (and, for Scheme files on the include path, the web image).
+; Build-dependencies are used on the host, at build time, so they must
+; be installed in the host repository; they are also built for the
+; target, as an import of one of their compiled modules needs their
+; unit at run time, unless that cannot be done (with a warning).
+; Dependency versions are not enforced: a warning says when the egg
+; found is older than the one asked for.
 ;
 ; Environment:
 ;   WASM_EGGS_ARCH             the target: wasm64 (the default) or wasm32
 ;   WASM_EGGS_CHICKEN_INSTALL  command retrieving an egg: "CMD -r NAME"
+;   WASM_EGGS_HOST_REPOSITORY  the host repository (a path list), where
+;                              build-dependencies must be installed
 ;   WASM_EGGS_CORE             modules provided by the core system:
 ;                              eggs of these names are not built
 ;   WASM_EGGS_RESERVED         unit names taken by the core system
@@ -56,6 +63,8 @@
 ;   WASM_EGG_DIR               where the eggs are built (the directory
 ;                              records where each egg's sources came
 ;                              from, in EGG/origin)
+;   CHICKEN_EGG_CACHE          the chicken-install cache, as for
+;                              chicken-install
 
 (import scheme
 	(chicken base)
@@ -76,14 +85,18 @@
 
 ; the eggs whose dependencies are being resolved, innermost first
 (define needed-by '())
+;; while set, fail calls it with the message instead of exiting
+(define fail-handler #f)
 
 (define (fail fmt . args)
-  (fprintf (current-error-port) "~a: ~?~a~%" program fmt args
-	   (if (null? needed-by)
-	       ""
-	       (sprintf " (needed by ~a)"
-			(string-intersperse (map ->string needed-by) " <- "))))
-  (exit 1))
+  (let ((msg (sprintf "~?~a" fmt args
+		      (if (null? needed-by)
+			  ""
+			  (sprintf " (needed by ~a)"
+				   (string-intersperse (map ->string needed-by) " <- "))))))
+    (when fail-handler (fail-handler msg))
+    (fprintf (current-error-port) "~a: ~a~%" program msg)
+    (exit 1)))
 
 (define (warn fmt . args)
   (fprintf (current-error-port) "~a: warning: ~?~%" program fmt args))
@@ -100,6 +113,8 @@
 (define egg-directory
   (let ((d (get-environment-variable "WASM_EGG_DIR")))
     (if (and d (not (string=? "" d))) d "eggs")))
+(define host-repository
+  (string-split (or (get-environment-variable "WASM_EGGS_HOST_REPOSITORY") "") ":"))
 
 ;; chicken-install's egg mappings: ((NAME ...) . (NAME ...)) ...  A
 ;; dependency on a name of the left is one on those of the right (none,
@@ -243,15 +258,18 @@
 ;;; .egg files
 
 ; An egg is (NAME DIR EGG-FILE DEPENDENCIES COMPONENTS INCLUDES VERSION
-; WANTED), where each component is one of
+; WANTED BUILD-DEPENDENCIES), where each component is one of
 ;   (extension NAME unit: U source: FILE options: (OPT ...)
 ;    link-options: (OPT ...) objects: (NAME ...) dependencies: (NAME ...)
 ;    modules: (NAME ...) declared-modules: BOOL types-file: NAME|#f
 ;    predefined-types: BOOL)
 ;   (c-object NAME source: FILE options: (OPT ...) dependencies: (NAME ...))
 ; each include is (c-include|scheme-include NAME (FILE ...) DESTINATION),
-; VERSION is the egg's version (or #f), and WANTED the versions asked
-; for its dependencies, ((NAME . VERSION) ...).
+; VERSION is the egg's version (or #f), WANTED the versions asked for
+; its dependencies, ((NAME . VERSION) ...), and BUILD-DEPENDENCIES its
+; build-dependencies that are not also dependencies, ((NAME . VERSION
+; or #f) ...).  Those built for the target are added to DEPENDENCIES
+; (see resolve).
 
 (define (egg-name e) (car e))
 (define (egg-dir e) (cadr e))
@@ -261,6 +279,7 @@
 (define (egg-includes e) (list-ref e 5))
 (define (egg-version e) (list-ref e 6))
 (define (egg-wanted e) (list-ref e 7))
+(define (egg-build-dependencies e) (list-ref e 8))
 
 (define (component-kind c) (car c))
 (define (component-name c) (cadr c))
@@ -311,6 +330,7 @@
   (let ((info (read-egg-file file))
 	(deps '())
 	(wanted '())
+	(build-deps '())
 	(version #f)
 	(component-props '())           ; the components, where they apply
 	(components '())
@@ -409,7 +429,7 @@
 	   (define (property p)
 	     (case (car p)
 	       ((files)
-		(set! files (append files (map (lambda (f) (check-path name (->string f)))
+		(set! files (append files (map (lambda (f) (check-include-file name cname f))
 					       (cdr p)))))
 	       ((destination)
 		(let ((d (normalize-pathname (->string (cadr p)))))
@@ -445,12 +465,23 @@
 	(else (fail "egg `~a': invalid component-options ~s" name prop))))
     (define (toplevel prop)
       (case (car prop)
-	((dependencies build-dependencies)
+	((dependencies)
 	 (for-each (lambda (d)
 		     (let ((n (dependency-name name d))
 			   (v (dependency-version d)))
 		       (set! deps (append deps (apply-mappings (list n))))
 		       (when v (set! wanted (cons (cons n v) wanted)))))
+		   (cdr prop)))
+	;; needed on the host, at build time (chicken-install installs
+	;; them before building the egg), not built for the target: see
+	;; check-build-dependencies
+	((build-dependencies)
+	 (for-each (lambda (d)
+		     (let* ((n (dependency-name name d))
+			    (ns (apply-mappings (list n)))
+			    (v (and (equal? ns (list n)) (dependency-version d))))
+		       (set! build-deps
+			 (append build-deps (map (lambda (n) (cons n v)) ns)))))
 		   (cdr prop)))
 	((version) (set! version (->string (cadr prop))))
 	((synopsis author maintainer category license test-dependencies
@@ -475,7 +506,19 @@
 	  (sort-components name (reverse components) others)
 	  (reverse includes)
 	  version
-	  wanted)))
+	  wanted
+	  ;; one that is a dependency too is built for the target
+	  (filter (lambda (b) (not (memq (car b) deps))) build-deps))))
+
+;; a file of an include component, relative to the egg's directory: it
+;; is installed at the same path relative to the destination, as by
+;; chicken-install
+(define (check-include-file egg component f)
+  (let ((p (check-path egg (->string f))))
+    (when (or (absolute-pathname? p)
+	      (member ".." (string-split p "/")))
+      (fail "egg `~a': file of `~a' must be inside the egg: ~s" egg component p))
+    p))
 
 (define (delete-duplicates lst)
   (let loop ((lst lst) (acc '()))
@@ -581,12 +624,48 @@
 			    roots))
 	     (lookup (lambda (n #!optional (path '()))
 		       (fluid-let ((needed-by path))
-			 (by-name n)))))
-	(let ((order (topological egg-name
-				  (lambda (e) (filter (lambda (d) (not (core? d)))
-						      (egg-dependencies e)))
-				  lookup (map lookup roots) "egg")))
+			 (by-name n))))
+	     (buildable '()))           ; ((name . #t|#f) ...)
+	;; Whether egg N and the eggs it depends on can be built for the
+	;; target (found, and refused by nothing above).  An egg found
+	;; on the way stays known by name; one that is a dependency of
+	;; another egg fails then as usual.
+	(define (buildable? n path)
+	  (cond ((assq n buildable) => cdr)
+		(else
+		 (let* ((seen '())
+			(why (call-with-current-continuation
+			      (lambda (k)
+				(fluid-let ((fail-handler k))
+				  (let visit ((n n) (path path))
+				    (unless (or (core? n) (memq n seen))
+				      (set! seen (cons n seen))
+				      (for-each (cut visit <> (cons n path))
+						(egg-dependencies (lookup n path)))))
+				  #f)))))
+		   (set! buildable (cons (cons n (not why)) buildable))
+		   (when why
+		     (warn "build-dependency `~a' of `~a' is not built for WebAssembly, ~
+			    only used from the host repository: ~a~%  ~
+			    (an egg importing one of its compiled modules will not link)"
+			   n (car path) why))
+		   (not why)))))
+	;; the build-dependencies that can be are built for the target
+	;; too, as dependencies (they stay build-dependencies, which the
+	;; host must have)
+	(define (target-dependencies e)
+	  (let* ((deps (egg-dependencies e))
+		 (extra (filter (lambda (b)
+				  (and (not (memq (car b) deps)) (not (core? (car b)))
+				       (buildable? (car b) (list (egg-name e)))))
+				(egg-build-dependencies e))))
+	    (unless (null? extra)
+	      (set-car! (cdddr e) (append deps (map car extra)))
+	      (set-car! (list-tail e 7) (append (filter cdr extra) (egg-wanted e))))
+	    (filter (lambda (d) (not (core? d))) (egg-dependencies e))))
+	(let ((order (topological egg-name target-dependencies lookup (map lookup roots) "egg")))
 	  (check-versions order)
+	  (check-build-dependencies order)
 	  order)))))
 
 ;; Versions are not enforced (the egg found is built, as for a local
@@ -602,6 +681,50 @@
 		  (egg-name e) (cdr w) (car w) (egg-dir d) (egg-version d)))))
       (reverse (egg-wanted e))))
    eggs))
+
+; Build-dependencies are needed at build time, on the host (as
+; chicken-install installs them before building an egg), so they must
+; be installed in the host repository, where the host chicken
+; compiling the eggs finds them (see WASM_EGG_REPOSITORY_PATH in
+; Makefile.emscripten), whether or not they are also built for the
+; target (see resolve).  The core system provides some.
+(define (check-build-dependencies eggs)
+  (for-each
+   (lambda (e)
+     (for-each
+      (lambda (b)
+	(let ((n (car b)) (v (cdr b)))
+	  (unless (memq n core-eggs)
+	    (let ((info (host-egg-info n)))
+	      (cond ((not info)
+		     (fail "egg `~a': build-dependency `~a' is not installed in the host repository (~a): ~
+			    install it with the host chicken-install (build-dependencies are used on the host, ~
+			    at build time)"
+			   (egg-name e) n
+			   (if (null? host-repository)
+			       "none: see WASM_HOST_REPOSITORY"
+			       (string-intersperse host-repository ":"))))
+		    ((and v (egg-info-version info))
+		     => (lambda (hv)
+			  (unless (version>=? hv v)
+			    (warn "egg `~a' needs version ~a of `~a' on the host, but ~a has version ~a"
+				  (egg-name e) v n info hv)))))))))
+      (egg-build-dependencies e)))
+   eggs))
+
+;; the .egg-info file of an egg installed in the host repository
+(define (host-egg-info name)
+  (any (lambda (dir)
+	 (let ((f (make-pathname dir (symbol->string name) "egg-info")))
+	   (and (file-exists? f) f)))
+       host-repository))
+
+(define (egg-info-version file)
+  (let ((info (handle-exceptions ex #f (with-input-from-file file read))))
+    (and (list? info)
+	 (let ((v (find (lambda (p) (and (pair? p) (eq? 'version (car p)) (pair? (cdr p))))
+			info)))
+	   (and v (->string (cadr v)))))))
 
 (define (filter pred lst)
   (cond ((null? lst) '())
@@ -640,14 +763,21 @@
 ; (E/origin names it: the planner rewrites it only when the directory
 ; changes).  The egg's include files are installed below
 ; $(WASM_EGG_DIR)/prefix, on the include paths of the eggs built after
-; it.  The components are compiled one after the other, in the egg's
-; order, as chicken-install does: csc-wasm runs in src for a C object,
-; and in a directory of its own, C.build, for an extension, which so
-; shows the import libraries of all the modules it defines.  These go
-; to $(WASM_EGG_DIR)/repo, with its types file, and C.installs lists
-; them.  done.stamp follows the whole egg.
+; it, and E/includes.list lists them for the SDK (the Scheme files
+; below share/chicken, on the include path, are also listed in
+; WASM_EGG_WEB_INCLUDES, for the web image).  The list is the target
+; that installs them, so that a build directory without it (made
+; before the lists were) installs them again; E/includes.stamp follows
+; it, for the components.  The components are
+; compiled one after the other, in the egg's order, as chicken-install
+; does: csc-wasm runs in src for a C object, and in a directory of its
+; own, C.build, for an extension, which so shows the import libraries
+; of all the modules it defines.  These go to $(WASM_EGG_DIR)/repo,
+; with its types file, and C.installs lists them.  done.stamp follows
+; the whole egg.
 (define (write-makefile eggs)
   (let* ((units '()) (objects '()) (ldopts '()) (stamps '()) (install-lists '())
+	 (include-lists '()) (web-includes '())
 	 (owner '())                    ; ((unit . egg) ...)
 	 (dir (lambda (e) (sprintf "$(WASM_EGG_DIR)/~a" (egg-name e))))
 	 (abs (lambda (e) (sprintf "$(CURDIR)/$(WASM_EGG_DIR)/~a" (egg-name e))))
@@ -673,15 +803,34 @@
 	 (for-each (lambda (f) (printf "~a:~%" f)) files)
 	 (newline)
 	 (unless (null? includes)
-	   (printf "~a/includes.stamp: ~a/src.stamp~%" (dir e) (dir e))
-	   (for-each
-	    (lambda (i)
-	      (let ((dest (sprintf "~a/~a" prefix (cadddr i))))
-		(printf "\tmkdir -p ~a~%" dest)
-		(unless (null? (caddr i))
-		  (printf "\tcd ~a && cp -R ~a ~a/~%" (src e) (words (map sh (caddr i))) dest))))
-	    includes)
-	   (printf "\ttouch $@~%~%"))
+	   ;; E/includes.list names what was installed, relative to
+	   ;; the prefix, for the SDK
+	   (let ((installed '()))
+	     (printf "~a/includes.stamp: ~a/includes.list~%\ttouch $@~%~%" (dir e) (dir e))
+	     (printf "~a/includes.list: ~a/src.stamp~%" (dir e) (dir e))
+	     (for-each
+	      (lambda (i)
+		(let ((dest (normalize-directory (cadddr i))))
+		  (printf "\tmkdir -p ~a/~a~%" prefix (sh dest))
+		  (for-each
+		   (lambda (f)
+		     (let* ((fdir (pathname-directory f))
+			    (to (if fdir (string-append dest "/" fdir) dest)))
+		       (when fdir (printf "\tmkdir -p ~a/~a~%" prefix (sh to)))
+		       (printf "\tcp -R ~a/~a ~a/~a/~%" (src e) (sh f) prefix (sh to))
+		       (set! installed (cons (string-append dest "/" f) installed))
+		       (cond ((and (eq? 'scheme-include (car i)) (include-path-relative dest))
+			      => (lambda (rel)
+				   (set! web-includes
+				     (cons (if (string=? "" rel) f (string-append rel "/" f))
+					   web-includes)))))))
+		   (caddr i))))
+	      includes)
+	     (printf "\t{ :;~a } >$@~%~%"
+		     (apply string-append
+			    (map (lambda (p) (string-append " echo " (sh p) ";"))
+				 (reverse installed))))
+	     (set! include-lists (cons (sprintf "~a/includes.list" (dir e)) include-lists))))
 	 ;; components wait for the eggs they depend on (the core
 	 ;; system's are not built), and for the one before them
 	 (let* ((ready (sprintf "~a/~a.stamp" (dir e) (if (null? includes) "src" "includes")))
@@ -755,6 +904,8 @@
     (printf "WASM_EGG_OBJECTS = ~a~%" (words (delete-duplicates objects)))
     (printf "WASM_EGG_LDOPTS = ~a~%" (words (map sh ldopts)))
     (printf "WASM_EGG_INSTALLS = ~a~%" (words (reverse install-lists)))
+    (printf "WASM_EGG_INCLUDE_LISTS = ~a~%" (words (reverse include-lists)))
+    (printf "WASM_EGG_WEB_INCLUDES = ~a~%" (words (delete-duplicates (reverse web-includes))))
     (printf "WASM_EGG_STAMPS = ~a~%~%" (words (reverse stamps)))
     ;; replan when an egg (or the set of files in its tree) changes
     (let ((inputs (append-map (lambda (e) (cons (egg-file e) (egg-directories (egg-dir e))))
@@ -764,6 +915,17 @@
 
 (define (append-map f lst)
   (apply append (map f lst)))
+
+;; DEST (relative to the prefix) relative to share/chicken, which is on
+;; the include path, or #f if it is not below it
+(define (include-path-relative dest)
+  (let ((home "share/chicken"))
+    (cond ((string=? dest home) "")
+	  ((and (> (string-length dest) (string-length home))
+		(string=? (string-append home "/")
+			  (substring dest 0 (+ 1 (string-length home)))))
+	   (substring dest (+ 1 (string-length home))))
+	  (else #f))))
 
 ;; EGG/origin names the directory that EGG/src is copied from; it is
 ;; rewritten only when that changes, so that the copy is made again.

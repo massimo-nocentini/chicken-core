@@ -262,9 +262,13 @@ else
 WASM_REPO_STAMP = wasm-repo.stamp
 endif
 
-wasm-eggs.mk: wasm-eggs.scm config.make $(WASM_EGG_CONFIG) $(SRCDIR)setup.defaults
-	WASM_EGGS_CHICKEN_INSTALL="$(WASM_HOST_CHICKEN_INSTALL)" WASM_EGGS_ARCH=$(WASM_ARCH) \
-	  WASM_EGGS_CORE="$(IMPORT_LIBRARIES)" \
+# config-host.make: the egg cache and the host repository (where
+# build-dependencies must be) are inputs too; a new plan rebuilds only
+# the eggs whose sources come from elsewhere.
+wasm-eggs.mk: wasm-eggs.scm config.make $(WASM_EGG_CONFIG) $(WASM_HOST_CONFIG) $(SRCDIR)setup.defaults
+	$(if $(WASM_EGG_CACHE),CHICKEN_EGG_CACHE="$(WASM_EGG_CACHE)") \
+	  WASM_EGGS_CHICKEN_INSTALL="$(WASM_HOST_CHICKEN_INSTALL)" WASM_EGGS_ARCH=$(WASM_ARCH) \
+	  WASM_EGGS_HOST_REPOSITORY="$(WASM_HOST_REPOSITORY)" WASM_EGGS_CORE="$(IMPORT_LIBRARIES)" \
 	  WASM_EGGS_DEFAULTS="$(SRCDIR)setup.defaults" WASM_EGG_DIR="$(WASM_EGG_DIR)" \
 	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio webnb" \
 	  $(WASM_HOST_CSI) -s $< $@ $(WASM_EGGS)
@@ -293,12 +297,26 @@ wasm-egg-units.stamp: $(WASM_EGG_CONFIG) $(if $(strip $(WASM_EGGS)),wasm-eggs.mk
 # The egg import libraries (and types files) join the repository image,
 # and the egg objects the SDK, as libchicken-eggs.a.  Each extension
 # lists the files it installed (all the modules it defines) in
-# $(WASM_EGG_DIR)/E/C.installs.
-wasm-eggs-repo.stamp: wasm-repo.stamp $(WASM_CSC) $(WASM_EGG_STAMPS)
+# $(WASM_EGG_DIR)/E/C.installs.  The include files the eggs install
+# (c-include, scheme-include), listed in $(WASM_EGG_DIR)/E/includes.list,
+# go to the same place in the SDK, for programs; the Scheme ones on the
+# include path (in share/chicken) to the web image as well, through
+# $(WASM_EGG_WEB_SHARE), for the REPL and the compiler there.
+WASM_EGG_WEB_SHARE = $(WASM_EGG_DIR)/web-share
+WASM_EGG_WEB_EMBED = $(if $(WASM_EGG_WEB_INCLUDES),--embed-file $(WASM_EGG_WEB_SHARE)@$(DATADIR))
+wasm-eggs-repo.stamp: wasm-repo.stamp $(WASM_CSC) $(WASM_EGG_STAMPS) $(WASM_EGG_INCLUDE_LISTS)
 	set -- $$(cat $(WASM_EGG_INSTALLS) /dev/null); test $$# -eq 0 || cp "$$@" $(WASM_REPO)/
 	rm -f $(WASM_STAGE)$(LIBDIR)/libchicken-eggs$(A)
 	$(if $(WASM_EGG_OBJECTS),$(LIBRARIAN) $(LIBRARIAN_OPTIONS) \
 	  $(WASM_STAGE)$(LIBDIR)/libchicken-eggs$(A) $(WASM_EGG_OBJECTS))
+	$(if $(WASM_EGG_INCLUDE_LISTS),l=$$(cat $(WASM_EGG_INCLUDE_LISTS)) && cd $(WASM_EGG_DIR)/prefix && \
+	  for f in $$l; do \
+	    d=$(CURDIR)/$(WASM_STAGE)$(PREFIX)/$$(dirname "$$f"); \
+	    mkdir -p "$$d" && cp -R "$$f" "$$d/" || exit 1; \
+	  done)
+	rm -rf $(WASM_EGG_WEB_SHARE)
+	$(foreach f,$(WASM_EGG_WEB_INCLUDES),mkdir -p $(dir $(WASM_EGG_WEB_SHARE)/$f) && \
+	  cp -R $(WASM_EGG_DIR)/prefix/share/chicken/$f $(dir $(WASM_EGG_WEB_SHARE)/$f) &&) :
 	touch $@
 
 WASM_EGG_LINK = wasm-egg-units$(O) $(WASM_EGG_OBJECTS)
@@ -326,12 +344,15 @@ node/chicken-profile.js node/chicken-status.js: node/%.js: %$(O) $(LIBCHICKEN_A)
 # sh wrappers: node/csi etc. run like the native tools.  The staged
 # repository comes first, before any of CHICKEN_REPOSITORY_PATH (which
 # may name a host repository): only it has the import libraries, as
-# source, of the eggs linked in.
+# source, of the eggs linked in.  The include path defaults to the
+# staged share/chicken (in place of $(DATADIR), which is not on the
+# host), where the eggs' Scheme include files are.
 $(addprefix node/,$(WASM_NODE_TOOLS)): node/%: node/%.js $(WASM_REPO_STAMP)
 	{ echo '#!/bin/sh'; \
 	  echo 'd=$$(cd "$$(dirname "$$0")" && pwd)'; \
 	  echo 'CHICKEN_REPOSITORY_PATH=$$d/../$(WASM_REPO)$${CHICKEN_REPOSITORY_PATH:+:$$CHICKEN_REPOSITORY_PATH}'; \
-	  echo 'export CHICKEN_REPOSITORY_PATH'; \
+	  echo 'CHICKEN_INCLUDE_PATH=$${CHICKEN_INCLUDE_PATH-$$d/../$(WASM_STAGE)$(DATADIR)}'; \
+	  echo 'export CHICKEN_REPOSITORY_PATH CHICKEN_INCLUDE_PATH'; \
 	  echo 'exec "$${NODE:-node}" $${NODE_OPTIONS_WASM} "$$d/$*.js" "$$@"'; } >$@
 	chmod +x $@
 
@@ -339,7 +360,7 @@ $(addprefix node/,$(WASM_NODE_TOOLS)): node/%: node/%.js $(WASM_REPO_STAMP)
 
 WEB_DIR = web
 WASM_WEB_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=web,worker,node \
-  -sMODULARIZE=1 -sFORCE_FILESYSTEM=1 --embed-file $(WASM_REPO)@$(EGGDIR)
+  -sMODULARIZE=1 -sFORCE_FILESYSTEM=1 --embed-file $(WASM_REPO)@$(EGGDIR) $(WASM_EGG_WEB_EMBED)
 WEB_ASSETS = repl.js repl-driver.js repl-worker.js compiler-worker.js nb-kernel.js \
   notebook.js notebook-lib.js chicken.png
 WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-compiler.wasm
@@ -390,9 +411,13 @@ wasm-sdk: $(WASM_CSC) $(WASM_REPO_STAMP) wasm-host-repo.stamp
 wasm-host-repo.stamp: $(WASM_CSC) $(WASM_HOST_CONFIG)
 	echo '$(WASM_HOST_REPOSITORY)' >$(WASM_SDK_SHARE)/host-repository
 	touch $@
+# There is no shared library: libchicken.a, the name a link without
+# -static asks for (as "csc" of "make wasm-cross" does), is the static
+# one, so that such links work too.
 $(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE)
 	mkdir -p $(WASM_STAGE)$(LIBDIR) $(WASM_STAGE)$(CHICKENINCDIR) $(WASM_SDK_SHARE) $(WASM_STAGE)$(BINDIR)
 	cp $(LIBCHICKEN_A) $(WASM_STAGE)$(LIBDIR)/
+	ln -sf $(notdir $(LIBCHICKEN_A)) $(WASM_STAGE)$(LIBDIR)/libchicken$(A)
 	cp $(filter %chicken.h,$^) chicken-config.h $(WASM_STAGE)$(CHICKENINCDIR)/
 	echo '$(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS)' >$(WASM_SDK_SHARE)/emcflags
 	echo '$(WASM_COMMON_LDFLAGS)' >$(WASM_SDK_SHARE)/emldflags
@@ -443,23 +468,36 @@ wasm-check: wasm-node wasm-web wasm-sdk
 # tests/wasm-eggs.sh.  It starts from copies of the outputs here (not
 # the stamps, which stand for directories), so only the eggs, the
 # repository image and the programs linking them are built there.  It
-# works offline: no egg is retrieved and no host repository is used.
+# works offline: no egg is retrieved.  wasm-egg-tool, the
+# build-dependency of wasm-egg-c, is in an egg cache of its own, and
+# installed in a host repository of its own as chicken-install would:
+# its import library compiled by the host chicken and its .egg-info.
 WASM_EGGS_TEST_BUILD = $(WASM_TESTS_RUN)/eggs-build
 WASM_TEST_EGGS = $(abspath $(SRCDIR))/tests/wasm/eggs
+WASM_TEST_HOST_REPO = $(abspath $(WASM_EGGS_TEST_BUILD))/host-repository
 
 wasm-check-eggs: wasm-node wasm-web wasm-sdk
 	rm -rf $(WASM_EGGS_TEST_BUILD) && mkdir -p $(WASM_EGGS_TEST_BUILD)
 	find . -maxdepth 1 -type f ! -name '*.stamp' ! -name config-eggs.make ! -name config-host.make \
 	  ! -name wasm-eggs.mk ! -name 'wasm-egg-units.*' -exec cp -p {} $(WASM_EGGS_TEST_BUILD)/ \;
 	{ echo "# GENERATED BY make wasm-check-eggs"; \
-	  echo "WASM_EGGS = $(WASM_TEST_EGGS)/wasm-egg-b $(WASM_TEST_EGGS)/wasm-egg-a"; } \
+	  echo "WASM_EGGS = $(WASM_TEST_EGGS)/wasm-egg-b $(WASM_TEST_EGGS)/wasm-egg-a" \
+	    "$(WASM_TEST_EGGS)/wasm-egg-c"; } \
 	  >$(WASM_EGGS_TEST_BUILD)/config-eggs.make
+	mkdir -p $(WASM_TEST_HOST_REPO) $(WASM_EGGS_TEST_BUILD)/egg-cache
+	cp -R $(WASM_TEST_EGGS)/wasm-egg-tool $(WASM_EGGS_TEST_BUILD)/egg-cache/
+	cd $(WASM_TEST_HOST_REPO) && env CHICKEN_REPOSITORY_PATH=$(abspath $(SRCDIR)) $(CHICKEN) \
+	  $(WASM_TEST_EGGS)/wasm-egg-tool/wasm-egg-tool.scm -dynamic -emit-all-import-libraries -output-file tool.c && rm tool.c
+	echo '((version "1.1") (installed-files))' >$(WASM_TEST_HOST_REPO)/wasm-egg-tool.egg-info
 	{ echo "# GENERATED BY make wasm-check-eggs"; \
-	  echo "WASM_HOST_CSI = $(WASM_HOST_CSI)"; } >$(WASM_EGGS_TEST_BUILD)/config-host.make
+	  echo "WASM_HOST_CSI = $(WASM_HOST_CSI)"; \
+	  echo "WASM_HOST_REPOSITORY = $(WASM_TEST_HOST_REPO)"; \
+	  echo "WASM_EGG_CACHE = $(abspath $(WASM_EGGS_TEST_BUILD))/egg-cache"; } \
+	  >$(WASM_EGGS_TEST_BUILD)/config-host.make
 	+$(MAKE) -C $(WASM_EGGS_TEST_BUILD) -f $(abspath $(SRCDIR))/GNUmakefile \
 	  node/csi $(WEB_DIR)/chicken-repl.js wasm-sdk
 	cd $(WASM_TESTS_RUN) && EGG_BUILD=eggs-build TEST_DIR=$(abspath $(SRCDIR))/tests \
-	  HOST_CSI="$(WASM_HOST_CSI)" NODE="$(NODE)" sh $(SRCDIR)tests/wasm-eggs.sh
+	  HOST_CSI="$(WASM_HOST_CSI)" NODE="$(NODE)" MAKE="$(MAKE)" sh $(SRCDIR)tests/wasm-eggs.sh
 
 wasm-serve: wasm-web
 	cd $(WEB_DIR) && python3 -m http.server $${PORT:-8080}

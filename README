@@ -452,10 +452,14 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     "make wasm-cross" additionally builds CHICKEN's own cross
     toolchain (see the "Cross development" chapter of the manual)
     for this SDK, installed in "build-wasm-cross/inst" with the
-    program prefix "wasm-".  Its "wasm-csc" needs "-static" (the
-    SDK has no shared library); add
+    program prefix "wasm-".  There is no shared library: the SDK's
+    lib/libchicken.a, which "wasm-csc" links without "-static", is
+    the static library, so programs are linked statically either
+    way.  Add
     "-L @build-wasm-cross/inst/share/wasm-chicken/node.rsp" to
-    link for node as "csc-wasm -node" does.  The toolchain refers
+    link for node as "csc-wasm -node" does, and
+    "-I build-wasm/stage/chicken/share/chicken" for the Scheme
+    include files of eggs (see below).  The toolchain refers
     to the SDK in WASM_BUILDDIR by absolute path, so rerun
     "make wasm-cross" after cleaning that directory.
 
@@ -485,7 +489,19 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     extensions listing them, and test-dependencies are ignored, as
     are dependencies on "chicken" and on modules of the core system
     (such as srfi-4) or mapped away by setup.defaults (such as
-    r7rs).  Unlike chicken-install, it does not check the versions
+    r7rs).  Build-dependencies are needed at build time, on the
+    host, as chicken-install installs them before it builds an egg:
+    they must be installed in the host repository
+    (WASM_HOST_REPOSITORY, see below), where the host chicken
+    compiling the eggs finds them; the build stops early, naming the
+    egg, when one is not there, and warns when it is older than asked
+    for.  They are also built for WebAssembly, like dependencies, as
+    importing a compiled module needs its unit at run time even if
+    only its syntax is used; one that cannot be (not in the cache
+    and not retrieved, or refused as below) is only used on the
+    host, with a warning, and an egg that imports one of its
+    compiled modules then fails to link.  Unlike chicken-install,
+    it does not check the versions
     of dependencies: the release in the cache (or the local
     directory) is built, with a warning if it is older than the
     one asked for; refresh the cache with "chicken-install -r".
@@ -504,9 +520,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     (egg-wide or per component, as in "sendfile"), generated source
     files and extensions without static linkage.  Programs are not
     built, and "data" components are not installed (a warning says
-    so); "c-include" and "scheme-include" files are installed where
+    so).  "c-include" and "scheme-include" files are installed where
     the eggs built after them include them from (build-wasm/eggs/
-    prefix), but not into the repository image.  An egg without
+    prefix), and at the same place in the SDK (by default
+    include/chicken, on emcc's include path, and share/chicken,
+    which csc-wasm puts on the include path after the "-I"
+    directories), so that programs can include them.  The Scheme
+    files on the include path (in share/chicken) also go into the
+    web image, for the REPL, the notebook and the compiler there,
+    and the node tools search the SDK's share/chicken unless
+    CHICKEN_INCLUDE_PATH is set: "(include "FILE")" finds them, as
+    natively.  An egg without
     extensions for the target (a host-only egg, such as "bind")
     builds nothing, with a warning.  An egg that runs code of
     another egg at compile time ("import-for-syntax", as in
@@ -527,14 +551,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     WASM_EGGS is recorded in the build directory apart from the
     other settings: changing it rebuilds only the eggs that change
     (including eggs taken from another directory than before), the
-    repository image and the programs linking them.  The eggs are
+    repository image and the programs linking them.  The host
+    settings the eggs are planned with, the chicken-install cache
+    (CHICKEN_EGG_CACHE, else $XDG_CACHE_HOME or ~/.cache, followed
+    by "/chicken-install", as chicken-install finds it) and
+    WASM_HOST_REPOSITORY, are recorded apart again: when one
+    changes, the eggs are planned anew, and only those that now come
+    from another directory are rebuilt.  The eggs are
     built in build-wasm/eggs.  Tested with srfi-1, srfi-13,
     srfi-14, srfi-18, srfi-19, srfi-69, matchable, miscmacros,
     regex, defstruct, vector-lib, uri-generic, uri-common, base64,
-    check-errors, intarweb and memory-mapped-files.  srfi-19 (by
-    way of the locale egg) fails when imported in the node csi
-    unless TZ is set, since emscripten names the local time zone
-    like "UTC+0200".
+    check-errors, intarweb and memory-mapped-files.
 
     Other targets: "make wasm-clean" removes the build outputs,
     "make wasm-distclean" the build directories.  "WASM_GOAL"
@@ -631,8 +658,10 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     and an eggs lane:
     it builds csi and the REPL again, in tests-run/eggs-build of the
     build directory, with the test eggs of tests/wasm/eggs, and runs
-    tests/wasm-eggs.sh (node csi, a program compiled with csc-wasm,
-    refused eggs and tests/wasm/egg-harness.js and
+    tests/wasm-eggs.sh (node csi, programs compiled with csc-wasm,
+    the eggs' include files, a build-dependency installed in a host
+    repository and built from an egg cache, replanning, refused eggs and
+    tests/wasm/egg-harness.js and
     notebook-harness.js for the REPL and the notebook).  The browser test
     tests/wasm/page.spec.mjs needs Playwright and is run by hand:
 

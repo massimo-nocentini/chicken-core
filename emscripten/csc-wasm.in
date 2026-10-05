@@ -53,7 +53,10 @@
 #
 # Programs are always linked statically: every unit they use must be in
 # libchicken or named on the command line.  The host chicken reads import
-# libraries and types.db from the SDK repository.
+# libraries and types.db from the SDK repository, and looks for included
+# files (after the -I directories) in the SDK's share/chicken, where
+# the eggs linked into the SDK install their Scheme include files (and
+# their C headers in include/chicken, on emcc's include path).
 
 set -e
 
@@ -225,6 +228,9 @@ export CHICKEN_REPOSITORY_PATH
 # The target features ("emscripten" and "wasm64" or "wasm32") are
 # recorded in the SDK by "make wasm".
 target_features="-static $(cat "$S/share/chicken/features")"
+# searched after the -I directories, before the host chicken's own
+# include path (or CHICKEN_INCLUDE_PATH)
+sdk_include=$(q "$S/share/chicken")
 
 # stem FILE: set b to FILE's base name without its extension, made
 # unique among the inputs (app.scm and app.c, or a/m.scm and b/m.scm),
@@ -265,10 +271,10 @@ for f; do
     c=$work/$b.c
     if test $mode = translate; then c=$out; fi
     if test $mode = analyze; then
-	eval "run $CHICKEN \"\$f\" $target_features $chicken_opts"
+	eval "run $CHICKEN \"\$f\" $target_features $chicken_opts -include-path $sdk_include"
 	continue
     fi
-    eval "run $CHICKEN \"\$f\" $target_features $chicken_opts -output-file \"\$c\""
+    eval "run $CHICKEN \"\$f\" $target_features $chicken_opts -include-path $sdk_include -output-file \"\$c\""
     test $mode = translate && exit 0
     o=$work/$b.o
     if test $mode = compile; then o=$out; fi
