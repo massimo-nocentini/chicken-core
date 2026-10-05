@@ -143,7 +143,7 @@
     if (kernel) return kernel;
     if (P.unavailable || !K) return null;
     kernel = K.create({
-      createWorker: () => new Worker('repl-worker.js' + P.Q),
+      createWorker: () => new Worker(P.workerUrl('repl-worker.js')),   // the REPL's build
       getModule: () => P.replModule(),
       args: () => P.settings.args,
       csirc: () => (P.settings.csirc.trim() ? P.settings.csirc : null),

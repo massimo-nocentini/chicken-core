@@ -37,7 +37,12 @@
  *   3 s while evaluating (a long primitive that never yields), it is
  *   terminated and a fresh one started.
  * - Settings, history and the theme live in localStorage when available;
- *   everything works without it.
+ *   everything works without it (a build chosen in the Settings then
+ *   goes in ?arch=).
+ * - A page may have the modules of two architectures (make wasm
+ *   WASM_WEB_ARCHS="wasm64 wasm32"): it runs the first one this browser
+ *   supports (or the one ?arch= or the Settings ask for), and every
+ *   worker loads that one's modules (see "the build" below).
  * - window.ChickenPage gives the Notebook tab (notebook.js) the settings,
  *   the storage, the compiled .wasm and the uploads; the page sends it
  *   "chicken:tab" and "chicken:settings" events. */
@@ -53,23 +58,26 @@
   const HOME = '/home/web_user/';
   const PROMPT_END = /#;\d+> $/;
 
-  const BUILD = (document.querySelector('meta[name="chicken-build"]') || {}).content || '';
+  const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
+  const BUILD = meta('chicken-build');
   const Q = BUILD && BUILD.indexOf('@') < 0 ? '?v=' + encodeURIComponent(BUILD) : '';
-  const ARCH = (document.querySelector('meta[name="chicken-wasm-arch"]') || {}).content || '';
-  // how setjmp/longjmp were built (WASM_SJLJ): exnref, legacy or none
-  const EH = (document.querySelector('meta[name="chicken-wasm-eh"]') || {}).content || '';
   const $ = id => document.getElementById(id);
   const term = $('term'), line = $('line'), statusPill = $('status'), statusText = $('status-text');
 
   // ---- storage (may be unavailable: private mode, blocked site data)
 
   const store = {
+    // whether settings persist (not with blocked site data, say)
+    works: (() => {
+      try { localStorage.setItem('chicken-repl.?', '1'); localStorage.removeItem('chicken-repl.?'); return true; }
+      catch (e) { return false; }
+    })(),
     get(k, d) {
       try { const v = localStorage.getItem('chicken-repl.' + k); return v === null ? d : v; }
       catch (e) { return d; }
     },
-    set(k, v) {
-      try { localStorage.setItem('chicken-repl.' + k, v); } catch (e) { /* ignore */ }
+    set(k, v) {                         // whether it was stored
+      try { localStorage.setItem('chicken-repl.' + k, v); return true; } catch (e) { return false; }
     },
   };
   const touch = matchMedia('(pointer: coarse)').matches;
@@ -79,6 +87,7 @@
     sliceMs: Number(store.get('sliceMs', '50')) || 50,
     quotes: store.get('quotes', touch ? '1' : '0') === '1',
     theme: store.get('theme', 'auto'),
+    arch: store.get('arch', 'auto'),    // the build to run, when the page has several
   };
 
   function applyTheme() {
@@ -87,6 +96,191 @@
     else delete document.documentElement.dataset.theme;
   }
   applyTheme();
+
+  // ---- the build
+
+  // The builds of the page (make wasm WASM_WEB_ARCHS=...), "ARCH:EH" each
+  // in the chicken-wasm-builds meta tag: the first one's modules are
+  // beside the page, another's in a directory named after its
+  // architecture.  EH is how setjmp/longjmp were built (WASM_SJLJ):
+  // exnref, legacy or none.  A page without the tag has the one build
+  // of the chicken-wasm-arch and chicken-wasm-eh tags.
+  const BUILDS = (() => {
+    const l = [], words = meta('chicken-wasm-builds').split(/\s+/).filter(w => w && w.indexOf('@') < 0);
+    words.forEach((w, i) => {
+      const [arch, eh] = w.split(':');
+      if (/^wasm(32|64)$/.test(arch) && /^(exnref|legacy|none)$/.test(eh) && !l.some(b => b.arch === arch))
+        l.push({ arch, eh, dir: i ? arch + '/' : '' });
+    });
+    return l.length ? l : [{ arch: meta('chicken-wasm-arch'), eh: meta('chicken-wasm-eh'), dir: '' }];
+  })();
+  const PREFER = ['wasm64', 'wasm32'];     // the order of the automatic choice
+
+  // A wasm64 build needs memory64 in the engine, and one made with
+  // WASM_SJLJ=wasm (the default on wasm64) or wasm-legacy (the default
+  // on wasm32) the exception handling instructions it uses: without them
+  // the modules fail to compile.  Each probe module has just the
+  // feature: a 64-bit memory, an empty try_table (exnref), an empty
+  // legacy try.  A feature is probed only when a build that needs it is
+  // considered: Firefox may warn about a module with the deprecated try,
+  // even a probe.
+  const HEADER = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];   // magic, version
+  const FUNC = [0x01, 0x04, 0x01, 0x60, 0x00, 0x00,                  // type: [] -> []
+                0x03, 0x02, 0x01, 0x00];                             // one function
+  const PROBES = {
+    memory64: [...HEADER, 0x05, 0x03, 0x01, 0x04, 0x00],             // memory: i64, min 0
+    exnref: [...HEADER, ...FUNC, 0x0a, 0x08, 0x01, 0x06, 0x00, 0x1f, 0x40, 0x00, 0x0b, 0x0b],  // try_table end end
+    legacy: [...HEADER, ...FUNC, 0x0a, 0x07, 0x01, 0x05, 0x00, 0x06, 0x40, 0x0b, 0x0b],        // try end end
+  };
+  const FEATURES = {
+    memory64: '64-bit WebAssembly (memory64)',
+    exnref: 'WebAssembly exception handling with exnref',
+    legacy: 'WebAssembly exception handling (the legacy instructions)',
+  };
+  const probed = {};
+  function has(f) {
+    if (!(f in probed)) {
+      try { probed[f] = WebAssembly.validate(new Uint8Array(PROBES[f])); }
+      catch (e) { probed[f] = false; }
+    }
+    return probed[f];
+  }
+  const needs = b => [...(b.arch === 'wasm64' ? ['memory64'] : []), ...(b.eh in PROBES ? [b.eh] : [])];
+  const lacks = b => needs(b).filter(f => !has(f));
+  // the same, but without a probe for legacy that has not been made
+  const lacksKnown = b => needs(b).filter(f => (f !== 'legacy' || f in probed) && !has(f));
+  const featureList = l => l.map(f => FEATURES[f]).join(' and ');
+
+  // the browsers that run a build (see the README)
+  function browsersFor(b) {
+    if (b.arch === 'wasm64') return 'Chrome or Edge ' + (b.eh === 'exnref' ? 137 : 133) + ', Firefox 134 or later';
+    if (b.eh === 'exnref') return 'Chrome or Edge 137, Firefox 131, Safari 18.4 or later';
+    return 'Chrome or Edge 95, Firefox 100, Safari 15.4 or later';
+  }
+  // why this browser cannot run the page's only build b, and what to do
+  function missingFeature(b, miss) {
+    const exnref = b.eh === 'exnref';
+    if (miss.includes('memory64'))
+      return '; this browser does not support 64-bit WebAssembly (memory64), which this build needs.\n' +
+        '; Use Chrome or Edge ' + (exnref ? 137 : 133) + ', Firefox 134 or later, or a build made with "make wasm WASM_ARCH=wasm32".';
+    if (miss.includes('exnref'))
+      return '; this browser does not support WebAssembly exception handling with exnref, which this build needs.\n' +
+        (b.arch === 'wasm64'
+         ? '; Use Chrome or Edge 137, Firefox 134 or later, or a build made with "make wasm WASM_SJLJ=wasm-legacy".'
+         : '; Use Chrome or Edge 137, Firefox 131, Safari 18.4 or later, or a build made with ' +
+           '"make wasm WASM_ARCH=wasm32 WASM_SJLJ=wasm-legacy".');
+    return '; this browser does not support WebAssembly exception handling, which this build needs.\n' +
+      '; Use ' + browsersFor(b) + ', or a build made with "make wasm ' +
+      (b.arch === 'wasm32' ? 'WASM_ARCH=wasm32 ' : '') + 'WASM_SJLJ=emscripten".';
+  }
+
+  // The build to run: the one ?arch= in the URL asks for, else the one
+  // chosen in the Settings (on a page with several builds), if this
+  // browser can run it; else, as with "auto" for either, the first in
+  // PREFER order it can run.  Returns {build, notes, missing}: build is
+  // null when it can run none (missing then says why), notes explain
+  // the choice.
+  function choose(urlArch, setArch) {
+    const inUrl = urlArch != null && urlArch !== '';
+    const want = inUrl ? (urlArch === 'auto' ? null : urlArch)
+      : BUILDS.length > 1 && setArch !== 'auto' ? setArch : null;
+    const how = inUrl ? '?arch=' + urlArch.slice(0, 40) : 'the build chosen in the Settings';
+    const notes = [];
+    let build = null, refused = null;
+    if (want != null) {
+      const b = BUILDS.find(x => x.arch === want);
+      if (!b)
+        notes.push('; ignoring ' + how + ': this page has ' +
+                   (BUILDS.length > 1 ? 'the ' + BUILDS.map(x => x.arch).join(' and ') + ' builds.'
+                    : 'only the ' + BUILDS[0].arch + ' build.'));
+      else if (lacks(b).length) {
+        notes.push('; ignoring ' + how + ': this browser lacks ' + featureList(lacks(b)) +
+                   ', which the ' + b.arch + ' build needs.');
+        refused = b;
+      } else {
+        build = b;
+        if (BUILDS.length > 1) notes.push('; running the ' + b.arch + ' build, as ' + how + ' asks.');
+      }
+    }
+    if (build) return { build, notes, missing: null };
+    const fails = [];
+    for (const b of BUILDS.slice().sort((x, y) => PREFER.indexOf(x.arch) - PREFER.indexOf(y.arch))) {
+      const miss = lacks(b);
+      if (!miss.length) { build = b; break; }
+      fails.push({ b, miss });
+    }
+    if (build && fails.length)
+      notes.push(fails[0].b === refused ? '; running the ' + build.arch + ' build instead.'
+                 : '; running the ' + build.arch + ' build: this browser lacks ' + featureList(fails[0].miss) +
+                   ', which the ' + fails[0].b.arch + ' build needs.');
+    if (build) return { build, notes, missing: null };
+    return {
+      build: null, notes,
+      missing: BUILDS.length === 1 ? missingFeature(fails[0].b, fails[0].miss)
+        : '; this browser runs no build of this page: ' +
+          fails.map(({ b, miss }) => b.arch + ' needs ' + featureList(miss)).join('; ') + '.\n' +
+          '; Use ' + browsersFor(fails[fails.length - 1].b) + '.',
+    };
+  }
+
+  let urlArch = null;
+  try { urlArch = new URLSearchParams(location.search).get('arch'); } catch (e) { urlArch = null; }
+  const CHOICE = choose(urlArch, settings.arch);
+  // Without storage the choice in the Settings is the one ?arch= makes
+  // (a choice there loads the page again with it).
+  if (!store.works && BUILDS.length > 1 && (urlArch === 'auto' || BUILDS.some(b => b.arch === urlArch)))
+    settings.arch = urlArch;
+  const HTTP_HINT = 'This page must be served over HTTP, for example with "make wasm-serve".';
+  // why nothing can run here, or null
+  const LOCKOUT = location.protocol === 'file:'
+    ? '; ' + HTTP_HINT + '\n; Browsers do not run workers or fetch .wasm files from file:// URLs.'
+    : typeof WebAssembly !== 'object' || typeof Worker !== 'function'
+    ? '; this browser lacks WebAssembly or Web Workers.'
+    : CHOICE.missing;
+  // the build that runs; when none does, what a page with one build was
+  // built for, and nothing on a page with several
+  const RUNS = LOCKOUT ? (BUILDS.length > 1 ? null : BUILDS[0]) : CHOICE.build;
+  const ARCH = RUNS ? RUNS.arch : '', EH = RUNS ? RUNS.eh : '';
+  const DIR = CHOICE.build ? CHOICE.build.dir : '';
+  // the workers get the build id and the directory of the modules
+  const WQ = (() => {
+    const p = new URLSearchParams();
+    if (Q) p.set('v', BUILD);
+    if (DIR) p.set('dir', DIR);
+    const t = p.toString();
+    return t ? '?' + t : '';
+  })();
+  const workerUrl = name => name + WQ;
+  if (BUILDS.length > 1) {
+    // the build in the header, and its choice in the Settings
+    if (!LOCKOUT) {
+      const chip = $('arch');
+      chip.textContent = ARCH;
+      chip.title = 'Running the ' + ARCH + ' build (' + (ARCH === 'wasm64' ? '64' : '32') +
+        '-bit WebAssembly); this page has ' + BUILDS.map(b => b.arch).join(' and ') + '. Choose one in the Settings.';
+      chip.hidden = false;
+    }
+    for (const r of document.querySelectorAll('input[name="arch"]'))
+      r.parentNode.hidden = r.value !== 'auto' && !BUILDS.some(b => b.arch === r.value);
+    archSetting();
+    $('set-arch').hidden = false;
+  }
+  // The builds in the Settings: one this browser is known not to run
+  // (probed, see lacksKnown) cannot be chosen.
+  function archSetting() {
+    if (BUILDS.length < 2) return;
+    const cannot = [];
+    for (const r of document.querySelectorAll('input[name="arch"]')) {
+      const b = BUILDS.find(x => x.arch === r.value), miss = b ? lacksKnown(b) : [];
+      r.disabled = miss.length > 0;
+      if (miss.length) cannot.push('This browser cannot run ' + b.arch + ': it lacks ' + featureList(miss) + '.');
+    }
+    $('set-arch-help').textContent = (LOCKOUT ? '' : 'Running ' + ARCH + '. ') +
+      'Automatic runs ' + PREFER.filter(a => BUILDS.some(b => b.arch === a)).join(' where the browser supports it, else ') +
+      '; ?arch= in the URL overrides this. Choosing another build than the one running reloads the page' +
+      (store.works ? '.' : ' with ?arch=, as this browser keeps no settings.') +
+      (cannot.length ? ' ' + cannot.join(' ') : '');
+  }
 
   // ---- terminal output
 
@@ -267,7 +461,6 @@
   }
 
   const uploads = new Map();            // name -> Uint8Array, resent on every spawn
-  const HTTP_HINT = 'This page must be served over HTTP, for example with "make wasm-serve".';
   let unavailable = null;               // why nothing can run (set at start), or null
   let unavailableDetail = null;         // the same with what to do about it
 
@@ -311,15 +504,15 @@
     setStatus('loading');
     let mod;
     try {
-      mod = await (replModuleP || (replModuleP = compileWasm('chicken-repl.wasm' + Q)));
+      mod = await (replModuleP || (replModuleP = compileWasm(DIR + 'chicken-repl.wasm' + Q)));
     } catch (e) {
       replModuleP = null;
-      if (g === gen) fatal('; could not load chicken-repl.wasm: ' + ((e && e.message) || e) + '\n; ' + HTTP_HINT);
+      if (g === gen) fatal('; could not load ' + DIR + 'chicken-repl.wasm: ' + ((e && e.message) || e) + '\n; ' + HTTP_HINT);
       return;
     }
     if (g !== gen) return;
     let w;
-    try { w = new Worker('repl-worker.js' + Q); }
+    try { w = new Worker(workerUrl('repl-worker.js')); }
     catch (e) { fatal('; could not start the worker: ' + ((e && e.message) || e) + '\n; ' + HTTP_HINT); return; }
     worker = w;
     w.onmessage = e => { if (g === gen) onWorker(e.data); };
@@ -348,11 +541,17 @@
     showNotice(notice);
   }
 
+  let choiceNoted = false;
   function onWorker(m) {
     msgs++;
     switch (m.type) {
     case 'ready':
       ready = true;
+      if (!choiceNoted) {               // before the banner
+        choiceNoted = true;
+        if (CHOICE.notes.length && term.querySelector('.loading')) term.querySelector('.loading').remove();
+        for (const t of CHOICE.notes) note(t);
+      }
       setInputEnabled(true);
       if (!touch && document.activeElement !== $('src') && !$('settings').open &&
           !$('panel-repl').hidden) line.focus();
@@ -591,12 +790,17 @@
   // ---- settings
 
   const dlg = $('settings');
+  let archShown = null;                 // the build checked when the dialog opened
   $('settings-btn').addEventListener('click', () => {
     $('set-csirc').value = settings.csirc;
     $('set-args').value = settings.args;
     $('set-slice').value = settings.sliceMs;
     $('set-quotes').checked = settings.quotes;
     for (const r of document.querySelectorAll('input[name="theme"]')) r.checked = r.value === settings.theme;
+    for (const r of document.querySelectorAll('input[name="arch"]')) r.checked = r.value === settings.arch;
+    if (!document.querySelector('input[name="arch"]:checked')) $('set-arch-auto').checked = true;
+    archShown = document.querySelector('input[name="arch"]:checked').value;
+    archSetting();
     dlg.showModal();
   });
   dlg.addEventListener('close', () => {
@@ -607,13 +811,31 @@
     settings.quotes = $('set-quotes').checked;
     const th = document.querySelector('input[name="theme"]:checked');
     settings.theme = th ? th.value : 'auto';
+    const ar = document.querySelector('input[name="arch"]:checked');
+    settings.arch = ar ? ar.value : 'auto';
     store.set('csirc', settings.csirc);
     store.set('args', settings.args);
     store.set('sliceMs', String(settings.sliceMs));
     store.set('quotes', settings.quotes ? '1' : '0');
     store.set('theme', settings.theme);
+    const archStored = store.set('arch', settings.arch);
+    // Choosing a build other than the one running means other modules
+    // for every worker: load the page again, without the ?arch= that
+    // would override the choice (the notebook saves itself on pagehide),
+    // or, when the choice could not be stored, with ?arch= making it.
+    // Other changes keep the page, its ?arch= and its uploads.
+    const archChoice = BUILDS.length > 1 && settings.arch !== archShown ? choose(null, settings.arch) : null;
+    if (archChoice && archChoice.build !== CHOICE.build) {
+      const u = new URL(location.href);
+      if (archStored) u.searchParams.delete('arch'); else u.searchParams.set('arch', settings.arch);
+      if (u.href === location.href) location.reload(); else location.replace(u.href);
+      return;
+    }
     applyTheme();
     document.dispatchEvent(new Event('chicken:settings'));
+    // a build this browser turned out not to run: say so
+    if (archChoice && archChoice.build && settings.arch !== 'auto' && archChoice.build.arch !== settings.arch)
+      for (const t of archChoice.notes) note(t);
     restart();
   });
 
@@ -661,7 +883,7 @@
   const creqs = new Map();
   function compilerWorker() {
     if (cworker) return cworker;
-    const w = new Worker('compiler-worker.js' + Q);
+    const w = new Worker(workerUrl('compiler-worker.js'));
     w.onmessage = ({ data: m }) => {
       const r = creqs.get(m.id);
       if (r) { creqs.delete(m.id); r(m); }
@@ -784,16 +1006,18 @@
 
   // ---- the page API for notebook.js
 
-  function replModule() {
+  function replModule() {               // of the build chosen
     if (!replModuleP) {
-      const p = compileWasm('chicken-repl.wasm' + Q);
+      const p = compileWasm(DIR + 'chicken-repl.wasm' + Q);
       replModuleP = p;
       p.catch(() => { if (replModuleP === p) replModuleP = null; });
     }
     return replModuleP;
   }
   window.ChickenPage = Object.freeze({
-    Q, ARCH, HOME, HTTP_HINT, BUILD, store, settings, touch,
+    Q, ARCH, EH, HOME, HTTP_HINT, BUILD, store, settings, touch,
+    BUILDS,                             // [{arch, eh, dir}] the page has
+    workerUrl,                          // the URL of a worker script, for the build chosen
     get unavailable() { return unavailable; },              // one line
     get unavailableDetail() { return unavailableDetail; },  // and what to do
     replModule,                         // Promise<WebAssembly.Module>, compiled once
@@ -806,44 +1030,7 @@
 
   // ---- start
 
-  // A wasm64 build (the default) needs memory64, and a build with
-  // WASM_SJLJ=wasm (the default on wasm64) exception handling with exnref:
-  // without them the modules fail to compile.  Each of these modules has
-  // just the feature: a 64-bit memory, an empty try_table.
-  function validates(bytes) {
-    try { return WebAssembly.validate(new Uint8Array(bytes)); }
-    catch (e) { return false; }
-  }
-  const HEADER = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];   // magic, version
-  function hasMemory64() {
-    return validates([...HEADER, 0x05, 0x03, 0x01, 0x04, 0x00]);    // memory: i64, min 0
-  }
-  function hasExnref() {
-    return validates([...HEADER,
-      0x01, 0x04, 0x01, 0x60, 0x00, 0x00,                          // type: [] -> []
-      0x03, 0x02, 0x01, 0x00,                                       // one function
-      0x0a, 0x08, 0x01, 0x06, 0x00, 0x1f, 0x40, 0x00, 0x0b, 0x0b]); // try_table end end
-  }
-  function missingFeature() {
-    const exnref = EH === 'exnref';
-    if (ARCH === 'wasm64' && !hasMemory64())
-      return '; this browser does not support 64-bit WebAssembly (memory64), which this build needs.\n' +
-        '; Use Chrome or Edge ' + (exnref ? 137 : 133) + ', Firefox 134 or later, or a build made with "make wasm WASM_ARCH=wasm32".';
-    if (exnref && !hasExnref())
-      return '; this browser does not support WebAssembly exception handling with exnref, which this build needs.\n' +
-        (ARCH === 'wasm64'
-         ? '; Use Chrome or Edge 137, Firefox 134 or later, or a build made with "make wasm WASM_SJLJ=wasm-legacy".'
-         : '; Use Chrome or Edge 137, Firefox 131, Safari 18.4 or later, or a build made with ' +
-           '"make wasm WASM_ARCH=wasm32 WASM_SJLJ=wasm-legacy".');
-    return null;
-  }
-
-  if (location.protocol === 'file:')
-    unavailable = '; ' + HTTP_HINT + '\n; Browsers do not run workers or fetch .wasm files from file:// URLs.';
-  else if (typeof WebAssembly !== 'object' || typeof Worker !== 'function')
-    unavailable = '; this browser lacks WebAssembly or Web Workers.';
-  else
-    unavailable = missingFeature();
+  unavailable = LOCKOUT;
   if (unavailable) {
     term.textContent = '';
     fatal(unavailable);
