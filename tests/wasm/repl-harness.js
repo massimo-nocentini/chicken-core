@@ -23,25 +23,40 @@
 // OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-// usage: node [v8 flags] repl-harness.js WEB_DIR
+// usage: node [v8 flags] repl-harness.js WEB_DIR [--arch=A]
 //
 // WEB_DIR holds chicken-repl.js and chicken-repl.wasm (build-wasm/web).
 // Runs the REPL core cases of the plan (README, WebAssembly section) and
 // exits with status 1 if any fails.  Run it once in default node and once
 // with "--liftoff --no-wasm-tier-up --stack-size=900".
+//
+// With --arch=A, the modules tested are those of the architecture A of
+// a page with several (make wasm WASM_WEB_ARCHS="wasm64 wasm32"), in
+// WEB_DIR/A unless A is the page's own (its chicken-wasm-arch).
 
 'use strict';
 const fs = require('fs');
 const path = require('path');
 
 const webDir = path.resolve(process.argv[2] || 'web');
-const createChickenRepl = require(path.join(webDir, 'chicken-repl.js'));
+// the page's own architecture and those it has (chicken-wasm-builds,
+// "ARCH:EH" each); --arch=A selects the modules of A
+const pageMeta = (html, name) => (new RegExp('<meta name="' + name + '" content="([^"]*)">').exec(html) || [])[1];
+function moduleArch(html) {
+  const own = pageMeta(html, 'chicken-wasm-arch');
+  const want = (process.argv.find(a => /^--arch=/.test(a)) || '').slice(7) || own;
+  const has = (pageMeta(html, 'chicken-wasm-builds') || own || '').split(/\s+/).map(w => w.split(':')[0]);
+  if (!has.includes(want)) throw new Error('the page in ' + webDir + ' has no ' + want + ' build (only ' + has.join(', ') + ')');
+  return { arch: want, sub: want === own ? '' : want + '/' };
+}
+// the architecture of the modules (make wasm WASM_ARCH=...)
+const { arch, sub } = moduleArch(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8'));
+const modDir = path.join(webDir, sub);
+const createChickenRepl = require(path.join(modDir, 'chicken-repl.js'));
 const Driver = require(path.join(__dirname, '..', '..', 'emscripten', 'web', 'repl-driver.js'));
 const { RUNNING, WAITING, BUSY, EXITED, SLEEPING } = Driver;
-const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(webDir, 'chicken-repl.wasm')));
-// the architecture the page was built for (make wasm WASM_ARCH=...)
-const arch = (/<meta name="chicken-wasm-arch" content="([^"]*)">/
-              .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
+const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(modDir, 'chicken-repl.wasm')));
+console.log('# ' + arch + ' modules in ' + modDir);
 
 let failures = 0, passes = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));

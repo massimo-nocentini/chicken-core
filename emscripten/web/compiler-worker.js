@@ -35,18 +35,24 @@
  *
  * chicken-compiler.js is linked with EXIT_RUNTIME=1, so an instance is
  * finished once main returns: every compile gets a fresh instance of
- * the WebAssembly module, which is compiled only once. */
+ * the WebAssembly module, which is compiled only once.
+ *
+ * As in repl-worker.js, the worker URL's ?v= is passed on to the module
+ * URLs, and its dir= names the directory of the modules. */
 
 'use strict';
 
-const V = new URLSearchParams(self.location.search).get('v') || '';
+const params = new URLSearchParams(self.location.search);
+const V = params.get('v') || '';
 const q = V ? '?v=' + encodeURIComponent(V) : '';
-importScripts('chicken-compiler.js' + q);
+const D = params.get('dir') || '';
+if (!/^([a-z0-9]+\/)?$/.test(D)) throw new Error('compiler-worker.js: bad module directory "' + D + '"');
+importScripts(D + 'chicken-compiler.js' + q);
 
 let modP = null;
 
 async function compileModule() {
-  const url = 'chicken-compiler.wasm' + q;
+  const url = D + 'chicken-compiler.wasm' + q;
   if (WebAssembly.compileStreaming) {
     try { return await WebAssembly.compileStreaming(fetch(url)); }
     catch (e) { /* a server without the application/wasm type: retry below */ }

@@ -40,6 +40,13 @@
 // Exits with status 1 if any check fails or the page logs a console error
 // (or, for a build with exnref, the warning about legacy exception
 // handling that Firefox gives).
+//
+// A page with two builds (make wasm WASM_WEB_ARCHS="wasm64 wasm32") is
+// tested on wasm64, which both browsers run, and then on wasm32 as an
+// engine without memory64 or exnref gets it, and as ?arch= and the
+// Settings choose it; the warnings of the wasm32 pages, with legacy
+// exception handling, are only counted.  (SHOTS also gets screenshots
+// of the wasm32 page.)
 
 import { createRequire } from 'node:module';
 import http from 'node:http';
@@ -50,14 +57,22 @@ const require = createRequire(import.meta.url);
 const pw = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const webDir = path.resolve(process.argv[2] || 'web');
 const shots = process.env.SHOTS ? path.resolve(process.env.SHOTS) : null;
-// the architecture the page was built for (make wasm WASM_ARCH=...)
-const arch = (/<meta name="chicken-wasm-arch" content="([^"]*)">/
-              .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
-if (arch !== 'wasm64' && arch !== 'wasm32') throw new Error('no wasm arch in ' + webDir + '/index.html');
-// how setjmp/longjmp were built (make wasm WASM_SJLJ=...): exnref, legacy or none
-const eh = (/<meta name="chicken-wasm-eh" content="([^"]*)">/
-            .exec(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
-if (!['exnref', 'legacy', 'none'].includes(eh)) throw new Error('no wasm EH mode in ' + webDir + '/index.html');
+// The builds of the page (make wasm WASM_ARCH=... WASM_WEB_ARCHS=...):
+// "ARCH:EH" each in chicken-wasm-builds, EH being how setjmp/longjmp were
+// built (WASM_SJLJ): exnref, legacy or none.  A page from before
+// WASM_WEB_ARCHS has the one of chicken-wasm-arch and chicken-wasm-eh.
+const html = fs.readFileSync(path.join(webDir, 'index.html'), 'utf8');
+const pageMeta = name => (new RegExp('<meta name="' + name + '" content="([^"]*)">').exec(html) || [])[1];
+const builds = (pageMeta('chicken-wasm-builds') || pageMeta('chicken-wasm-arch') + ':' + pageMeta('chicken-wasm-eh'))
+  .split(/\s+/).filter(Boolean).map(w => { const [a, e] = w.split(':'); return { arch: a, eh: e }; });
+for (const b of builds) {
+  if (b.arch !== 'wasm64' && b.arch !== 'wasm32') throw new Error('no wasm arch in ' + webDir + '/index.html');
+  if (!['exnref', 'legacy', 'none'].includes(b.eh)) throw new Error('no wasm EH mode in ' + webDir + '/index.html');
+}
+const dual = builds.length > 1;
+// the build the page runs in a browser with every feature
+const { arch, eh } = builds.find(b => b.arch === 'wasm64') || builds[0];
+const other = dual ? builds.find(b => b.arch !== arch) : null;
 const browsers = (process.env.BROWSERS || 'chromium').split(',').map(s => s.trim()).filter(Boolean);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -90,14 +105,16 @@ async function check(name, f) {
 function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
 
 // WebAssembly.validate rejecting the page's probe for a feature (see
-// missingFeature in repl.js), as in an engine without it: a memory section
-// declaring a 64-bit memory (flags 0x04 or 0x05), or a try_table.
+// PROBES in repl.js), as in an engine without it: a memory section
+// declaring a 64-bit memory (flags 0x04 or 0x05), a try_table, or a
+// legacy try ("legacy").
 async function lackFeature(page, feature) {
   await page.addInitScript(feature => {
     const lacks = b => {
       for (let i = 8; i + 3 < b.length; i++) {
         if (feature === 'memory64' && b[i] === 0x05 && b[i + 2] === 0x01 && (b[i + 3] & ~1) === 0x04) return true;
         if (feature === 'exnref' && b[i] === 0x1f && b[i + 1] === 0x40 && b[i + 2] === 0x00 && b[i + 3] === 0x0b) return true;
+        if (feature === 'legacy' && b[i] === 0x06 && b[i + 1] === 0x40 && b[i + 2] === 0x0b && b[i + 3] === 0x0b) return true;
       }
       return false;
     };
@@ -169,6 +186,8 @@ async function runBrowser(name) {
     if (isLegacyEh(m)) legacyEh.push(m.text());
   }); });
   page.on('requestfailed', r => errors.push('request failed: ' + r.url()));
+  const mainWasm = [];
+  page.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) mainWasm.push(r.url()); });
 
   const P = name + ': ';
   const term = () => page.$eval('#term', e => e.textContent);
@@ -215,6 +234,22 @@ async function runBrowser(name) {
     await evalTo('(import (chicken platform) (chicken fixnum))', /#;\d+> $/);
     await evalTo('(list (machine-type) (feature? #:64bit) most-positive-fixnum)', /\n\(.*\)\n#;\d+> $/);
     assert((await since()).includes('\n' + want + '\n'), 'got: ' + await since());
+  });
+
+  // the modules of a build: beside the page for its first one, else in
+  // the directory named after its architecture
+  const dirOf = a => (a === builds[0].arch ? '' : a + '/');
+  const fromDir = (urls, a) => urls.every(u => new URL(u, base).pathname.startsWith('/' + dirOf(a) + 'chicken-') &&
+                                         new URL(u, base).pathname.split('/').length === (dirOf(a) ? 3 : 2));
+
+  if (dual) await check(P + `two builds: the page runs ${arch}, shows it, and loads only its modules`, async () => {
+    assert(await page.evaluate(() => ChickenPage.ARCH) === arch, 'ChickenPage.ARCH');
+    assert(await page.isVisible('#arch') && await page.textContent('#arch') === arch, 'chip: ' + await page.textContent('#arch'));
+    assert(mainWasm.length && fromDir(mainWasm, arch), 'wasm fetched: ' + mainWasm.join(' '));
+    const ws = page.workers().map(w => w.url()).filter(u => /repl-worker/.test(u));
+    assert(ws.length === 1 && (dirOf(arch) ? new URL(ws[0], base).searchParams.get('dir') === dirOf(arch)
+                                         : !new URL(ws[0], base).searchParams.has('dir')), 'worker ' + ws);
+    assert(!/running the|ignoring/.test(await term()), 'no note about the choice: ' + (await term()).slice(0, 300));
   });
 
   await check(P + 'multi-line input with Shift+Enter', async () => {
@@ -1452,74 +1487,387 @@ async function runBrowser(name) {
     await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
     assert(/served over HTTP/.test(await f.textContent('#notice-text')), 'notice: ' + await f.textContent('#notice-text'));
     await assertLockedOut(f, 'file://');
+    // a page with two builds does not claim to run one
+    if (dual) {
+      assert(await f.isHidden('#arch'), 'file://: no build chip');
+      assert(!/Running/.test(await f.textContent('#set-arch-help')), 'file://: help ' + await f.textContent('#set-arch-help'));
+    }
     // the notebook says so too, and starts nothing
     await assertNotebookLockedOut(f, 'file://', /served over HTTP.*file:\/\/ URLs/);
+    if (dual) assert(await f.textContent('#nb-info') === '', 'file://: nb-info ' + await f.textContent('#nb-info'));
     await f.close();
   });
 
-  // Engines without memory64 (as Safari 26 and 27): the page must say so
-  // for a wasm64 build, and still start a wasm32 build.
-  await check(P + `without memory64 the ${arch} page ` +
-              (arch === 'wasm64' ? 'explains what it needs' : 'still works'), async () => {
-    const f = await context.newPage();
-    const wasmFetched = [];
-    f.on('pageerror', e => errors.push('no-memory64 pageerror: ' + e.message));
-    f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
-    await lackFeature(f, 'memory64');
-    await f.goto(base + 'index.html');
-    if (arch === 'wasm64') {
-      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
-      assert(/64-bit WebAssembly \(memory64\)/.test(await f.textContent('#notice-text')),
-             'notice: ' + await f.textContent('#notice-text'));
-      assert(/WASM_ARCH=wasm32/.test(await f.textContent('#term')), 'term suggests a wasm32 build');
-      assert(new RegExp('Chrome or Edge ' + (eh === 'exnref' ? 137 : 133)).test(await f.textContent('#term')),
-             'browser versions: ' + await f.textContent('#term'));
-      await assertLockedOut(f, 'no memory64');
-      // Ctrl+Enter in the editor must not get past the disabled Compile button
-      await f.click('#tab-compile');
-      await f.click('#src');
-      await f.keyboard.press('Control+Enter');
-      await new Promise(r => setTimeout(r, 500));
-      assert(await f.isDisabled('#compile'), 'compile still disabled after Ctrl+Enter');
-      assert(/memory64/.test(await f.textContent('#cstatus')), 'cstatus: ' + await f.textContent('#cstatus'));
-      await assertNotebookLockedOut(f, 'no memory64', /memory64.*Chrome or Edge.*WASM_ARCH=wasm32/);
-      assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
-    } else {
+  if (!dual) {
+    // Engines without memory64 (as Safari 26 and 27): the page must say so
+    // for a wasm64 build, and still start a wasm32 build.
+    await check(P + `without memory64 the ${arch} page ` +
+                (arch === 'wasm64' ? 'explains what it needs' : 'still works'), async () => {
+      const f = await context.newPage();
+      const wasmFetched = [];
+      f.on('pageerror', e => errors.push('no-memory64 pageerror: ' + e.message));
+      f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
+      await lackFeature(f, 'memory64');
+      await f.goto(base + 'index.html');
+      if (arch === 'wasm64') {
+        await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
+        assert(/64-bit WebAssembly \(memory64\)/.test(await f.textContent('#notice-text')),
+               'notice: ' + await f.textContent('#notice-text'));
+        assert(/WASM_ARCH=wasm32/.test(await f.textContent('#term')), 'term suggests a wasm32 build');
+        assert(new RegExp('Chrome or Edge ' + (eh === 'exnref' ? 137 : 133)).test(await f.textContent('#term')),
+               'browser versions: ' + await f.textContent('#term'));
+        await assertLockedOut(f, 'no memory64');
+        // Ctrl+Enter in the editor must not get past the disabled Compile button
+        await f.click('#tab-compile');
+        await f.click('#src');
+        await f.keyboard.press('Control+Enter');
+        await new Promise(r => setTimeout(r, 500));
+        assert(await f.isDisabled('#compile'), 'compile still disabled after Ctrl+Enter');
+        assert(/memory64/.test(await f.textContent('#cstatus')), 'cstatus: ' + await f.textContent('#cstatus'));
+        await assertNotebookLockedOut(f, 'no memory64', /memory64.*Chrome or Edge.*WASM_ARCH=wasm32/);
+        assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
+      } else {
+        await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+        await f.click('#tab-notebook');
+        await f.click('#nb-end-code');
+        await f.keyboard.type('(+ 1 2)');
+        await f.keyboard.press('Control+Enter');
+        await f.waitForFunction(() => [...document.querySelectorAll('#nb-cells .nb-value')].some(e => e.textContent === '3'),
+                                null, { timeout: 60000 });
+      }
+      await f.close();
+    });
+
+    // Engines without exnref (Chrome 133 to 136, Safari before 18.4): a
+    // build with WASM_SJLJ=wasm must say so, any other must still start.
+    await check(P + `without exnref the ${arch} ${eh}-EH page ` +
+                (eh === 'exnref' ? 'explains what it needs' : 'still works'), async () => {
+      const f = await context.newPage();
+      const wasmFetched = [];
+      f.on('pageerror', e => errors.push('no-exnref pageerror: ' + e.message));
+      f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
+      await lackFeature(f, 'exnref');
+      await f.goto(base + 'index.html');
+      if (eh === 'exnref') {
+        await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
+        assert(/exception handling with exnref/.test(await f.textContent('#notice-text')),
+               'notice: ' + await f.textContent('#notice-text'));
+        assert(/Chrome or Edge 137/.test(await f.textContent('#term')) && /WASM_SJLJ=wasm-legacy/.test(await f.textContent('#term')),
+               'term: ' + await f.textContent('#term'));
+        await assertLockedOut(f, 'no exnref');
+        await assertNotebookLockedOut(f, 'no exnref', /exnref.*Chrome or Edge 137.*WASM_SJLJ=wasm-legacy/);
+        assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
+      } else {
+        await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+      }
+      await f.close();
+    });
+
+    // a page with one build ignores ?arch= naming another, and says so
+    await check(P + `?arch= naming another build: the ${arch} page says it has only ${arch}`, async () => {
+      const o = arch === 'wasm64' ? 'wasm32' : 'wasm64';
+      const f = await context.newPage();
+      f.on('pageerror', e => errors.push('?arch pageerror: ' + e.message));
+      await f.goto(base + 'index.html?arch=' + o);
       await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+      await f.waitForFunction(() => /ignoring/.test(document.getElementById('term').textContent), null, { timeout: 10000 });
+      const t = await f.textContent('#term');
+      assert(t.includes('; ignoring ?arch=' + o + ': this page has only the ' + arch + ' build.'), 'note: ' + t.slice(0, 300));
+      assert(await f.isHidden('#arch') && await f.isHidden('#set-arch'), 'no build chip or setting');
+      await f.close();
+    });
+  } else {
+    // A page with two builds, in pages of the same context (and storage)
+    // as an engine without some features would get it.  Their console
+    // errors count; their warnings about legacy exception handling (the
+    // wasm32 build) are only counted.
+    let otherWarnings = 0;
+    async function openPage(lacking, query = '', init = null) {
+      const f = await context.newPage();
+      const what = '[' + (lacking.length ? 'no ' + lacking.join(', no ') : 'all features') + query +
+        (init ? ', ' + init.name : '') + '] ';
+      const wasm = [];
+      f.on('pageerror', e => errors.push(what + 'pageerror: ' + e.message));
+      const onConsole = m => {
+        if (m.type() === 'error') errors.push(what + 'console: ' + m.text());
+        if (isLegacyEh(m)) otherWarnings++;
+      };
+      f.on('console', onConsole);
+      f.on('worker', w => { if (typeof w.on === 'function') w.on('console', onConsole); });
+      f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasm.push(r.url()); });
+      f.on('requestfailed', r => errors.push(what + 'request failed: ' + r.url()));
+      for (const x of lacking) await lackFeature(f, x);
+      if (init) await f.addInitScript(init);
+      await f.goto(base + 'index.html' + query);
+      return { f, wasm, what };
+    }
+    const fState = (f, st, timeout = 60000) =>
+      f.waitForFunction(s => document.getElementById('status').dataset.state === s, st, { timeout });
+    async function fEval(f, text, re) {
+      const at = (await f.textContent('#term')).length;
+      await f.fill('#line', text);
+      await f.press('#line', 'Enter');
+      await f.waitForFunction(([src, fl, n]) => new RegExp(src, fl).test(document.getElementById('term').textContent.slice(n)),
+                              [re.source, re.flags, at], { timeout: 20000 });
+      await fState(f, 'ready', 20000);
+      return (await f.textContent('#term')).slice(at);
+    }
+    const MACHINE = { wasm64: '(wasm64 #t 4611686018427387903)', wasm32: '(wasm32 #f 1073741823)' };
+    // the REPL of page f runs build a, which the header and the API show
+    async function runs(f, a, what) {
+      await fState(f, 'ready');
+      await fEval(f, '(import (chicken platform) (chicken fixnum))', /#;\d+> $/);
+      const out = await fEval(f, '(list (machine-type) (feature? #:64bit) most-positive-fixnum)', /\n\(.*\)\n#;\d+> $/);
+      assert(out.includes('\n' + MACHINE[a] + '\n'), what + 'REPL: ' + out);
+      assert(await f.evaluate(() => ChickenPage.ARCH) === a, what + 'ChickenPage.ARCH');
+      assert(await f.isVisible('#arch') && await f.textContent('#arch') === a, what + 'chip: ' + await f.textContent('#arch'));
+    }
+    // (Firefox gives worker URLs as written, relative)
+    const workerDirs = f => f.workers().map(w => new URL(w.url(), base))
+      .filter(u => /(repl|compiler)-worker\.js$/.test(u.pathname)).map(u => u.searchParams.get('dir') || '');
+
+    await check(P + `two builds: without memory64 the page runs ${other.arch}: REPL, notebook and compiler`, async () => {
+      const { f, wasm, what } = await openPage(['memory64']);
+      await runs(f, other.arch, what);
+      assert(new RegExp('; running the ' + other.arch + ' build: this browser lacks 64-bit WebAssembly \\(memory64\\), ' +
+                        'which the wasm64 build needs\\.').test(await f.textContent('#term')),
+             what + 'note: ' + (await f.textContent('#term')).slice(0, 400));
+      if (shots) {
+        fs.mkdirSync(shots, { recursive: true });
+        await f.screenshot({ path: path.join(shots, `${name}-${other.arch}-repl-desktop.png`) });
+      }
+      // the notebook's kernel runs the same build
       await f.click('#tab-notebook');
       await f.click('#nb-end-code');
-      await f.keyboard.type('(+ 1 2)');
+      await f.keyboard.type('(import (chicken platform) (chicken fixnum)) (list (machine-type) most-positive-fixnum)');
       await f.keyboard.press('Control+Enter');
-      await f.waitForFunction(() => [...document.querySelectorAll('#nb-cells .nb-value')].some(e => e.textContent === '3'),
-                              null, { timeout: 60000 });
-    }
-    await f.close();
-  });
+      const want = MACHINE[other.arch].replace(/ #[tf]/, '');
+      await f.waitForFunction(w => [...document.querySelectorAll('#nb-cells .nb-value')].some(e => e.textContent === w),
+                              want, { timeout: 60000 });
+      assert(new RegExp('^CHICKEN .* · ' + other.arch + '$').test(await f.textContent('#nb-info')),
+             what + 'nb-info: ' + await f.textContent('#nb-info'));
+      if (shots) await f.screenshot({ path: path.join(shots, `${name}-${other.arch}-notebook-desktop.png`) });
+      // and so does the compiler
+      await f.click('#tab-compile');
+      await f.fill('#src', '(print 1)');
+      await f.click('#compile');
+      await f.waitForFunction(() => /ok|fail/.test(document.getElementById('cstatus').className), null, { timeout: 60000 });
+      assert(/ok/.test(await f.getAttribute('#cstatus', 'class')) && /C_toplevel/.test(await f.textContent('#cout')),
+             what + 'compile: ' + await f.textContent('#cstatus'));
+      if (shots) await f.screenshot({ path: path.join(shots, `${name}-${other.arch}-compile-desktop.png`) });
+      assert(wasm.some(u => /chicken-repl\.wasm/.test(u)) && wasm.some(u => /chicken-compiler\.wasm/.test(u)) &&
+             fromDir(wasm, other.arch) && wasm.every(u => /\?v=/.test(u)), what + 'wasm fetched: ' + wasm.join(' '));
+      const dirs = workerDirs(f);
+      assert(dirs.length === 3 && dirs.every(d => d === dirOf(other.arch)), what + 'worker dirs: ' + JSON.stringify(dirs));
+      if (shots) {
+        await f.click('#tab-repl');
+        await f.click('#settings-btn');
+        await f.screenshot({ path: path.join(shots, `${name}-${other.arch}-settings-desktop.png`) });
+        await f.keyboard.press('Escape');
+        for (const width of [360, 320]) {
+          await f.setViewportSize({ width, height: 740 });
+          await f.screenshot({ path: path.join(shots, `${name}-${other.arch}-repl-${width}.png`) });
+        }
+      }
+      await f.setViewportSize({ width: 320, height: 740 });
+      const o = await f.evaluate(() => [document.documentElement.scrollWidth, document.documentElement.clientWidth,
+                                       document.querySelector('.top').scrollWidth, document.querySelector('.top').clientWidth]);
+      assert(o[0] <= o[1] && o[2] <= o[3], what + 'no horizontal scroll at 320 px: ' + o);
+      await f.close();
+    });
 
-  // Engines without exnref (Chrome 133 to 136, Safari before 18.4): a
-  // build with WASM_SJLJ=wasm must say so, any other must still start.
-  await check(P + `without exnref the ${arch} ${eh}-EH page ` +
-              (eh === 'exnref' ? 'explains what it needs' : 'still works'), async () => {
-    const f = await context.newPage();
-    const wasmFetched = [];
-    f.on('pageerror', e => errors.push('no-exnref pageerror: ' + e.message));
-    f.on('request', r => { if (/\.wasm(\?|$)/.test(r.url())) wasmFetched.push(r.url()); });
-    await lackFeature(f, 'exnref');
-    await f.goto(base + 'index.html');
-    if (eh === 'exnref') {
-      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'error', null, { timeout: 10000 });
-      assert(/exception handling with exnref/.test(await f.textContent('#notice-text')),
-             'notice: ' + await f.textContent('#notice-text'));
-      assert(/Chrome or Edge 137/.test(await f.textContent('#term')) && /WASM_SJLJ=wasm-legacy/.test(await f.textContent('#term')),
-             'term: ' + await f.textContent('#term'));
-      await assertLockedOut(f, 'no exnref');
-      await assertNotebookLockedOut(f, 'no exnref', /exnref.*Chrome or Edge 137.*WASM_SJLJ=wasm-legacy/);
-      assert(!wasmFetched.length, 'fetched ' + wasmFetched.join(' '));
-    } else {
-      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
-    }
-    await f.close();
-  });
+    await check(P + `two builds: without exnref the page runs ${other.arch}`, async () => {
+      const { f, what } = await openPage(['exnref']);
+      await runs(f, other.arch, what);
+      assert(/running the .* build: this browser lacks WebAssembly exception handling with exnref/.test(await f.textContent('#term')),
+             what + 'note: ' + (await f.textContent('#term')).slice(0, 400));
+      await f.close();
+    });
+
+    // no exception handling at all: neither build runs
+    await check(P + 'two builds: without exnref and legacy exception handling the page explains it', async () => {
+      const { f, wasm, what } = await openPage(['exnref', 'legacy']);
+      await fState(f, 'error', 10000);
+      const notice = await f.textContent('#notice-text');
+      assert(/^this browser runs no build of this page: wasm64 needs WebAssembly exception handling with exnref; wasm32 needs WebAssembly exception handling \(the legacy instructions\)\.$/
+             .test(notice), what + 'notice: ' + notice);
+      assert(/Use Chrome or Edge 95, Firefox 100, Safari 15\.4 or later\./.test(await f.textContent('#term')),
+             what + 'term: ' + await f.textContent('#term'));
+      assert(await f.isHidden('#arch'), what + 'no build chip');
+      await assertLockedOut(f, 'no EH');
+      await assertNotebookLockedOut(f, 'no EH', /runs no build of this page.*Chrome or Edge 95/);
+      assert(!wasm.length, what + 'fetched ' + wasm.join(' '));
+      await f.close();
+    });
+
+    await check(P + `two builds: ?arch= picks ${other.arch} or ${arch}, or says why it cannot`, async () => {
+      let { f, wasm, what } = await openPage([], '?arch=' + other.arch);
+      await runs(f, other.arch, what);
+      assert((await f.textContent('#term')).includes('; running the ' + other.arch + ' build, as ?arch=' + other.arch + ' asks.'),
+             what + 'note: ' + (await f.textContent('#term')).slice(0, 300));
+      assert(fromDir(wasm, other.arch), what + 'wasm fetched: ' + wasm.join(' '));
+      await f.close();
+      ({ f, what } = await openPage([], '?arch=' + arch));
+      await runs(f, arch, what);
+      await f.close();
+      // a build this browser cannot run: the note, and the other build
+      ({ f, what } = await openPage(['memory64'], '?arch=wasm64'));
+      await runs(f, 'wasm32', what);
+      const t = await f.textContent('#term');
+      assert(t.includes('; ignoring ?arch=wasm64: this browser lacks 64-bit WebAssembly (memory64), which the wasm64 build needs.\n' +
+                        '; running the wasm32 build instead.'), what + 'note: ' + t.slice(0, 400));
+      await f.close();
+      // not a build of the page
+      ({ f, what } = await openPage([], '?arch=wasm16'));
+      await runs(f, arch, what);
+      assert((await f.textContent('#term')).includes('; ignoring ?arch=wasm16: this page has the ' +
+                                                    builds.map(b => b.arch).join(' and ') + ' builds.'),
+             what + 'note: ' + (await f.textContent('#term')).slice(0, 300));
+      await f.close();
+    });
+
+    // the Settings choice persists, ?arch= overrides it, Automatic again
+    await check(P + 'two builds: the Settings choose the build; ?arch= overrides them', async () => {
+      let { f, what } = await openPage([]);
+      await runs(f, arch, what);
+      await f.click('#settings-btn');
+      assert(await f.isVisible('#set-arch') && await f.isChecked('#set-arch-auto'), what + 'Automatic checked');
+      assert(/Automatic runs wasm64 where the browser supports it, else wasm32/.test(await f.textContent('#set-arch-help')),
+             what + 'help: ' + await f.textContent('#set-arch-help'));
+      await f.check(`input[name="arch"][value="${other.arch}"]`);
+      await Promise.all([f.waitForEvent('load'), f.click('#settings button[value="save"]')]);
+      await runs(f, other.arch, what + 'after Save: ');
+      assert(await f.evaluate(() => localStorage.getItem('chicken-repl.arch')) === other.arch, what + 'stored');
+      assert((await f.textContent('#term')).includes('; running the ' + other.arch + ' build, as the build chosen in the Settings asks.'),
+             what + 'note: ' + (await f.textContent('#term')).slice(0, 300));
+      await f.close();
+      // ?arch= wins over the Settings; ?arch=auto chooses as without them
+      ({ f, what } = await openPage([], '?arch=' + arch));
+      await runs(f, arch, what);
+      await f.close();
+      // a save that does not change the build running keeps the page
+      async function saveKeeps(f, what) {
+        await f.evaluate(() => { window.__same = 1; });
+        await f.click('#settings button[value="save"]');
+        await f.waitForTimeout(500);
+        await fState(f, 'ready');
+        assert(await f.evaluate(() => window.__same) === 1, what + 'reloaded');
+      }
+      ({ f, what } = await openPage([], '?arch=auto'));
+      await runs(f, arch, what);
+      // saving Automatic, which runs the same build, keeps the page and its ?arch=
+      await f.click('#settings-btn');
+      assert(await f.isChecked(`input[name="arch"][value="${other.arch}"]`), what + 'the stored choice checked');
+      await f.check('#set-arch-auto');
+      await saveKeeps(f, what + 'Automatic: ');
+      assert(/\?arch=auto$/.test(f.url()), what + 'url ' + f.url());
+      await runs(f, arch, what + 'after Save: ');
+      assert(await f.evaluate(() => localStorage.getItem('chicken-repl.arch')) === 'auto', what + 'stored auto');
+      await f.close();
+      // with ?arch= naming the other build, saving other settings keeps
+      // the page: its ?arch=, its build, the uploads and the Compile source
+      ({ f, what } = await openPage([], '?arch=' + other.arch));
+      await runs(f, other.arch, what);
+      await f.setInputFiles('#upload', { name: 'kept.scm', mimeType: 'text/plain', buffer: Buffer.from('(define kept 7)\n') });
+      await f.waitForFunction(() => /uploaded kept\.scm/.test(document.getElementById('term').textContent), null, { timeout: 10000 });
+      await f.click('#tab-compile');
+      await f.fill('#src', '(define (my-work) 42)');
+      await f.click('#tab-repl');
+      await f.click('#settings-btn');
+      assert(await f.isChecked('#set-arch-auto'), what + 'Automatic checked');
+      await saveKeeps(f, what + 'other settings: ');
+      assert(new RegExp('\\?arch=' + other.arch + '$').test(f.url()), what + 'url ' + f.url());
+      await runs(f, other.arch, what + 'after Save: ');
+      assert(await f.inputValue('#src') === '(define (my-work) 42)', what + 'src ' + await f.inputValue('#src'));
+      await fEval(f, ',l kept.scm', /#;\d+> $/);
+      assert((await fEval(f, 'kept', /\n\d+\n#;\d+> $/)).includes('\n7\n'), what + 'upload resent');
+      // choosing the build running there keeps the page too; another one
+      // loads it again, without ?arch=
+      await f.click('#settings-btn');
+      await f.check(`input[name="arch"][value="${other.arch}"]`);
+      await saveKeeps(f, what + 'the same build: ');
+      await f.click('#settings-btn');
+      await f.check(`input[name="arch"][value="${arch}"]`);
+      await Promise.all([f.waitForEvent('load'), f.click('#settings button[value="save"]')]);
+      assert(!/arch=/.test(f.url()), what + 'url ' + f.url());
+      await runs(f, arch, what + 'after choosing ' + arch + ': ');
+      assert(await f.evaluate(() => localStorage.getItem('chicken-repl.arch')) === arch, what + 'stored ' + arch);
+      // and back to Automatic (the same build): no reload
+      await f.click('#settings-btn');
+      await f.check('#set-arch-auto');
+      await saveKeeps(f, what + 'Automatic again: ');
+      assert(await f.evaluate(() => localStorage.getItem('chicken-repl.arch')) === 'auto', what + 'stored auto');
+      await f.close();
+    });
+
+    // a build the browser is known not to run cannot be chosen; one it
+    // turns out not to run (the legacy probe waits for the choice) is
+    // refused with a note, keeping the page
+    await check(P + 'two builds: the Settings offer only the builds this browser runs', async () => {
+      let { f, what } = await openPage(['memory64']);
+      await runs(f, 'wasm32', what);
+      await f.click('#settings-btn');
+      assert(await f.isDisabled('input[name="arch"][value="wasm64"]') &&
+             await f.isEnabled('input[name="arch"][value="wasm32"]'), what + 'wasm64 disabled');
+      assert((await f.textContent('#set-arch-help')).endsWith(
+        ' This browser cannot run wasm64: it lacks 64-bit WebAssembly (memory64).'),
+             what + 'help: ' + await f.textContent('#set-arch-help'));
+      await f.keyboard.press('Escape');
+      await f.close();
+      ({ f, what } = await openPage(['legacy']));
+      await runs(f, 'wasm64', what);
+      await f.click('#settings-btn');
+      assert(await f.isEnabled('input[name="arch"][value="wasm32"]'), what + 'wasm32 offered before its probe');
+      await f.check('input[name="arch"][value="wasm32"]');
+      await f.evaluate(() => { window.__same = 1; });
+      await f.click('#settings button[value="save"]');
+      await f.waitForFunction(() => /; restarting…/.test(document.getElementById('term').textContent), null, { timeout: 10000 });
+      await runs(f, 'wasm64', what + 'after Save: ');
+      assert(await f.evaluate(() => window.__same) === 1, what + 'reloaded');
+      const t = await f.textContent('#term');
+      assert(t.includes('; ignoring the build chosen in the Settings: this browser lacks WebAssembly exception handling ' +
+                        '(the legacy instructions), which the wasm32 build needs.\n; restarting…\n'),
+             what + 'note: ' + JSON.stringify(t.slice(-600)));
+      await f.click('#settings-btn');
+      assert(await f.isDisabled('input[name="arch"][value="wasm32"]') &&
+             await f.isChecked('input[name="arch"][value="wasm32"]'), what + 'wasm32 disabled after its probe, still chosen');
+      await f.check('#set-arch-auto');
+      await f.click('#settings button[value="save"]');
+      // (the dialog's close event comes after the click)
+      await f.waitForFunction(() => localStorage.getItem('chicken-repl.arch') === 'auto', null, { timeout: 10000 });
+      await runs(f, 'wasm64', what + 'after Automatic: ');
+      assert(await f.evaluate(() => window.__same) === 1, what + 'reloaded after Automatic');
+      await f.close();
+    });
+
+    // without storage the build chosen in the Settings goes in ?arch=
+    await check(P + 'two builds: without storage the Settings choose the build through ?arch=', async () => {
+      const noStorage = () => {
+        Object.defineProperty(window, 'localStorage', {
+          configurable: true, get() { throw new DOMException('blocked', 'SecurityError'); } });
+      };
+      const { f, what } = await openPage([], '', noStorage);
+      await runs(f, arch, what);
+      await f.click('#settings-btn');
+      assert(/reloads the page with \?arch=, as this browser keeps no settings\./.test(await f.textContent('#set-arch-help')),
+             what + 'help: ' + await f.textContent('#set-arch-help'));
+      await f.check(`input[name="arch"][value="${other.arch}"]`);
+      await Promise.all([f.waitForEvent('load'), f.click('#settings button[value="save"]')]);
+      assert(new RegExp('\\?arch=' + other.arch + '$').test(f.url()), what + 'url ' + f.url());
+      await runs(f, other.arch, what + 'after Save: ');
+      await f.click('#settings-btn');
+      assert(await f.isChecked(`input[name="arch"][value="${other.arch}"]`), what + 'the choice checked');
+      await f.check('#set-arch-auto');
+      await Promise.all([f.waitForEvent('load'), f.click('#settings button[value="save"]')]);
+      assert(/\?arch=auto$/.test(f.url()), what + 'url ' + f.url());
+      await runs(f, arch, what + 'after Automatic: ');
+      await f.close();
+    });
+
+    await check(P + `two builds: legacy exception handling warnings of the ${other.arch} pages counted`, async () => {
+      console.log('  # ' + otherWarnings + ' legacy exception handling warnings on the ' + other.arch + ' pages');
+    });
+  }
 
   await check(P + 'zero console errors', async () => {
     assert(!errors.length, errors.join('\n'));

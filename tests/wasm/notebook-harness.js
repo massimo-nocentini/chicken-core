@@ -23,7 +23,7 @@
 // OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-// usage: node [v8 flags] notebook-harness.js WEB_DIR [--eggs]
+// usage: node [v8 flags] notebook-harness.js WEB_DIR [--eggs] [--arch=A]
 //
 // WEB_DIR is a built web directory (build-wasm/web).  Part K drives the
 // kernel ("csi -n -e (##webnb#kernel)") through repl-driver.js: it posts
@@ -34,6 +34,12 @@
 // egg case runs.  Exits with status 1 if any case fails.  Run it once
 // in default node and once with "--liftoff --no-wasm-tier-up
 // --stack-size=900".
+//
+// With --arch=A, the modules tested are those of the architecture A of
+// a page with several (make wasm WASM_WEB_ARCHS="wasm64 wasm32"), in
+// WEB_DIR/A unless A is the page's own (its chicken-wasm-arch); then
+// Part C's repl-worker.js gets that directory in its dir= query, as on
+// the page.
 
 'use strict';
 const { Worker } = require('worker_threads');
@@ -42,16 +48,27 @@ const path = require('path');
 
 const webDir = path.resolve(process.argv[2] || 'web');
 const eggsOnly = process.argv.includes('--eggs');
-const createChickenRepl = require(path.join(webDir, 'chicken-repl.js'));
+// the page's own architecture and those it has (chicken-wasm-builds,
+// "ARCH:EH" each); --arch=A selects the modules of A
+const pageMeta = (html, name) => (new RegExp('<meta name="' + name + '" content="([^"]*)">').exec(html) || [])[1];
+function moduleArch(html) {
+  const own = pageMeta(html, 'chicken-wasm-arch');
+  const want = (process.argv.find(a => /^--arch=/.test(a)) || '').slice(7) || own;
+  const has = (pageMeta(html, 'chicken-wasm-builds') || own || '').split(/\s+/).map(w => w.split(':')[0]);
+  if (!has.includes(want)) throw new Error('the page in ' + webDir + ' has no ' + want + ' build (only ' + has.join(', ') + ')');
+  return { arch: want, sub: want === own ? '' : want + '/' };
+}
+// the architecture of the modules (make wasm WASM_ARCH=...); the eggs
+// lane builds no index.html
+const { arch, sub } = eggsOnly ? { arch: undefined, sub: '' }
+  : moduleArch(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8'));
+const createChickenRepl = require(path.join(webDir, sub, 'chicken-repl.js'));
 const srcWeb = path.join(__dirname, '..', '..', 'emscripten', 'web');
 const Driver = require(path.join(srcWeb, 'repl-driver.js'));
 const Kernel = require(path.join(srcWeb, 'nb-kernel.js'));
 const { BUSY, WAITING, SLEEPING, IDLE } = Driver;
-const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(webDir, 'chicken-repl.wasm')));
-// the architecture the page was built for (make wasm WASM_ARCH=...);
-// the eggs lane builds no index.html
-const arch = (/<meta name="chicken-wasm-arch" content="([^"]*)">/
-              .exec(eggsOnly ? '' : fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')) || [])[1];
+const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(webDir, sub, 'chicken-repl.wasm')));
+if (!eggsOnly) console.log('# ' + arch + ' modules in ' + path.join(webDir, sub));
 
 let failures = 0, passes = 0, current = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -662,11 +679,11 @@ const prelude = `
   const fs = require('fs'), path = require('path'), vm = require('vm');
   const dir = workerData.dir;
   globalThis.self = globalThis;
-  self.location = { search: '' };
+  self.location = { search: workerData.sub ? '?dir=' + encodeURIComponent(workerData.sub) : '' };
   globalThis.require = require;
   delete globalThis.module;
   delete globalThis.exports;
-  globalThis.__dirname = dir;
+  globalThis.__dirname = path.join(dir, workerData.sub);
   globalThis.onmessage = null;
   globalThis.importScripts = (...files) => files.forEach(p =>
     vm.runInThisContext(fs.readFileSync(path.join(dir, p.split('?')[0]), 'utf8'), { filename: p }));
@@ -684,7 +701,7 @@ const prelude = `
 
 let workers = 0;
 function createWorker() {
-  const w = new Worker(prelude, { eval: true, workerData: { dir: webDir }, resourceLimits: { stackSizeMb: 1 } });
+  const w = new Worker(prelude, { eval: true, workerData: { dir: webDir, sub }, resourceLimits: { stackSizeMb: 1 } });
   workers++;
   const shim = {
     onmessage: null, onerror: null,

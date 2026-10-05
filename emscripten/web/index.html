@@ -30,7 +30,9 @@
   both.  The Notebook tab (notebook.js, with notebook-lib.js and the
   kernel client nb-kernel.js) runs a second csi worker of its own.  The build rule replaces the BUILD placeholder (in the
   chicken-build meta tag and the URLs below) with a build id, which the
-  page passes as ?v= on every script, worker and .wasm URL.  No external resources: it
+  page passes as ?v= on every script, worker and .wasm URL, and the ARCH,
+  EH and BUILDS ones with the builds the page has (WASM_WEB_ARCHS), of
+  which repl.js picks one.  No external resources: it
   must be served over plain HTTP (make wasm-serve), not from file://. -->
 <html lang="en">
 <head>
@@ -42,6 +44,7 @@
 <meta name="chicken-build" content="@BUILD@">
 <meta name="chicken-wasm-arch" content="@ARCH@">
 <meta name="chicken-wasm-eh" content="@EH@">
+<meta name="chicken-wasm-builds" content="@BUILDS@">
 <title>CHICKEN Scheme REPL</title>
 <link rel="icon" type="image/png" href="chicken.png?v=@BUILD@">
 <style>
@@ -202,6 +205,17 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .pill[data-state="exited"] .dot, .pill[data-state="error"] .dot { background: var(--bad); }
 .pill[data-state="ready"] { color: var(--text); }
 @keyframes pulse { 50% { opacity: .3; } }
+/* the build running, on a page with several (repl.js) */
+.arch {
+  flex: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
 @media (prefers-reduced-motion: reduce) { .pill .dot { animation: none !important; } }
 
 /* tabs and toolbar */
@@ -443,6 +457,7 @@ dialog fieldset { border: 0; margin: 0; padding: 0; display: flex; gap: 14px; fl
 dialog legend { font-weight: 600; margin-bottom: 5px; padding: 0; }
 dialog .check { display: flex; gap: 8px; align-items: flex-start; font-size: 13.5px; }
 dialog .check input, dialog fieldset input { accent-color: var(--accent); }
+dialog fieldset .help { flex-basis: 100%; }
 dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 4px; }
 
 @media (max-width: 640px) {
@@ -880,6 +895,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
       </div>
     </a>
     <span class="grow"></span>
+    <span id="arch" class="arch" hidden></span>
     <span id="status" class="pill" data-state="loading" role="status" aria-live="polite">
       <span class="dot" aria-hidden="true"></span><span id="status-text">loading</span>
     </span>
@@ -1071,6 +1087,13 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
       <label><input type="radio" name="theme" value="auto"> System</label>
       <label><input type="radio" name="theme" value="light"> Light</label>
       <label><input type="radio" name="theme" value="dark"> Dark</label>
+    </fieldset>
+    <fieldset id="set-arch" hidden>
+      <legend>WebAssembly build</legend>
+      <label><input type="radio" name="arch" value="auto" id="set-arch-auto"> Automatic</label>
+      <label><input type="radio" name="arch" value="wasm64"> wasm64</label>
+      <label><input type="radio" name="arch" value="wasm32"> wasm32</label>
+      <span class="help" id="set-arch-help"></span>
     </fieldset>
     <div class="actions">
       <button class="btn" value="cancel" type="submit" formnovalidate>Cancel</button>

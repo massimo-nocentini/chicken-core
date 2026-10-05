@@ -35,6 +35,9 @@
 #              follow it.  Default: what csi reports.
 #   WASM_WEB_DIR, WASM_SDK  the web directory and the staged SDK, if
 #              S0 should check their architecture too
+#   WASM_WEB_OTHER  the other architectures of the web page (make wasm
+#              WASM_WEB_ARCHS=...), whose modules S0 checks in
+#              WASM_WEB_DIR/ARCH
 #   WASM_SMOKE_ALLOW_UNSUPPORTED=1  tolerate "unsupported syscall"
 #              diagnostics (DEBUGBUILD lane only)
 #   WASM_SMOKE_LANE_W=0  skip lane W (worst-case engine stack)
@@ -155,6 +158,13 @@ s0b() {
 	a=$("$NODE" "$TEST_DIR/wasm/wasm-arch.js" "$w") || return 1
 	echo "$(basename "$w") $a"
 	test "x$a" = "x$WASM_ARCH" || return 1
+    done
+    for o in $WASM_WEB_OTHER; do
+	for w in "$WASM_WEB_DIR/$o/chicken-repl.wasm" "$WASM_WEB_DIR/$o/chicken-compiler.wasm"; do
+	    a=$("$NODE" "$TEST_DIR/wasm/wasm-arch.js" "$w") || return 1
+	    echo "$o/$(basename "$w") $a"
+	    test "x$a" = "x$o" || return 1
+	done
     done
 }
 expect_status S0b 0 s0b

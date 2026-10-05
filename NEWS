@@ -273,6 +273,15 @@
     "wasm-legacy" (the default on wasm32, which keeps running in older
     engines) or "emscripten", and is recorded in the build directory.
     The REPL page tells a browser without exnref what the build needs.
+  - `make wasm WASM_WEB_ARCHS="wasm64 wasm32"' builds the REPL page
+    with both architectures: the other one is built in a subdirectory
+    of the build directory, with its own default WASM_SJLJ (legacy
+    exception handling on wasm32) and the same eggs, and its modules
+    go to web/wasm32/.  The page runs wasm64 where the browser has
+    memory64 and exnref, else wasm32 (in Safari 15.4, for example), and
+    else says what is missing; the REPL, the notebook kernel and the
+    compiler all load the build chosen, which the header shows.
+    `?arch=' in the URL or the Settings can ask for either.
 
 6.0.0
 

@@ -45,13 +45,19 @@
  * while more than HIGH characters are unacknowledged.
  *
  * The worker URL's ?v= query (the build id) is passed on to every script
- * and to the .wasm, so a rebuild never mixes cached files. */
+ * and to the .wasm, so a rebuild never mixes cached files.  Its dir=
+ * query names the directory of the modules of the architecture the
+ * page chose (make wasm WASM_WEB_ARCHS=...), such as "wasm32/"; without
+ * it they are beside this script. */
 
 'use strict';
 
-const V = new URLSearchParams(self.location.search).get('v') || '';
+const params = new URLSearchParams(self.location.search);
+const V = params.get('v') || '';
 const q = V ? '?v=' + encodeURIComponent(V) : '';
-importScripts('chicken-repl.js' + q, 'repl-driver.js' + q);
+const D = params.get('dir') || '';
+if (!/^([a-z0-9]+\/)?$/.test(D)) throw new Error('repl-worker.js: bad module directory "' + D + '"');
+importScripts(D + 'chicken-repl.js' + q, 'repl-driver.js' + q);
 
 // A zero-delay macrotask: setTimeout(f, 0) is clamped to 4 ms once nested.
 const ch = new MessageChannel();
@@ -117,7 +123,7 @@ onmessage = async ({ data: m }) => {
     drv = await ChickenReplDriver.start(createChickenRepl, {
       args: m.args, csirc: m.csirc, files: m.files, sliceMs: m.sliceMs,
       wasmModule: m.wasmModule,
-      locateFile: (p, dir) => dir + p + q,
+      locateFile: (p, dir) => dir + D + p + q,
       schedule, later,
       canRun: () => unacked < HIGH,
       onOutput: addOut,

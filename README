@@ -358,7 +358,10 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     node 24.0 with WASM_SJLJ=wasm-legacy), but not in Safari (up to
     27.2; only Safari Technology Preview has memory64 so far).
     "WASM_ARCH=wasm32" builds the 32-bit target instead, which runs
-    in all of them (see WASM_ARCH below).
+    in all of them (see WASM_ARCH below), and
+    WASM_WEB_ARCHS="wasm64 wasm32" a web page with both, which runs
+    wasm64 where the browser can and wasm32 elsewhere (see the web
+    page below).
     The build always happens out of tree, by
     default in "build-wasm"; the host tree's own "chicken"
     translates the Scheme sources, so build the host first:
@@ -388,6 +391,39 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       C" tab that runs the wasm "chicken".  It needs no special
       HTTP headers (no COOP/COEP) but must be served over HTTP, not
       opened from a file:// URL.  Any static web server will do.
+
+      Built with WASM_WEB_ARCHS="wasm64 wasm32", the page has the
+      modules (csi and the compiler) of both: those of WASM_ARCH
+      beside it, the other's in a directory named after it
+      (web/wasm32/ by default).  The other architecture is built in
+      a build directory of its own inside this one (arch-wasm32),
+      with the same settings and eggs, except that the settings whose
+      defaults depend on the architecture take its defaults there
+      (WASM_SJLJ, so wasm32 uses the legacy exception handling,
+      WASM_FRAME_PAD and WASM_MAXIMUM_MEMORY).  The page runs the
+      wasm64 build if the browser validates memory64 and exnref (as
+      it needs with the default WASM_SJLJ), else the wasm32 build if
+      it validates the legacy exception handling instructions, and
+      else says what is missing; the REPL, the notebook kernel and the
+      compiler all load the build chosen.  So it runs wasm64 in
+      Chrome and Edge 137 and Firefox 134 or later, and wasm32 in
+      Chrome and Edge 95 to 136, Firefox 100 to 133 and Safari 15.4
+      or later (the modules need 15.2, the page's dialogs 15.4;
+      Safari was not tested).  The header shows the build that runs,
+      and a note in the REPL says why when it is not the first
+      choice.  "?arch=wasm32" or "?arch=wasm64" in the page's URL
+      asks for a build ("?arch=auto" for the automatic choice), as
+      does the "WebAssembly build" entry of the Settings (kept in the
+      browser), which the URL overrides: choosing a build there other
+      than the one running reloads the page without "?arch=" (with
+      the choice in "?arch=" where the browser keeps no settings),
+      while saving the other settings keeps it.  The Settings do not
+      offer a build the browser is known not to run.  A build the
+      page does not have, or that the browser cannot run, is ignored
+      with a note saying so.  A page with one build ignores these
+      too.  Firefox warns, once for each module
+      it compiles, that the legacy exception handling of the wasm32
+      build is deprecated.
 
       The Notebook tab runs a second csi of its own, started on the
       first visit (what is defined there is not visible in the
@@ -618,6 +654,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       tests/compiler.scm), except bignum arithmetic, which was
       about 20% faster with 64-bit digits.
 
+    WASM_WEB_ARCHS
+      The architectures of the web page (default: WASM_ARCH alone),
+      which must include WASM_ARCH; when only this is given,
+      WASM_ARCH is its first one.  "wasm64 wasm32" builds the other
+      one too, for the page only (see build-wasm/web above).  It is
+      recorded apart from the other settings: changing it builds or
+      removes the other architecture's modules, and rebuilds only the
+      page's index.html here.  The second build compiles the runtime library and the
+      page's modules once more, and the page takes about twice the
+      space (21 MB instead of 11).
+
     WASM_STACK_SIZE
       The link-time stack size, which also bounds the nursery
       (default 4194304 bytes).  A "-:s" nursery larger than fits
@@ -688,12 +735,15 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     "make wasm-check" runs tests/wasm-smoke.sh (which first checks
     that the tools, the page's modules and a program compiled with
-    csc-wasm are all of WASM_ARCH), the interpreted and
+    csc-wasm are all of WASM_ARCH, and the modules of the page's
+    other architecture of that one), the interpreted and
     compiled test lanes of tests/runtests-wasm.sh, the headless
     REPL tests tests/wasm/repl-harness.js (also under Liftoff with a
     small stack) and tests/wasm/worker-harness.js, the notebook
     kernel tests tests/wasm/notebook-harness.js (also under Liftoff),
-    and an eggs lane:
+    these three again with "--arch=A" on the modules of the other
+    architecture A of a page with two builds (wasm32 with the default
+    WASM_ARCH), and an eggs lane:
     it builds csi and the REPL again, in tests-run/eggs-build of the
     build directory, with the test eggs of tests/wasm/eggs, and runs
     tests/wasm-eggs.sh (node csi, programs compiled with csc-wasm,
@@ -704,6 +754,13 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     tests/wasm/page.spec.mjs needs Playwright and is run by hand:
 
         BROWSERS=chromium,firefox node tests/wasm/page.spec.mjs build-wasm/web
+
+    For a page with two builds (make wasm WASM_WEB_ARCHS="wasm64
+    wasm32"), it tests the wasm64 build, then the wasm32 one as a
+    browser without memory64 or exnref gets it, the lockout without
+    any exception handling, ?arch= and the Settings choice; the
+    legacy exception handling warnings of the wasm32 pages are only
+    counted.  Run it on such a page and on one with a single build.
 
     Limitations:
 
