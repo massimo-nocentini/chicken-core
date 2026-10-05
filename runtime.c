@@ -13229,11 +13229,21 @@ static C_regparm C_uword decode_size(C_char **str)
 
 
 static C_regparm C_word decode_literal2(C_word **ptr, C_char **str,
-						C_word *dest)
+						C_word *dest);
+
+/* Decodes one literal, but not the last slot of a block (a pair's cdr):
+ * *last is set to that slot, which the caller decodes next, so that a
+ * long list takes a loop instead of a native frame per element (on
+ * WebAssembly the engine's stack can be small: 512 KB in a Safari
+ * worker, see C_WASM_MAX_NURSERY). */
+static C_regparm C_word decode_literal1(C_word **ptr, C_char **str,
+						C_word *dest, C_word **last)
 {
   C_ulong bits = *((*str)++) & 0xff;
   C_word *data, *dptr, val;
   C_uword size;
+
+  *last = NULL;
 
   /* vvv this can be taken out at a later stage (once it works reliably) vvv */
   if(bits != 0xfe)
@@ -13379,12 +13389,28 @@ static C_regparm C_word decode_literal2(C_word **ptr, C_char **str,
       C_word *dptr = *ptr;
       *ptr += size;
 
-      while(size--) {
-	*dptr = decode_literal2(ptr, str, dptr);
-	++dptr;
+      if(size > 0) {
+	while(--size) {
+	  *dptr = decode_literal2(ptr, str, dptr);
+	  ++dptr;
+	}
+
+	*last = dptr;
       }
     }
   }
+
+  return val;
+}
+
+
+static C_regparm C_word decode_literal2(C_word **ptr, C_char **str,
+						C_word *dest)
+{
+  C_word *slot, *last, val = decode_literal1(ptr, str, dest, &last);
+
+  while((slot = last) != NULL)
+    *slot = decode_literal1(ptr, str, slot, &last);
 
   return val;
 }
