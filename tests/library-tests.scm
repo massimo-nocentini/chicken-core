@@ -919,3 +919,11 @@ A
 
 (assert-fail (length 1))
 (assert-fail (length '(x . y)))
+
+;;; print-length limits in "(scheme write)", as csi's REPL sets them
+
+(define (limited n thunk)
+  (with-output-to-string (lambda () (##sys#with-print-length-limit n thunk))))
+
+(assert (string=? "((((((1))))..." (limited 10 (lambda () (write '((((((1)))))))))))
+(assert (string=? "abcd..." (limited 4 (lambda () (display "abcdefgh")))))

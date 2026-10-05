@@ -32,7 +32,7 @@
   (hide ##sys#dynamic-unwind
 	##sys#vector-resize ##sys#default-parameter-vector
 	setter-tag
-	##sys#print-exit ##sys#r7rs-exn-handlers
+	##sys#r7rs-exn-handlers
 	##sys#format-here-doc-warning
 	exit-in-progress cleanup-before-exit chicken.base#cleanup-tasks
         maximal-string-length find-ratio-between find-ratio

@@ -44,6 +44,12 @@
     map argument.
   - The procedures in "(scheme write)" respect any print-length limits
     imposed by the REPL.
+  - When the print-length limit ran out in a "(scheme write)" procedure,
+    the part of a string that still fitted was dropped and output
+    could come out garbled (e.g. "...((((((1))))..." for a limit of
+    10), and in static builds it failed with "call of non-procedure:
+    #<unbound value>" because ##sys#print-exit was hidden in the
+    library unit.
   - Fixed a bug in "read-string" when reading from a binary port.
   - Fixed a bug in bit->boolean when given negative bignums which would give
     incorrect output or crash due to out of bounds read (reported by crzcrz).

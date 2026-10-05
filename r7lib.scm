@@ -66,7 +66,7 @@
                  (pl (##sys#current-print-length))
                  (pl2 (fx+ pl len)))
             (if (fx> pl2 n)
-                (let ((m (fx- n pl2)))
+                (let ((m (fx- n pl)))
                   (when (fx> m 0) (emit (##sys#substring s 0 m) p))
                   (emit "..." p)
                   ((##sys#print-exit) (##sys#void)))
