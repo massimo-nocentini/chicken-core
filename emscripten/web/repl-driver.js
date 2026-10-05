@@ -58,7 +58,8 @@
  * feed() does not add a newline: after reading a datum csi peeks for the
  * newline that ends the line, so input should be "\n"-terminated.
  * post(text) hands the notebook kernel (csi -e "(##webnb#kernel)") one
- * whole request, as webnb.scm describes; requests queue in order. */
+ * whole request, as webnb.scm describes; requests queue in order.
+ * describe(e) gives an error's message and stack, as onCrash has them. */
 
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -67,6 +68,14 @@
   'use strict';
 
   const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, IDLE = 5;
+
+  // An error's message and stack: V8's stack begins with the message,
+  // JavaScriptCore's and SpiderMonkey's have the frames only.
+  function describe(e) {
+    if (!e || typeof e !== 'object') return String(e);
+    const head = String(e), stack = e.stack ? String(e.stack) : '';
+    return !stack || stack.startsWith(head) ? stack || head : head + '\n' + stack;
+  }
 
   async function start(createModule, o) {
     let M = null, dead = false, scheduled = false, ready = false;
@@ -81,7 +90,7 @@
     // The ExitStatus thrown by proc_exit is the only in-slice exit signal.
     function fail(e) {
       if (e && e.name === 'ExitStatus') finish('exit', e.status);
-      else finish('crash', String((e && e.stack) || e));
+      else finish('crash', describe(e));
     }
     function guard(f) {
       if (dead) return EXITED;
@@ -177,5 +186,5 @@
     return api;
   }
 
-  return { start, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE };
+  return { start, describe, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE };
 });

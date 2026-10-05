@@ -93,8 +93,14 @@ async function translate(source, options) {
   return { ok, code: out ? M.FS.readFile('/work/out.c', { encoding: 'utf8' }) : null, log };
 }
 
-// Emscripten's FS errors have no stack and print as [object Object]
-const describe = e => String((e && (e.stack || e.message || e.code)) || e);
+// Emscripten's FS errors have no stack and print as [object Object];
+// JavaScriptCore's and SpiderMonkey's stacks lack V8's first line, the
+// message (as repl-driver.js's describe)
+const describe = e => {
+  const head = e instanceof Error ? String(e) : String((e && (e.message || e.code)) || e);
+  const stack = e && e.stack ? String(e.stack) : '';
+  return !stack || stack.startsWith(head) ? stack || head : head + '\n' + stack;
+};
 
 onmessage = async ({ data: m }) => {
   if (m.type !== 'compile') return;

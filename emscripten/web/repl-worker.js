@@ -140,6 +140,6 @@ onmessage = async ({ data: m }) => {
     for (const x of pending) handle(x);
   } catch (e) {
     flushOut();
-    postMessage({ type: 'crash', message: String((e && e.stack) || e) });
+    postMessage({ type: 'crash', message: ChickenReplDriver.describe(e) });
   }
 };

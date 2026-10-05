@@ -163,8 +163,9 @@
     const k = ensureKernel();
     if (!k) return;
     k.start().catch(e => {
-      const why = (e && (e.reason || e.message)) || String(e);
-      showNotice('kernel', 'The notebook kernel is unavailable: ' + why);
+      // the first line: a crash's stack is in the kernel messages
+      const why = String((e && (e.reason || e.message)) || e).split('\n')[0];
+      showNotice('kernel', 'The notebook kernel is unavailable: ' + clip(why, 400));
     });
   }
 
