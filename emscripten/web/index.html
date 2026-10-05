@@ -71,6 +71,14 @@
   --wait: #1d4ed8;
   --sleep: #7c3aed;
   --bad: #b42318;
+  --syn-comment: #676258;
+  --syn-string: #3a7018;
+  --syn-special: #a3470a;
+  --syn-number: #a12f62;
+  --syn-constant: #7a3fb8;
+  --syn-keyword: #0d6d64;
+  --syn-quote: #2a6590;
+  --syn-paren: #5c574d;
   --shadow: 0 1px 2px rgb(40 30 10 / .06), 0 4px 16px rgb(40 30 10 / .06);
   --radius: 10px;
   --mono: ui-monospace, "Noto Sans Mono", "Noto Mono", monospace;
@@ -101,6 +109,14 @@
     --wait: #7aa7ff;
     --sleep: #c4a5ff;
     --bad: #ff8a80;
+    --syn-comment: #928c80;
+    --syn-string: #a8cc7a;
+    --syn-special: #f5a524;
+    --syn-number: #f28db2;
+    --syn-constant: #c4a5ff;
+    --syn-keyword: #5ccfbf;
+    --syn-quote: #82b8e8;
+    --syn-paren: #a29d91;
     --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .3);
     color-scheme: dark;
   }
@@ -128,6 +144,14 @@
   --wait: #7aa7ff;
   --sleep: #c4a5ff;
   --bad: #ff8a80;
+  --syn-comment: #928c80;
+  --syn-string: #a8cc7a;
+  --syn-special: #f5a524;
+  --syn-number: #f28db2;
+  --syn-constant: #c4a5ff;
+  --syn-keyword: #5ccfbf;
+  --syn-quote: #82b8e8;
+  --syn-paren: #a29d91;
   --shadow: 0 1px 2px rgb(0 0 0 / .4), 0 6px 20px rgb(0 0 0 / .3);
   color-scheme: dark;
 }
@@ -571,6 +595,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 .nb-body { grid-area: body; min-width: 0; }
 .nb-editor {
   position: relative;
+  overflow: clip;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--term-bg);
@@ -599,8 +624,29 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   outline: none;
 }
 .nb-src::placeholder { color: var(--muted); opacity: .75; }
-.nb-hl { position: absolute; inset: 0; color: transparent; pointer-events: none; overflow: hidden; }
-.nb-hl mark { color: transparent; background: color-mix(in srgb, var(--term-err) 18%, transparent); border-radius: 3px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--term-err) 18%, transparent); }
+/* the overlay's height is its own (not the editor's): sizing the editor
+   does not lay out its text again */
+.nb-hl { position: absolute; top: 0; left: 0; right: 0; color: transparent; pointer-events: none; overflow: hidden; }
+.nb-hl > div { min-height: 1.55em; }
+.nb-hl mark { color: inherit; background: color-mix(in srgb, var(--term-err) 18%, transparent); border-radius: 3px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--term-err) 18%, transparent); }
+/* syntax colors: the overlay shows the text, the editor only its caret
+   and selection (no bold or italics: the glyphs must line up); the line
+   of an error keeps the plain text color, which is readable on its tint */
+.nb-editor.syn .nb-hl { color: var(--term-fg); }
+.nb-editor.syn .nb-hl mark * { color: inherit; }
+.nb-editor.syn .nb-src { color: transparent; caret-color: var(--term-fg); }
+.nb-editor.syn .nb-src::selection { color: transparent; background: color-mix(in srgb, var(--focus) 18%, transparent); }
+/* an IME draws what it composes in the editor's text color */
+.nb-editor.syn.ime .nb-src { color: var(--term-fg); }
+.nb-editor.ime .nb-hl { visibility: hidden; }
+.syn-comment { color: var(--syn-comment); }
+.syn-string, .syn-char { color: var(--syn-string); }
+.syn-special { color: var(--syn-special); }
+.syn-number { color: var(--syn-number); }
+.syn-constant { color: var(--syn-constant); }
+.syn-keyword { color: var(--syn-keyword); }
+.syn-quote { color: var(--syn-quote); }
+.syn-paren { color: var(--syn-paren); }
 .nb-bal {
   position: absolute;
   right: 6px; bottom: 4px;
@@ -870,6 +916,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   .nb-cell[data-status="error"] { outline: 2px solid Mark; }
   .nb-editor { border-color: CanvasText; }
   .nb-hl mark { background: Mark; forced-color-adjust: none; }
+  .nb-editor.syn .nb-hl, .nb-editor.syn .nb-hl * { forced-color-adjust: none; color: transparent; }
 }
 @media print {
   .top, .bar, .nb-gutter .nb-run, .nb-tools, .nb-add, .hints, .notice, .nb-log, .nb-toast, .nb-stdin, .nb-bal, .nb-more { display: none !important; }

@@ -798,6 +798,85 @@ async function runBrowser(name) {
     assert(/Incomplete input/.test(out), 'note: ' + out);
     assert(!(await page.$(`#nb-cells > li:nth-child(${i + 1}) .nb-stream`)), 'no output');
     assert(await page.$eval(`#nb-cells > li:nth-child(${i + 1})`, e => !!e.querySelector('.nb-hl mark')), 'line highlighted');
+    // the marked line keeps its spans, in the plain text color (readable on the mark)
+    const hl = await page.$eval(`#nb-cells > li:nth-child(${i + 1})`, e => {
+      const o = e.querySelector('.nb-hl'), m = o.querySelector('mark');
+      return { mark: m.textContent, text: [...o.children].map(d => d.textContent).join('\n'), src: e.querySelector('.nb-src').value,
+               spans: m.querySelectorAll('.syn-string, .syn-paren').length, fg: getComputedStyle(o).color,
+               colors: [...new Set([...m.querySelectorAll('span')].map(s => getComputedStyle(s).color))] };
+    });
+    assert(hl.mark === hl.src && hl.text === hl.src && hl.spans >= 3 && hl.colors.join() === hl.fg,
+           'the marked line ' + JSON.stringify(hl));
+  });
+
+  await check(P + 'notebook: code cells are colored, text cells are not', async () => {
+    const i = await nbNew('(define (f x) ; c\n  (if x "s" #\\( 1))\n');
+    // the overlay: a block per line (its text is r.text)
+    const paint = i => page.$eval(`#nb-cells > li:nth-child(${i + 1})`, e => {
+      const hl = e.querySelector('.nb-hl'), src = e.querySelector('.nb-src'), cs = getComputedStyle(src);
+      const a = hl.getBoundingClientRect(), b = src.getBoundingClientRect();
+      return { syn: e.querySelector('.nb-editor').classList.contains('syn'), src: src.value,
+               text: hl.firstElementChild ? [...hl.children].map(d => d.textContent).join('\n') : hl.textContent,
+               kinds: [...hl.querySelectorAll('span')].map(s => s.className + ':' + s.textContent),
+               color: cs.color, caret: cs.caretColor, hlColor: getComputedStyle(hl).color, inert: hl.inert,
+               box: [a.left - b.left, a.top - b.top, a.width - b.width, a.height - b.height].map(x => Math.abs(x) < 1) };
+    });
+    const clear = /rgba\(0, 0, 0, 0\)|transparent/;
+    let r = await paint(i);
+    assert(r.syn && r.text === r.src, 'overlay mirrors the source ' + JSON.stringify(r));
+    for (const k of ['syn-special:define', 'syn-special:if', 'syn-comment:; c', 'syn-string:"s"', 'syn-char:#\\(', 'syn-number:1'])
+      assert(r.kinds.includes(k), k + ' in ' + r.kinds.join(' '));
+    assert(clear.test(r.color) && !clear.test(r.caret) && !clear.test(r.hlColor),
+           'the editor shows the caret, the overlay the text ' + JSON.stringify(r));
+    assert(r.box.every(x => x), 'overlay and editor in the same box ' + JSON.stringify(r.box));
+    // find in page sees the text once (the overlay is inert)
+    const found = await page.evaluate(() => {
+      const hits = [];
+      getSelection().removeAllRanges();
+      for (let k = 0; k < 3 && window.find('#\\( 1', false, false, true); k++)
+        hits.push(!!(getSelection().anchorNode && getSelection().anchorNode.parentElement &&
+                     getSelection().anchorNode.parentElement.closest('.nb-hl')));
+      return { hits, inert: document.querySelector('.nb-hl').inert };
+    });
+    assert(found.inert && !found.hits.includes(true), 'find skips the overlay ' + JSON.stringify(found));
+    // an IME composes in the editor's own (visible) text
+    const ime = async type => {
+      await nbSrc(i).dispatchEvent(type);
+      return nbSrc(i).evaluate(e => [getComputedStyle(e).color, getComputedStyle(e.parentNode.querySelector('.nb-hl')).visibility]);
+    };
+    const [during, after] = [await ime('compositionstart'), await ime('compositionend')];
+    assert(!clear.test(during[0]) && during[1] === 'hidden' && clear.test(after[0]) && after[1] === 'visible',
+           'composition ' + JSON.stringify([during, after]));
+    // typing repaints, an unterminated string included
+    await nbSrc(i).press('Control+End');
+    await nbSrc(i).pressSequentially(' "open');
+    r = await paint(i);
+    assert(r.text === r.src && r.kinds[r.kinds.length - 1] === 'syn-string:"open', 'repainted on input ' + JSON.stringify(r.kinds));
+    // only what changed is repainted: a quote typed and taken back
+    await nbSrc(i).press('Control+Home');
+    await nbSrc(i).press('ArrowRight');
+    await nbSrc(i).press('"');
+    const q = await paint(i);
+    assert(q.text === q.src && q.kinds[1] === 'syn-string:"define (f x) ; c' && q.kinds[2] === 'syn-string:  (if x "',
+           'a quote typed ' + JSON.stringify(q.kinds));
+    await nbSrc(i).press('Backspace');
+    const back = await paint(i);
+    assert(back.text === r.src && JSON.stringify(back.kinds) === JSON.stringify(r.kinds), 'and taken back ' + JSON.stringify(back.kinds));
+    // a text cell is plain; back to code it is colored again
+    await nbSrc(i).press('Escape');
+    await page.keyboard.press('m');
+    r = await paint(i);
+    assert(!r.syn && !r.kinds.length && !r.text, 'a text cell is not colored ' + JSON.stringify(r));
+    await page.keyboard.press('y');
+    r = await paint(i);
+    assert(r.syn && r.text === r.src && r.kinds.length, 'code again ' + JSON.stringify(r));
+    // a new text cell
+    await page.click('#nb-end-text');
+    const t = (await nbCells()) - 1;
+    await nbSrc(t).fill('(define x 1) "s"');
+    r = await paint(t);
+    assert(!r.syn && !r.kinds.length && !/rgba\(0, 0, 0, 0\)|transparent/.test(r.color), 'a new text cell ' + JSON.stringify(r));
+    await nbSrc(t).press('Shift+Enter');
   });
 
   await check(P + 'notebook: big output is capped and the kernel stays responsive', async () => {
@@ -975,6 +1054,127 @@ async function runBrowser(name) {
     assert(slow.tds === 6000, 'short table rows: ' + slow.tds + ' cells');
     assert(JSON.stringify(slow.ragged) === JSON.stringify(['1/1 /2', '1/1 2/1 3/1']), 'ragged rows ' + JSON.stringify(slow.ragged));
     assert(JSON.stringify(slow.code) === JSON.stringify(['a``b', 'c`d']), 'code spans ' + JSON.stringify(slow.code));
+  });
+
+  await check(P + 'notebook: the Scheme highlighter', async () => {
+    const r = await page.evaluate(() => {
+      const L = window.ChickenNotebookLib, bad = [];
+      const kinds = s => L.highlight(s).filter(p => p[0]).map(p => p[0] + ':' + p[1]);
+      const expect = (s, want) => {
+        const got = kinds(s);
+        if (JSON.stringify(got) !== JSON.stringify(want)) bad.push(JSON.stringify(s) + ' gave ' + JSON.stringify(got));
+      };
+      expect('(define (f x) (if x 1 2))',
+             ['paren:(', 'special:define', 'paren:(', 'paren:)', 'paren:(', 'special:if', 'number:1', 'number:2', 'paren:))']);
+      expect('(list define if) [let ()]', ['paren:(', 'paren:)', 'paren:[', 'special:let', 'paren:()]']);
+      expect("'(if a) `(b ,(when c) ,@d) #(do)",
+             ['quote:\'', 'paren:(', 'paren:)', 'quote:`', 'paren:(', 'quote:,', 'paren:(', 'special:when', 'paren:)',
+              'quote:,@d', 'paren:)', 'paren:#(', 'paren:)']);
+      expect("'sym 'a.b 'x: '1", ['quote:\'sym', 'quote:\'a.b', 'quote:\'', 'keyword:x:', 'quote:\'', 'number:1']);
+      expect('; line\n#| a #| nested |# b |# x', ['comment:; line', 'comment:#| a #| nested |# b |#']);
+      expect('#;(a (b)) c #; #; d e f (g #;) h #;\'(i) j',
+             ['comment:#;(a (b))', 'comment:#; #; d e', 'paren:(', 'comment:#;', 'paren:)', 'comment:#;\'(i)']);
+      expect('"a\\"b\nc" #\\a #\\space #\\x41 #\\( #\\) #\\; #\\" #\\|',
+             ['string:"a\\"b\nc"', 'char:#\\a', 'char:#\\space', 'char:#\\x41', 'char:#\\(', 'char:#\\)', 'char:#\\;',
+              'char:#\\"', 'char:#\\|']);
+      expect('1 -2 3.5 .5 1. 1/2 1e10 -1.5e-3 #x1F #b101 #o17 #e1.5 #i1/3 #x#e10 +inf.0 -nan.0 1+2i +i 1@2',
+             ['1', '-2', '3.5', '.5', '1.', '1/2', '1e10', '-1.5e-3', '#x1F', '#b101', '#o17', '#e1.5', '#i1/3', '#x#e10',
+              '+inf.0', '-nan.0', '1+2i', '+i', '1@2'].map(x => 'number:' + x));
+      expect('- ... + 1+ a1 #b2 #o8 #xg inf.0 1/ 1e', []);
+      expect('#t #f #true #false #!eof #!optional #!rest #!key #!default #:k k: : |a b| |x:|',
+             ['#t', '#f', '#true', '#false', '#!eof', '#!optional', '#!rest', '#!key', '#!default'].map(x => 'constant:' + x)
+               .concat(['keyword:#:k', 'keyword:k:']));
+      expect('#u8(1) #U8() #\'f', ['paren:#u8(', 'number:1', 'paren:)', 'paren:#U8()', 'quote:#\'f']);
+      // as CHICKEN reads them: {} are parens; ' , end a token, ` does not
+      expect("{if x} (a{b}) (1,2) '(a'b) a`b", ['paren:{', 'special:if', 'paren:}', 'paren:(', 'paren:{', 'paren:})', 'paren:(',
+                                                'number:1', 'quote:,', 'number:2', 'paren:)', 'quote:\'', 'paren:(', 'quote:\'b',
+                                                'paren:)']);
+      // #|, #; and "#! " are comments at the start of a token only
+      expect('a#|b|# 1#;2\n(c#! d)', ['comment:;2', 'paren:(', 'paren:)']);
+      expect('#!/usr/bin/env csi -s (\n#! x (\n(x #!eof)', ['comment:#!/usr/bin/env csi -s (', 'comment:#! x (', 'paren:(',
+                                                           'constant:#!eof', 'paren:)']);
+      // a #; datum leaves the head of the form and a quote as they were
+      expect("(#;x define y) '#;a b '#;(x) (if y)", ['paren:(', 'comment:#;x', 'special:define', 'paren:)', 'quote:\'',
+                                                   'comment:#;a', 'quote:b', 'quote:\'', 'comment:#;(x)', 'paren:(',
+                                                   'paren:)']);
+      expect('(and-let* ()) (cut f <>) (time x) (: f (-> fixnum))', ['paren:(', 'special:and-let*', 'paren:())', 'paren:(',
+             'special:cut', 'paren:)', 'paren:(', 'special:time', 'paren:)', 'paren:(', 'special::', 'paren:(', 'paren:))']);
+      // unterminated: to the end
+      expect('(a "open', ['paren:(', 'string:"open']);
+      expect('x #| open #| more |# still', ['comment:#| open #| more |# still']);
+      expect('|bar ( "', []);
+      expect('#\\', ['char:#\\']);
+      // the texts add up to the source; the parens are scan()'s (but for
+      // those of a #; datum, which are comment)
+      const tricky = ['', '#', "'", ',@', '#\\', '#;', '#|', '|#', '"\\', '|\\', '#u8', '#\\😀x', 'a#|b|#c', 'a|b c|d (e)',
+                      '#\\a#\\(b', 'x#;(y)', '((#;#;))', ')))', '\r\n\t\u00a0 x', '#\\(#| ( |#', '|a|#| ( |#', '#! (', 'a#! (',
+                      '"s"#! (', '{[(}])'];
+      let seed = 7;
+      const rnd = n => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) % n;
+      const A = ['(', ')', '[', ']', '{', '}', '"', '|', ';', '#', '\\', '\n', ' ', 'a', '1', "'", ',', '`', '@', 'u8', 'x', ':',
+                 '#|', '|#', '#;', '#\\', '#!', '/', '😀', 'if'];
+      for (let k = 0; k < 20000; k++) { let s = ''; for (let m = rnd(24); m > 0; m--) s += A[rnd(A.length)]; tricky.push(s); }
+      for (const s of tricky) {
+        const p = L.highlight(s);
+        if (p.map(x => x[1]).join('') !== s) { bad.push('texts of ' + JSON.stringify(s)); continue; }
+        if (p.some((x, k) => !x[1] || (k && x[0] === p[k - 1][0]))) bad.push('pieces of ' + JSON.stringify(s));
+        if (s.includes('#;')) continue;
+        const want = [], got = [];
+        L.scan(s, (kind, i) => { if (kind === 'open' || kind === 'close') want.push(i); });
+        let at = 0;
+        for (const [k, t] of p) {
+          if (k === 'paren') for (let j = 0; j < t.length; j++) if ('()[]{}'.includes(t[j])) got.push(at + j);
+          at += t.length;
+        }
+        if (want.join() !== got.join()) bad.push('parens of ' + JSON.stringify(s) + ': ' + want + ' / ' + got);
+        if (bad.length > 10) break;
+      }
+      // linear time
+      const slow = [];
+      for (const [k, s] of Object.entries({
+        code: '(define (f n) (if (= n 0) 1 (* n (f (- n 1))))) ; c\n"s" #\\a \'x #t\n'.repeat(10000),
+        'block comments': '#|'.repeat(250000), quotes: '"'.repeat(500000), bars: '|'.repeat(500000),
+        'datum comments': '#;'.repeat(250000), parens: '('.repeat(250000) + ')'.repeat(250000), chars: '#\\'.repeat(250000),
+        prefixes: "',@`".repeat(125000), atoms: 'a'.repeat(500000),
+      })) {
+        const t = performance.now();
+        L.highlight(s);
+        const ms = performance.now() - t;
+        if (ms > 1000) slow.push(k + ': ' + Math.round(ms) + ' ms');
+      }
+      // as DOM, and line by line
+      const d = L.highlightDom('(a "b\nc")\n(d)', document);
+      const dom = { text: d.textContent, kids: [...d.childNodes].map(e => e.className || '#text') };
+      const lines = JSON.stringify(L.highlightLines(L.highlight('(a "b\nc")\n\n')));
+      // fenced code: Scheme (or no language) is colored, now or (lazy) by colorCode
+      const src = '```\n(if a)\n```\n\n```scheme\n"s"\n```\n\n```python\nif a: "s"\n```';
+      const codes = md => [...md.querySelectorAll('pre code')].map(c => c.querySelectorAll('span').length + ':' + c.textContent);
+      const pres = codes(L.renderMarkdown(src, document, 't-'));
+      const lazy = L.renderMarkdown(src, document, 't-', null, true), div = document.createElement('div');
+      div.appendChild(lazy);
+      const before = codes(div);
+      L.colorCode(div, document);
+      const after = codes(div);
+      // at most 32 KB of code is colored per call
+      const big = '```\n' + '(a)\n'.repeat(5000) + '```\n\n```\n' + '(b)\n'.repeat(5000) + '```';
+      const capped = [...L.renderMarkdown(big, document, 't-').querySelectorAll('pre code')].map(c => c.childElementCount > 0);
+      // what CHICKEN's reader takes for a whole, or not
+      const bal = ['#;(a\n b) (c)', '(a#;(b\n)', '(f x#;c (\n)', '#! /usr/bin/csi -s (\n(x)', '{a [b]}', '(a {b) }', '(a]',
+                   '(a#|b c|#)'].map(s => s + ' ' + L.balance(s).ok);
+      return { bad, slow, dom, lines, pres, before, after, capped, bal };
+    });
+    assert(!r.bad.length, r.bad.join('\n'));
+    assert(!r.slow.length, 'slow: ' + r.slow.join('; '));
+    assert(r.dom.text === '(a "b\nc")\n(d)' &&
+           r.dom.kids.join() === 'syn-paren,#text,syn-string,syn-paren,#text,syn-paren,#text,syn-paren', 'highlightDom ' + JSON.stringify(r.dom));
+    assert(r.lines === '[[["paren","("],["","a "],["string","\\"b"]],[["string","c\\""],["paren",")"]],[],[]]', 'lines ' + r.lines);
+    const fenced = ['3:(if a)', '1:"s"', '0:if a: "s"'];
+    assert(JSON.stringify(r.pres) === JSON.stringify(fenced) && JSON.stringify(r.after) === JSON.stringify(fenced) &&
+           JSON.stringify(r.before) === JSON.stringify(['0:(if a)', '0:"s"', '0:if a: "s"']),
+           'fenced code ' + JSON.stringify([r.pres, r.before, r.after]));
+    assert(JSON.stringify(r.capped) === '[true,false]', 'fenced code budget ' + JSON.stringify(r.capped));
+    assert(r.bal.join() === ['#;(a\n b) (c) true', '(a#;(b\n) true', '(f x#;c (\n) true', '#! /usr/bin/csi -s (\n(x) true',
+                             '{a [b]} true', '(a {b) } false', '(a] false', '(a#|b c|#) true'].join(), 'balance ' + r.bal.join(' / '));
   });
 
   // ten uses of a group of ten uses of ...: 10^5 elements from 1.2 KB
@@ -1463,7 +1663,12 @@ async function runBrowser(name) {
            'notice: ' + await page.textContent('#nb-notice-text'));
     await accepting(() => page.setInputFiles('#nb-file', { name: 'most.scm', mimeType: 'text/plain', buffer: Buffer.from(forms(5000)) }));
     await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 5000, null, { timeout: 20000 });
+    // only the cells near the view are colored
+    await page.waitForFunction(() => document.querySelector('#nb-cells > li .nb-editor.syn'), null, { timeout: 5000 });
+    const painted = await page.$$eval('#nb-cells .nb-editor.syn', l => l.length);
+    assert(painted > 0 && painted < 500, painted + ' cells painted');
     await nbNew('(+ 1 1)');
+    await page.waitForFunction(() => document.querySelector('#nb-cells > li:nth-child(5001) .nb-editor.syn'), null, { timeout: 5000 });
     for (const fmt of ['.json', '.scm']) {
       if (await page.isVisible('#nb-notice')) await page.click('#nb-notice-close');
       await page.waitForFunction(() => document.getElementById('nb-notice').hidden, null, { timeout: 5000 });
@@ -1476,6 +1681,31 @@ async function runBrowser(name) {
       assert(new RegExp('Could not import back\\' + fmt + ': more than 5000 cells').test(await page.textContent('#nb-notice-text')),
              fmt + ' import back: ' + await page.textContent('#nb-notice-text'));
     }
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'small.scm', mimeType: 'text/plain', buffer: Buffer.from('(+ 1 2)') }));
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1, null, { timeout: 20000 });
+  });
+
+  // a lone \r is a line break in the editor, so it is one in the overlay;
+  // the code blocks of text cells are colored when they come into view
+  await check(P + 'notebook: imported sources are colored as the editor shows them', async () => {
+    const cells = [{ type: 'code', source: '(a)\r(b) ; x\r\n(c)' }, { type: 'markdown', source: '```\n(if a "s")\n```' }]
+      .concat(Array.from({ length: 300 }, (_, k) => ({ type: 'code', source: '(+ ' + k + ' 1)' })),
+              [{ type: 'markdown', source: '```scheme\n(when b)\n```' }]);
+    const buf = Buffer.from(JSON.stringify({ format: 'chicken-notebook', version: 1, meta: { title: 'cr' }, cells }));
+    await accepting(() => page.setInputFiles('#nb-file', { name: 'cr.json', mimeType: 'application/json', buffer: buf }));
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 303, null, { timeout: 20000 });
+    await page.waitForFunction(() => document.querySelector('#nb-cells > li:nth-child(2) .nb-md .syn-special'), null, { timeout: 5000 });
+    const r = await page.evaluate(() => {
+      const li = document.querySelectorAll('#nb-cells > li'), hl = li[0].querySelector('.nb-hl');
+      return { src: li[0].querySelector('.nb-src').value, lines: [...hl.children].map(d => d.textContent),
+               comments: [...hl.querySelectorAll('.syn-comment')].map(e => e.textContent),
+               far: li[302].querySelectorAll('.nb-md span').length };
+    });
+    assert(r.src === '(a)\n(b) ; x\n(c)' && r.lines.join('|') === '(a)|(b) ; x|(c)' && r.comments.join() === '; x',
+           'line breaks ' + JSON.stringify(r));
+    assert(r.far === 0, 'a text cell out of sight is not colored yet: ' + r.far);
+    await page.locator('#nb-cells > li').nth(302).scrollIntoViewIfNeeded();
+    await page.waitForFunction(() => document.querySelector('#nb-cells > li:nth-child(303) .nb-md .syn-special'), null, { timeout: 5000 });
     await accepting(() => page.setInputFiles('#nb-file', { name: 'small.scm', mimeType: 'text/plain', buffer: Buffer.from('(+ 1 2)') }));
     await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1, null, { timeout: 20000 });
   });
