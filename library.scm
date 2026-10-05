@@ -3701,7 +3701,7 @@ EOF
   (##core#inline "C_i_bytevectorp" x) )
 
 (define (bytevector-length bv)
-  (##sys#check-bytevector bv 'bytevector-size)
+  (##sys#check-bytevector bv 'bytevector-length)
   (##sys#size bv) )
 
 (define (bytevector-u8-ref bv i)
