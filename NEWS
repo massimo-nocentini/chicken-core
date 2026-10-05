@@ -192,6 +192,10 @@
     heap filter walkers kept a block's size in an int, so on 64-bit
     platforms a live object of 2 GB or more (e.g. a 2.2 GB bytevector)
     corrupted the heap at the next major GC.
+  - The heap dump of -:H (##sys#dump-heap-state) summed the bytes per
+    type in an int, so on 64-bit platforms it printed no total for a
+    type with 2 GB or more; the counts and totals are now unsigned
+    words.
 
 - Platform support
   - New "emscripten" platform.  `make wasm' cross-builds libchicken,

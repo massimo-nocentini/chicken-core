@@ -293,7 +293,7 @@ typedef struct trace_info_struct
 typedef struct hdump_bucket_struct
 {
   C_word key;
-  int count, total;
+  C_uword count, total;
   struct hdump_bucket_struct *next;
 } HDUMP_BUCKET;
 
@@ -4174,7 +4174,8 @@ C_regparm void C_rereclaim2(C_uword size, int relative_resize)
   C_fromspace_limit = new_tospace_limit;
 
   if(gc_report_flag) {
-    C_dbg(C_text("GC"), C_text("resized heap to %d bytes\n"), heap_size);
+    C_dbg(C_text("GC"), C_text("resized heap to " UWORD_COUNT_FORMAT_STRING " bytes\n"),
+          heap_size);
     C_dbg(C_text("GC"), C_text("(new) fromspace: \tstart=" UWORD_FORMAT_STRING
 			       ", \tlimit=" UWORD_FORMAT_STRING "\n"),
 	  (C_word)fromspace_start, (C_word)C_fromspace_limit);
@@ -13505,7 +13506,7 @@ hdump_hash(C_word key)
 
 
 static void
-hdump_count(C_word key, int n, int t)
+hdump_count(C_word key, C_uword n, C_uword t)
 {
   HDUMP_BUCKET **bp = hdump_table + hdump_hash(key);
   HDUMP_BUCKET *b = *bp;
@@ -13541,7 +13542,7 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
   C_SCHEME_BLOCK *sbp;
   C_header h;
   C_word x, key, *p;
-  int imm = 0, blk = 0;
+  C_uword imm = 0, blk = 0;
 
   hdump_table = (HDUMP_BUCKET **)C_malloc(HDUMP_TABLE_SIZE * sizeof(HDUMP_BUCKET *));
 
@@ -13645,17 +13646,19 @@ static void C_ccall dump_heap_state_2(C_word c, C_word *av)
             C_fprintf(C_stderr, C_text("unknown key " UWORD_FORMAT_STRING), (C_uword)b->key);
       }
 
-      C_fprintf(C_stderr, C_text("\t%d"), b->count);
+      C_fprintf(C_stderr, C_text("\t" UWORD_COUNT_FORMAT_STRING), b->count);
 
       if(b->total > 0)
-        C_fprintf(C_stderr, C_text("\t%d bytes"), b->total);
+        C_fprintf(C_stderr, C_text("\t" UWORD_COUNT_FORMAT_STRING " bytes"),
+                  b->total);
 
       C_fputc('\n', C_stderr);
       C_free(b);
     }
   }
 
-  C_fprintf(C_stderr, C_text("\ntotal number of blocks: %d, immediates: %d\n"),
+  C_fprintf(C_stderr, C_text("\ntotal number of blocks: " UWORD_COUNT_FORMAT_STRING
+                             ", immediates: " UWORD_COUNT_FORMAT_STRING "\n"),
 	    blk, imm);
   C_free(hdump_table);
   C_kontinue(k, C_SCHEME_UNDEFINED);
