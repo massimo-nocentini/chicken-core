@@ -137,11 +137,12 @@ WASM_ARCH=${WASM_ARCH:-$reported}
 case $WASM_ARCH in
     wasm64)
 	fixnum_max=4611686018427387903 bits='#t #f'
-	# C_WASM_MAX_NURSERY in runtime.c at the default frame pad
+	# C_WASM_MAX_NURSERY in runtime.c: 3072 frames at the default pad
 	max_nursery_k=384
 	jiffies_per_second=1000000 jiffy_ms=1000 ;;
     wasm32)
 	fixnum_max=1073741823 bits='#f #t'
+	# C_WASM_MAX_NURSERY in runtime.c: whatever the pad
 	max_nursery_k=256
 	jiffies_per_second=1000 jiffy_ms=1 ;;
     *) echo "wasm-smoke: unknown architecture '$WASM_ARCH' (csi reports '$reported')"; exit 1 ;;
@@ -191,8 +192,8 @@ stack_checks() {
 	'(import (chicken fixnum)) (define (f n) (if (fx= n 0) 0 (fx+ 1 (f (fx- n 1))))) (print (f 1000000))'
     expect_error S18 'recursion too deep or circular data' csi_run -n -e \
 	'(define (mk) (let loop ((i 0) (l (quote ()))) (if (< i 1000000) (loop (+ i 1) (list l)) l))) (print (equal? (mk) (mk)))'
-    # the same two at the largest nursery the runtime accepts (at the
-    # default frame pad: C_WASM_MAX_NURSERY in runtime.c)
+    # the same two at the largest nursery the runtime accepts (on
+    # wasm64 at the default frame pad: C_WASM_MAX_NURSERY in runtime.c)
     expect S9m 1000000 csi_run -:s${max_nursery_k}k -n -e \
 	'(define (f n) (if (= n 0) 0 (+ 1 (f (- n 1))))) (print (f 1000000))'
     expect_error S18m 'recursion too deep or circular data' csi_run -:s${max_nursery_k}k -n -e \

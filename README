@@ -709,14 +709,21 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     WASM_FRAME_PAD
       The minimum shadow-stack bytes per CPS frame (default 128 on
-      wasm64, 64 on wasm32), which keeps the engine's native call
+      wasm64, 1024 on wasm32), which keeps the engine's native call
       depth bounded by the nursery.  For the same reason the
       nursery is limited to 3072 times the pad on wasm64 (384 KB
-      by default) and 4096 times on wasm32 (256 KB), whatever the
-      stack size: a larger "-:s" is refused at startup, and a
-      larger "-nursery" is lowered to it.  These limits keep a
-      margin of 1.6 to 1.9 over the nursery that overflowed a 1 MB
-      (browser worker) stack in the tests.
+      by default) and to 256 KB on wasm32, whatever the stack
+      size: a larger "-:s" is refused at startup, and a larger
+      "-nursery" is lowered to it.  On wasm64 this keeps a margin
+      of 1.8 over the nursery that overflowed a 1 MB (browser
+      worker) stack in the tests.  wasm32 is what Safari and every
+      iOS browser run, in JavaScriptCore, whose frames are several
+      times V8's, with a 512 KB worker stack: its pad keeps 256
+      frames between minor GCs, as tests/wasm/jsc-stack.js checks.
+      In V8 that costs 45% to 110% on code that allocates, and C
+      recursion such as equal? on deeply nested data can stop after
+      about 60 levels (at most about 320, depending on how full the
+      nursery is), where it allowed about 1000 at a 64-byte pad.
 
     WASM_SIMD
       Compile with -msimd128.
@@ -753,8 +760,12 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     the eggs' include files, a build-dependency installed in a host
     repository and built from an egg cache, replanning, refused eggs and
     tests/wasm/egg-harness.js and
-    notebook-harness.js for the REPL and the notebook).  The browser test
-    tests/wasm/page.spec.mjs needs Playwright and is run by hand:
+    notebook-harness.js for the REPL and the notebook).  With JSC
+    naming a JavaScriptCore shell (make wasm-check JSC=/path/to/jsc),
+    it also runs tests/wasm/jsc-stack.js on the page's wasm32
+    modules, with the 512 KB stack of an iOS worker and with 384 KB.
+    The browser test tests/wasm/page.spec.mjs needs Playwright and is
+    run by hand:
 
         BROWSERS=chromium,firefox node tests/wasm/page.spec.mjs build-wasm/web
 

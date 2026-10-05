@@ -239,9 +239,16 @@
     `make wasm WASM_ARCH=wasm32' builds the 32-bit target.  The
     frame pad and the nursery limit that protect the engine's native
     stack were re-measured per architecture: 128 bytes and 384 KB on
-    wasm64, 64 bytes and 256 KB on wasm32 (was 320 KB), for a margin
-    of 1.6 to 1.9.  In node, wasm64 code runs 7% to 17% slower than
-    wasm32, except bignum arithmetic (about 20% faster).
+    wasm64, for a margin of 1.8, and 1024 bytes and 256 KB on wasm32,
+    which Safari and every iOS browser run in JavaScriptCore, with
+    bigger frames and a 512 KB worker stack (csi overflowed it at
+    startup with a 64-byte pad).  The 1024-byte pad makes allocating
+    code about 70% slower there and 45% to 110% in V8, and C recursion
+    such as equal? on deeply nested data can stop after about 60
+    levels instead of about 1000.  The runtime decodes a compiled
+    unit's literal lists in a loop, not a C call per element: the
+    page's compiler (Compile to C) overflowed there while loading
+    its own units.
   - On WebAssembly the heap grows only as far as both its halves can be
     allocated in the linear memory that is left (or that malloc holds
     free, as after the heap shrank), and then stops with

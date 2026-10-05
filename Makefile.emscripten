@@ -65,7 +65,10 @@ else ifeq ($(WASM_ARCH),wasm32)
 WASM_ARCH_FLAG = -m32
 # 2 GB, not 4: pointers stay below 2^31, which JS glue may see signed.
 WASM_DEFAULT_MAXIMUM_MEMORY = 2147483648
-WASM_DEFAULT_FRAME_PAD = 64
+# JavaScriptCore (Safari, every iOS browser: the engines without
+# memory64) has big frames and 512 KB worker stacks: few frames between
+# minor GCs, with a nursery fixed at 256 KB (see C_WASM_MAX_NURSERY)
+WASM_DEFAULT_FRAME_PAD = 1024
 # the compatibility build: legacy EH runs in older engines too
 WASM_DEFAULT_SJLJ = wasm-legacy
 else
@@ -201,6 +204,16 @@ endif
 	cat $@.tmp chicken-defaults.h >$@.tmp2
 	rm $@.tmp
 	mv $@.tmp2 $@
+
+# chicken-defaults.h has the C compiler options (C_INSTALL_CFLAGS,
+# C_TARGET_CFLAGS), but config.make not their defaults, which depend on
+# the architecture (the frame pad): a record of their own, replaced only
+# when they change.
+chicken-defaults.h: wasm-cflags
+.PHONY: wasm-cflags.force
+wasm-cflags: wasm-cflags.force
+	echo '$(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS)' >$@.tmp
+	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 
 include $(SRCDIR)rules.make
 
@@ -553,6 +566,17 @@ define WASM_WEB_HARNESSES
 	  $(CURDIR)/$(WEB_DIR) $1
 endef
 
+# The page's wasm32 modules in JavaScriptCore's shell, with the stack of
+# a Darwin worker (512 KB, as on iOS) and with less: only when JSC names
+# a jsc (see tests/wasm/jsc-stack.js).
+WASM_JSC_MODULES = $(if $(filter wasm32,$(WASM_ARCH)),$(WEB_DIR),$(if $(filter wasm32,$(WASM_WEB_OTHER)),$(WEB_DIR)/wasm32))
+define WASM_JSC_LANE
+	for b in 524288 393216; do \
+	  $(JSC) --maxPerThreadStackUsage=$$b $(SRCDIR)tests/wasm/jsc-stack.js -- \
+	    $(CURDIR)/$(WASM_JSC_MODULES) $(SRCDIR)emscripten/web/repl-driver.js || exit 1; \
+	done
+endef
+
 # (WASM_WEB_OTHER has one architecture at most: a foreach of the
 # multi-line WASM_WEB_HARNESSES would join two with a space)
 wasm-check: wasm-node wasm-web wasm-sdk
@@ -566,6 +590,7 @@ wasm-check: wasm-node wasm-web wasm-sdk
 	  sh $(SRCDIR)tests/runtests-wasm.sh
 	$(call WASM_WEB_HARNESSES)
 	$(foreach a,$(WASM_WEB_OTHER),$(call WASM_WEB_HARNESSES,--arch=$a))
+	$(if $(and $(JSC),$(WASM_JSC_MODULES)),$(WASM_JSC_LANE))
 	+$(MAKE) -f $(SRCDIR)GNUmakefile wasm-check-eggs
 
 # The eggs lane builds csi (node and web) and the SDK in a build
@@ -611,5 +636,5 @@ wasm-clean:
 	-rm -rf node $(WEB_DIR) arch-wasm64 arch-wasm32 $(WASM_STAGE) $(WASM_TESTS_RUN) $(WASM_EGG_DIR) \
 	  *.stamp *$(O) *$(A) \
 	  wasm-units.c webio.c webnb.c csi-node.c csi-web.c chicken-config.h chicken-defaults.h \
-	  wasm-eggs.mk wasm-egg-units.scm wasm-egg-units.c \
+	  wasm-cflags wasm-eggs.mk wasm-egg-units.scm wasm-egg-units.c \
 	  $(DISTFILES) buildid buildbranch buildversion *.import.scm

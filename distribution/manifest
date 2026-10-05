@@ -149,6 +149,7 @@ tests/wasm/notebook-harness.js
 tests/wasm/egg-harness.js
 tests/wasm/page.spec.mjs
 tests/wasm/wasm-arch.js
+tests/wasm/jsc-stack.js
 tests/wasm/eggs/wasm-egg-a/wasm-egg-a.egg
 tests/wasm/eggs/wasm-egg-a/wasm-egg-a.scm
 tests/wasm/eggs/wasm-egg-a/wasm-egg-a-c.c

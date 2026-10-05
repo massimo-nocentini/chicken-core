@@ -1057,12 +1057,16 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
  * own call stack is separate and invisible.  Make every C_stack_pointer
  * evaluation (hence every CPS frame, C_demand and C_stack_check1) consume
  * at least C_WASM_FRAME_PAD bytes of shadow stack, so the nursery size
- * bounds the number of live native frames between two minor GCs. */
+ * bounds the number of live native frames between two minor GCs (see
+ * C_WASM_MAX_NURSERY in runtime.c).  The defaults are those of
+ * WASM_FRAME_PAD in Makefile.emscripten, which also passes it to the
+ * SDK's csc-wasm: code with a smaller pad than the runtime's loosens
+ * the bound. */
 # ifndef C_WASM_FRAME_PAD
 #  ifdef C_SIXTY_FOUR
 #   define C_WASM_FRAME_PAD 128
 #  else
-#   define C_WASM_FRAME_PAD 64
+#   define C_WASM_FRAME_PAD 1024
 #  endif
 # endif
 # define C_stack_pointer ((C_word *)C_alloca(C_WASM_FRAME_PAD))

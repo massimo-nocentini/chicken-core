@@ -73,6 +73,10 @@ if (!eggsOnly) console.log('# ' + arch + ' modules in ' + path.join(webDir, sub)
 let failures = 0, passes = 0, current = null;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const now = () => performance.now();
+// the time since t, for a watchdog of 1000 ms: node's timers count from
+// its loop clock, in whole milliseconds and read before the call, so one
+// may fire a little earlier than performance.now() says
+const fired = t => { const d = now() - t; return [d >= 998 && d < 5000, d]; };
 function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
 const J = x => JSON.stringify(x);
 function eq(a, b, what) { assert(J(a) === J(b), what + ': expected ' + J(b) + ', got ' + J(a)); }
@@ -793,7 +797,7 @@ async function partC() {
     W.k.stop();
     const d = await p;
     eq([d.status, d.reason], ['killed', 'unresponsive'], 'killed');
-    assert(now() - t >= 1000, 'after watchdogMs');
+    assert(fired(t)[0], 'after watchdogMs: ' + fired(t)[1]);
     assert(W.logs.some(([k, t]) => k === 'kernel' && /did not respond/.test(t)), 'kernel log');
     const r = await W.k.run('after', 'big');
     assert(r.status === 'error' && /unbound variable: big/.test(r.error.text), 'big unbound: ' + J(r));
@@ -941,7 +945,7 @@ async function partC() {
     W.k.stop();
     const d = await p;
     eq([d.status, d.reason], ['killed', 'unresponsive'], 'killed');
-    assert(now() - t >= 1000 && now() - t < 5000, 'after watchdogMs: ' + (now() - t));
+    { const [ok, ms] = fired(t); assert(ok, 'after watchdogMs: ' + ms); }
     eq((await W.k.run('after', '(+ 1 2)')).values, ['3'], 'respawned');
     W.k.dispose();
     current = C;
@@ -959,7 +963,7 @@ async function partC() {
     W.k.stop();
     const d = await p;
     eq([d.status, d.reason], ['killed', 'unresponsive'], 'killed');
-    assert(now() - t >= 1000 && now() - t < 5000, 'after watchdogMs: ' + (now() - t));
+    { const [ok, ms] = fired(t); assert(ok, 'after watchdogMs: ' + ms); }
     W.k.dispose();
     current = C;
   });

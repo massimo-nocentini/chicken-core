@@ -1360,20 +1360,35 @@ void C_set_or_change_heap_size(C_word heap, int reintern)
  * (V8): the worst case is equal? on two deep lists (tests/wasm-smoke.sh
  * S18) with Liftoff frames, on node's main thread with --stack-size=900
  * and in a worker limited to a 1 MB stack (as in a browser).  On wasm32
- * (pad 64) it passes up to 416 KB, 6656 frames, and fails at 448 KB.
+ * at pad 64 it passes up to 416 KB, 6656 frames, and fails at 448 KB.
  * On wasm64 the engine's frames are bigger: at pad 64 it passes up to
  * 320 KB (5120 frames), at pad 128 (the wasm64 default, see
  * Makefile.emscripten) up to 704 KB (5632 frames), failing at 352 and
- * 736 KB.  The nursery is limited to 4096 frames on wasm32 (256 KB at
- * the default pad) and 3072 on wasm64 (384 KB), a margin of 1.6-1.9x.
- * 64-bit objects need the larger nursery: apply with 10000 arguments
- * (tests/apply-test.scm) never completes with 304 KB or less on wasm64
- * (144 KB or less on wasm32), as natively. */
+ * 736 KB.  The nursery is limited to 3072 frames on wasm64 (384 KB), a
+ * margin of 1.8x.  64-bit objects need the larger nursery: apply with
+ * 10000 arguments (tests/apply-test.scm) never completes with 304 KB or
+ * less on wasm64 (144 KB or less on wasm32), as natively.
+ *
+ * wasm32 is for engines without memory64, chiefly JavaScriptCore
+ * (Safari, every iOS browser): its wasm frames for the same code are
+ * 250-570 bytes (V8's 85-100), and its workers on Darwin get a 512 KB
+ * stack, of which it keeps 128 KB in reserve.  There csi overflowed at
+ * startup, about 1100 frames deep, at pad 64 with a 256 KB nursery
+ * (4096 frames).  So the wasm32 pad is 1024 and the nursery is fixed at
+ * 256 KB, 256 frames: in the jsc shell with a stack of 512 KB and 384
+ * KB (--maxPerThreadStackUsage, tests/wasm/jsc-stack.js) startup, a
+ * 200000 deep recursion, equal? on deep lists and apply with 10000
+ * arguments pass, down to 352 KB (equal? overflows at 320 KB, startup
+ * at 256 KB); pad 768 had no margin at 384 KB.  The extra minor GCs
+ * cost 70% in JavaScriptCore, 45-110% in V8, and C recursion
+ * (C_stack_check1: the nursery left plus C_STACK_RESERVE, 64 frames)
+ * can stop after about 60 levels; a reserve of 192 KB overflowed equal?
+ * at 384 KB. */
 # ifndef C_WASM_MAX_NURSERY
 #  ifdef C_SIXTY_FOUR
 #   define C_WASM_MAX_NURSERY ((C_uword)C_WASM_FRAME_PAD * 3 * 1024)
 #  else
-#   define C_WASM_MAX_NURSERY ((C_uword)C_WASM_FRAME_PAD * 4 * 1024)
+#   define C_WASM_MAX_NURSERY ((C_uword)256 * 1024)
 #  endif
 # endif
 
