@@ -1,20 +1,28 @@
-# Builds the WebAssembly web page with both architectures, as deployed
-# in docs/: build-wasm/web from make wasm WASM_WEB_ARCHS="wasm64 wasm32",
-# plus docs/README.txt and docs/serve.py.  The bundle is uploaded as the
-# workflow artifact chicken-wasm-web-<rev>.
+# Builds the WebAssembly web page with both architectures: build-wasm/web
+# from make wasm WASM_WEB_ARCHS="wasm64 wasm32", plus the README.txt and
+# serve.py of emscripten/deploy.  The bundle is uploaded as the
+# workflow artifact chicken-wasm-web-<rev> and, for main, deployed to the
+# docs/ folder of the gh-pages branch, which GitHub Pages serves (Settings
+# > Pages > Deploy from a branch: gh-pages, /docs).
+#
+# gh-pages holds one commit, replaced (force-pushed) by each deploy: the
+# modules are about 20 MB, which a history would keep for every deploy.
+# Its Source: trailer names the commit of main it was built from, and a
+# deploy of an older commit (a re-run of an old run) is refused.
 name: WebAssembly bundle
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/**']
   pull_request:
     branches: [main]
   workflow_dispatch:
 
+# A newer push to a pull request cancels the older run; on main the
+# newer run waits, so a built bundle is always deployed.
 concurrency:
   group: wasm-bundle-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,6 +35,8 @@ jobs:
   bundle:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    outputs:
+      rev: ${{ steps.boot.outputs.rev }}
     steps:
       - uses: actions/checkout@v4
 
@@ -92,7 +102,7 @@ jobs:
         run: |
           mkdir -p bundle
           cp -R build-wasm/web/. bundle/
-          cp docs/README.txt docs/serve.py bundle/
+          cp emscripten/deploy/README.txt emscripten/deploy/serve.py bundle/
           test -f bundle/index.html -a -f bundle/chicken-repl.wasm -a -f bundle/wasm32/chicken-repl.wasm
 
       - uses: actions/upload-artifact@v4
@@ -100,3 +110,69 @@ jobs:
           name: chicken-wasm-web-${{ steps.boot.outputs.rev }}
           path: bundle/
           if-no-files-found: error
+
+  deploy:
+    needs: bundle
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: chicken-wasm-web-${{ needs.bundle.outputs.rev }}
+          path: ${{ runner.temp }}/bundle
+
+      - name: Commit the bundle to gh-pages under docs/
+        env:
+          REV: ${{ needs.bundle.outputs.rev }}
+          SITE: ${{ runner.temp }}/site
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          git init -q -b gh-pages "$SITE"
+          cd "$SITE"
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          git config http.extraheader "AUTHORIZATION: basic $auth"
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          mkdir docs
+          cp -R "$RUNNER_TEMP/bundle/." docs/
+          # served as is, with no Jekyll pass (which drops _-prefixed files)
+          touch docs/.nojekyll
+          git add -A
+          tree=$(git write-tree)
+          lease=refs/heads/gh-pages:          # no gh-pages yet
+          if git fetch -q --depth 1 origin gh-pages 2>/dev/null; then
+            old=$(git rev-parse FETCH_HEAD)
+            lease=refs/heads/gh-pages:$old
+            if [ "$(git rev-parse "$old^{tree}")" = "$tree" ]; then
+              echo "gh-pages already has this bundle"
+              exit 0
+            fi
+            src=$(git log -1 --format='%(trailers:key=Source,valueonly)' "$old")
+            if [ -n "$src" ] && [ "$src" != "$GITHUB_SHA" ] &&
+               git fetch -q --filter=tree:0 origin "$GITHUB_SHA" "$src" &&
+               git merge-base --is-ancestor "$GITHUB_SHA" "$src"; then
+              echo "::notice::gh-pages has $src, newer than $GITHUB_SHA: not deploying"
+              exit 0
+            fi
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "Deploy the WebAssembly web page of $REV" \
+              -m "Built by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID." \
+              -m "Source: $GITHUB_SHA"
+          git push --force-with-lease="$lease" origin HEAD:refs/heads/gh-pages
+          echo "Deployed $REV: $(git rev-parse --short HEAD)" >>"$GITHUB_STEP_SUMMARY"
+
+      # A push made with GITHUB_TOKEN may not start the Pages build of a
+      # branch-based site, so ask for one (also after a skipped deploy,
+      # which retries a request that failed before)
+      - name: Ask GitHub Pages to publish gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" --jq .status ||
+            echo "::warning::could not request a Pages build: is Pages set to deploy from gh-pages, /docs?"

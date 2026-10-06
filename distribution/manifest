@@ -321,6 +321,8 @@ emscripten/web/compiler-worker.js
 emscripten/web/nb-kernel.js
 emscripten/web/notebook.js
 emscripten/web/notebook-lib.js
+emscripten/deploy/README.txt
+emscripten/deploy/serve.py
 GNUmakefile
 config.make
 rules.make
