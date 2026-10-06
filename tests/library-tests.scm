@@ -927,3 +927,16 @@ A
 
 (assert (string=? "((((((1))))..." (limited 10 (lambda () (write '((((((1)))))))))))
 (assert (string=? "abcd..." (limited 4 (lambda () (display "abcdefgh")))))
+
+;;; signal is continuable and leaves the handler installed
+
+(assert (equal? 2 (with-exception-handler
+                   (lambda (c) 1)
+                   (lambda () (+ (signal 'a) (signal 'b))))))
+(assert (equal? '(outer inner x)
+                (with-exception-handler
+                 (lambda (c) (cons 'outer c))
+                 (lambda ()
+                   (with-exception-handler
+                    (lambda (c) (signal (cons 'inner c)))
+                    (lambda () (signal '(x))))))))

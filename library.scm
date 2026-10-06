@@ -6639,9 +6639,16 @@ EOF
 	    '(exn . location) #f) ) ) ) )
 
 (define (signal x)
+  ;; Continuable, so the handler is reinstated when it returns (as in
+  ;; scheme#raise-continuable): only its own dynamic extent runs under
+  ;; the outer handler.
   (let ((h (car ##sys#current-exception-handler)))
-    (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler))
-    (h x) ) )
+    (##sys#dynamic-wind
+      (lambda ()
+        (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
+      (lambda () (h x))
+      (lambda ()
+        (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
 
 (define ##sys#error-handler
   (make-parameter
