@@ -96,7 +96,9 @@ jobs:
       - name: Smoke test the node csi
         run: |
           source ~/emsdk/emsdk_env.sh
-          test "$(build-wasm/node/csi -n -e '(display (+ 1 2))')" = 3
+          # emsdk_env.sh puts emsdk's node in EMSDK_NODE, not on the PATH, and
+          # the runner's own node is too old for wasm64 (memory64/table64).
+          test "$(NODE="$EMSDK_NODE" build-wasm/node/csi -n -e '(display (+ 1 2))')" = 3
 
       - name: Assemble the bundle
         run: |
