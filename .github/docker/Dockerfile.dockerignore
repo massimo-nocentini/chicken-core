@@ -1,0 +1,10 @@
+# .git stays in the context: identify.sh reads the revision from it
+docs/
+build-wasm*/
+boot/
+.claude/
+config.make
+*.o
+*.so
+*.so.*
+*.a

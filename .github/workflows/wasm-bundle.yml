@@ -1,0 +1,102 @@
+# Builds the WebAssembly web page with both architectures, as deployed
+# in docs/: build-wasm/web from make wasm WASM_WEB_ARCHS="wasm64 wasm32",
+# plus docs/README.txt and docs/serve.py.  The bundle is uploaded as the
+# workflow artifact chicken-wasm-web-<rev>.
+name: WebAssembly bundle
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: wasm-bundle-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # the version the README says the build is tested with
+  EMSDK_VERSION: 6.0.10
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read the bootstrap snapshot version
+        id: boot
+        run: |
+          version=$(sed -n 's/^BOOTVERSION=//p' scripts/bootstrap.sh)
+          url=$(sed -n 's/^BOOTURL=//p' scripts/bootstrap.sh | sed "s/\${BOOTVERSION}/$version/")
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          echo "url=https://code.call-cc.org/dev-snapshots/$url" >>"$GITHUB_OUTPUT"
+          echo "rev=$(git rev-parse --short HEAD)" >>"$GITHUB_OUTPUT"
+
+      - name: Cache the bootstrap snapshot
+        id: snapshot-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/chicken-snapshot
+          key: chicken-snapshot-${{ steps.boot.outputs.version }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the bootstrap snapshot
+        if: steps.snapshot-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$RUNNER_TEMP/snapshot" && cd "$RUNNER_TEMP/snapshot"
+          wget -qO- "${{ steps.boot.outputs.url }}" | tar -xz
+          cd "chicken-${{ steps.boot.outputs.version }}"
+          ./configure --prefix "$HOME/chicken-snapshot"
+          make -j"$(nproc)"
+          make install
+
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install emsdk
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION"
+          ~/emsdk/emsdk activate "$EMSDK_VERSION"
+
+      - name: Build the host CHICKEN
+        run: |
+          ./configure --chicken "$HOME/chicken-snapshot/bin/chicken"
+          make -j"$(nproc)" boot-chicken
+          make spotless
+          ./configure --chicken ./chicken-boot
+          make -j"$(nproc)"
+
+      - name: Build wasm64 and wasm32
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          make -j"$(nproc)" wasm WASM_WEB_ARCHS="wasm64 wasm32"
+
+      - name: Smoke test the node csi
+        run: |
+          source ~/emsdk/emsdk_env.sh
+          test "$(build-wasm/node/csi -n -e '(display (+ 1 2))')" = 3
+
+      - name: Assemble the bundle
+        run: |
+          mkdir -p bundle
+          cp -R build-wasm/web/. bundle/
+          cp docs/README.txt docs/serve.py bundle/
+          test -f bundle/index.html -a -f bundle/chicken-repl.wasm -a -f bundle/wasm32/chicken-repl.wasm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chicken-wasm-web-${{ steps.boot.outputs.rev }}
+          path: bundle/
+          if-no-files-found: error
