@@ -11,12 +11,21 @@
 # A checkout has no C translations of the Scheme sources, so the build
 # bootstraps as scripts/bootstrap.sh does: the release snapshot named
 # there builds a chicken-boot from the checkout, which builds the rest.
+#
+# Everything is compiled and linked with clang.  configure records only
+# the C compiler and the linker in config.make, and the boot-chicken
+# stages run make with CONFIG= (no config.make), so the compilers and
+# the linker are also given on every make command line, from which they
+# reach the sub-makes through MAKEFLAGS.
 
-ARG DEBIAN=debian:trixie-slim
+# ubuntu:latest is multi-platform: each build pulls its own platform's image
+ARG BASE=ubuntu:latest
 
-FROM ${DEBIAN} AS snapshot
+FROM ${BASE} AS snapshot
+ENV CC=clang CXX=clang++
+ENV CLANG_MAKE="C_COMPILER=clang CXX_COMPILER=clang++ LINKER=clang"
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates gcc libc6-dev make wget \
+ && apt-get install -y --no-install-recommends ca-certificates clang libc6-dev make wget \
  && rm -rf /var/lib/apt/lists/*
 # Only this file, so the snapshot layer is reused until it changes
 COPY scripts/bootstrap.sh /tmp/bootstrap.sh
@@ -26,9 +35,9 @@ RUN set -eu; \
     mkdir -p /boot && cd /boot; \
     wget -qO- "https://code.call-cc.org/dev-snapshots/$url" | tar -xz; \
     cd "chicken-$version"; \
-    ./configure --prefix /boot/snapshot; \
-    make -j"$(nproc)"; \
-    make install
+    ./configure --prefix /boot/snapshot --c-compiler clang --linker clang; \
+    make -j"$(nproc)" $CLANG_MAKE; \
+    make $CLANG_MAKE install
 
 FROM snapshot AS build
 RUN apt-get update \
@@ -38,21 +47,25 @@ WORKDIR /src
 COPY . .
 RUN set -eu; \
     git config --global --add safe.directory /src; \
-    ./configure --chicken /boot/snapshot/bin/chicken; \
-    make -j"$(nproc)" boot-chicken; \
-    make spotless; \
-    ./configure --chicken ./chicken-boot --prefix /usr/local; \
-    make -j"$(nproc)"; \
-    make DESTDIR=/out install
+    ./configure --chicken /boot/snapshot/bin/chicken --c-compiler clang --linker clang; \
+    make -j"$(nproc)" $CLANG_MAKE boot-chicken; \
+    make $CLANG_MAKE spotless; \
+    ./configure --chicken ./chicken-boot --prefix /usr/local --c-compiler clang --linker clang; \
+    make -j"$(nproc)" $CLANG_MAKE; \
+    make $CLANG_MAKE DESTDIR=/out install
 
-FROM ${DEBIAN}
-# csc and chicken-install need a C compiler at run time
+FROM ${BASE}
+# csc and chicken-install need a C compiler at run time: the clang the
+# installed CHICKEN was configured with
+ENV CC=clang CXX=clang++
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates gcc libc6-dev make \
+ && apt-get install -y --no-install-recommends ca-certificates clang libc6-dev make \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=build /out/usr/local/ /usr/local/
 RUN ldconfig \
  && csi -version \
+ && grep -q '# define C_INSTALL_CC "clang"' /usr/local/include/chicken/chicken-config.h \
+ && grep -q '# define C_INSTALL_CXX "clang++"' /usr/local/include/chicken/chicken-config.h \
  && printf '(import (chicken format))\n(printf "~a~%%" (+ 1 2))\n' >/tmp/t.scm \
  && csc /tmp/t.scm -o /tmp/t && test "$(/tmp/t)" = 3 \
  && rm -f /tmp/t /tmp/t.scm
