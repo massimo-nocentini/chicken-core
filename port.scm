@@ -429,7 +429,7 @@ char *ttyname(int fd) {
                                     (set! tail bv)
                                     (loop n c)))))))))
 	     read-line			; read-line
-	     ##sys#read-buffered-bytes     ; read-buffered
+	     read-buffered     ; read-buffered
              (lambda (p) (ready?))  ; char-ready?
              ))
 	   (data (vector #f))

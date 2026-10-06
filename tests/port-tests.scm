@@ -379,6 +379,17 @@ EOF
                          (lambda () (close-input-port p))
                          #:peek-char (lambda () (peek-char p))))))
 
+    (test-group "make-input-port read-buffered"
+      (test-equal "read-buffered: procedure is used"
+                  (read-buffered
+                   (make-input-port (constantly #\a) (constantly #t) void
+                                    read-buffered: (lambda (p) "xyz")))
+                  "xyz")
+      (test-equal "no read-buffered: procedure gives the empty string"
+                  (read-buffered
+                   (make-input-port (constantly #\a) (constantly #t) void))
+                  ""))
+
     (test-group "generic read-bytevector! with multi-byte characters"
       (define (in s)
         (let ((p (open-input-string s)))
