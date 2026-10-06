@@ -102,6 +102,7 @@ read-syntax.scm
 repl.scm
 runtime.c
 utf.c
+utf-tables.c
 scheduler.scm
 srfi-4.scm
 stub.scm
@@ -116,7 +117,6 @@ tests/csc-tests.scm
 tests/c-id-valid.scm
 tests/data-structures-tests.scm
 tests/environment-tests.scm
-tests/gobble.scm
 tests/heap-literal-stress-test.scm
 tests/test-optional.scm
 tests/arithmetic-test.scm
@@ -136,7 +136,6 @@ tests/record-printer-test.scm
 tests/r4rstest.scm
 tests/r4rstest.expected
 tests/null.scm
-tests/sgrep.scm
 tests/r7rs-tests.scm
 tests/runtests.sh
 tests/runtests-wasm.sh
@@ -164,7 +163,6 @@ tests/wasm/eggs/wasm-egg-c/wasm-egg-c.egg
 tests/wasm/eggs/wasm-egg-c/wasm-egg-c.scm
 tests/wasm/eggs/wasm-egg-tool/wasm-egg-tool.egg
 tests/wasm/eggs/wasm-egg-tool/wasm-egg-tool.scm
-tests/runbench.sh
 tests/srfi-4-tests.scm
 tests/srfi-45-tests.scm
 tests/apply-test.scm
@@ -248,9 +246,6 @@ tests/lolevel-tests.scm
 tests/compiler-syntax-tests.scm
 tests/compiler.scm
 tests/fft.scm
-tests/slatex.scm
-tests/test.tex
-tests/slatex.sty
 tests/symbolgc-tests.scm
 tests/private-repository-test.scm
 tests/records-and-setters-test.scm
@@ -460,6 +455,7 @@ scripts/compile-all
 scripts/compare-documentation-exports.scm
 scripts/make-wrapper.scm
 scripts/makedist.scm
+scripts/mkunicodetables.scm
 scripts/smoke-test.sh
 manual-html/Accessing external objects.html
 manual-html/Acknowledgements.html

@@ -190,6 +190,7 @@
 
     chicken.bytevector#bytevector-length chicken.bytevector#bytevector=?
     chicken.bytevector#bytevector? chicken.bytevector#bytevector-u8-ref
+    chicken.bytevector#bytevector-u8-set!
 
     chicken.keyword#get-keyword
 
@@ -1086,6 +1087,8 @@
 (rewrite '##sys#foreign-unsigned-ranged-integer-argument 17 2 "C_i_foreign_unsigned_ranged_integer_argumentp")
 
 (rewrite 'chicken.bytevector#bytevector-length 2 1 "C_block_size" #f)
+(rewrite 'chicken.bytevector#bytevector-u8-set! 2 3 "C_u_i_bytevector_set" #f)
+(rewrite 'chicken.bytevector#bytevector-u8-set! 2 3 "C_i_bytevector_set" #t)
 
 ;; TODO: Move this stuff to types.db
 (rewrite 'chicken.bytevector#bytevector-u8-ref 2 2 "C_u_i_bytevector_ref" #f)

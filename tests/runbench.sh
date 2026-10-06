@@ -1,6 +1,11 @@
 #!/bin/sh
 # runbench.sh - run benchmarks
 #
+# - Upstream dropped the core benchmark suite (slatex, grep, allocation)
+#   and the `make bench' target; this fork keeps the remaining benchmarks,
+#   including the delimited-continuation ones.  Run it from tests/ after
+#   building: `cd tests; sh runbench.sh'.
+#
 # - Note: this needs a proper shell, so it will not work with plain mingw
 #   (just the compiler and the Windows shell, without MSYS)
 
@@ -47,26 +52,12 @@ echo "======================================== compilation ... "
 echo "======================================== compiler ... "
 run -:Hd
 
-echo "======================================== slatex ... "
-$compile slatex.scm
-mkdir -p slatexdir
-rm -f slatexdir/*
-run
-
-echo "======================================== grep ... "
-$compile sgrep.scm
-run compiler.scm
-
 echo "======================================== fft/boxed ... "
 $compile fft.scm
 run 2000 11
 echo "======================================== fft/unboxed ... "
 $compile fft.scm -D unboxed
 run 2000 11
-
-echo "======================================== allocation ... "
-$compile gobble.scm
-run 1000000000
 
 echo "======================================== irregex ... "
 /usr/bin/time "$timeopts" $interpret -bnq test-irregex.scm >/dev/null

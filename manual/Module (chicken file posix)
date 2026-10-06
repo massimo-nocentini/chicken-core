@@ -511,6 +511,47 @@ Example usage:
     (close-output-port temp-port)))
 </enscript>
 
+==== file-mkstemps
+
+<procedure>(file-mkstemps TEMPLATE-FILENAME SUFFIX-LENGTH)</procedure>
+
+Create a file based on the given {{TEMPLATE-FILENAME}}, in which
+the six characters before the suffix must be ''XXXXXX''.  These will
+be replaced with a string that makes the filename unique.
+{{SUFFIX-LENGTH}} should be a fixnum giving the length of the suffix
+in bytes.  The file descriptor of the created file and the generated
+filename is returned.  See the {{mkstemps(3)}} manual page for details
+on how this function works.  The template string given is not modified.
+
+Example usage:
+
+<enscript highlight=scheme>
+ (let ((suffix ".tmp"))
+  (let-values (((fd temp-path)
+                (file-mkstemps (string-append "/tmp/mytemporary.XXXXXX" suffix)
+                              (number-of-bytes suffix))))
+   (let ((temp-port (open-output-file* fd)))
+     (format temp-port "This file is ~A.~%" temp-path)
+     (close-output-port temp-port))))
+</enscript>
+
+'''NOTE''': On native Windows builds (all except cygwin), this
+procedure is unimplemented and will raise an error.
+
+==== file-mkdtemp
+
+<procedure>(file-mkdtemp TEMPLATE-FILENAME)</procedure>
+
+Create a directory based on the given {{TEMPLATE-FILENAME}}, in which
+the six last characters must be ''XXXXXX''.  These will be replaced
+with a string that makes the directory name unique.  The generated
+directory name is returned.  See the {{mkdtemp(3)}} manual page for
+details on how this function works.  The template string given is
+not modified.
+
+'''NOTE''': On native Windows builds (all except cygwin), this
+procedure is unimplemented and will raise an error.
+
 ==== file-read
 
 <procedure>(file-read FILENO SIZE [BUFFER])</procedure>

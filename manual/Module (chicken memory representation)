@@ -138,10 +138,12 @@ The returned bytevector shares storage with the original value.
 
 ==== make-record-instance
 
-<procedure>(make-record-instance SYMBOL ARG1 ...)</procedure>
+<procedure>(make-record-instance TAG ARG1 ...)</procedure>
 
-Returns a new instance of the record type {{SYMBOL}}, with its
-slots initialized to {{ARG1 ...}}.  To illustrate:
+Returns a new instance of the record type {{TAG}}, with its
+slots initialized to {{ARG1 ...}}.  {{TAG}} should be a symbol or
+a vector holding a symbol, distinguishing between non-generative
+and generative record types. To illustrate:
 
 <enscript highlight=scheme>
 (define-record-type point (make-point x y) point?
@@ -154,7 +156,7 @@ expands into something quite similar to:
 <enscript highlight=scheme>
 (begin
   (define (make-point x y)
-    (make-record-instance 'point x y) )
+    (make-record-instance '#(point) x y) )
   (define (point? x)
     (and (record-instance? x)
          (eq? 'point (block-ref x 0)) ) )
@@ -167,11 +169,11 @@ expands into something quite similar to:
 
 ==== record-instance?
 
-<procedure>(record-instance? X [SYMBOL])</procedure>
+<procedure>(record-instance? X [TAG])</procedure>
 
 Returns {{#t}} if {{X}} is a record structure, or {{#f}} otherwise.
 
-Further, returns {{#t}} if {{X}} is of type {{SYMBOL}}, or {{#f}}
+Further, returns {{#t}} if {{X}} is of type {{TAG}}, or {{#f}}
 otherwise.
 
 
@@ -179,7 +181,8 @@ otherwise.
 
 <procedure>(record-instance-type RECORD)</procedure>
 
-Returns type symbol of the record structure {{RECORD}}. Signals an
+Returns the type tag of the record structure {{RECORD}}, which is either
+a symbol or a vector holding a symbol. Signals an
 error if {{RECORD}} is not a record structure.
 
 

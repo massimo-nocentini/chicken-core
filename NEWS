@@ -1,4 +1,4 @@
-6.0.1
+6.1.0
 
 - Core libraries
   - `string-foldcase' could write past the end of its output buffer: it
@@ -51,16 +51,17 @@
     #<unbound value>" because ##sys#print-exit was hidden in the
     library unit.
   - Fixed a bug in "read-string" when reading from a binary port.
-  - Fixed a bug in bit->boolean when given negative bignums which would give
-    incorrect output or crash due to out of bounds read (reported by crzcrz).
+  - Fixed a bug in bit->boolean when given negative bignums which would 
+    give incorrect output or crash due to out of bounds read (reported by 
+    Stanislav Kljuhhin).
   - The deprecated "chicken-home" and "define-record-printer" have been 
     removed.
   - Fix "=" raising an error when passed a complex number and a bignum,
-    returning #f instead (reported by "crzcrz").
+    returning #f instead (reported by Stanislav Kljuhhin).
   - Fixed various potential buffer overflows in runtime system, reported 
-    with fixes by "crzcrz".
+    with fixes by Stanislav Kljuhhin.
   - Fixed several bugs in input decoding from TCP and process ports,
-    special thanks to "crzcrz" for the considerable help in analyzing 
+    special thanks to Stanislav Kljuhhin for the considerable help in analyzing 
     and testing the problem and it's solution.
   - `(chicken number-vector)': a ratnum reaching any of the complex
     vector store paths -- `c64vector', `make-c64vector', `c64vector-set!',
@@ -106,10 +107,47 @@
     product and quotient.
   - `(chicken memory)': `move-memory!' accepts `c64vector' and
     `c128vector', which it used to reject.
+  - Improved the behaviour of a number of arithmetic primitives when using
+    mixed complex and non-complex numbers as arguments to make them
+    more consistent with other Scheme implementations and return results
+    that are more useful.
+  - Multiplication with exact zero always produces a zero result.
+  - Various improvements numerical code, in particular for complex numbers
+    and inverse trigonometric functions. Contributed by Peter McGoron.
+  - Added safe variant for bytevector predicates, which would otherwise
+    fail when given immediate values (thanks to Massimo Nocentini).
+  - Added fast path for ASCII chars in utf comparison predicate (thanks
+    to Massimo Nocentini).
+  - Fixed incorrect buffer management in "file-mkstemp" (from the
+    "chicken.file.posix" module).
+  - Made the "u8vector" type a proper synonym for "bytevector" (thanks to
+    Diega A. Mundo).
+  - Fixed argument handling for "include-path" (thanks to "siiky", Diego
+    A. Mundo and Kristianl Lein-Mathisen).
+  - Overhauled UTF character-class databases and predicates to Unicode 18 
+    and moved tables into a separate file to easy maintenance (thanks to 
+    Stanislav Kljuhhin).
+  - Added "file-mkstemps" and "file-mkdtemp" to the "(chicken file posix)"
+    module and "call-with-temporary-file" (in "(chicken file)"), contributed
+    by Stanislav Kljuhhin.
+  - "include" now searches relative to the including source file, if a
+    relative path is given, to make it more portable across existing
+    Scheme implementations (suggested by "Retropikzel"). "include-relative"
+    still exists but has been deprecated.
+  - Added "#u8{...}" notation for reading hex-encoded bytevectors,
+    bytevectors inside bytevector literals are spliced, allowing for various
+    ways to construct complex byte sequences (thanks to Kristian 
+    Lein-Mathisen).
+  - Procedures expecting specifically input or output ports now check
+    whether their port argument is of the correct direction.  Previously
+    e.g. close-input-port would silently ignore output port arguments
+    (thanks to Étienne Pflieger).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
+  - Disabled confusing warnings about indirect exports when using 
+    "define-library". 
 
 - Core libraries
   - `chicken.continuation' now exports the delimited control operators
@@ -170,8 +208,6 @@
     the number vector operations.
   - `u64vector-ref' and `s64vector-ref' now inline, as the 32-bit
     accessors already did; the setters were already registered.
-  - `c128vector?' is an extended binding again -- the list named a
-    nonexistent `f128vector?'.
   - The scrutinizer declared `c64vector-ref' and `c128vector-ref' as
     returning a float, but they return a complex number, so specialized
     code read a pointer as a double: `(+ (c64vector-ref v 0) 1.0)' gave a
@@ -179,6 +215,12 @@
     and setters were likewise declared not to accept complex arguments.
   - The `s64vector' procedures had no type declarations at all, and
     `make-f64vector' was declared with one parameter too few.
+  - Fixed a bug in the "lfa2" pass that could result in exponential
+    compile times due to redundant node walking.
+  - Fix misspelled primitives in extended bindings list for compiler
+    rewrites (the number vector names lacked their "#" module separator,
+    and `c128vector?' was listed as a nonexistent `f128vector?'), added
+    rewrites for R7RS bytevector operations (thanks to Massimo Nocentini).
 
 - Runtime system
   - Bignum multiplication and division now work a whole digit at a time

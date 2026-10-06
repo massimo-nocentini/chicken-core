@@ -501,11 +501,15 @@ EOF
 
 ;; Record layout:
 ;
-; 0	Tag (symbol)
+; 0	Tag (symbol or #(symbol))
 ; 1..N	Slot (object)
 
 (define (make-record-instance type . args)
-  (##sys#check-symbol type 'make-record-instance)
+  (unless (or (##core#inline "C_symbolp" type)
+              (and (##core#inline "C_vectorp" type)
+                   (eq? 1 (##sys#size type))
+                   (##core#inline "C_symbolp" (##slot type 0))))
+    (##sys#signal-hook #:type-error #f "bad argument type - not a valid record tag" type) )
   (apply ##sys#make-structure type args) )
 
 (define (record-instance? x #!optional type)

@@ -274,7 +274,8 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     The "configure" script respects the "CC" and "CFLAGS" environment
     variables, which correspond to the "--c-compiler" option and to
-    the "C_COMPILER_OPTIMIZATION_OPTIONS" make variable respectively.
+    the "C_COMPILER_OPTIMIZATION_OPTIONS" and
+    "RUNTIME_OPTIMIZATION_OPTIONS" make variables respectively.
     Note that "CFLAGS" *replaces* the optimization options rather
     than adding to them; see section 2.6.
 
@@ -298,17 +299,24 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     The optimization flags default to "-Os -fomit-frame-pointer",
     or to "-O3 -fomit-frame-pointer" when "OPTIMIZE_FOR_SPEED" is
-    set, or to "-O0 -g ..." for a "--debugbuild". The C sources and
-    the C emitted by "chicken" are written and tested against these
+    set, or to "-O0 -g ..." for a "--debugbuild". The two C files
+    of the runtime system itself, "runtime.c" and "utf.c", are
+    compiled with a separate set, "RUNTIME_OPTIMIZATION_OPTIONS",
+    which defaults to "-O2" whether or not "OPTIMIZE_FOR_SPEED" is
+    set ("-g ..." for a "--debugbuild"). The C sources and the C
+    emitted by "chicken" are written and tested against these
     defaults.
 
-    Beware that "CFLAGS", and the "C_COMPILER_OPTIMIZATION_OPTIONS"
-    variable it sets, *replace* the default optimization flags
-    instead of extending them. Passing "CFLAGS=-march=native"
-    therefore also turns off "-Os -fomit-frame-pointer". To add a
-    flag rather than replace the set, spell out the whole list:
+    Beware that "CFLAGS", and the two variables it sets, *replace*
+    the default optimization flags instead of extending them.
+    Passing "CFLAGS=-march=native" therefore also turns off
+    "-Os -fomit-frame-pointer" and the runtime's "-O2". To add a
+    flag rather than replace the set, spell out the whole list, for
+    each variable you want it in (setting only the first leaves
+    "runtime.c" and "utf.c" at their own defaults):
 
-        make C_COMPILER_OPTIMIZATION_OPTIONS="-Os -fomit-frame-pointer -g"
+        make C_COMPILER_OPTIMIZATION_OPTIONS="-Os -fomit-frame-pointer -g" \
+             RUNTIME_OPTIMIZATION_OPTIONS="-O2 -g"
 
     (The separate "C_COMPILER_OPTIONS" variable, which carries
     "-fno-strict-aliasing -fwrapv", is not affected by "CFLAGS" and

@@ -35,7 +35,7 @@
 
 (declare
   (unit file)
-  (uses extras irregex pathname)
+  (uses extras irregex pathname posix)
   (fixnum)
   (disable-interrupts)
   (foreign-declare #<<EOF
@@ -126,6 +126,7 @@ EOF
 (module chicken.file
   (create-directory delete-directory
    create-temporary-file create-temporary-directory
+   call-with-temporary-file
    delete-file delete-file* copy-file move-file rename-file
    file-exists? directory-exists?
    file-readable? file-writable? file-executable?
@@ -134,6 +135,7 @@ EOF
 (import scheme
 	chicken.base
 	chicken.condition
+        chicken.file.posix
 	chicken.fixnum
 	chicken.foreign
 	chicken.io
@@ -142,19 +144,6 @@ EOF
 	chicken.process-context)
 
 (include "common-declarations.scm")
-
-(define-foreign-variable strerror c-string "strerror(errno)")
-
-;; TODO: Some duplication from POSIX, to give better error messages.
-;; This really isn't so much posix-specific, and code like this is
-;; also in library.scm.  This should be deduplicated across the board.
-(define posix-error
-  (let ([strerror (foreign-lambda c-string "strerror" int)]
-	[string-append string-append] )
-    (lambda (type loc msg . args)
-      (let ([rn (##sys#update-errno)])
-        (apply ##sys#signal-hook/errno
-               type rn loc (string-append msg " - " (strerror rn)) args)))))
 
 
 ;;; Existence checks:
@@ -180,7 +169,7 @@ EOF
     (or (fx= r 0)
 	(if (fx= (##sys#update-errno) (foreign-value "EACCES" int))
 	    #f
-	    (posix-error #:file-error loc "cannot access file" filename)))))
+	    (##sys#posix-error #:file-error loc "cannot access file" filename)))))
 
 (define (file-readable? filename) (test-access filename _r_ok 'file-readable?))
 (define (file-writable? filename) (test-access filename _w_ok 'file-writable?))
@@ -198,7 +187,7 @@ EOF
      "C_opendir"
      (##sys#make-c-string spec 'directory) handle)
     (if (##sys#null-pointer? handle)
-	(posix-error #:file-error 'directory "cannot open directory" spec)
+	(##sys#posix-error #:file-error 'directory "cannot open directory" spec)
 	(let loop ()
 	  (##core#inline "C_readdir" handle entry)
 	  (if (##sys#null-pointer? entry)
@@ -222,7 +211,7 @@ EOF
 
 (define-inline (*create-directory loc name)
   (unless (fx= 0 (##core#inline "C_mkdir" (##sys#make-c-string name loc)))
-    (posix-error #:file-error loc "cannot create directory" name)))
+    (##sys#posix-error #:file-error loc "cannot create directory" name)))
 
 (define create-directory
   (lambda (name #!optional recursive)
@@ -244,7 +233,7 @@ EOF
       (let ((sname (##sys#make-c-string dir)))
 	(when (and (not (fx= 0 (##core#inline "C_rmdir" sname)))
 	           (not (fx= (##sys#update-errno) (foreign-value "ENOENT" int))))
-	  (posix-error #:file-error 'delete-directory "cannot delete directory" dir))))
+	  (##sys#posix-error #:file-error 'delete-directory "cannot delete directory" dir))))
     (##sys#check-string name 'delete-directory)
     (if recursive
 	(let ((files (find-files ; relies on `find-files' to list dir-contents before dir
@@ -267,9 +256,9 @@ EOF
 (define (delete-file filename)
   (##sys#check-string filename 'delete-file)
   (unless (eq? 0 (##core#inline "C_remove" (##sys#make-c-string filename 'delete-file)))
-    (##sys#signal-hook/errno
-     #:file-error (##sys#update-errno) 'delete-file
-     (##sys#string-append "cannot delete file - " strerror) filename))
+    (##sys#posix-error
+     #:file-error 'delete-file
+     "cannot delete file" filename))
   filename)
 
 (define (delete-file* file)
@@ -288,9 +277,9 @@ EOF
 		  "C_rename"
 		  (##sys#make-c-string oldfile 'rename-file)
 		  (##sys#make-c-string newfile 'rename-file)))
-    (##sys#signal-hook/errno
-     #:file-error (##sys#update-errno) 'rename-file
-     (##sys#string-append "cannot rename file - " strerror) oldfile newfile))
+    (##sys#posix-error
+     #:file-error 'rename-file
+     "cannot rename file" oldfile newfile))
   newfile)
 
 (define (copy-file oldfile newfile #!optional (clobber #f) (blocksize 1024))
@@ -347,6 +336,7 @@ EOF
 
 (define create-temporary-file)
 (define create-temporary-directory)
+(define call-with-temporary-file)
 
 (let ((temp-prefix "temp")
       (string-append string-append))
@@ -363,41 +353,66 @@ EOF
   (set! create-temporary-file
     (lambda (#!optional (ext "tmp"))
       (##sys#check-string ext 'create-temporary-file)
-      (let loop ()
-	(let* ((n (##core#inline "C_random_fixnum" #x10000))
-	       (getpid (foreign-lambda int "C_getpid"))
-	       (pn (make-pathname
-		    (tempdir)
-		    (string-append
-		     temp-prefix
-		     (number->string n 16)
-		     "."
-		     (##sys#number->string (getpid)))
-		    ext)))
-	  (if (file-exists? pn)
-	      (loop)
-	      (call-with-output-file pn (lambda (p) pn)))))))
+      (if ##sys#windows-platform
+          (let loop ()
+            (let* ((n (##core#inline "C_random_fixnum" #x10000))
+                   (getpid (foreign-lambda int "C_getpid"))
+                   (pn (make-pathname
+                        (tempdir)
+                        (string-append
+                         temp-prefix
+                         (number->string n 16)
+                         "."
+                         (##sys#number->string (getpid)))
+                        ext)))
+              (if (file-exists? pn)
+                  (loop)
+                  (call-with-output-file pn (lambda (p) pn)))))
+          (let* ((n (fx- (##sys#size (##sys#slot ext 0)) 1))
+                 ;; Account for the added dot.
+                 (n (if (fx= n 0) 0 (fx+ n 1)))
+                 (pn (make-pathname
+                      (tempdir)
+                      (string-append temp-prefix "XXXXXX")
+                      ext)))
+            (let-values (((fd pn) (file-mkstemps pn n)))
+              (file-close fd)
+              pn)))))
   (set! create-temporary-directory
     (lambda ()
-      (let loop ()
-	(let* ((n (##core#inline "C_random_fixnum" #x10000))
-	       (getpid (foreign-lambda int "C_getpid"))
-	       (pn (make-pathname
-		    (tempdir)
-		    (string-append
-		     temp-prefix
-		     (number->string n 16)
-		     "."
-		     (##sys#number->string (getpid))))))
-	  (if (file-exists? pn)
-	      (loop)
-	      (let ((r (##core#inline "C_mkdir" (##sys#make-c-string pn 'create-temporary-directory))))
-		(if (eq? r 0)
-		    pn
-		    (##sys#signal-hook
-		     #:file-error 'create-temporary-directory
-		     (##sys#string-append "cannot create temporary directory - " strerror)
-		     pn)))))))))
+      (if ##sys#windows-platform
+          (let loop ()
+            (let* ((n (##core#inline "C_random_fixnum" #x10000))
+                   (getpid (foreign-lambda int "C_getpid"))
+                   (pn (make-pathname
+                        (tempdir)
+                        (string-append
+                         temp-prefix
+                         (number->string n 16)
+                         "."
+                         (##sys#number->string (getpid))))))
+              (if (file-exists? pn)
+                  (loop)
+                  (let ((r (##core#inline "C_mkdir" (##sys#make-c-string pn 'create-temporary-directory))))
+                    (if (eq? r 0)
+                        pn
+                        (##sys#posix-error
+                         #:file-error 'create-temporary-directory
+                         "cannot create temporary directory" pn))))))
+          (file-mkdtemp
+            (make-pathname (tempdir) (string-append temp-prefix "XXXXXX"))))))
+  (set! call-with-temporary-file
+    (let ((open-output-file* open-output-file*)
+          (close-output-port close-output-port))
+      (lambda (p)
+        (let-values (((fd pn) (file-mkstemp
+                               (make-pathname (tempdir) (string-append temp-prefix "XXXXXX")))))
+          (let ((f (open-output-file* fd)))
+            (##sys#call-with-values
+              (lambda () (p f pn))
+              (lambda results
+                (close-output-port f)
+                (apply ##sys#values results)))))))))
 
 
 ;;; Filename globbing:

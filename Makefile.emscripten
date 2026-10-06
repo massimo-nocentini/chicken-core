@@ -164,6 +164,10 @@ else
 C_COMPILER_OPTIMIZATION_OPTIONS ?= -O2
 WASM_LINK_OPT ?= -O2
 endif
+# rules.make compiles the C units of libchicken (runtime.c, utf.c) with
+# RUNTIME_OPTIMIZATION_OPTIONS, not the options above: keep them the same
+# here (defaults.make's own default omits the -O0 of a debug build).
+RUNTIME_OPTIMIZATION_OPTIONS ?= $(C_COMPILER_OPTIMIZATION_OPTIONS)
 C_COMPILER_SHARED_OPTIONS =
 LINKER_LINK_SHARED_PROGRAM_OPTIONS =
 # chicken.h's '#include "chicken-config.h"' would find the HOST header in

@@ -37,7 +37,10 @@
 	exit-in-progress cleanup-before-exit chicken.base#cleanup-tasks
         maximal-string-length find-ratio-between find-ratio
 	make-complex flonum->ratnum ratnum
-	+maximum-allowed-exponent+ mantexp->dbl ldexp round-quotient
+	+maximum-allowed-exponent+ mantexp->dbl ldexp ldexp*
+	round-quotient
+	fllog1+ ##sys#sign ##sys#atanh ##sys#internal-atanh
+	##sys#sign-bit ##sys#tanh
 	##sys#string->compnum ##sys#internal-gcd)
   (not inline chicken.base#sleep-hook ##sys#change-directory-hook
        ##sys#user-read-hook ##sys#error-hook ##sys#signal-hook ##sys#signal-hook/errno
@@ -698,7 +701,9 @@ EOF
   ;; NOTE: the scratch buffer is 3n bytes, not 2n as for -upcase and
   ;; -downcase below.  C_utf_string_foldcase consults `fold2', whose rows
   ;; are {source, r1, r2, r3}, so one input codepoint expands to at most
-  ;; three output codepoints; 16 of the 104 rows do use the third slot.
+  ;; three output codepoints; 16 of the 105 rows do use the third slot.
+  ;; (Tables generated into utf-tables.c by scripts/mkunicodetables.scm;
+  ;; re-check this bound when they are regenerated.)
   ;; The worst *byte* expansion over the whole table is exactly 3x, and it
   ;; is reached by U+0390 (GREEK SMALL LETTER IOTA WITH DIALYTIKA AND
   ;; TONOS) and U+03B0 (GREEK SMALL LETTER UPSILON WITH DIALYTIKA AND
@@ -714,8 +719,8 @@ EOF
   (##sys#check-string str 'string-downcase)
   ;; 2n is enough here (do not "tidy" it to match string-foldcase above):
   ;; C_utf_char_downcase is a 1:1 codepoint mapping, and its widest byte
-  ;; growth over upper1/upper2/upper3 is 1.5x, at U+023A -> U+2C65 (two
-  ;; bytes in, three out).
+  ;; growth over `lowermap' is 1.5x, at U+023A -> U+2C65 (two bytes in,
+  ;; three out).
   (let* ((bv (##sys#slot str 0))
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
@@ -725,8 +730,8 @@ EOF
 (define (string-upcase str)
   (##sys#check-string str 'string-upcase)
   ;; 2n is enough here too: C_utf_char_upcase is a 1:1 codepoint mapping
-  ;; whose widest byte growth over lower1/lower2/lower4 is 1.5x, at
-  ;; U+023F -> U+2C7E (two bytes in, three out).
+  ;; whose widest byte growth over `uppermap' is 1.5x, e.g. at U+023F ->
+  ;; U+2C7E or U+019B -> U+A7DC (two bytes in, three out).
   (let* ((bv (##sys#slot str 0))
          (n (##core#inline "C_fixnum_difference" (##sys#size bv) 1))
          (buf (##sys#make-bytevector (##core#inline "C_fixnum_times" n 2)))
@@ -842,7 +847,7 @@ EOF
   (;; [syntax] and-let* case-lambda cut cute declare define-constant
    ;; define-inline define-record define-record-type
    ;; define-values delay-force fluid-let include
-   ;; include-relative let-optionals let-values let*-values letrec*
+   ;; let-optionals let-values let*-values letrec*
    ;; letrec-values nth-value optional parameterize rec receive
    ;; require-library require-extension set!-values syntax unless when
    bignum? flonum? fixnum? ratnum? cplxnum? finite? infinite? nan?
@@ -1051,7 +1056,7 @@ EOF
 	    (else #f) ) ) ) )
 
 (define (each . procs)
-  (cond ((null? procs) (lambda _ (void)))
+  (cond ((null? procs) (lambda _ (##core#undefined)))
 	((null? (##sys#slot procs 1)) (##sys#slot procs 0))
 	(else
 	 (lambda args
@@ -1266,7 +1271,7 @@ EOF
                (lambda (_) ; peek-char
                  (if (eq? index bv-len)
                      #!eof
-                     (##core#inline "C_i_bytevector_ref" bv index)))
+                     (fast-i->c (##core#inline "C_i_bytevector_ref" bv index))))
                #f    ; write-char
                #f    ; write-bytevector
                (lambda (_ _) ; close
@@ -1320,7 +1325,7 @@ EOF
                (add bv start end))
              (lambda (_ _) ; close
                (##sys#setislot port 8 #t))
-             #f    ; flush-output
+             (lambda (_) #f)    ; flush-output
              #f ; u8-ready?
              #f  ; read-bytevector!
              #f    ; read-line
@@ -1332,7 +1337,7 @@ EOF
 (set! scheme#get-output-bytevector
  (lambda (p)
   (define (fail) (error 'get-output-bytevector "not an output-bytevector" p))
-  (##sys#check-port p 'get-output-bytevector)
+  (##sys#check-output-port p 'get-output-bytevector)
   (if (eq? (##sys#slot p 7) 'custom)
       (let ((getter (##sys#slot p 9)))
         (if (procedure? getter)
@@ -2053,49 +2058,35 @@ EOF
           (let* ((len1 (string-length s1))
                  (len2 (string-length s2))
                  (c (##core#inline "C_utf_compare_ci"
-                     s1 s2 0 0
-                     (if (fx< len1 len2) len1 len2))))
+                     s1 s2 0 0 len1 len2)))
             (let loop ((s s2)
                        (len len2)
                        (ss more)
-                       (f (cmp c len1 len2)))
+                       (f (cmp c)))
               (and f
                    (or (null? ss)
                        (let* ((s2 (##sys#slot ss 0))
                               (len2 (string-length s2))
                               (c (##core#inline "C_utf_compare_ci"
-                                  s s2 0 0
-                                  (if (fx< len len2) len len2))))
+                                  s s2 0 0 len len2)))
                          (loop s2 len2 (##sys#slot ss 1)
-                               (cmp c len len2))))))))))
+                               (cmp c))))))))))
   (set! scheme#string-ci<? (lambda (s1 s2 . more)
                              (compare
                                s1 s2 more 'string-ci<?
-                               (lambda (cmp len1 len2)
-                                 (or (fx< cmp 0)
-                                     (and (fx< len1 len2)
-                                          (eq? cmp 0) ) )))))
+                               (cut fx< <> 0))))
   (set! scheme#string-ci>? (lambda (s1 s2 . more)
                              (compare
                                s1 s2 more 'string-ci>?
-                               (lambda (cmp len1 len2)
-                                 (or (fx> cmp 0)
-                                     (and (fx> len1 len2)
-                                          (eq? cmp 0) ) ) ) ) ) )
+                               (cut fx> <> 0) ) ) )
   (set! scheme#string-ci<=? (lambda (s1 s2 . more)
                               (compare
                                 s1 s2 more 'string-ci<=?
-                                (lambda (cmp len1 len2)
-                                  (if (eq? cmp 0)
-                                      (fx<= len1 len2)
-                                      (fx< cmp 0) ) ) ) ) )
+                                (cut fx<= <> 0) ) ) )
   (set! scheme#string-ci>=? (lambda (s1 s2 . more)
                               (compare
                                 s1 s2 more 'string-ci>=?
-                                (lambda (cmp len1 len2)
-                                  (if (eq? cmp 0)
-                                      (fx>= len1 len2)
-                                      (fx> cmp 0) ) ) ) ) ) )
+                                (cut fx>= <> 0) ) ) ) )
 
 (define (##sys#string-append x y)
   (let* ((bv1 (##sys#slot x 0))
@@ -2528,19 +2519,25 @@ EOF
 (define (##sys#/-2 x y)
   (when (eq? y 0)
     (##sys#error-hook (foreign-value "C_DIVISION_BY_ZERO_ERROR" int) '/ x y))
-  (cond ((and (##core#inline "C_i_exact_integerp" x)
+  (cond ((eq? x 0) 0)
+        ((and (##core#inline "C_i_exact_integerp" x)
               (##core#inline "C_i_exact_integerp" y))
          (let ((g (%integer-gcd x y)))
            (ratnum (%integer-quotient x g) (%integer-quotient y g))))
         ;; Compnum *must* be checked first
         ((or (cplxnum? x) (cplxnum? y))
-         (let* ((a (real-part x)) (b (imag-part x))
-                (c (real-part y)) (d (imag-part y))
-                (r (+ (* c c) (* d d)))
-                (x (##sys#/-2 (+ (* a c) (* b d)) r))
-                (y (##sys#/-2 (- (* b c) (* a d)) r)) )
-           (make-complex x y) ))
-        ((or (##core#inline "C_i_flonump" x) (##core#inline "C_i_flonump" y))
+          (if (cplxnum? y)
+              (let* ((a (real-part x)) (b (imag-part x))
+                     (c (real-part y)) (d (imag-part y))
+                     (r (+ (* c c) (* d d)))
+                     (x (##sys#/-2 (+ (* a c) (* b d)) r))
+                     (y (##sys#/-2 (- (* b c) (* a d)) r)) )
+                (make-complex x y) )
+              (let* ((a (real-part x)) (b (imag-part x))
+                     (xu (##sys#/-2 a y))
+                     (yu (##sys#/-2 b y)))
+                (make-complex xu yu))))
+       ((or (##core#inline "C_i_flonump" x) (##core#inline "C_i_flonump" y))
          ;; This may be incorrect when one is a ratnum consisting of bignums
          (fp/ (exact->inexact x) (exact->inexact y)))
         ((ratnum? x)
@@ -2724,12 +2721,61 @@ EOF
 	  (##sys#/-2 (+ (exp in) (exp (- in))) 2) )
 	(##core#inline_allocate ("C_a_i_cos" 4) (exact->inexact n)) ) ))
 
+(define (##sys#tanh z)
+  (let* ((x (real-part z))
+         (y (imag-part z))
+         (tanh-overflow-treshold (/ (fpasinh maximum-flonum) 2))
+         (tanh-overflow-low-treshold (/ (fpasinh maximum-flonum) 4))
+         (ax (abs x)))
+    (cond
+      ((eqv? z 0) 0)
+      ((> ax tanh-overflow-treshold)
+       (if (real? z)
+           (* 1.0 (##sys#sign-bit x))
+           (make-rectangular (* 1.0 (##sys#sign-bit x))
+                             (* 0.0 (##sys#sign-bit y)))))
+      ((> ax tanh-overflow-low-treshold)
+       (if (real? z)
+           (* 1.0 (##sys#sign-bit x))
+           (let ((y*2 (* y 2.0))
+                 (cosh-x*2 (fpcosh (* 2.0 x))))
+             (cond
+               ((finite? y*2)
+                (make-rectangular (* 1.0 (##sys#sign-bit x))
+                                  (/ (sin y*2)
+                                     cosh-x*2)))
+               ((finite? y)
+                (make-rectangular (* 1.0 (##sys#sign-bit x))
+                                  (/ (* 2.0 (sin y) (cos y))
+                                     cosh-x*2)))
+               (else (make-rectangular (* 1.0 (##sys#sign-bit sign x))
+                                       (* 0.0 (##sys#sign-bit sign y))))))))
+      (else
+       (let* ((t (tan y))
+              (beta (+ 1.0 (* t t)))
+              (s (if (eqv? x 0)
+                     0.0              ; Avoid divide-by-exact-zero errors
+                     (fpsinh x)))
+              (rho (sqrt (+ 1.0 (* s s)))))
+         (if (infinite? t)
+             (make-rectangular (/ rho s) (/ t))
+             (let ((ret (if (real? z)
+                            (* beta rho s)
+                            (make-rectangular (* beta rho s)
+                                              t))))
+               (/ ret (+ 1.0 (* beta (* s s)))))))))))
+
+
+
 (set! scheme#tan
   (lambda (n)
     (##sys#check-number n 'tan)
     (if (cplxnum? n)
-	(##sys#/-2 (sin n) (cos n))
+        (* -i (##sys#tanh (* +i n)))   ; Kahan's version
 	(##core#inline_allocate ("C_a_i_tan" 4) (exact->inexact n)) ) ))
+
+(define (##sys#conjugate z)
+  (make-rectangular (real-part z) (- (imag-part z))))
 
 ;; General case: sin^{-1}(z) = -i\ln(iz + \sqrt{1-z^2})
 (set! scheme#asin
@@ -2742,9 +2788,30 @@ EOF
 				   (##core#inline_allocate
 				    ("C_a_i_fix_to_flo" 4) n)))
 	  ;; General definition can return compnums
-	  (else (* -i (##sys#log-1
-		       (+ (* +i n)
-			  (##sys#sqrt/loc 'asin (- 1 (* n n))))) )) ) ))
+	  (else
+	    (cond
+	      ;; These should fall out of the algorithm below,
+	      ;; but inexactness-promotion rules end up generating
+	      ;; a NaN somewhere.
+	      ;;
+	      ;; These are the special cases -inf.0+0.0i and
+	      ;; +inf.0+0.0i from Gambit. Since Gambit has mixed exactness numbers,
+	      ;; this doesn't copy -inf.0+0i and +inf.0+0i. Basically, unsigned
+	      ;; zero is approached counterclockwise, and signed zero from the
+	      ;; side with that sign. So unsigned zero approches from the bottom
+	      ;; and matches -0.0, which is probably not what we want.
+	      ((eqv? n +inf.0)  1.5707963267948966+inf.0i)
+	      ((eqv? n -inf.0) -1.5707963267948966+inf.0i)
+	      (else
+	       (let* ((x (real-part n))
+	              (s:1-n (sqrt (- 1 n)))
+	              (s:1+n (sqrt (+ 1 n)))
+	              (ipart (imag-part (* (##sys#conjugate s:1-n)
+	                                   s:1+n))))
+	         (make-rectangular (atan x (real-part (* s:1-n s:1+n)))
+	                           (if (and (exact? ipart) (zero? ipart))
+	                               0
+	                               (fpasinh ipart))))))))))
 
 ;; General case:
 ;; cos^{-1}(z) = 1/2\pi + i\ln(iz + \sqrt{1-z^2}) = 1/2\pi - sin^{-1}(z) = sin(1) - sin(z)
@@ -2759,7 +2826,76 @@ EOF
                                      (##core#inline_allocate
                                       ("C_a_i_fix_to_flo" 4) n)))
             ;; General definition can return compnums
-            (else (- asin1 (asin n)))))))
+            (else
+              (let* ((s:1-n (sqrt (- 1 n)))
+                     (s:1+n (sqrt (+ 1 n)))
+                     (x (* 2 (atan (real-part s:1-n) (real-part s:1+n))))
+                     (w (imag-part (* (##sys#conjugate s:1+n)
+                                      s:1-n)))
+                     (y (if (eq? w 0)
+                            0
+                            (fpasinh w))))
+                (make-rectangular x y)))))))
+
+;;; Start Kahan's atan (with modifications from Gambit)
+
+(define fllog1+
+  (foreign-lambda double "log1p" double))
+
+(define (##sys#sign-bit x)
+  (cond
+    ((eq? x 0) +1)
+    ((eqv? x +0.0) +1.0)
+    ((eqv? x -0.0) -1.0)
+    (else (signum x))))
+
+(define (##sys#internal-atanh z)
+  (let* ((z (* (##sys#sign-bit (real-part z)) (##sys#conjugate z)))
+         (x (real-part z))
+         (y (imag-part z))
+         (theta (/ (sqrt maximum-flonum) 4))
+         (rho (/ theta))
+         (fl-pi/2  1.57079632679489661923132169163975144)
+         (fl-pi/4 0.785398163397448309615660845819875721))
+    (cond
+      ((or (> x theta) (> (abs y) theta))
+       (make-rectangular (real-part (/ z))
+                         (* fl-pi/2 (##sys#sign-bit y))))
+      ((and (= x 1.0) (zero? y))
+       (make-rectangular +inf.0
+                         (* (##sys#sign-bit y) fl-pi/4)))
+      ((= x 1.0)
+       (let ((absy (abs y)))
+         (make-rectangular (log (/ (sqrt (sqrt (+ 4.0 (* y y))))
+                                   (sqrt absy)))
+                           (* (/ (+ fl-pi/2
+                                    (atan absy 2.0))
+                                 2.0)
+                              (##sys#sign-bit y)))))
+      (else
+       (let ((y^2 (* y y)))
+         (make-rectangular (cond
+                             ((eqv? x 0) 0)
+                             (else
+                              (/ (fllog1+ (/ (* 4.0 x)
+                                             (+ (* (- 1.0 x) (- 1.0 x))
+                                                y^2)))
+                                 4.0)))
+                           (/ (angle (+ (* (- 1.0 x) (+ 1.0 x))
+                                        (- y^2)
+                                        (make-rectangular
+                                         0.0
+                                         (* 2.0 y))))
+                              2.0)))))))
+
+(define (##sys#atanh z)
+  (cond
+    ((eqv? z 0) 0)
+    ((and (real? z) (eqv? (abs z) 1))
+     (error 'atanh "atanh has a singularity at 1 and -1"))
+    ((and (real? z) (< -1.0 z 1.0))
+     (fpatanh (exact->inexact z)))
+    (else (* (##sys#sign-bit (real-part z)) (##sys#conjugate (##sys#internal-atanh z))))))
 
 (set! scheme#atan
   (lambda (n #!optional b)
@@ -2767,15 +2903,15 @@ EOF
     (cond ((cplxnum? n)
 	   (if b
 	       (##sys#error-bad-real n 'atan)
-	       (let ((in (* +i n)))
-		 (##sys#/-2 (- (##sys#log-1 (+ 1 in))
-			       (##sys#log-1 (- 1 in))) +2i))))
+	       (* -i (##sys#atanh (* +i n)))))
 	  (b
 	   (##core#inline_allocate
 	    ("C_a_i_atan2" 4) (exact->inexact n) (exact->inexact b)))
 	  (else
 	   (##core#inline_allocate
 	    ("C_a_i_atan" 4) (exact->inexact n))) ) ))
+
+;;; End kahan algorithm
 
 ;; This is "Karatsuba Square Root" as described by Paul Zimmermann,
 ;; which is 3/2K(n) + O(n log n) for an input of 2n words, where K(n)
@@ -2812,13 +2948,70 @@ EOF
     (##sys#check-exact-uinteger x 'exact-integer-sqrt)
     (##sys#exact-integer-sqrt x)))
 
+;; Complex square root according to Kahan's algorithm.
+
+(define logb (foreign-lambda double "logb" double))
+(define (ldexp* x k)
+  (if (inexact? x)
+      (ldexp x k)
+      (* x (expt 2 k))))
+
+(define (##sys#cssqs z)
+  (let* ((x (real-part z))
+         (y (imag-part z))
+         (x^2 (* x x))
+         (y^2 (* y y))
+         (rho (+ x^2 y^2)))
+    (if (and (or (nan? rho) (infinite? rho))
+             (or (infinite? x) (infinite? y)))
+        (values +inf.0 0)
+        (let ((underflowed? (or (< x^2 minimum-flonum)
+                                (< y^2 minimum-flonum)))
+              (overflowed? (or (infinite? rho)
+                               (infinite? x^2)
+                               (infinite? y^2))))
+          (if (or overflowed?
+                  (and underflowed? (< rho (/ minimum-flonum
+                                              flonum-epsilon))))
+              (let* ((k (logb (inexact (max (abs x) (abs y)))))
+                     (x* (ldexp* x (- k)))
+                     (y* (ldexp* y (- k))))
+                (values (+ (* x* x*) (* y* y*)) k))
+              (values rho 0))))))
+
+(define (##sys#csqrt z)
+   (define (even*? k)
+     (and (integer? k) (even? k)))
+   (define (odd*? k)
+     (and (integer? k) (odd? k)))
+   (let*-values (((x) (real-part z))
+                 ((y) (imag-part z))
+                 ((rho k) (##sys#cssqs z))
+                 ((rho) (if (not (nan? x))
+                            (+ (ldexp* (abs x) (- k))
+                               (sqrt rho))
+                            rho))
+                 ((rho) (if (even*? k)
+                            (+ rho rho)
+                            rho))
+                 ((k) (if (odd*? k)
+                          (/ (- k 1) 2)
+                          (- (/ k 2) 1)))
+                 ((rho) (ldexp* (sqrt rho) k))
+                 ((zeta) rho)
+                 ((eta) y)
+                 ((eta) (if (and (not (zero? rho)) (not (infinite? eta)))
+                            (/ eta rho 2.0)
+                            eta)))
+     (if (and (not (zero? rho)) (negative? x))
+         (make-rectangular (abs eta) (* rho (##sys#sign-bit y)))
+         (make-rectangular zeta eta))))
+
 ;; This procedure is so large because it tries very hard to compute
 ;; exact results if at all possible.
 (define (##sys#sqrt/loc loc n)
   (cond ((cplxnum? n)     ; Must be checked before we call "negative?"
-         (let ((p (##sys#/-2 (angle n) 2))
-               (m (##core#inline_allocate ("C_a_i_sqrt" 4) (magnitude n))) )
-           (make-complex (* m (cos p)) (* m (sin p)) ) ))
+         (##sys#csqrt n))
         ((negative? n)
          (make-complex .0 (##core#inline_allocate
 			   ("C_a_i_sqrt" 4) (exact->inexact (- n)))))
@@ -3532,7 +3725,7 @@ EOF
   (##core#inline "C_i_bytevectorp" x) )
 
 (define (bytevector-length bv)
-  (##sys#check-bytevector bv 'bytevector-size)
+  (##sys#check-bytevector bv 'bytevector-length)
   (##sys#size bv) )
 
 (define (bytevector-u8-ref bv i)
@@ -3553,16 +3746,18 @@ EOF
   (##sys#check-bytevector bv 'utf8->string)
   (let* ((n (##sys#size bv))
          (to (or end n)))
+    (##sys#check-range/including start 0 n 'utf8->string)
     (if end
         (##sys#check-range/including end 0 n 'utf8->string))
-    ;; `start' was never checked: a negative one made C_utf_validate and
-    ;; C_copy_memory_with_offset read behind the bytevector's data (a
-    ;; start of -1 returned the low byte of the bytevector's own header
-    ;; as the first character), and one past `to' produced a negative
-    ;; length that reached ##sys#make-bytevector.  Checking against `to'
-    ;; rather than `n' also establishes start <= to for the subtraction
-    ;; below.  This deliberately turns garbage-or-crash into a raised
-    ;; condition.
+    ;; The check of `start' against `n' above keeps it inside the
+    ;; bytevector, but not at or before `to': with an explicit `end',
+    ;; (utf8->string bv 4 2) passes both checks and makes the length
+    ;; below negative, which reached ##sys#make-bytevector.  Checking
+    ;; against `to' as well establishes start <= to for the subtraction.
+    ;; Before either check existed a negative `start' made
+    ;; C_utf_validate and C_copy_memory_with_offset read behind the
+    ;; bytevector's data (a start of -1 returned the low byte of the
+    ;; bytevector's own header as the first character).
     (##sys#check-range/including start 0 to 'utf8->string)
     ;; C_utf_validate does not merely say yes or no: it returns the number
     ;; of codepoints it decoded.  Handing the same bytes to
@@ -3586,13 +3781,13 @@ EOF
   (##sys#check-bytevector bv 'bytes->string)
   (let* ((n (##sys#size bv))
          (to (or end n)))
+    (##sys#check-range/including start 0 n 'bytes->string)
     (if end
         (##sys#check-range/including end 0 n 'bytes->string))
-    ;; Exactly the hole fixed for utf8->string above, nine lines away: only
-    ;; `end' was checked, so a negative `start' walked backwards out of the
-    ;; bytevector (a start of -1 returned the low byte of the bytevector's
-    ;; own header as the first character).  Checking against `to' also
-    ;; establishes start <= to for the subtraction below.
+    ;; As in utf8->string above: the check against `n' keeps `start' inside
+    ;; the bytevector (a negative one used to walk backwards out of it), and
+    ;; checking against `to' as well establishes start <= to for the
+    ;; subtraction below when an explicit `end' precedes `start'.
     (##sys#check-range/including start 0 to 'bytes->string)
     (##sys#buffer->string bv start (##core#inline "C_fixnum_difference" to start))))
 
@@ -4322,7 +4517,7 @@ EOF
               (if (eq? enc 'utf-8) ;; fast path
                   (##core#inline "C_display_char" p c)
                   (let* ((bv (##sys#make-bytevector 4))
-                         (n (##sys#encode-char c bv enc)))
+                         (n (##core#inline "C_utf_insert" bv 0 c)))
                     ((##sys#slot (##sys#slot p 2) 3) p bv 0 n))))) ; write-bytevector
           (lambda (p bv from to)                     ; write-bytevector
             (##sys#encode-buffer
@@ -4460,7 +4655,7 @@ EOF
     (if (null? args)
 	##sys#standard-input
 	(let ((p (car args)))
-	  (##sys#check-port p 'current-input-port)
+	  (##sys#check-input-port p 'current-input-port)
 	  (let-optionals (cdr args) ((convert? #t) (set? #t))
 	    (when set? (set! ##sys#standard-input p)))
 	  p) ) ))
@@ -4470,7 +4665,7 @@ EOF
     (if (null? args)
 	##sys#standard-output
 	(let ((p (car args)))
-	  (##sys#check-port p 'current-output-port)
+	  (##sys#check-output-port p 'current-output-port)
 	  (let-optionals (cdr args) ((convert? #t) (set? #t))
 	    (when set? (set! ##sys#standard-output p)))
 	  p) ) ))
@@ -4480,7 +4675,7 @@ EOF
     (if (null? args)
 	##sys#standard-error
 	(let ((p (car args)))
-	  (##sys#check-port p 'current-error-port)
+	  (##sys#check-output-port p 'current-error-port)
 	  (let-optionals (cdr args) ((convert? #t) (set? #t))
 	    (when set? (set! ##sys#standard-error p)))
 	  p))))
@@ -4530,12 +4725,15 @@ EOF
         port) ) )
 
   (define (close port inp loc)
-    (##sys#check-port port loc)
+    (if inp
+        (##sys#check-input-port port loc)
+        (##sys#check-output-port port loc))
     ; repeated closing is ignored
     (let ((direction (if inp 1 2)))
       (when (##core#inline "C_port_openp" port direction)
 	(##sys#setislot port 8 (fxand (##sys#slot port 8) (fxnot direction)))
-	((##sys#slot (##sys#slot port 2) 4) port direction))))
+	((##sys#slot (##sys#slot port 2) 4) port direction)
+        (##core#undefined))))
 
   (set! scheme#open-input-file (lambda (name . mode) (open name #t mode 'open-input-file)))
   (set! scheme#open-output-file (lambda (name . mode) (open name #f mode 'open-output-file)))
@@ -5658,7 +5856,7 @@ EOF
 
 (define (##sys#write-char-0 c p)
   ((##sys#slot (##sys#slot p 2) 2) p c)
-  (##sys#void))
+  (##core#undefined))
 
 (define (##sys#write-char/port c port)
   (##sys#check-output-port port #t 'write-char)
@@ -5692,15 +5890,13 @@ EOF
   (lambda args
     (##sys#check-output-port ##sys#standard-output #t 'print)
     (*print-each args)
-    (##sys#write-char-0 #\newline ##sys#standard-output)
-    (void)))
+    (##sys#write-char-0 #\newline ##sys#standard-output)))
 
 (set! chicken.base#print*
   (lambda args
     (##sys#check-output-port ##sys#standard-output #t 'print)
     (*print-each args)
-    (##sys#flush-output ##sys#standard-output)
-    (void)))
+    (##sys#flush-output ##sys#standard-output)))
 
 (define ##sys#current-print-length (make-parameter 0))
 (define ##sys#print-length-limit (make-parameter #f))
@@ -5727,7 +5923,7 @@ EOF
 		    (let ((n (fx- length-limit cpp0)))
 		      (when (fx> n 0) (outstr0 port (##sys#substring str 0 n)))
 		      (outstr0 port "...")
-		      ((##sys#print-exit) (##sys#void)))
+		      ((##sys#print-exit) (##core#undefined)))
 		    (outstr0 port str) )
 		(##sys#current-print-length cpl) )
 	      (outstr0 port str) ) )
@@ -5742,7 +5938,7 @@ EOF
 	      (##sys#current-print-length (fx+ cpp0 1))
 	      (when (fx> cpp0 length-limit)
 		(outstr0 port "...")
-		((##sys#print-exit) (##sys#void)))))
+		((##sys#print-exit) (##core#undefined)))))
 	  ((##sys#slot (##sys#slot port 2) 2) port chr))  ; write-char
 
 	(define (specialchar? chr)
@@ -5922,7 +6118,7 @@ EOF
 			    (outchr port #\space)
 			    (out (##sys#slot x i)) ) ) ) ) )
 		(else (##sys#error "unprintable block object encountered")))))
-      (##sys#void))))
+      (##core#undefined))))
 
 (define ##sys#procedure->string
   (let ((string-append string-append))
@@ -6423,22 +6619,33 @@ EOF
       (apply ##sys#signal-hook/errno mode #f msg args)
       (##sys#signal-hook/errno mode #f msg)))
 
+(define ##sys#posix-error
+  (let ((string-append string-append))
+    (lambda (type loc msg . args)
+      (apply ##sys#signal-hook/errno
+             type (##sys#update-errno) loc 
+             (string-append msg " - " strerror) args))))
+
 (define (abort x)
-  (##sys#current-exception-handler x)
-  (abort
-   (##sys#make-structure
-    'condition
-    '(exn)
-    (list '(exn . message) "exception handler returned"
-	  '(exn . arguments) '()
-	  '(exn . location) #f) ) ) )
+  (let ((h (car ##sys#current-exception-handler)))
+    (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler))
+    (h x)
+    (abort
+     (##sys#make-structure
+      'condition
+      '(exn)
+      (list '(exn . message) "exception handler returned"
+  	    '(exn . arguments) '()
+	    '(exn . location) #f) ) ) ) )
 
 (define (signal x)
-  (##sys#current-exception-handler x) )
+  (let ((h (car ##sys#current-exception-handler)))
+    (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler))
+    (h x) ) )
 
 (define ##sys#error-handler
   (make-parameter
-   (let ([string-append string-append])
+   (let ((string-append string-append))
      (lambda (msg . args)
        (##sys#error-handler (lambda args (##core#inline "C_halt" "error in error")))
        (cond ((not (foreign-value "C_gui_mode" bool))
@@ -6474,7 +6681,7 @@ EOF
 (define ##sys#current-exception-handler
   ;; Exception-handler for the primordial thread:
   (let ((string-append string-append))
-    (lambda (c)
+    (define (h c)
       (when (##sys#structure? c 'condition)
 	(set! ##sys#last-exception c)
 	(let ((kinds (##sys#slot c 1)))
@@ -6513,23 +6720,27 @@ EOF
        (##sys#make-structure
 	'condition
 	'(uncaught-exception)
-	(list '(uncaught-exception . reason) c)) ) ) ) )
+	(list '(uncaught-exception . reason) c)) ))
+     (let ((eh (list h)))
+       (##sys#setslot eh 1 eh)
+       eh)))
 
 (define (with-exception-handler handler thunk)
-  (let ([oldh ##sys#current-exception-handler])
+  (let ((old ##sys#current-exception-handler))
     (##sys#dynamic-wind
-      (lambda () (set! ##sys#current-exception-handler handler))
+      (lambda () 
+        (set! ##sys#current-exception-handler (cons handler old)))
       thunk
-      (lambda () (set! ##sys#current-exception-handler oldh)) ) ) )
+      (lambda () 
+        (set! ##sys#current-exception-handler old)) ) ) )
 
-;; TODO: Make this a proper parameter
 (define (current-exception-handler . args)
   (if (null? args)
-      ##sys#current-exception-handler
+      (car ##sys#current-exception-handler)
       (let ((proc (car args)))
 	(##sys#check-closure proc 'current-exception-handler)
 	(let-optionals (cdr args) ((convert? #t) (set? #t))
-	  (when set? (set! ##sys#current-exception-handler proc)))
+	  (when set? (set-car! ##sys#current-exception-handler proc)))
 	proc)))
 
 ;;; Condition object manipulation
@@ -6775,7 +6986,8 @@ EOF
                                 " but rest list length is " (##sys#number->string c) )
 		 (if fn (list fn) '()))))
         ((57) (apply ##sys#signal-hook #:type-error loc "string contains invalid UTF-8 sequence" args))
-        ((58) (apply ##sys#signal-hook #:type-error loc "bad argument type - numeric value exceeds range" args))
+        ((58) (apply ##sys#signal-hook #:type-error loc "string contains un-encodable character" args))
+        ((59) (apply ##sys#signal-hook #:type-error loc "bad argument type - numeric value exceeds range" args))
 	(else (apply ##sys#signal-hook #:runtime-error loc "unknown internal error" args)) ) ) ) )
 
 ) ; chicken.condition
@@ -6784,49 +6996,14 @@ EOF
 
 ;;; R7RS exceptions
 
-(define ##sys#r7rs-exn-handlers
-  (make-parameter
-    (let ((lst (list ##sys#current-exception-handler)))
-      (set-cdr! lst lst)
-      lst)))
-
-(define scheme#with-exception-handler
-  (let ((eh ##sys#r7rs-exn-handlers))
-    (lambda (handler thunk)
-      (dynamic-wind
-       (lambda ()
-         ;; We might be interoperating with srfi-12 handlers set by intermediate
-         ;; non-R7RS code, so check if a new handler was set in the meanwhile.
-         (unless (eq? (car (eh)) ##sys#current-exception-handler)
-           (eh (cons ##sys#current-exception-handler (eh))))
-         (eh (cons handler (eh)))
-         (set! ##sys#current-exception-handler handler))
-       thunk
-       (lambda ()
-         (eh (cdr (eh)))
-         (set! ##sys#current-exception-handler (car (eh))))))))
-
-(define scheme#raise
-  (let ((eh ##sys#r7rs-exn-handlers))
-    (lambda (obj)
-      (scheme#with-exception-handler
-        (cadr (eh))
-        (lambda ()
-          ((cadr (eh)) obj)
-          ((car (eh))
-           (make-property-condition
-            'exn
-            'message "exception handler returned"
-            'arguments '()
-            'location #f)))))))
-
-(define scheme#raise-continuable
-  (let ((eh ##sys#r7rs-exn-handlers))
-     (lambda (obj)
-       (scheme#with-exception-handler
-        (cadr (eh))
-        (lambda ()
-          ((cadr (eh)) obj))))))
+(define (scheme#raise-continuable obj)
+  (let ((h (car ##sys#current-exception-handler)))
+    (dynamic-wind
+      (lambda () 
+        (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
+      (lambda () (h obj))
+      (lambda ()
+        (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
 
 (define scheme#error-object? condition?)
 (define scheme#error-object-message (condition-property-accessor 'exn 'message))
@@ -7022,7 +7199,7 @@ EOF
     ##sys#standard-input
     ##sys#standard-output
     ##sys#standard-error
-    ##sys#default-exception-handler
+    (list ##sys#default-exception-handler)
     (##sys#vector-resize ##sys#current-parameter-vector
 			 (##sys#size ##sys#current-parameter-vector) #f)
     '() )				; metacontinuation: a new thread is
@@ -7933,7 +8110,7 @@ static C_word C_curdir(C_word buf, C_word size) {
   (when new
     (##sys#check-list new 'include-path)
     (set! ##sys#include-pathnames new))
-  ##include-pathnames)
+  ##sys#include-pathnames)
 
 (define path-list-separator
   (if ##sys#windows-platform #\; #\:))
@@ -7995,8 +8172,6 @@ static C_word C_curdir(C_word buf, C_word size) {
          => (lambda (p)
               (map chop-separator (##sys#split-path p))))
         (else (list installation-home))))
-
-(define (include-path) ##sys#include-pathnames)
 
 
 ;;; Feature identifiers:
@@ -8266,7 +8441,8 @@ static C_word C_curdir(C_word buf, C_word size) {
     ((##sys#slot (##sys#slot port 2) 4) port 1))
   (when (##core#inline "C_port_openp" port 2)
     ((##sys#slot (##sys#slot port 2) 4) port 2))
-  (##sys#setislot port 8 0)))
+  (##sys#setislot port 8 0)
+  (##core#undefined)))
 
 (set! scheme#call-with-port
  (lambda (port proc)
@@ -8544,12 +8720,15 @@ static C_word C_curdir(C_word buf, C_word size) {
 (define chicken.io#read-bytevector/port read-bytevector/port)
 (define chicken.io#read-bytevector!/port read-bytevector!/port)
 
-(define (read-buffered #!optional (port ##sys#standard-input))  ; DEPRECATED
-  (##sys#check-input-port port #t 'read-buffered)
+(define (##sys#read-buffered-bytes port)
   (let ((rb (##sys#slot (##sys#slot port 2) 9))) ; read-buffered method
     (if rb
 	(rb port)
 	"")))
+
+(define (read-buffered #!optional (port ##sys#standard-input))  ; DEPRECATED
+  (##sys#check-input-port port #t 'read-buffered)
+  (##sys#read-buffered-bytes port))
 
 
 ;;; read token of characters that satisfy a predicate

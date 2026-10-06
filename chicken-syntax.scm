@@ -433,7 +433,7 @@
  (##sys#er-transformer
   (lambda (form r c)
     (##sys#check-syntax 'include form '(_ . #(string 1)))
-    `(##core#begin ,@(map (lambda (x) `(##core#include ,x #f))
+    `(##core#begin ,@(map (lambda (x) `(##core#include ,x ,##sys#current-source-filename))
                        (cdr form))))))
 
 (##sys#extend-macro-environment
@@ -441,10 +441,10 @@
  (##sys#er-transformer
   (lambda (form r c)
     (##sys#check-syntax 'include-ci form '(_ . #(string 1)))
-    `(##core#begin ,@(map (lambda (x) `(##core#include-ci ,x #f))
+    `(##core#begin ,@(map (lambda (x) `(##core#include-ci ,x ,##sys#current-source-filename))
                        (cdr form))))))
 
-(##sys#extend-macro-environment
+(##sys#extend-macro-environment     ; DEPRECATED
  'include-relative '()
  (##sys#er-transformer
   (lambda (form r c)
@@ -1214,7 +1214,6 @@
             (%apply (r 'apply))
             (%values (r 'values))
             (%condition (r 'condition))
-            (%call-with-values (r 'call-with-values))
             (%guard-k (r 'guard-k))
             (%handler-k (r 'handler-k))
             (%lambda (r 'lambda)))
@@ -1251,7 +1250,7 @@
                                (guard-aux reraise (car more) (cdr more)))))))
           `((scheme#call-with-current-continuation
               (,%lambda (,%guard-k)
-                (scheme#with-exception-handler
+                (chicken.condition#with-exception-handler
                   (,%lambda (,%condition)
                     ((scheme#call-with-current-continuation
                        (,%lambda (,%handler-k)

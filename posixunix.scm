@@ -182,6 +182,8 @@ static sigset_t C_sigset;
 #define C_read(fd, b, n)    C_fix(read(C_unfix(fd), C_c_string(b), C_unfix(n)))
 #define C_write(fd, b, start, n)   C_fix(write(C_unfix(fd), C_c_string(b) + C_unfix(start), C_unfix(n)))
 #define C_mkstemp(t)        C_fix(mkstemp(C_c_string(t)))
+#define C_mkstemps(t, n)    C_fix(mkstemps(C_c_string(t), C_unfix(n)))
+#define C_mkdtemp(t)        C_fix(mkdtemp(C_c_string(t)) ? 0 : -1)
 
 #define C_ctime(n)          (C_secs = (n), ctime(&C_secs))
 
@@ -339,7 +341,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-fixnum cmd 'file-control)
       (let ([res (fcntl fd cmd arg)])
         (if (eq? res -1)
-            (posix-error #:file-error 'file-control "cannot control file" fd cmd)
+            (##sys#posix-error #:file-error 'file-control "cannot control file" fd cmd)
             res ) ) ) ) )
 
 (set! chicken.file.posix#file-open
@@ -351,7 +353,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
         (##sys#check-fixnum mode 'file-open)
         (let ([fd (##core#inline "C_open" (##sys#make-c-string filename 'file-open) flags mode)])
           (when (eq? -1 fd)
-            (posix-error #:file-error 'file-open "cannot open file" filename flags mode) )
+            (##sys#posix-error #:file-error 'file-open "cannot open file" filename flags mode) )
           fd) ) ) ) )
 
 (set! chicken.file.posix#file-close
@@ -362,7 +364,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	(cond
 	  ((eq? _errno _eintr) (##sys#dispatch-interrupt loop))
 	  (else
-	   (posix-error #:file-error 'file-close "cannot close file" fd)))))))
+	   (##sys#posix-error #:file-error 'file-close "cannot close file" fd)))))))
 
 (set! chicken.file.posix#file-read
   (lambda (fd size . buffer)
@@ -373,7 +375,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	(##sys#signal-hook #:type-error 'file-read "bad argument type - not a bytevector" buf) )
       (let ([n (##core#inline "C_read" fd buf size)])
 	(when (eq? -1 n)
-	  (posix-error #:file-error 'file-read "cannot read from file" fd size) )
+	  (##sys#posix-error #:file-error 'file-read "cannot read from file" fd size) )
 	(list buf n) ) ) ) )
 
 (set! chicken.file.posix#file-write
@@ -385,18 +387,51 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-fixnum size 'file-write)
       (let ([n (##core#inline "C_write" fd buffer 0 size)])
         (when (eq? -1 n)
-          (posix-error #:file-error 'file-write "cannot write to file" fd size) )
+          (##sys#posix-error #:file-error 'file-write "cannot write to file" fd size) )
         n) ) ) )
 
 (set! chicken.file.posix#file-mkstemp
   (lambda (template)
     (##sys#check-string template 'file-mkstemp)
-    (let* ([buf (##sys#make-c-string template 'file-mkstemp)]
-	   [fd (##core#inline "C_mkstemp" buf)]
-	   [path-length (string-length buf)])
-      (when (eq? -1 fd)
-	(posix-error #:file-error 'file-mkstemp "cannot create temporary file" template) )
-      (values fd (##sys#substring buf 0 (fx- path-length 1) ) ) ) ) )
+    (let* ((bv1 (##sys#make-c-string template 'file-mkstemp))
+           (len (##sys#size bv1))
+           (bv2 (##sys#make-bytevector len)) )
+      (##core#inline "C_copy_memory" bv2 bv1 len)
+      (let ((fd (##core#inline "C_mkstemp" bv2)))
+        (when (eq? -1 fd)
+	  (##sys#posix-error #:file-error 'file-mkstemp 
+                       "cannot create temporary file" template) )
+        (values 
+          fd 
+          (##sys#buffer->string! bv2 (fx- len 1)))))))
+
+(set! chicken.file.posix#file-mkstemps
+  (lambda (template suffixlen)
+    (##sys#check-string template 'file-mkstemps)
+    (##sys#check-fixnum suffixlen 'file-mkstemps)
+    (let* ((bv1 (##sys#make-c-string template 'file-mkstemps))
+           (len (##sys#size bv1))
+           (bv2 (##sys#make-bytevector len)) )
+      (##core#inline "C_copy_memory" bv2 bv1 len)
+      (let ((fd (##core#inline "C_mkstemps" bv2 suffixlen)))
+        (when (eq? -1 fd)
+	  (##sys#posix-error #:file-error 'file-mkstemps
+                       "cannot create temporary file" template) )
+        (values
+          fd
+          (##sys#buffer->string! bv2 (fx- len 1)))))))
+
+(set! chicken.file.posix#file-mkdtemp
+  (lambda (template)
+    (##sys#check-string template 'file-mkdtemp)
+    (let* ((bv1 (##sys#make-c-string template 'file-mkdtemp))
+           (len (##sys#size bv1))
+           (bv2 (##sys#make-bytevector len)) )
+      (##core#inline "C_copy_memory" bv2 bv1 len)
+      (when (eq? -1 (##core#inline "C_mkdtemp" bv2))
+        (##sys#posix-error #:file-error 'file-mkdtemp
+                     "cannot create temporary directory" template) )
+      (##sys#buffer->string! bv2 (fx- len 1)))))
 
 
 ;;; I/O multiplexing:
@@ -432,7 +467,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (let ((n ((foreign-lambda int "poll" scheme-pointer int int)
 		fds-blob nfds (if tm (inexact->exact (truncate (* (max 0 tm) 1000))) -1))))
 	(cond ((fx< n 0)
-	       (posix-error #:file-error 'file-select "failed" fdsr fdsw) )
+	       (##sys#posix-error #:file-error 'file-select "failed" fdsr fdsw) )
 	      ((eq? n 0) (values (if (pair? fdsr) '() #f) (if (pair? fdsw) '() #f)))
 	      (else
 	       (let ((rl (let lp ((i 0) (res '()) (fds fdsrl))
@@ -464,7 +499,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 (set! chicken.process#create-pipe
   (lambda (#!optional mode)
    (when (fx< (##core#inline "C_pipe" #f) 0)
-     (posix-error #:file-error 'create-pipe "cannot create pipe") )
+     (##sys#posix-error #:file-error 'create-pipe "cannot create pipe") )
    (values _pipefd0 _pipefd1))  )
 
 
@@ -565,7 +600,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
         (##core#inline "C_sigaddset" s) )
       sigs)
     (when (fx< (##core#inline "C_sigprocmask_set" 0) 0)
-      (posix-error #:process-error 'set-signal-mask! "cannot set signal mask") )))
+      (##sys#posix-error #:process-error 'set-signal-mask! "cannot set signal mask") )))
 
 (define chicken.process.signal#signal-mask
   (getter-with-setter
@@ -592,7 +627,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
     (##core#inline "C_sigemptyset" 0)
     (##core#inline "C_sigaddset" sig)
     (when (fx< (##core#inline "C_sigprocmask_block" 0) 0)
-      (posix-error #:process-error 'signal-mask! "cannot block signal") )))
+      (##sys#posix-error #:process-error 'signal-mask! "cannot block signal") )))
 
 (set! chicken.process.signal#signal-unmask!
   (lambda (sig)
@@ -600,7 +635,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
     (##core#inline "C_sigemptyset" 0)
     (##core#inline "C_sigaddset" sig)
     (when (fx< (##core#inline "C_sigprocmask_unblock" 0) 0)
-      (posix-error #:process-error 'signal-unmask! "cannot unblock signal") )) )
+      (##sys#posix-error #:process-error 'signal-unmask! "cannot unblock signal") )) )
 
 
 ;;; Getting group- and user-information:
@@ -698,7 +733,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		     #:type-error loc
 		     "bad argument type - not a fixnum, port or string" f)))))
       (when (fx< r 0)
-	(posix-error #:file-error loc "cannot change file owner" f uid gid) )) ) )
+	(##sys#posix-error #:file-error loc "cannot change file owner" f uid gid) )) ) )
 
 (set! chicken.process-context.posix#create-session
   (lambda ()
@@ -738,7 +773,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
               (##sys#make-c-string old 'create-symbolic-link)
               (##sys#make-c-string new 'create-symbolic-link) )
              0)
-      (posix-error #:file-error 'create-symbolic-link "cannot create symbolic link" old new) ) ) )
+      (##sys#posix-error #:file-error 'create-symbolic-link "cannot create symbolic link" old new) ) ) )
 
 (define-foreign-variable _filename_max int "FILENAME_MAX")
 
@@ -750,7 +785,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                   (##sys#make-c-string fname location)
                   buf)))
         (if (fx< len 0)
-            (posix-error #:file-error location "cannot read symbolic link" fname)
+            (##sys#posix-error #:file-error location "cannot read symbolic link" fname)
             (##sys#buffer->string buf 0 len))))))
 
 (set! chicken.file.posix#read-symbolic-link
@@ -780,14 +815,14 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-string old 'file-link)
       (##sys#check-string new 'file-link)
       (when (fx< (link old new) 0)
-      (posix-error #:file-error 'hard-link "could not create hard link" old new) ) ) ) )
+        (##sys#posix-error #:file-error 'file-link "could not create hard link" old new) ) ) ) )
 
 (define-inline (eagain/ewouldblock? e)
   (or (eq? e _ewouldblock)
       (eq? e _eagain)))
 
 (define ##sys#custom-input-port
-  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close void) (more? #f) enc)
+  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 1) (on-close ##sys#void) (more? #f) enc)
     (when nonblocking? (##sys#file-nonblocking! fd) )
     (let ((bufsiz (if (fixnum? bufi) bufi (##sys#size bufi)))
 	  (buf (if (fixnum? bufi) (##sys#make-bytevector bufi) bufi))
@@ -800,7 +835,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		 (if (eq? -1 res)
 		     (if (eagain/ewouldblock? _errno)
 			 #f
-			 (posix-error #:file-error loc "cannot select" fd nam))
+			 (##sys#posix-error #:file-error loc "cannot select" fd nam))
 		     (eq? 1 res))))]
             [peek
              (lambda ()
@@ -826,7 +861,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                              (loop) )
                             ((eq? _errno _eintr)
                              (##sys#dispatch-interrupt loop))
-                            (else (posix-error #:file-error loc "cannot read" fd nam) )))
+                            (else (##sys#posix-error #:file-error loc "cannot read" fd nam) )))
                          ((and more? (eq? cnt 0))
                           ;; When "more" keep trying, otherwise read once more
                           ;; to guard against race conditions
@@ -838,7 +873,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                                 (when (eq? cnt -1)
                                   (if (eagain/ewouldblock? _errno)
                                       (set! cnt 0)
-                                      (posix-error #:file-error loc "cannot read" fd nam) ) )
+                                      (##sys#posix-error #:file-error loc "cannot read" fd nam) ) )
                                 (set! buflen cnt)
                                 (set! bufpos 0) ) ))
                          (else
@@ -862,7 +897,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 			 (ready?)) )
 		   (lambda ()		; close
 		     (when (fx< (##core#inline "C_close" fd) 0)
-		       (posix-error #:file-error loc "cannot close" fd nam))
+		       (##sys#posix-error #:file-error loc "cannot close" fd nam))
 		     (on-close))
 		   peek-char:
                    (lambda ()		; peek-char
@@ -933,7 +968,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 	  this-port ) ) ) ) )
 
 (define ##sys#custom-output-port
-  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 0) (on-close void)
+  (lambda (loc nam fd #!optional (nonblocking? #f) (bufi 0) (on-close ##sys#void)
                enc)
     (when nonblocking? (##sys#file-nonblocking! fd) )
     (letrec ((this-port #f)
@@ -949,7 +984,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 			    ((eq? _errno _eintr)
 			     (##sys#dispatch-interrupt loop))
 			    (else
-			     (posix-error loc #:file-error "cannot write" fd nam) ) ) )
+			     (##sys#posix-error loc #:file-error "cannot write" fd nam) ) ) )
 			  ((fx< cnt len)
 			   (poke bv (fx+ start cnt) (fx- len cnt)) ) ) ) )))
 	     (store
@@ -984,7 +1019,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		 (lambda (str) (store str))
 		 (lambda ()		; close
 		   (when (fx< (##core#inline "C_close" fd) 0)
-		     (posix-error #:file-error loc "cannot close" fd nam))
+		     (##sys#posix-error #:file-error loc "cannot close" fd nam))
 		   (on-close))
                  force-output:
 		 (lambda ()		; flush
@@ -1005,7 +1040,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 		     ((fixnum? fname) (##core#inline "C_ftruncate" fname off))
 		     (else (##sys#error 'file-truncate "invalid file" fname)))
 	       0)
-      (posix-error #:file-error 'file-truncate "cannot truncate file" fname off) ) ) )
+      (##sys#posix-error #:file-error 'file-truncate "cannot truncate file" fname off) ) ) )
 
 
 ;;; File locking:
@@ -1017,7 +1052,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
 
 (let ()
   (define (err msg port loc)
-    (posix-error #:file-error loc msg port) )
+    (##sys#posix-error #:file-error loc msg port) )
   (define (fileno x loc)
     (if (port? x)
         (chicken.file.posix#port->fileno x)
@@ -1058,7 +1093,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
     (let ([mode (if (pair? mode) (car mode) (fxior _s_irwxu (fxior _s_irwxg _s_irwxo)))])
       (##sys#check-fixnum mode 'create-fifo)
       (when (fx< (##core#inline "C_mkfifo" (##sys#make-c-string fname 'create-fifo) mode) 0)
-      (posix-error #:file-error 'create-fifo "cannot create FIFO" fname mode) ) ) ) )
+      (##sys#posix-error #:file-error 'create-fifo "cannot create FIFO" fname mode) ) ) ) )
 
 
 ;;; Time related things:
@@ -1115,7 +1150,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       ((foreign-lambda int "C_fflush" c-pointer) #f)
       (let ((pid (fork)))
         (cond ((eq? -1 pid)             ; error
-               (posix-error #:process-error 'process-fork "cannot create child process"))
+               (##sys#posix-error #:process-error 'process-fork "cannot create child process"))
               ((eq? 0 pid)              ; child process
                (set! children '())
                (when killothers
@@ -1142,7 +1177,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                     (##core#inline "C_u_i_execve" prg argbuf envbuf)
                     (##core#inline "C_u_i_execvp" prg argbuf))))
          (when (eq? r -1)
-           (posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
+           (##sys#posix-error #:process-error 'process-execute "cannot execute process" filename)))))))
 
 (define-foreign-variable _wnohang int "WNOHANG")
 (define-foreign-variable _wait-status int "C_wait_status")
@@ -1171,7 +1206,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
       (##sys#check-fixnum sig 'process-signal)
       (let ((r (##core#inline "C_kill" pid sig)))
       (when (eq? r -1)
-        (posix-error #:process-error 'process-signal
+        (##sys#posix-error #:process-error 'process-signal
           "could not send signal to process" id sig) ) ) ) ) )
 
 (define (shell-command loc)
@@ -1222,7 +1257,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
                (vector-set! clsvec idx #t)
                (when (and (vector-ref clsvec idxa) (vector-ref clsvec idxb))
                  (chicken.process#process-wait proc #f) )
-               (void)) ))
+               (##core#undefined)) ))
           (needed-pipe
            (lambda (loc port)
              (and port
@@ -1326,7 +1361,7 @@ static int set_file_mtime(C_word filename, C_word atime, C_word mtime)
     (lambda (dir)
       (##sys#check-string dir 'set-root-directory!)
       (when (fx< (chroot dir) 0)
-        (posix-error #:file-error 'set-root-directory! "unable to change root directory" dir) ) ) ) )
+        (##sys#posix-error #:file-error 'set-root-directory! "unable to change root directory" dir) ) ) ) )
 
 ;;; unimplemented stuff:
 

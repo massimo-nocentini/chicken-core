@@ -192,8 +192,8 @@ char *ttyname(int fd) {
   (let ((read-char read-char)
         (write-char write-char))
     (define (read-and-write src dest)
-      (##sys#check-port src 'copy-port)
-      (##sys#check-port dest 'copy-port)
+      (##sys#check-input-port src 'copy-port)
+      (##sys#check-output-port dest 'copy-port)
       (let ((buf (##sys#make-bytevector +buf-size+)))
         (let loop ()
           (let ((n (chicken.io#read-bytevector!/port +buf-size+ buf src 0)))
@@ -201,7 +201,7 @@ char *ttyname(int fd) {
               (chicken.io#write-bytevector buf dest 0 n)
               (loop))))))
     (define (read-and-delegate src dest writer)
-      (##sys#check-port src 'copy-port)
+      (##sys#check-input-port src 'copy-port)
       (let ((buf (##sys#make-bytevector +buf-size+)))
         (let loop ((p 0))
           (let* ((n (chicken.io#read-bytevector!/port
@@ -228,7 +228,7 @@ char *ttyname(int fd) {
             (writer x dest)
             (loop)))))
     (define (delegate-and-write src reader dest)
-      (##sys#check-port dest 'copy-port)
+      (##sys#check-output-port dest 'copy-port)
       (let ((buf (##sys#make-bytevector (fx+ 4 +buf-size+))))
         (let loop ((n 0))
           (when (fx>= n +buf-size+)
@@ -429,7 +429,7 @@ char *ttyname(int fd) {
                                     (set! tail bv)
                                     (loop n c)))))))))
 	     read-line			; read-line
-	     read-buffered     ; read-buffered
+	     ##sys#read-buffered-bytes     ; read-buffered
              (lambda (p) (ready?))  ; char-ready?
              ))
 	   (data (vector #f))
@@ -611,15 +611,6 @@ char *ttyname(int fd) {
     (##sys#set-port-data! port (vector #f))
     port))
 
-;; Duplication from posix-common.scm
-(define posix-error
-  (let ((strerror (foreign-lambda c-string "strerror" int))
-	(string-append string-append))
-    (lambda (type loc msg . args)
-      (let ((rn (##sys#update-errno)))
-        (apply ##sys#signal-hook/errno
-               type rn loc (string-append msg " - " (strerror rn)) args)))))
-
 ;; Terminal ports
 (define (terminal-port? port)
   (##sys#check-open-port port 'terminal-port?)
@@ -637,7 +628,7 @@ char *ttyname(int fd) {
     (lambda (port)
       (check-terminal! 'terminal-name port)
       (or (ttyname (##core#inline "C_port_fileno" port))
-	  (posix-error #:error 'terminal-name
+	  (##sys#posix-error #:error 'terminal-name
 		       "cannot determine terminal name" port)))))
 
 (define terminal-size
@@ -652,7 +643,7 @@ char *ttyname(int fd) {
 			    (location rows)
 			    (location columns)))
 	    (values rows columns)
-	    (posix-error #:error 'terminal-size
+	    (##sys#posix-error #:error 'terminal-size
 			 "cannot determine terminal size" port))))))
 
 )

@@ -1204,8 +1204,8 @@
 (test-equal "1.0 * ratnum"  (apply * '(1.0 1/2)) 0.5)
 
 ;; Fixed for exactness (Gauche represents zero always exactly?)
-(test-equal "flonum * 0"  (apply * '(3.0 0)) 0.0)
-(test-equal "0 * flonum"  (apply * '(0 3.0)) 0.0)
+(test-equal "flonum * 0"  (apply * '(3.0 0)) 0)
+(test-equal "0 * flonum"  (apply * '(0 3.0)) 0)
 (test-equal "flonum * 1"  (apply * '(3.0 1)) 3.0)
 (test-equal "1 * flonum"  (apply * '(1 3.0)) 3.0)
 
@@ -1214,16 +1214,13 @@
 (test-equal "flonum * 1.0"  (apply * '(3.0 1.0)) 3.0)
 (test-equal "1.0 * flonum"  (apply * '(1.0 3.0)) 3.0)
 
-;; these return complex exact 0+0i, but this can't be constructed in the reader
-;; not sure what to do here...
-;(test-equal "compnum * 0" (* 0 +i) 0)
-;(test-equal "0 * compnum" (* +i 0) 0)
-
+(test-equal "compnum * 0" (* 0 +i) 0)
+(test-equal "0 * compnum" (* +i 0) 0)
 (test-equal "compnum * 1" (* 1 +i) +i)
 (test-equal "1 * compnum" (* +i 1) +i)
 
-(test-equal "compnum * 0.0" (* 0.0 +i) 0.0+0.0i)
-(test-equal "0.0 * compnum" (* +i 0.0) 0.0+0.0i)
+(test-equal "compnum * 0.0" (* 0.0 +i) +0.0i)
+(test-equal "0.0 * compnum" (* +i 0.0) +0.0i)
 (test-equal "compnum * 1.0" (* 1.0 +i) +1.0i)
 (test-equal "1.0 * compnum" (* +i 1.0) +1.0i))
 

@@ -848,8 +848,6 @@
 (scheme#interaction-environment
  (#(procedure #:clean) scheme#interaction-environment () (struct environment)))
 
-(scheme#with-exception-handler (#(procedure #:clean #:enforce) scheme#with-exception-handler ((procedure (*) . *) (procedure () . *)) . *))
-(scheme#raise (#(procedure #:clean #:enforce) scheme#raise (*) noreturn))
 (scheme#raise-continuable (#(procedure #:clean #:enforce) scheme#raise-continuable (*) . *))
 (scheme#error-object-irritants
   (#(procedure #:clean #:enforce)
@@ -1196,11 +1194,7 @@
 (chicken.condition#condition-property-accessor (#(procedure #:clean #:enforce) chicken.condition#condition-property-accessor (* * #!optional *) (procedure ((struct condition)) *)))
 
 (chicken.condition#current-exception-handler
- (#(procedure #:clean #:enforce) chicken.condition#current-exception-handler (#!optional (procedure (*) noreturn) boolean boolean) procedure)
- ((procedure) (let ((#(tmp1) #(1)))
-		(let ((#(tmp2) (set! ##sys#current-exception-handler #(tmp1))))
-		  #(tmp1))))
- (() ##sys#current-exception-handler))
+ (#(procedure #:clean #:enforce) chicken.condition#current-exception-handler (#!optional (procedure (*) noreturn) boolean boolean) procedure))
 (chicken.condition#get-condition-property (#(procedure #:clean #:enforce) chicken.condition#get-condition-property ((struct condition) * * #!optional *) *))
 (chicken.condition#make-composite-condition (#(procedure #:clean #:enforce) chicken.condition#make-composite-condition (#!rest (struct condition)) (struct condition)))
 (chicken.condition#make-property-condition (#(procedure #:clean #:enforce) chicken.condition#make-property-condition (* #!rest *) (struct condition)))
@@ -1670,6 +1664,7 @@
 (chicken.file#create-directory (#(procedure #:clean #:enforce) chicken.file#create-directory (string #!optional *) string))
 (chicken.file#create-temporary-directory (#(procedure #:clean #:enforce) chicken.file#create-temporary-directory () string))
 (chicken.file#create-temporary-file (#(procedure #:clean #:enforce) chicken.file#create-temporary-file (#!optional string) string))
+(chicken.file#call-with-temporary-file (procedure chicken.file#call-with-temporary-file ((procedure (output-port string) . *)) . *))
 (chicken.file#delete-directory (#(procedure #:clean #:enforce) chicken.file#delete-directory (string #!optional *) undefined))
 (chicken.file#delete-file (#(procedure #:clean #:enforce) chicken.file#delete-file (string) string))
 (chicken.file#delete-file* (#(procedure #:clean #:enforce) chicken.file#delete-file* (string) (or false string)))
@@ -1919,9 +1914,9 @@
 (chicken.memory.representation#procedure-data (#(procedure #:clean #:enforce) chicken.memory.representation#procedure-data (procedure) *))
 (chicken.memory.representation#record->vector (#(procedure #:clean) chicken.memory.representation#record->vector (*) vector))
 
-(chicken.memory.representation#make-record-instance (#(procedure #:clean) chicken.memory.representation#make-record-instance (symbol #!rest) *))
-(chicken.memory.representation#record-instance? (#(procedure #:clean) chicken.memory.representation#record-instance? (* #!optional symbol) boolean)
-		  ((* symbol) (##sys#structure? #(1) #(2)))
+(chicken.memory.representation#make-record-instance (#(procedure #:clean) chicken.memory.representation#make-record-instance (* #!rest) *))
+(chicken.memory.representation#record-instance? (#(procedure #:clean) chicken.memory.representation#record-instance? (* #!optional *) boolean)
+		  ((* *) (##sys#structure? #(1) #(2)))
 		  ((*) (let ((#(tmp) #(1)))
 			 (if (##sys#immediate? #(tmp))
 			     '#f
@@ -1948,7 +1943,7 @@
 
 (chicken.port#call-with-input-string (#(procedure #:enforce) chicken.port#call-with-input-string (string (procedure (input-port) . *)) . *))
 (chicken.port#call-with-output-string (#(procedure #:enforce) chicken.port#call-with-output-string ((procedure (output-port) . *)) string))
-(chicken.port#copy-port (#(procedure #:enforce) chicken.port#copy-port (* * #!optional (procedure (*) *) (procedure (* output-port) *)) undefined))
+(chicken.port#copy-port (#(procedure #:enforce) chicken.port#copy-port (* * #!optional (procedure (*) *) (procedure (* *) *)) undefined))
 (chicken.port#make-input-port (#(procedure #:clean #:enforce) chicken.port#make-input-port ((procedure () (or char eof)) (procedure () *) (procedure () . *) #!rest *) input-port))
 (chicken.port#make-output-port (#(procedure #:clean #:enforce) chicken.port#make-output-port ((procedure (string) . *) (procedure () . *) #!rest *) output-port))
 (chicken.port#make-binary-input-port (#(procedure #:clean #:enforce) chicken.port#make-binary-input-port ((procedure () (or fixnum eof)) (procedure () *) (procedure () . *) #!rest *) input-port))
@@ -2083,6 +2078,8 @@
 (chicken.file.posix#file-lock (#(procedure #:clean #:enforce) chicken.file.posix#file-lock ((or port fixnum) #!optional *) boolean))
 (chicken.file.posix#file-lock/blocking (#(procedure #:clean #:enforce) chicken.file.posix#file-lock/blocking ((or port fixnum) #!optional *) boolean))
 (chicken.file.posix#file-mkstemp (#(procedure #:clean #:enforce) chicken.file.posix#file-mkstemp (string) fixnum string))
+(chicken.file.posix#file-mkstemps (#(procedure #:clean #:enforce) chicken.file.posix#file-mkstemps (string fixnum) fixnum string))
+(chicken.file.posix#file-mkdtemp (#(procedure #:clean #:enforce) chicken.file.posix#file-mkdtemp (string) string))
 (chicken.file.posix#file-open (#(procedure #:clean #:enforce) chicken.file.posix#file-open (string fixnum #!optional fixnum) fixnum))
 (chicken.file.posix#file-owner (#(procedure #:clean #:enforce) chicken.file.posix#file-owner ((or string fixnum port)) fixnum))
 (chicken.file.posix#file-permissions (#(procedure #:clean #:enforce) chicken.file.posix#file-permissions ((or string fixnum port)) fixnum))

@@ -45,8 +45,8 @@
    duplicate-fileno fcntl/dupfd fcntl/getfd fcntl/getfl fcntl/setfd
    fcntl/setfl file-access-time file-change-time file-modification-time
    file-close file-control file-creation-mode file-group file-link
-   file-lock file-lock/blocking file-mkstemp file-open file-owner
-   file-permissions file-position file-read file-select file-size
+   file-lock file-lock/blocking file-mkstemp file-mkstemps file-mkdtemp
+   file-open file-owner file-permissions file-position file-read file-select file-size
    file-stat file-truncate file-unlock file-write
    file-type block-device? character-device? directory? fifo?
    regular-file? socket? symbolic-link?
@@ -87,6 +87,8 @@
 (define file-lock)
 (define file-lock/blocking)
 (define file-mkstemp)
+(define file-mkstemps)
+(define file-mkdtemp)
 (define file-open)
 (define file-owner)
 (define file-permissions)

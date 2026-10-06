@@ -214,7 +214,7 @@ EOF
 (define history-add
   (let ([vector-resize vector-resize])
     (lambda (vals)
-      (let ([x (if (null? vals) (##sys#void) (##sys#slot vals 0))]
+      (let ([x (if (null? vals) (##core#undefined) (##sys#slot vals 0))]
 	    [size (##sys#size history-list)] )
 	(when (fx>= history-count size)
 	  (set! history-list (vector-resize history-list (fx* 2 size))) )
@@ -223,7 +223,7 @@ EOF
 	x) ) ) )
 
 (define (history-clear)
-  (vector-fill! history-list (##sys#void)))
+  (vector-fill! history-list (##core#undefined)))
 
 (define history-show
   (let ((newline newline))
@@ -287,7 +287,7 @@ EOF
 	   (set-cdr! a (list proc help)) ))
 	(else
 	 (set! command-table (cons (list name proc help) command-table))))
-  (##sys#void))
+  (##core#undefined))
 
 (define default-evaluator
   (let ((eval eval)
@@ -308,19 +308,19 @@ EOF
 	       (cond ((assq cmd command-table) =>
 		      (lambda (p)
 			((cadr p))
-			(##sys#void) ) )
+			(##core#undefined) ) )
 		     (else
 		      ;;XXX use `toplevel-command' to define as many as possible of these
 		      (case cmd
 			((x)
 			 (let ([x (read)])
 			   (pretty-print (strip-syntax (expand x)))
-			   (##sys#void) ) )
+			   (##core#undefined) ) )
 			((p)
 			 (let* ([x (read)]
 				[xe (eval x)] )
 			   (pretty-print xe)
-			   (##sys#void) ) )
+			   (##core#undefined) ) )
 			((d)
 			 (let* ([x (read)]
 				[xe (eval x)] )
@@ -340,11 +340,11 @@ EOF
 			((l)
 			 (let ((fns (string-split (read-line))))
 			   (for-each load fns)
-			   (##sys#void) ) )
+			   (##core#undefined) ) )
 			((ln)
 			 (let ((fns (string-split (read-line))))
 			   (for-each (cut load-noisily <> printer: (lambda (x) (pretty-print x) (print* "==> "))) fns)
-			   (##sys#void) ) )
+			   (##core#undefined) ) )
 			((t)
 			 (let ((x (read)))
 			   (receive rs (time (eval x))
@@ -363,16 +363,16 @@ EOF
 			       (printf "editor returned with non-zero exit status ~a" r))))
 			((ch)
 			 (history-clear)
-			 (##sys#void))
+			 (##core#undefined))
 			((h)
 			 (history-show)
-			 (##sys#void))
+			 (##core#undefined))
 			((c)
 			 (show-frameinfo selected-frame)
-			 (##sys#void))
+			 (##core#undefined))
 			((f)
 			 (select-frame (read))
-			 (##sys#void))
+			 (##core#undefined))
 			((g)
 			 (copy-from-frame (read)))
 			((s)
@@ -410,10 +410,10 @@ EOF
 				  (print #\space help)
 				  (print " ," (car a)) ) ) )
 			  command-table)
-			 (##sys#void) )
+			 (##core#undefined) )
 			(else
 			 (printf "undefined toplevel command ~s - enter `,?' for help~%" form)
-			 (##sys#void) ) ) ) ) ) )
+			 (##core#undefined) ) ) ) ) ) )
 	    (else
 	     (receive rs (eval form)
 	       (history-add rs)
@@ -447,7 +447,7 @@ EOF
        ;; imported dynamically by bootstrap compiler
        ;; this can be replaced by "expand1" later
        (pretty-print (strip-syntax (chicken.syntax#expand1 expr)))
-       (##sys#void))))
+       (##core#undefined))))
  ",x1 EXP           Pretty print expand1-ed expression EXP")
 
 
@@ -619,7 +619,7 @@ EOF
             ((bwp-object? x)
              (fprintf out "broken weak pointer~%"))
 	    ((eof-object? x) (fprintf out "end-of-file object~%"))
-	    ((eq? (##sys#void) x) (fprintf out "unspecified object~%"))
+	    ((eq? (##core#undefined) x) (fprintf out "unspecified object~%"))
 	    ((fixnum? x)
 	     (fprintf out "exact immediate integer ~S~%  #x~X~%  #o~O~%  #b~B"
 	       x x x x)
@@ -749,7 +749,7 @@ EOF
 		      (fprintf out "structure of type `~S':~%" (##sys#slot x 0))
 		      (descseq #f ##sys#size ##sys#slot 1) ) ) ) )
 	    (else (fprintf out "unknown object~%")) )
-      (##sys#void) ) ) )
+      (##core#undefined) ) ) )
 
 
 ;;; Display hexdump:
@@ -899,7 +899,7 @@ EOF
 	       (define (fail msg)
 		 (display msg)
 		 (newline)
-		 (return (##sys#void)))
+		 (return (##core#undefined)))
 	       (do ((ct ct (cdr ct)))
 		   ((null? ct) (fail "no environment in frame"))
 		 ;;XXX this should be refactored as it duplicates the code above
@@ -922,7 +922,7 @@ EOF
 		      (##sys#slot data 2)	; e
 		      (##sys#slot data 3))	; v
 		     (fail (##sys#string-append "no such variable: " name)))))))
-	    (##sys#void))))))
+	    (##core#undefined))))))
 
 
 ;;; Handle some signals:
@@ -1062,7 +1062,7 @@ EOF
                  (load cfg-fn))
                 ((and home-fn (file-exists? home-fn))
                  (load home-fn) ) ) ) )
-      (define (evalstring str #!optional (rec (lambda _ (void))))
+      (define (evalstring str #!optional (rec (lambda _ (##core#undefined))))
 	(let ((in (open-input-string str))
 	      (read-with-source-info chicken.syntax#read-with-source-info)) ; OBSOLETE - after bootstrapping we can get rid of this explicit namespacing
 	  (do ([x (read-with-source-info in) (read-with-source-info in)])
@@ -1093,6 +1093,7 @@ EOF
 	(delete-duplicates
 	 (append (map chop-separator (collect-options "-include-path"))
 		 (map chop-separator (collect-options "-I"))
+                 '(".")
 		 ##sys#include-pathnames)
 	 string=?) )
       (when kwstyle

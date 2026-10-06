@@ -144,15 +144,8 @@
 (define (string-compare3-ci s1 s2)
   (##sys#check-string s1 'string-compare3-ci)
   (##sys#check-string s2 'string-compare3-ci)
-  (let ((len1 (string-length s1))
-	(len2 (string-length s2)) )
-    (let* ((len-diff (fx- len1 len2))
-	   (cmp (##core#inline "C_utf_compare_ci"
-                        s1 s2 0 0
-                        (if (fx< len-diff 0) len1 len2))))
-      (if (fx= cmp 0)
-	  len-diff
-	  cmp))))
+  (##core#inline "C_utf_compare_ci" s1 s2 0 0
+                 (string-length s1) (string-length s2)))
 
 
 ;;; Substring comparison:

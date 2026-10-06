@@ -653,7 +653,8 @@ void *alloca ();
 #define C_BAD_ARGUMENT_TYPE_COMPLEX_ABS               55
 #define C_REST_ARG_OUT_OF_BOUNDS_ERROR                56
 #define C_DECODING_ERROR                              57
-#define C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR	58
+#define C_ENCODING_ERROR                                58
+#define C_BAD_ARGUMENT_TYPE_NUMERIC_RANGE_ERROR	59
 
 /* Platform information */
 #if defined(C_BIG_ENDIAN)
@@ -1260,7 +1261,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_a_u_i_flonum_signum(ptr, n, x) (C_flonum_magnitude(x) == 0.0 ? (x) : ((C_flonum_magnitude(x) < 0.0) ? C_flonum(ptr, -1.0) : C_flonum(ptr, 1.0)))
 
 #define C_a_i_address_to_pointer(ptr, c, addr)  C_mpointer(ptr, (void *)C_num_to_unsigned_int(addr))
-#define C_a_i_pointer_to_address(ptr, c, pptr)  C_unsigned_int_to_num(ptr, (unsigned int)C_c_pointer_nn(pptr))
+#define C_a_i_pointer_to_address(ptr, c, pptr)  C_unsigned_int_to_num(ptr, (unsigned long)C_c_pointer_nn(pptr))
 
 #define C_display_fixnum(p, n)          (C_fprintf(C_port_file(p), C_text("%d"), C_unfix(n)), C_SCHEME_UNDEFINED)
 #define C_display_char(p, c)            (C_utf_putc(C_character_code(c), C_port_file(p)), C_SCHEME_UNDEFINED)
@@ -1283,7 +1284,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_u_i_substring_equal_p(x, y, s1, s2, len) \
                                         C_mk_bool(C_utf_compare(x, y, s1, s2, len) == C_fix(0))
 #define C_u_i_substring_ci_equal_p(x, y, s1, s2, len) \
-                                        C_mk_bool(C_utf_compare_ci(x, y, s1, s2, len) == C_fix(0))
+                                        C_mk_bool(C_utf_compare_ci(x, y, s1, s2, len, len) == C_fix(0))
 
 /* this does not use C_mutate: */
 #define C_copy_bytevector(b1, b2, len)  (C_memcpy(C_data_pointer(b2), C_data_pointer(b1), C_unfix(len)), (b2))
@@ -1380,7 +1381,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_a_i_fix_to_flo(p, n, f)       C_flonum(p, C_unfix(f))
 #define C_cast_to_flonum(n)             ((double)(n))
 #define C_a_i_mpointer(ptr, n, x)       C_mpointer(ptr, (x))
-#define C_a_u_i_pointer_inc(ptr, n, p, i) C_mpointer(ptr, (C_char *)(p) + C_unfix(i))
+#define C_a_u_i_pointer_inc(ptr, n, p, i) C_mpointer(ptr, (C_char *)C_c_pointer_nn(p) + C_unfix(i))
 #define C_pointer_eqp(x, y)             C_mk_bool(C_c_pointer_nn(x) == C_c_pointer_nn(y))
 #define C_a_int_to_num(ptr, n, i)       C_int_to_num(ptr, i)
 #define C_a_unsigned_int_to_num(ptr, n, i)  C_unsigned_int_to_num(ptr, i)
@@ -1683,8 +1684,8 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 
 #define C_ub_i_f32vector_ref(b, i)      (((float *)C_data_pointer(C_block_item((b), 1)))[ C_unfix(i) ])
 #define C_ub_i_f64vector_ref(b, i)      (((double *)C_data_pointer(C_block_item((b), 1)))[ C_unfix(i) ])
-#define C_ub_i_f32vector_set(v, i, x)   ((((float *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)),C_SCHEME_UNDEFINED)
-#define C_ub_i_f64vector_set(v, i, x)   ((((double *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)),C_SCHEME_UNDEFINED)
+#define C_ub_i_f32vector_set(v, i, x)   ((((float *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)), C_SCHEME_UNDEFINED)
+#define C_ub_i_f64vector_set(v, i, x)   ((((double *)C_data_pointer(C_block_item((v), 1)))[ C_unfix(i) ] = (x)), C_SCHEME_UNDEFINED)
 
 #define C_a_i_flonum_sin(ptr, c, x)     C_flonum(ptr, C_sin(C_flonum_magnitude(x)))
 #define C_a_i_flonum_cos(ptr, c, x)     C_flonum(ptr, C_cos(C_flonum_magnitude(x)))
@@ -1891,6 +1892,7 @@ C_fctexport void C_save_and_reclaim_args(void *trampoline, int n, ...) C_noret;
 C_fctexport void C_rereclaim2(C_uword size, int relative_resize) C_regparm;
 C_fctexport void C_unbound_variable(C_word sym);
 C_fctexport void C_decoding_error(C_word str, C_word index);
+C_fctexport void C_encoding_error(C_word bv, C_word index);
 C_fctexport C_word C_retrieve2(C_word val, char *name) C_regparm;
 C_fctexport void *C_retrieve2_symbol_proc(C_word val, char *name) C_regparm;
 C_fctexport int C_in_stackp(C_word x) C_regparm;
@@ -1938,7 +1940,7 @@ C_fctexport C_char *C_getenventry(int i);
 C_fctexport C_word C_utf_subchar(C_word s, C_word i) C_regparm;
 C_fctexport C_word C_utf_setsubchar(C_word s, C_word i, C_word c) C_regparm;
 C_fctexport C_word C_utf_compare(C_word s1, C_word s2, C_word start1, C_word start2, C_word len) C_regparm;
-C_fctexport C_word C_utf_compare_ci(C_word s1, C_word s2, C_word start1, C_word start2, C_word len) C_regparm;
+C_fctexport C_word C_utf_compare_ci(C_word s1, C_word s2, C_word start1, C_word start2, C_word len1, C_word len2) C_regparm;
 C_fctexport C_word C_utf_equal(C_word s1, C_word s2) C_regparm;
 C_fctexport C_word C_utf_equal_ci(C_word s1, C_word s2) C_regparm;
 C_fctexport C_word C_utf_copy(C_word from, C_word to, C_word start1, C_word end1, C_word start2) C_regparm;
@@ -2863,6 +2865,15 @@ inline static C_word C_i_pairp(C_word x)
   return C_mk_bool(!C_immediatep(x) && C_header_type(x) == C_PAIR_TYPE);
 }
 
+/* Immediate-safe counterpart of the raw C_bytevectorp macro.  Use this
+   one whenever the argument's blockness has not already been established --
+   in particular from compiler rewrite rules, which fire at call sites where
+   the argument type is unknown. */
+inline static C_word C_i_bytevectorp(C_word x)
+{
+  return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_BYTEVECTOR_TYPE);
+}
+
 inline static C_word C_i_weak_pairp(C_word x)
 {
   return C_mk_bool(!C_immediatep(x) && C_block_header(x) == C_WEAK_PAIR_TAG);
@@ -2880,16 +2891,6 @@ inline static C_word C_i_stringp(C_word x)
 inline static C_word C_i_generic_structurep(C_word x)
 {
   return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_STRUCTURE_TYPE);
-}
-
-
-/* Immediate-safe counterpart of the raw C_bytevectorp macro above.  Use this
-   one whenever the argument's blockness has not already been established --
-   in particular from compiler rewrite rules, which fire at call sites where
-   the argument type is unknown. */
-inline static C_word C_i_bytevectorp(C_word x)
-{
-  return C_mk_bool(!C_immediatep(x) && C_header_bits(x) == C_BYTEVECTOR_TYPE);
 }
 
 

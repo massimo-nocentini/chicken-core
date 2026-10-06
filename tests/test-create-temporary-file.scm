@@ -37,3 +37,38 @@
     (let ((tmp (create-temporary-directory)))
       (delete-directory tmp)
       (assert (not (pathname-directory tmp))))))
+
+(for-each
+  (lambda (ext)
+    (let* ((tmp (create-temporary-file ext))
+           (suffix (if (zero? (string-length ext)) "" (string-append "." ext))))
+      (assert (equal? (substring tmp (- (string-length tmp) (string-length suffix)))
+                      suffix))
+      (assert (file-exists? tmp))
+      (assert (call-with-input-file tmp (lambda (p) (eof-object? (read-char p)))))
+      (delete-file tmp)))
+  '("" "tmp" "привет"))
+
+(let ((dir (create-temporary-directory)))
+  (with-environment-variable "TMPDIR" dir
+    (lambda ()
+      (let ((port #f)
+            (name #f))
+        (assert
+          (eq? 'done
+            (call-with-temporary-file
+              (lambda (p tmp)
+                (set! port p)
+                (set! name tmp)
+                (assert (output-port? p))
+                (assert (not (port-closed? p)))
+                (assert (file-exists? tmp))
+                (assert (equal? (pathname-directory tmp) dir))
+                (assert (not (pathname-extension tmp)))
+                (display "привет" p)
+                'done))))
+        (assert (port-closed? port))
+        (assert (file-exists? name))
+        (assert (equal? 'привет (call-with-input-file name read)))
+        (delete-file name))))
+  (delete-directory dir))

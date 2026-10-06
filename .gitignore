@@ -143,3 +143,8 @@
 # WebAssembly out-of-tree build directories (make wasm)
 
 /build-wasm*/
+
+# Generated during bootstrapping
+
+/boot
+
