@@ -2363,6 +2363,14 @@ like a bug in the change under test. Build with `env -u LD_LIBRARY_PATH make` if
 in doubt; a clean-environment build of the same tree succeeds where the ambient
 one crashes.
 
+The same variable also corrupts *comparisons* against the installed build. With
+`LD_LIBRARY_PATH` pointing at the build tree, as the test recipes set it, the
+installed `~/.local/bin/csi` and `csc`, and the binaries `csc` produces, load the
+tree's patched `libchicken` and so behave like the patched build. A "stock"
+baseline taken that way silently shows the fix. While landing §11.9 it made the
+unfixed alias bug look fixed. Run the baseline under
+`env -u LD_LIBRARY_PATH -u CHICKEN_REPOSITORY_PATH`.
+
 ### 11.8 The SIMD survey, and what it actually produced
 
 The brief was "introduce SIMD optimizations wherever possible". §9.5 records the
@@ -2531,6 +2539,172 @@ builds with different `-DC_KARATSUBA_THRESHOLD` values was tried and abandoned a
 invalid on this machine, and no better method was substituted. That one is a
 loose end, not a decision.
 
+### 11.9 A local captured a macro's reference to a global — `db033882`
+
+An upstream hygiene bug in the expander, found while testing §11.10 against the
+paper. It affects every kind of macro, not just syntactic closures:
+
+```scheme
+(define x 10)
+(define-syntax g (syntax-rules () ((_) x)))
+(let ((x 20)) (g))   ; csc: 20, csi: "unbound variable: x45" -- should be 10
+```
+
+**Cause.** Since upstream `bf374b02` (2018, "Change module imports to be
+lexically scoped"), the compiler (`core.scm`) and the interpreter (`eval.scm`)
+no longer pass a syntactic environment down the code walker. Each binding form
+instead extends the `##sys#current-environment` parameter, so that parameter
+holds both the imports (`(cons . scheme#cons)`) and the aliases of the locals in
+scope (`(x . x45)`).
+
+The macro's `x` is an alias whose `##core#macro-alias` property is the plain
+global name `x`. The walker correctly finds that it is not lexically bound and
+hands it to `##sys#alias-global-hook` (`modules.scm:884`). The hook then looks
+the plain name up again in the current environment, finds the local's
+`(x . x45)` and returns `x45`. Compiled code refers to the local variable; the
+interpreter looks up a global named `x45`, which does not exist.
+
+**Fix.** Imports in that environment always map to namespaced symbols
+(`module#name`), and locals map to plain aliases. Every caller of the hook
+(variable reference, `set!`, declarations, profiling names, `define-external`)
+calls it only after deciding the variable is global. So the hook now ignores
+entries whose value is not namespaced.
+
+**Evidence.** Stock measured in a clean environment (see §11.7):
+
+| case | stock `csc` | fixed, `csi` and `csc` |
+|---|---|---|
+| `syntax-rules` reference under `(let ((x 20)) ...)` | 20 | 10 |
+| `set!` of the global through a macro | changes the local | changes the global |
+| `er` `(r 'x)` / `ir` reference | 20 | the global |
+| a module global referenced inside its own module | `local` | `module-global` |
+| deliberately unhygienic `er` (returns a raw `x`) | 20 | 20, still captured |
+
+Stock `csi` fails the first row with an unbound gensym. The regression tests are
+at the end of `tests/syntax-tests.scm`; stock fails them, and the fixed build
+passes them interpreted and compiled. `make check` is green.
+
+The bug is also why a `syntax-rules` reference to `y` followed by an internal
+`(define y 1)` reported "unbound variable: y46". It now names the global `y`,
+which really is unbound there.
+
+### 11.10 Syntactic closures in `(chicken syntax)` — `d5194716`, merged `cc5b858e`
+
+Bawden & Rees, "Syntactic Closures" (LFP 1988), is implemented next to the
+explicit and implicit renaming transformers. The paper is the normative
+reference. The implementation is in `expand.scm`, starting at the section header
+at line 1260; the manual's "Syntactic closures" section in `Module (chicken
+syntax)` documents every procedure and lists the differences from the paper.
+
+**Interface.**
+- The MIT Scheme / CHICKEN 3 egg API: `sc-macro-transformer`,
+  `rsc-macro-transformer`, `make-syntactic-closure`,
+  `make-syntactic-closure-list`, `close-syntax`, `capture-syntactic-environment`,
+  `identifier?`, `identifier=?`, `identifier->symbol`, `syntactic-closure?`,
+  `syntactic-environment?` and `strip-syntactic-closures`.
+- The paper's own interface:
+  - `expander-macro-transformer`, for expanders written `(lambda (env exp) ...)`;
+  - `scheme-syntactic-environment` (§4.2), whose `scheme` names are absolute
+    references such as `scheme#cons`;
+  - `core-syntactic-environment`;
+  - `extend-syntactic-environment` (§4.1);
+  - `scheme-macrology` (§4.3 and the appendix: `delay`, `or`, `and`, `let`,
+    `cond`, `case`, `with-macro`, `with-macro-rec`).
+
+Seventeen exports in all, in `chicken.syntax.import.scm` and `types.db`.
+
+**Design.** The CHICKEN 3 egg replaced the whole expander with MIT's
+`synclo.scm`. This implementation does not. Closures are first-class only while
+an sc or rsc transformer runs. When it returns, its output is *lowered* to
+ordinary renamed code (`make-sc-transformer`, `:2648`; `sc-lower`, `:2441`), so
+closure macros, `er`/`ir` macros, `syntax-rules`, modules and import libraries
+all keep working together. The points worth knowing before changing it:
+
+- **Per-closure identity.** Each closure object is its own identifier context,
+  as in the paper's appendix (`sc-lower-closure`, `:2123`). Binders the
+  surrounding output introduces cannot capture a closure's names; only its
+  free-names list can be captured. Two separate closures of `x` are different
+  identifiers.
+- **Two passes.** Pass 1 builds nothing: it records which aliases occur and
+  calls each capture procedure once. Pass 2 builds the lowered form, returning
+  unchanged subforms `eq?`. That preserves line numbers, and lets compiler
+  syntax decline by returning its input.
+- **Un-renaming.** A usage-environment alias is turned back into the user's
+  plain name when no other identifier for that name occurs in the output
+  (`sc-choose-unrenamed`, `:2577`). In the common case user code therefore
+  comes out exactly as written.
+- **Context of nested macro calls.** In the paper, a macro called inside a
+  closure has that closure's environment as its usage environment. Lowering
+  registers each form that may be such a call, with its context, in a weak
+  table (`sc-context-db`, `:2194`). Non-sc macros pass it on to the calls they
+  build (`sc-propagate-context!`, `:2362`, called from `##sys#expand-0`).
+- **Definitions.** The paper leaves definitions unspecified. A hook in
+  `##sys#canonicalize-body` (`sc-fini`, `:559`; "Definitions in bodies",
+  `:2989`) makes `(define ,(close-syntax name env) ...)` define the user's name
+  in a body. Closures made outside the body keep their outer meaning, as with
+  `letrec*`.
+- **Captures.** `capture-syntactic-environment` is MIT's extension, not the
+  paper's, and is called eagerly. Placed inside the output, it gets an
+  environment for that place, implemented with "twins" (`:1750`).
+- **Lifetime.** Environments are valid during their expansion and within their
+  scope. The current expansion is a parameter, so it is per thread, and its
+  cleanup runs in a `dynamic-wind` after-thunk.
+
+The one change outside the expander: vector literals in macro output go through
+`##sys#strip-syntax-literal` (`expand.scm:168`, used at `core.scm:659` and
+`eval.scm:214`). A `syntax-rules` template `#(a b)` used to evaluate to
+`#(a12 b13)`; vectors that hold no renamed symbol are still used as they are.
+
+**Verification.**
+- **Oracle.** The paper's appendix is a complete implementation. It was ported
+  and run as an oracle (69 differential cases plus 8 that exercise
+  simplifications of the appendix itself). The port reproduces the paper's own
+  claims: §1 problems 1–4, §3.2 `push`/`or`/`catch`, §4.4 `adjoin`, and the
+  recursive `or`. `tests/paper-oracle-tests.scm` gives 90 passed, 0 failed. Its
+  last 4 deviations disappeared with §11.9, which also removed a workaround for
+  that bug from `sc-choose-unrenamed` (`534baf5a`).
+- **Unit tests.** `tests/syntactic-closures-tests.scm` gives 176 passed.
+  `syntactic-closures-redefine.scm` covers user redefinitions of the exports,
+  and `syntactic-closures-m1.scm` / `-m2.scm` cover a module, its import
+  library and the compiled `.import.so`.
+- **Wiring.** All of these run in `csi`, `csc` and `csc -O3 -specialize` from
+  `tests/runtests.sh`, and `make check` is green.
+- **Review.** Three rounds of adversarial review confirmed 48 defects, each
+  fixed with a regression test. The round cap ended the loop; it never had a
+  round with no new findings.
+
+**Scope and cost.** Against `6d07d79e`, 18 files change, +5989/−31:
+
+| | added | removed |
+|---|---:|---:|
+| `expand.scm` | 1980 | 23 |
+| `core.scm`, `eval.scm`, `modules.scm` (§11.9), `types.db`, `chicken.syntax.import.scm` | 85 | 5 |
+| tests | 3173 | 0 |
+| docs (`manual/`, `NEWS`) and wiring (`runtests*.sh`, `distribution/manifest`) | 751 | 3 |
+
+`expand.scm` doubles, from 1,971 to about 3,930 lines. Fidelity to the paper on
+top of a renaming expander is what costs: the context table, the body hook and
+un-renaming exist only for it.
+
+Expansion that uses no sc/rsc macro is not measurably slower; compiling
+`eval.scm` took 0.46 s, against 0.58 s on stock. On sc-heavy code, peak memory
+is about twice that of a simpler lowering: 150 MB against 77 MB on 3000
+toplevel definitions built from sc macros, measured before the review rounds.
+
+**Not merged, kept for reference.** Branch `syntactic-closures-minimal` is a
+482-line variant of `expand.scm`. It treats two closures of the same name in the
+same environment as one identifier, and it lacks the context of nested macro
+calls. So it differs from the paper on `d2-bind2-t68` and
+`free-advertised-closure-inside-usage`, and on 6 of the judges' probes. It
+predates the review rounds, so it also lacks their fixes, e.g. vector-literal
+performance, `types.db` purity, and robustness against circular data and
+re-entry.
+
+**Behaviour change.** `(chicken syntax)` is imported by default, so the
+seventeen names are now visible in every toplevel. Code that defines its own
+`identifier?` now assigns the imported binding and the compiler warns. NEWS
+documents this, with the `(import (except ...))` workaround.
+
 ## Appendix: file map
 
 | File | Role |
@@ -2548,7 +2722,7 @@ loose end, not a decision.
 | `batch-driver.scm` | Pass sequencing, command-line handling |
 | `support.scm` | Node representation, the analysis database, utilities |
 | `library.scm` | The Scheme-level core library, including the port layer |
-| `expand.scm`, `modules.scm`, `synrules.scm` | Macro expander, module system, `syntax-rules` |
+| `expand.scm`, `modules.scm`, `synrules.scm` | Macro expander (er, ir and syntactic-closure transformers, §11.10), module system, `syntax-rules` |
 | `eval.scm` | The interpreter — a separate execution path this document does not cover |
 | `srfi-4.scm` | Homogeneous numeric vectors (`chicken.number-vector`) |
 | `r7lib.scm` | R7RS library support |
