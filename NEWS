@@ -41,7 +41,7 @@
   - Fixed incorrect buffer management in "file-mkstemp" (from the
     "chicken.file.posix" module).
   - Made the "u8vector" type a proper synonym for "bytevector" (thanks to
-    Diega A. Mundo).
+    Diego A. Mundo).
   - Fixed argument handling for "include-path" (thanks to "siiky", Diego
     A. Mundo and Kristianl Lein-Mathisen).
   - Overhauled UTF character-class databases and predicates to Unicode 18 
