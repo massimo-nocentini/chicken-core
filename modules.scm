@@ -895,8 +895,13 @@
 	 (lambda (a)
 	   (let ((sym2 (cdr a)))
 	     (dm "(ALIAS) in current environment " sym " -> " sym2)
-	     ;; check for macro (XXX can this be?)
-	     (if (pair? sym2) (mrename sym) sym2))))
+	     (cond ((pair? sym2) (mrename sym)) ; macro (XXX can this be?)
+		   ;; A lexical alias (see ##sys#extend-se): SYM was
+		   ;; resolved as global, so it is the global that a local
+		   ;; of the same name shadows here, e.g. a reference made
+		   ;; by a macro to a global, expanded under such a local.
+		   ((not (namespaced-symbol? sym2)) (mrename sym))
+		   (else sym2)))))
 	(else (mrename sym))))
 
 (define (##sys#validate-exports exps loc)
