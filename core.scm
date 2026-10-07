@@ -656,7 +656,7 @@
 	  ((symbol? x) (resolve-variable x e dest ldest h outer-ln))
 	  ((not (pair? x))
 	   (if (constant? x)
-	       `(quote ,x)
+	       `(quote ,(if (vector? x) (##sys#strip-syntax-literal x) x))
 	       (##sys#syntax-error/context "illegal atomic form" x)))
 	  ((symbol? (car x))
 	   (let ((ln (or (get-line-number x) outer-ln)))

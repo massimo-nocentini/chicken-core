@@ -278,6 +278,32 @@ echo "======================================== syntax tests (v2, compiled) ..."
 $compile syntax-tests-2.scm
 ./a.out
 
+echo "======================================== syntactic closures tests ..."
+$interpret -s syntactic-closures-tests.scm
+$compile syntactic-closures-tests.scm
+./a.out
+$compile -O3 -specialize syntactic-closures-tests.scm
+./a.out
+rm -f syntactic-closures-m1.import.*
+$compile_s syntactic-closures-m1.scm -J
+$interpret -s syntactic-closures-m2.scm
+$compile syntactic-closures-m2.scm
+./a.out
+$compile_s syntactic-closures-m1.import.scm
+$interpret -s syntactic-closures-m2.scm
+$interpret -s syntactic-closures-redefine.scm
+$compile syntactic-closures-redefine.scm
+./a.out
+$compile -O3 -specialize syntactic-closures-redefine.scm
+./a.out
+
+echo "======================================== syntactic closures paper oracle tests ..."
+$interpret -s paper-oracle-tests.scm
+$compile paper-oracle-tests.scm
+./a.out
+$compile -O3 -specialize paper-oracle-tests.scm
+./a.out
+
 echo "======================================== meta-syntax tests ..."
 $interpret -bnq meta-syntax-test.scm -e '(import foo)' -e '(assert (equal? (quote ((1))) (bar 1 2)))' -e '(assert (equal? (quote (list 1 2 3)) (listify)))' -e '(import test-import-syntax-for-syntax)' -e '(assert (equal? (quote (1)) (test)))' -e '(import test-begin-for-syntax)' -e '(assert (equal? (quote (1)) (test)))'
 $compile_s meta-syntax-test.scm -j foo

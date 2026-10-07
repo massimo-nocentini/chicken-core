@@ -1471,7 +1471,8 @@ Syntax definitions are valid only at the top level of a
 
 {{<Keyword>}} is an identifier, and the {{<transformer spec>}} should
 be an instance of {{syntax-rules}}.  Note that CHICKEN also supports
-{{er-macro-transformer}} and {{ir-macro-transformer}} here.  For more
+{{er-macro-transformer}}, {{ir-macro-transformer}},
+{{sc-macro-transformer}} and {{rsc-macro-transformer}} here.  For more
 information see [[Module (chicken syntax)|the (chicken syntax) module]].
 
 The top-level syntactic environment is extended by binding the

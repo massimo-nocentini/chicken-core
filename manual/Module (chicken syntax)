@@ -17,8 +17,8 @@ appropriate, as it offers stronger guarantees of hygiene, is more
 high-level and is standard R7RS Scheme.
 
 For those situations where you need more control, however, CHICKEN
-supports two kinds of low-level macros: so-called explicit renaming
-and implicit renaming macros.
+supports three kinds of low-level macros: so-called explicit renaming
+and implicit renaming macros, and syntactic closures.
 
 ==== Explicit renaming macros
 
@@ -291,6 +291,672 @@ that when you would call e.g.  {{(compare (cadr expression) (rename
 comparison {{(compare sym 'abc)}} should be written as {{(compare sym
 (inject 'abc))}} in an IR macro.
 
+
+=== Syntactic closures
+
+Syntactic closures (Alan Bawden and Jonathan Rees, ''Syntactic
+Closures'', 1988 ACM Conference on Lisp and Functional Programming)
+are a third kind of low-level macro, compatible with MIT Scheme,
+chibi-scheme and the old {{syntactic-closures}} egg.  The paper is the
+reference for their semantics; this section quotes its examples.
+
+A ''syntactic closure'' is a form together with the ''syntactic
+environment'' in which its names must be interpreted, and a list of
+''free names'' that are instead interpreted where the closure is
+placed.  As the paper puts it, "a syntactic closure carries its own
+context with it".  A macro is written as a procedure, an ''expander'',
+that receives a syntactic environment instead of rename and compare
+procedures, and makes hygiene explicit by closing forms in the
+environment where they belong:
+
+* the parts of the macro form are closed in the ''usage'' environment,
+where the macro is used;
+* the code the macro adds is closed in the ''macro'' environment, where
+it was defined, or in an environment it knows, such as
+{{scheme-syntactic-environment}}.
+
+The paper's first examples are {{push}}, {{or}} and {{catch}}.  With
+{{sc-macro-transformer}}, whose result is closed in the macro
+environment, they read:
+
+<enscript highlight=scheme>
+(define-syntax push
+  (sc-macro-transformer
+   (lambda (exp env)
+     (let ((obj-exp (make-syntactic-closure env '() (cadr exp)))
+           (list-var (make-syntactic-closure env '() (caddr exp))))
+       `(set! ,list-var (cons ,obj-exp ,list-var))))))
+
+(define-syntax or2
+  (sc-macro-transformer
+   (lambda (exp env)
+     (let ((exp-1 (make-syntactic-closure env '() (cadr exp)))
+           (exp-2 (make-syntactic-closure env '() (caddr exp))))
+       `((lambda (temp) (if temp temp ,exp-2)) ,exp-1)))))
+
+(define-syntax catch
+  (sc-macro-transformer
+   (lambda (exp env)
+     (let ((body-exp (make-syntactic-closure env '(throw) (cadr exp))))
+       `(call-with-current-continuation (lambda (throw) ,body-exp))))))
+
+(let ((stack '()))
+  (let ((cons 6)) (push 'foo stack))          ; cons is not captured
+  stack)                                      ; => (foo)
+(let ((temp 'tv)) (or2 #f temp))              ; => tv, temp is the user's
+(catch (+ 5 (throw 'x)))                      ; => x, throw is captured
+</enscript>
+
+{{set!}}, {{cons}}, {{lambda}} and {{if}} are interpreted where the
+macros were defined, so local bindings of these names at the call site
+do not affect them; the user's {{temp}} is closed in the usage
+environment, so the macro's {{temp}} cannot capture it; and the body of
+{{catch}} leaves {{throw}} free, so the {{throw}} bound by the macro
+captures it.
+
+==== How syntactic closures work in CHICKEN
+
+Syntactic closures are implemented on top of the renaming expander:
+when an sc or rsc transformer returns, every syntactic closure in its
+result is replaced by an equivalent renamed form ("lowered").  Hence
+sc, rsc, er, ir and {{syntax-rules}} macros can be freely mixed: they
+may expand into each other and receive each other's output.  All of
+the procedures below are available at expansion time without an
+explicit import, like {{er-macro-transformer}}.
+
+As in the paper's implementation, every syntactic closure is an
+identifier context of its own: a name in a closure means what it means
+in the closure's environment, and nothing that the surrounding output
+binds can capture it.  Two closures of the same name are two
+different identifiers: a closure used as a binding name binds only
+that closure.  To bind a name given by the caller in a body supplied by
+the caller, do as the paper's {{let}} does: put the name itself in the
+binding position and leave it free in the closure of the body.  A
+closure object can also be used both as the binder and the reference:
+
+<enscript highlight=scheme>
+(define-syntax bind-1
+  (sc-macro-transformer
+   (lambda (exp env)
+     `(let ((,(cadr exp) 1))
+        ,(make-syntactic-closure env (list (cadr exp)) (caddr exp))))))
+(bind-1 x (+ x 1))                                      ; => 2
+
+(define-syntax twice-bound
+  (sc-macro-transformer
+   (lambda (exp env)
+     (let ((v (close-syntax (cadr exp) env)))          ; one closure
+       `(let ((,v 21)) (* 2 ,v))))))
+(twice-bound x)                                         ; => 42
+</enscript>
+
+Writing {{(let ((,(close-syntax 'x env) 1)) ,(close-syntax 'x env))}}
+instead refers to the {{x}} of the usage environment, not to the
+binding, as in MIT Scheme and chibi-scheme.  This also applies to
+named {{let}}, {{receive}}, {{do}} and the like.
+
+Only the free names of a closure take their meaning from the place
+where it is put, and this also holds when the closure is passed to
+another macro.  In the paper a macro used inside a closure has that
+closure's environment as its usage environment: in
+
+<enscript highlight=scheme>
+(define-syntax aif
+  (sc-macro-transformer
+   (lambda (form env)
+     `(let ((it ,(close-syntax (cadr form) env)))
+        (if it
+            ,(make-syntactic-closure env '(it) (caddr form))
+            ,(close-syntax (cadddr form) env))))))
+
+(aif (memq 'b '(a b c)) (aif (cadr it) (list it) 'no) 'no)  ; => (c)
+(catch (list 'outer (catch (throw 'inner))))              ; => (outer inner)
+(catch (list 'outer (or2 #f (catch (throw 'inner)))))     ; => (outer inner)
+</enscript>
+
+the inner {{it}} and {{throw}} are those of the inner macro, also when
+a macro that closes its operands in its usage environment, such as
+{{or2}}, stands between the two, or when the inner call is built by a
+{{syntax-rules}}, er or ir macro, e.g.
+{{(define-syntax my-catch (syntax-rules () ((_ e) (catch e))))}} used
+as {{(catch (list 'outer (my-catch (throw 'inner))))}}.  A closure
+handed to a macro is not free text of that macro's form, so the free
+names of the macro's own closures do not capture it:
+
+<enscript highlight=scheme>
+(define-syntax pass
+  (sc-macro-transformer
+   (lambda (form env)
+     `(aif ,(close-syntax (cadr form) env) ,(close-syntax (caddr form) env) #f))))
+
+(let ((it 'user)) (pass 1 it))                            ; => user
+</enscript>
+
+Conversely, what a macro called inside a closure binds in its usage
+environment captures the free names of that closure as the user wrote
+them in the macro form, as in the paper, also when the macro is an rsc
+macro that writes the binder as a plain symbol:
+
+<enscript highlight=scheme>
+(define-syntax rcatch
+  (rsc-macro-transformer
+   (lambda (form env)
+     `(call-with-current-continuation (lambda (throw) ,(cadr form))))))
+
+(catch (list 'outer (rcatch (throw 'inner))))             ; => (outer inner)
+</enscript>
+
+A name of the usage environment is written in the expansion as it is
+(and not as a fresh alias) when that cannot change what it refers to,
+that is, when the expansion contains no other identifier of that name.
+So the output of a macro looks like the code the user wrote, and
+non-hygienic er, ir and rsc macros used in it see the user's names.
+
+The paper leaves definitions unspecified (its section 6).  In CHICKEN a
+body that defines a name, either directly or through a closure of that
+name made in the usage environment of a macro used in the body,
+defines the name itself, and every closure of the name in that
+environment refers to the definition.  (A macro is used in the body
+when it is expanded while the body's definitions are collected,
+directly or through other macros.)  Closures made in an environment
+outside the body, for instance by a macro whose output contains the
+body or kept by an expander from an earlier expansion, keep their
+meaning, as they would with {{letrec*}}.  So a macro can write
+{{(define ,(close-syntax name env) ...)}} and
+{{(set! ,(close-syntax name env) ...)}}, with two different closures,
+and both refer to the user's {{name}}, in a body as at toplevel.  A
+binder of the name inside the body that is not one of those closures,
+such as the parameter of a {{(lambda (x) ...)}} made by another
+closure of the macro, is renamed apart where needed, so that it does
+not capture them (see the differences below for the binding forms this
+works with).
+
+A syntactic environment can be used to make closures (and to compare
+identifiers) while the expansion it belongs to runs, and later in the
+expansion of code within its scope; for instance by an expander bound
+with {{extend-syntactic-environment}}, as the paper's {{with-macro}}
+does.  (The usage and macro environments of a toplevel expansion stay
+usable in later toplevel code, which is within their scope.)  The
+environment that a capture placed inside the output, or at the top of
+a closure with free names, receives stands for bindings of that output,
+so it can only be used while its expansion runs.  Using an environment
+anywhere else signals an error.  Closures that were made
+while their environment could be used keep their meaning, and can be
+placed in the output of later expansions.
+
+==== Differences from the paper and from MIT Scheme
+
+* Syntactic closures must occur in the result of an sc or rsc
+transformer, an expander, or a procedure given to
+{{capture-syntactic-environment}}.  An er or ir transformer cannot
+return them, except inside quoted data.
+* Inside {{quote}} (and vector literals) closures are replaced by their
+forms; the paper's implementation leaves the closure objects there.
+* Unclosed output of an expander is interpreted in the macro
+environment, as the output of {{sc-macro-transformer}} is; the paper's
+implementation signals an error.
+* Variables shadow keywords, and a closed keyword is a keyword, as in
+R7RS; the paper's implementation dispatches on the raw symbol at the
+head of a form.
+* {{capture-syntactic-environment}} (MIT Scheme's extension) calls its
+procedure once, when the output of the transformer is lowered (see
+below).
+* A binder in the result of a capture placed inside the output does not
+capture closures made in the captured environment, and a binder of a
+name inside a body does not capture the closures that define the name
+(see above), only where the binding form is one of the standard
+{{lambda}}, {{let}} (also named {{let}}), {{let*}}, {{letrec}},
+{{letrec*}}, {{do}} or, in the bodies of these, {{define}}.  A binder
+made by another macro there, e.g. by {{receive}} or a user's macro, can
+still capture such a closure.
+* Quoted data in the output of an sc or rsc transformer that is too
+large or too deep to walk (more than 4000000 pairs, or nested more
+than 1000 deep), in particular circular data, is stripped rather than
+lowered: closures in it are replaced by their forms and lose their
+identity (which only matters for templates of {{with-macro}}), and
+captures in it are not called.
+* Definitions, as described above.
+* A macro call that an er, ir or {{syntax-rules}} macro builds gets
+the context of the form that macro was called with (see the nested
+{{catch}} above).  CHICKEN's own macros ({{let}}, {{cond}},
+{{cut}} etc.) are taken to pass the forms they receive on as they are;
+a call of an sc macro that one of them builds anew, e.g. by
+{{(cut aif <> it #f)}}, does not see the code around it as its usage
+environment.
+* Input forms may contain identifiers renamed by other macros.  Compare
+identifiers with {{identifier=?}}, or use {{identifier->symbol}}, and
+never use {{eq?}} or {{case}} on them.
+* A user name written as it is (see above) can be captured by a
+non-hygienic er, ir or rsc macro that the expansion calls, like any
+user code.  When an expansion uses a name of its usage environment
+that also occurs as it is in its own macro form, the name is taken to
+be that occurrence.
+* The code of a transformer that is itself part of lowered output (a
+{{let-syntax}}, {{letrec-syntax}} or {{define-syntax}} in the output
+of an sc macro, or written by the user inside a closure with free
+names, such as the body of {{aif}}) loses the renaming of the symbols
+it quotes, as all quoted data does.  So {{'it}} returned by an sc
+transformer there, and {{(r 'it)}} or {{(i 'it)}} in an er or ir one,
+mean what the plain name {{it}} means where the local macro is defined
+(here the global {{it}}), not the binding that the enclosing output
+introduced; in the paper they keep their meaning.  {{syntax-rules}}
+templates, a closure of the name in the transformer's usage
+environment ({{(close-syntax 'it env)}}) and the {{with-macro}} of
+{{scheme-macrology}} are not affected.  Likewise a local macro defined
+in the output of an sc macro cannot refer, by a quoted name, to a
+variable private to that output.
+* An exported macro that expands into references to bindings private to
+its module must list them as indirect exports, as with
+{{er-macro-transformer}}.
+* The procedures are exported by {{(chicken syntax)}}, which every
+toplevel imports by default, rather than by a separate library.  A
+definition of one of their names (e.g. a helper {{identifier?}}) at
+toplevel, or in a module that imports {{(chicken syntax)}} whole,
+assigns the binding of {{(chicken syntax)}} for the whole program (the
+compiler warns about it), as for any imported binding.  Import with
+{{except}} to keep such a definition private:
+{{(import (except (chicken syntax) identifier?))}}.  The expander and
+{{scheme-macrology}} do not use the exported bindings.
+
+==== sc-macro-transformer
+
+<procedure>(sc-macro-transformer TRANSFORMER)</procedure>
+
+Returns a syntactic-closure macro transformer.  {{TRANSFORMER}} is
+called with the complete macro form and the ''usage'' environment.
+Its result is interpreted in the ''macro'' environment: plain symbols
+in it refer to the bindings visible where the macro was defined, and
+binders it introduces are fresh.  Parts of the input form must be
+closed in the usage environment (with {{make-syntactic-closure}} or
+{{close-syntax}}) to keep their meaning.  See {{push}}, {{or2}} and
+{{catch}} above.
+
+==== rsc-macro-transformer
+
+<procedure>(rsc-macro-transformer TRANSFORMER)</procedure>
+
+The reverse: {{TRANSFORMER}} is called with the macro form and the
+''macro'' environment, and its result is interpreted in the usage
+environment.  Input forms can therefore be used as they are, while the
+identifiers the macro introduces must be closed in the macro
+environment to be hygienic:
+
+<enscript highlight=scheme>
+(define-syntax swap!
+  (rsc-macro-transformer
+   (lambda (form env)
+     (let ((a (cadr form)) (b (caddr form))
+           (tmp (close-syntax 'tmp env)))
+       `(,(close-syntax 'let env) ((,tmp ,a))
+         (,(close-syntax 'set! env) ,a ,b)
+         (,(close-syntax 'set! env) ,b ,tmp))))))
+</enscript>
+
+If either kind of transformer returns its input form unchanged
+({{eq?}}), the form is not lowered.  In {{define-compiler-syntax}}
+this declines the optimization (an sc compiler-syntax transformer can
+also decline by returning {{(close-syntax form env)}}); in an ordinary
+macro it is reported as an endless expansion, as for er and ir
+transformers.
+
+==== make-syntactic-closure
+
+<procedure>(make-syntactic-closure ENV FREE-NAMES FORM)</procedure>
+
+Returns a syntactic closure of {{FORM}} in the syntactic environment
+{{ENV}}.  Names in {{FORM}} are interpreted in {{ENV}}, except those in
+the list {{FREE-NAMES}}, which take the meaning they have where the
+closure is placed (for example, a binding introduced around it by the
+macro's output, as {{throw}} in {{catch}} above).  If {{FORM}} is a
+constant other than a vector (a number, string, character, boolean
+and so on) it is returned unchanged; a vector may contain names, and
+is closed.  A member of {{FREE-NAMES}} is returned unchanged too,
+except a name that the expansion received in a closure nested in its
+macro form (see {{pass}} above), which is closed.
+
+Closures may appear anywhere in a macro's output: as expressions,
+operators, {{set!}} targets, binding or definition names, inside
+{{quote}} (where they are removed) and as arguments to other macros.
+A closure may be closed again; the inner closure keeps its own
+environment.
+
+==== close-syntax
+
+<procedure>(close-syntax FORM ENV)</procedure>
+
+Equivalent to {{(make-syntactic-closure ENV '() FORM)}}.
+
+==== make-syntactic-closure-list
+
+<procedure>(make-syntactic-closure-list ENV FREE-NAMES FORMS)</procedure>
+
+Closes each element of the proper list {{FORMS}} with
+{{make-syntactic-closure}}.  {{ENV}} and {{FREE-NAMES}} are checked
+also when {{FORMS}} is empty.
+
+==== capture-syntactic-environment
+
+<procedure>(capture-syntactic-environment PROC)</procedure>
+
+Returns a form which, when it occurs in the output of a transformer,
+is replaced by the result of calling {{PROC}} with the syntactic
+environment of that place.  When the capture is the whole output, that
+is the macro environment of an sc transformer, the usage environment of
+an rsc transformer, or the environment of a closure whose whole form it
+is.  The typical use is obtaining the macro environment in an sc
+transformer:
+
+<enscript highlight=scheme>
+(define-syntax my-cond
+  (sc-macro-transformer
+   (lambda (form env)
+     (capture-syntactic-environment
+      (lambda (menv)
+        (let loop ((clauses (cdr form)))
+          (cond ((null? clauses) '(if #f #f))
+                ((identifier=? env (caar clauses) menv 'else)
+                 `(begin ,@(make-syntactic-closure-list env '() (cdar clauses))))
+                (else
+                 `(if ,(close-syntax (caar clauses) env)
+                      (begin ,@(make-syntactic-closure-list env '() (cdar clauses)))
+                      ,(loop (cdr clauses)))))))))))
+</enscript>
+
+A capture placed inside the output gets the environment at that place,
+so closures made in it see the bindings the output makes around it, as
+in this example from the MIT Scheme manual:
+
+<enscript highlight=scheme>
+(define-syntax loop-until
+  (sc-macro-transformer
+   (lambda (exp env)
+     (let ((id (cadr exp))
+           (init (caddr exp))
+           (test (cadddr exp))
+           (return (cadddr (cdr exp)))
+           (step (cadddr (cddr exp)))
+           (close (lambda (exp free) (make-syntactic-closure env free exp))))
+       `(letrec ((loop
+                  ,(capture-syntactic-environment
+                    (lambda (env)
+                      `(lambda (,id)
+                         (,(make-syntactic-closure env '() `if)
+                          ,(close test (list id))
+                          ,(close return (list id))
+                          (,(make-syntactic-closure env '() `loop)
+                           ,(close step (list id)))))))))
+          (loop ,(close init '())))))))
+
+(loop-until i 0 (> i 5) (* i 10) (+ i 1))               ; => 60
+</enscript>
+
+A binder in the capture's own result does not capture closures made in
+the environment: there {{(make-syntactic-closure env '() 'loop)}}
+refers to the {{letrec}} binding also when the user's {{id}} is
+{{loop}} (or {{if}}), as in MIT Scheme:
+
+<enscript highlight=scheme>
+(loop-until loop 0 (> loop 5) (* loop 10) (+ loop 1))   ; => 60
+</enscript>
+
+Unlike MIT Scheme, {{PROC}} is called once, when the transformer's
+output is lowered and before that output is expanded, so
+{{identifier=?}} in the environment it receives does not see the
+bindings of the output around the capture.
+
+==== expander-macro-transformer
+
+<procedure>(expander-macro-transformer EXPANDER)</procedure>
+
+Returns a macro transformer for an ''expander'' in the sense of the
+paper: a procedure {{(lambda (syntactic-env exp) ...)}} that is called
+with the usage environment and the macro form (note the order of the
+arguments) and returns a syntactic closure, usually one closed in
+{{scheme-syntactic-environment}}.  The expanders of the paper (its
+section 3.2) can be used as they are:
+
+<enscript highlight=scheme>
+(define (push-expander syntactic-env exp)
+  (let ((obj-exp (make-syntactic-closure syntactic-env '() (cadr exp)))
+        (list-var (make-syntactic-closure syntactic-env '() (caddr exp))))
+    (make-syntactic-closure scheme-syntactic-environment '()
+      `(set! ,list-var (cons ,obj-exp ,list-var)))))
+
+(define (or-expander syntactic-env exp)
+  (let ((exp-1 (make-syntactic-closure syntactic-env '() (cadr exp)))
+        (exp-2 (make-syntactic-closure syntactic-env '() (caddr exp))))
+    (make-syntactic-closure scheme-syntactic-environment '()
+      `((lambda (temp) (if temp temp ,exp-2)) ,exp-1))))
+
+(define (catch-expander syntactic-env exp)
+  (let ((body-exp (make-syntactic-closure syntactic-env '(throw) (cadr exp))))
+    (make-syntactic-closure scheme-syntactic-environment '()
+      `(call-with-current-continuation (lambda (throw) ,body-exp)))))
+
+(define-syntax push (expander-macro-transformer push-expander))
+(define-syntax or2 (expander-macro-transformer or-expander))
+(define-syntax catch (expander-macro-transformer catch-expander))
+</enscript>
+
+(In compiled code, define the expanders with {{define-for-syntax}} or
+inside {{begin-for-syntax}}.)  An unclosed result is interpreted in the
+macro environment, as with {{sc-macro-transformer}}.
+
+==== scheme-syntactic-environment
+
+<constant>scheme-syntactic-environment</constant>
+
+The ''advertised'' environment of the paper (section 4.2): the names
+of the {{scheme}} module have their standard meaning, whatever local or
+module bindings of the same names are visible where the closure is
+used.  Its variables are absolute references (e.g. to
+{{scheme#cons}}), and its syntactic keywords are the standard {{if}},
+{{lambda}}, {{let}}, {{set!}} and so on.  So in {{push-expander}}
+above, "the mapping of the identifier named cons found in
+scheme-syntactic-environment will be the global variable named cons,
+rather than any local variables that happen to have the same name".
+Other names mean what they mean in the macro environment of the
+expansion that made the closure: for a toplevel macro, the toplevel;
+for a macro defined in a module, the module.
+
+==== core-syntactic-environment
+
+<constant>core-syntactic-environment</constant>
+
+The paper's core environment: only the primitive keywords {{quote}},
+{{if}}, {{begin}}, {{set!}} and {{lambda}} are keywords; the other names
+are variables, those of the {{scheme}} module with their standard
+meaning.  Using another keyword of the macro environment in it signals
+a syntax error.  The derived syntax is built over it with
+{{scheme-macrology}}.
+
+==== extend-syntactic-environment
+
+<procedure>(extend-syntactic-environment ENV KEYWORD EXPANDER)</procedure>
+
+Returns a new syntactic environment that is like {{ENV}} except that
+the symbol {{KEYWORD}} is a macro expanded by {{EXPANDER}}: either an
+expander procedure (see {{expander-macro-transformer}}) or a
+transformer made by {{sc-macro-transformer}},
+{{rsc-macro-transformer}}, {{er-macro-transformer}},
+{{ir-macro-transformer}} or {{syntax-rules}}.  The macro environment of
+a transformer is that of the expansion that calls
+{{extend-syntactic-environment}}.  The paper's example (section 4.1)
+
+<enscript highlight=scheme>
+(extend-syntactic-environment scheme-syntactic-environment 'push push-expander)
+</enscript>
+
+"returns a new syntactic environment in which expressions of the form
+{{(push ...)}} are expanded by the expander push-expander.  Any other
+expression is interpreted according to scheme-syntactic-environment."
+Forms closed in the new environment can use the keyword; it is not
+visible anywhere else.  An inner extension shadows an outer one with
+the same keyword, also when both are made by nested uses of one macro:
+
+<enscript highlight=scheme>
+(define-syntax with-k
+  (sc-macro-transformer
+   (lambda (form env)
+     (make-syntactic-closure
+      (extend-syntactic-environment env 'k
+        (lambda (e x)
+          (make-syntactic-closure scheme-syntactic-environment '()
+            (list 'quote (cadr form)))))
+      '() `(begin ,@(cddr form))))))
+
+(with-k a (list (k) (with-k b (k)) (k)))         ; => (a b a)
+</enscript>
+
+Section 1 of the paper uses such an environment for {{contorted}},
+whose auxiliary keyword {{use}} never reaches the caller's subforms:
+
+<enscript highlight=scheme>
+(define-for-syntax (contorted-expander syntactic-env exp)
+  (let* ((test (make-syntactic-closure syntactic-env '() (cadr exp)))
+         (x (make-syntactic-closure syntactic-env '() (caddr exp)))
+         (y (make-syntactic-closure syntactic-env '() (cadddr exp)))
+         (use-env
+          (extend-syntactic-environment
+           scheme-syntactic-environment 'use
+           (lambda (use-syntactic-env use-exp)
+             (make-syntactic-closure scheme-syntactic-environment '()
+               `(,(cadr use-exp) ,x ,y))))))
+    (make-syntactic-closure scheme-syntactic-environment '()
+      `(if ,test
+           ,(make-syntactic-closure use-env '() '(use and))
+           ,(make-syntactic-closure use-env '() '(use or))))))
+
+(define-syntax contorted (expander-macro-transformer contorted-expander))
+
+(let ((use (lambda (a b) 'user-use)))
+  (contorted #f (use 1 2) 3))                     ; => user-use
+</enscript>
+
+A ''macrology'' (paper section 4.3) is a procedure from syntactic
+environments to syntactic environments that adds a collection of
+related keywords:
+
+<enscript highlight=scheme>
+(define-for-syntax (pop-expander syntactic-env exp)
+  (let ((var (make-syntactic-closure syntactic-env '() (cadr exp))))
+    (make-syntactic-closure scheme-syntactic-environment '()
+      `(let ((top (car ,var))) (set! ,var (cdr ,var)) top))))
+
+(define-for-syntax (stack-macrology env)
+  (extend-syntactic-environment
+   (extend-syntactic-environment env 'push push-expander)
+   'pop pop-expander))
+
+(define-syntax with-stack-ops      ; push and pop only in its body
+  (expander-macro-transformer
+   (lambda (env exp)
+     (make-syntactic-closure (stack-macrology env) '()
+       `(begin ,@(cdr exp))))))
+</enscript>
+
+==== scheme-macrology
+
+<procedure>(scheme-macrology SYNTACTIC-ENV)</procedure>
+
+The paper's Scheme macrology (section 4.3 and appendix): returns an
+environment that extends {{SYNTACTIC-ENV}}, which must give meaning to
+the primitive keywords, with the derived keywords {{delay}}, {{or}},
+{{and}}, {{let}}, {{cond}}, {{case}}, {{with-macro}} and
+{{with-macro-rec}}, all defined in terms of the primitive keywords of
+{{SYNTACTIC-ENV}} and of each other.  The paper's example obtains an
+environment in which the derived keywords use an alternative {{if}}:
+
+<enscript highlight=scheme>
+(define-for-syntax (new-if-expander syntactic-env exp)   ; negates the test
+  (let ((parts (make-syntactic-closure-list syntactic-env '() (cdr exp))))
+    (make-syntactic-closure core-syntactic-environment '()
+      `(if (not ,(car parts)) ,@(cdr parts)))))
+
+(define-for-syntax new-if-syntactic-environment
+  (scheme-macrology
+   (extend-syntactic-environment core-syntactic-environment 'if new-if-expander)))
+
+(define-syntax with-new-if
+  (expander-macro-transformer
+   (lambda (syntactic-env exp)
+     (make-syntactic-closure new-if-syntactic-environment '() (cadr exp)))))
+
+(with-new-if (or #f 5))                            ; => #f
+</enscript>
+
+{{(with-macro (KEYWORD . PARAMETERS) TEMPLATE BODY ...)}} (paper
+section 4.4) binds {{KEYWORD}} in {{BODY}} to a macro whose replacement
+is {{TEMPLATE}}, evaluated as standard Scheme at expansion time with
+the {{PARAMETERS}} bound to closures of the arguments; the replacement
+is closed in the environment of the {{with-macro}} form, so
+
+<enscript highlight=scheme>
+(let ((adjoin cons))
+  (with-macro (push frob stack) `(set! ,stack (adjoin ,frob ,stack))
+    (let ((adjoin +))
+      (push (adjoin n m) sum-stack))))
+</enscript>
+
+behaves as {{(set! sum-stack (cons (+ n m) sum-stack))}}.  The
+symbols the template puts into the replacement keep the identity they
+have in the {{with-macro}} form; two different identifiers of the same
+name in quoted data of the template (e.g. a closure that an expander
+quoted into it) stay distinct.
+{{with-macro-rec}} closes the replacement inside its body instead, so
+the macro can be recursive:
+
+<enscript highlight=scheme>
+(with-macro-rec (or exp . other-exps)
+    (if (null? other-exps)
+        exp
+        `(let ((temp ,exp)) (if temp temp (or ,@other-exps))))
+  (or #f #f 7))                                    ; => 7
+</enscript>
+
+These forms are available in code closed in an environment made by
+{{scheme-macrology}}, e.g. {{(scheme-macrology core-syntactic-environment)}}.
+
+==== identifier?
+
+<procedure>(identifier? X)</procedure>
+
+Returns {{#t}} if {{X}} is a symbol (including the renamed symbols
+produced by other macros) or a syntactic closure of an identifier.
+
+==== identifier=?
+
+<procedure>(identifier=? ENV1 ID1 ENV2 ID2)</procedure>
+
+Returns {{#t}} if {{ID1}} interpreted in {{ENV1}} and {{ID2}}
+interpreted in {{ENV2}} denote the same binding: the same local
+variable, the same macro or special form, or the same global name.
+Returns {{#f}} if either is not an identifier.
+
+==== identifier->symbol
+
+<procedure>(identifier->symbol ID)</procedure>
+
+Returns the symbol {{ID}} was written as, removing syntactic closures
+and renaming (see {{strip-syntax}}).
+
+==== syntactic-closure?
+
+<procedure>(syntactic-closure? X)</procedure>
+
+==== syntactic-environment?
+
+<procedure>(syntactic-environment? X)</procedure>
+
+Type predicates.
+
+==== strip-syntactic-closures
+
+<procedure>(strip-syntactic-closures X)</procedure>
+
+Returns a copy of {{X}} with all syntactic closures replaced by their
+forms and renamed identifiers by their original names.  This is the
+same as {{strip-syntax}}, which also removes syntactic closures.
 
 === Expanding macros
 
