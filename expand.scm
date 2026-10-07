@@ -41,7 +41,23 @@
    read-with-source-info
    strip-syntax
    er-macro-transformer
-   ir-macro-transformer)
+   ir-macro-transformer
+   sc-macro-transformer
+   rsc-macro-transformer
+   make-syntactic-closure
+   make-syntactic-closure-list
+   close-syntax
+   capture-syntactic-environment
+   identifier?
+   identifier=?
+   identifier->symbol
+   syntactic-closure?
+   syntactic-environment?
+   strip-syntactic-closures
+   scheme-syntactic-environment
+   core-syntactic-environment
+   extend-syntactic-environment
+   expander-macro-transformer)
 
 (import scheme
 	chicken.base
@@ -132,6 +148,8 @@
               (do ((i 0 (fx+ i 1)))
                   ((fx>= i len) vec)
                 (##sys#setslot vec i (walk (##sys#slot x i))))))
+           ((##sys#structure? x 'syntactic-closure)
+            (walk (##sys#slot x 3)))
            (else x)))))
 
 (define (##sys#extend-se se vars #!optional (aliases (map gensym vars)))
@@ -1016,21 +1034,22 @@
 
 ;;; explicit/implicit-renaming transformer
 
+;; Give the copy NEW of the pair OLD the line number of OLD, if any.
+(define (inherit-pair-line-numbers old new)
+  (and-let* ((name (car new))
+	     ((symbol? name))
+	     (ln (get-line-number old)))
+    (let ((h (##sys#lndb-hash new)))
+      (unless (assq new (lndb-bucket ##sys#line-number-database h))
+	(lndb-push! ##sys#line-number-database h
+		    (lndb-weak-cons new ln)))))
+  new)
+
 (define (make-er/ir-transformer handler explicit-renaming?)
   (##sys#make-structure
    'transformer
    (lambda (form se dse)
      (let ((renv '()))	  ; keep rename-environment for this expansion
-       (define (inherit-pair-line-numbers old new)
-	 (and-let* ((name (car new))
-		    ((symbol? name))
-		    (ln (get-line-number old)))
-	   (let ((h (##sys#lndb-hash new)))
-	     (unless (assq new (lndb-bucket ##sys#line-number-database h))
-	       (lndb-push! ##sys#line-number-database h
-			   (lndb-weak-cons new ln)))))
-	 new)
-       (assert (list? se) "not a list" se) ;XXX remove later
        (define (rename sym)
 	 (cond ((pair? sym)
 		(inherit-pair-line-numbers sym (cons (rename (car sym)) (rename (cdr sym)))))
@@ -1119,6 +1138,7 @@
                                 (dd "BUILTIN ALIAS: " sym " as " renamed
                                     " --> " implicitly-renamed)
                                 implicitly-renamed)))))))
+       (assert (list? se) "not a list" se) ;XXX remove later
        (if explicit-renaming?
 	   ;; Let the user handle renaming
 	   (handler form rename compare)
@@ -1134,6 +1154,446 @@
 
 (define ##sys#er-transformer er-macro-transformer)
 (define ##sys#ir-transformer ir-macro-transformer)
+
+
+;;; Syntactic closures (Bawden & Rees, "Syntactic Closures", LFP 1988)
+;
+; Syntactic closures are layered on top of the renaming expander: the
+; objects below exist for the transformers, and never reach the rest
+; of the expander or the compiler.  When an sc/rsc transformer returns,
+; its result is "lowered": every identifier is replaced by the symbol
+; that the renaming expander will interpret with the intended meaning
+; (a fresh alias, as made by `macro-alias', for a name of the macro
+; environment and the symbol itself for a name of the usage
+; environment), and every syntactic closure is replaced by its lowered
+; form.  Lowered output is ordinary renamed output, so sc
+; and rsc macros mix freely with er, ir and syntax-rules macros.
+;
+; A "context" is a procedure mapping an identifier (a symbol or a
+; syntactic closure) to its lowered form.  The objects are
+;
+;   #<syntactic-environment CONTEXT DSE STATE TRANSPARENT>
+;	CONTEXT	 context of the environment
+;	DSE	 the usage environment of the expansion, for identifier=?
+;	STATE	 (ALIVE RENAMES ADVERTISED), shared by every environment
+;		 of one expansion; ALIVE is #f once the expansion has
+;		 returned, RENAMES and ADVERTISED are memo tables
+;	TRANSPARENT  #t for an environment captured inside the output:
+;		 its closures behave like the output around them
+;   #<syntactic-closure ENV FREE FORM>
+;   #<syntactic-capture PROC>	   result of capture-syntactic-environment
+;
+; A syntactic closure carries its own context (sec. 3.1 of the paper):
+; a binder that the surrounding output introduces must not capture the
+; names of a closure, except its free names.  As closures of the same
+; environment lower names the same way, the form around a closure (the
+; result itself, or the form of an enclosing closure) is scanned first,
+; and a name of the closure that lowers to a symbol of that form is
+; replaced by a fresh alias with the same meaning, which no binder of
+; the form can capture.  Nothing changes when there is no such clash,
+; or when the clash is with a name defined by a definition, so closed
+; definition names still define the user's name.
+;
+; Section 4 of the paper (advertised environments, extending
+; environments, expanders) is at the end.
+;
+; The exported procedures are thin wrappers, so that a user redefining
+; e.g. `identifier?' at toplevel does not break the expander.
+
+(define (sc-closure? x) (##sys#structure? x 'syntactic-closure))
+(define (sc-environment? x) (##sys#structure? x 'syntactic-environment))
+(define (sc-capture? x) (##sys#structure? x 'syntactic-capture))
+
+;; The environment of the result of the running sc/rsc transformer.
+(define sc-current-env #f)
+
+(define (sc-identifier? x)
+  (cond ((symbol? x))
+	((sc-closure? x) (sc-identifier? (##sys#slot x 3)))
+	(else #f)))
+
+(define (sc-check-environment env loc)
+  (unless (sc-environment? env)
+    (##sys#signal-hook
+     #:type-error loc "bad argument type - not a syntactic environment" env))
+  (unless (car (##sys#slot env 3))
+    (##sys#error
+     loc "syntactic environment used outside of the expansion that created it"
+     env)))
+
+(define (sc-make-environment ctx dse state transparent)
+  (##sys#make-structure 'syntactic-environment ctx dse state transparent))
+
+(define (sc-make-closure env free form loc)
+  (sc-check-environment env loc)
+  (unless (and (list? free) (every sc-identifier? free))
+    (##sys#signal-hook
+     #:type-error loc "bad argument type - not a list of identifiers" free))
+  (if (or (memq form free)
+	  (not (or (symbol? form) (pair? form) (vector? form)
+		   (sc-closure? form) (sc-capture? form))))
+      form
+      (##sys#make-structure 'syntactic-closure env free form)))
+
+;; Look KEY up in the memo table in slot I of the running expansion's
+;; state, adding (MAKE) when absent.
+(define (sc-memo i key make)
+  (if sc-current-env
+      (let ((cell (list-tail (##sys#slot sc-current-env 3) i)))
+	(cond ((assq key (car cell)) => cdr)
+	      (else (let ((x (make)))
+		      (set-car! cell (cons (cons key x) (car cell)))
+		      x))))
+      (make)))
+
+;; The context of an environment whose names mean what RENAME makes of
+;; them.  A syntactic closure met in such a context gets its free names
+;; resolved in it.
+(define (sc-base-context rename)
+  (define (ctx id)
+    (if (symbol? id)
+	(rename id)
+	(sc-lower-closure id ctx '())))
+  ctx)
+
+;; An alias that lowering made for a name of an environment stands for
+;; that name: a later closure leaving the name free leaves the alias
+;; free too, and resolves the name where it is placed, as the paper's
+;; free names are names (a nested `catch' captures the `throw' of its
+;; body).  Aliases made by other means, e.g. by syntax-rules, are not
+;; names.
+(define (sc-name-alias sym a)
+  (unless (eq? sym a) (putp a '##sys#sc-name sym))
+  a)
+
+(define (sc-free-name id free)
+  (cond ((memq id free) id)
+	((and (symbol? id) (getp id '##sys#sc-name)) =>
+	 (lambda (n) (sc-free-name n free)))
+	(else #f)))
+
+;; Lower closure C, placed where CTX is the context and OUTER describes
+;; the symbols of the forms around C (see `sc-lower').  Its free names
+;; are resolved with CTX, everything else with the context of C's
+;; environment, renamed if a binder in OUTER could capture it; closures
+;; nested in C see the free names of C through the composed context.
+;; C may come from an expansion that has returned (the paper's
+;; expanders keep closures in the expanders they put in environments):
+;; it was made while its environment was alive, and keeps the meaning
+;; it had then.
+(define (sc-lower-closure c ctx outer)
+  (let* ((env (##sys#slot c 1))
+	 (free (##sys#slot c 2))
+	 (ectx (##sys#slot env 1))
+	 (own (if (or (null? outer) (##sys#slot env 4))
+		  ectx
+		  (lambda (id)
+		    (let ((s (ectx id)))
+		      (if (and (symbol? id) (sc-clash? s outer))
+			  (sc-memo 1 s (lambda ()
+					 (macro-alias s (##sys#slot sc-current-env 2))))
+			  s))))))
+    (sc-lower
+     (##sys#slot c 3)
+     (if (null? free)
+	 own
+	 (letrec ((ctx2 (lambda (id)
+			  (cond ((sc-free-name id free) => ctx)
+				((symbol? id) (own id))
+				(else (sc-lower-closure id ctx2 '()))))))
+	   ctx2))
+     outer)))
+
+;; Whether a binder of the forms described by OUTER could capture the
+;; symbol S.  Not if S occurs only as the name defined by a definition:
+;; a definition extends the environment of the closures around it (the
+;; paper does not specify definitions; this is MIT Scheme's behaviour),
+;; so that (define NAME ... <closure of NAME>) defines a recursive NAME.
+(define (sc-clash? s outer)
+  (let loop ((l outer))
+    (and (pair? l)
+	 (let ((e (car l)))
+	   (or (if (pair? e)
+		   (and (eq? (car e) s)
+			(let ((def (sc-definition-keyword (cadr e))))
+			  (not (or (eq? def define-values-definition)
+				   (and def (cddr e))))))
+		   (eq? e s))
+	       (loop (cdr l)))))))
+
+;; The definition (define, define-syntax or define-values) that the
+;; lowered identifier ID denotes in the usage environment, if any; as in
+;; `##sys#canonicalize-body'.
+(define (sc-definition-keyword id)
+  (let ((se (##sys#slot sc-current-env 2)))
+    (let repeat ((id id))
+      (let ((f (or (lookup id se) (lookup id (##sys#macro-environment)))))
+	(cond ((and (symbol? f) (eq? (getp id '##sys#override) 'value)) #f)
+	      ((or (eq? f define-definition)
+		   (eq? f define-syntax-definition)
+		   (eq? f define-values-definition))
+	       f)
+	      ((and (symbol? f) (not (eq? f id))) (repeat f))
+	      (else #f))))))
+
+;; Lower X in context CTX; OUTER describes the symbols of the forms
+;; around X: a list of lowered symbols, and of entries (S HEAD . NAME?)
+;; for a symbol S in the second element of a form (HEAD ...), which
+;; HEAD may define (NAME? is #t for the name of (HEAD NAME ...) or
+;; (HEAD (NAME . FORMALS) ...)).  Unchanged subforms are returned as
+;; they are, so that line-number information and `eq?'-ness (which
+;; compiler syntax relies on) are kept.  Like er and ir, this does not
+;; handle circular structure.
+(define (sc-lower x ctx outer)
+  (let ((captures '())
+	(syms outer))
+    ;; A capture is called once.  Its environment is the one of the
+    ;; place where it occurs; inside the output that place may be under
+    ;; binders of the output, so the environment is transparent.
+    (define (capture x top?)
+      (cond ((assq x captures) => cdr)
+	    (else
+	     (sc-check-environment sc-current-env 'capture-syntactic-environment)
+	     (let ((r ((##sys#slot x 1)
+		       (sc-make-environment ctx (##sys#slot sc-current-env 2)
+					    (##sys#slot sc-current-env 3)
+					    (not top?)))))
+	       (set! captures (cons (cons x r) captures))
+	       r))))
+    ;; Collect the symbols X lowers to outside of closures.
+    (let scan ((x x) (top? #t))
+      (cond ((symbol? x) (set! syms (cons (ctx x) syms)))
+	    ((and (pair? x) (symbol? (car x)) (pair? (cdr x)))
+	     (let ((head (ctx (car x))))
+	       (define (add y name?)
+		 (if (symbol? y)
+		     (set! syms (cons (cons* (ctx y) head name?) syms))
+		     (scan y #f)))
+	       (set! syms (cons head syms))
+	       (let loop ((d (cadr x)))
+		 (cond ((pair? d)
+			(let formals ((f (cdr d)))
+			  (cond ((pair? f) (add (car f) #f) (formals (cdr f)))
+				((not (null? f)) (add f #f))))
+			(loop (car d)))
+		       (else (add d #t))))
+	       (scan (cddr x) #f)))
+	    ((pair? x) (scan (car x) #f) (scan (cdr x) #f))
+	    ((vector? x) (scan (vector->list x) #f))
+	    ((sc-capture? x) (scan (capture x top?) top?))))
+    (let walk ((x x))
+      (cond ((symbol? x) (ctx x))
+	    ((pair? x)
+	     (let* ((a (walk (car x)))
+		    (d (walk (cdr x))))
+	       (if (and (eq? a (car x)) (eq? d (cdr x)))
+		   x
+		   (inherit-pair-line-numbers x (cons a d)))))
+	    ((vector? x)
+	     (let* ((lst (vector->list x))
+		    (lst2 (walk lst)))
+	       (if (eq? lst lst2) x (list->vector lst2))))
+	    ((sc-closure? x) (sc-lower-closure x ctx syms))
+	    ((sc-capture? x) (walk (capture x #f)))
+	    (else x)))))
+
+;; What identifier ID of environment ENV denotes in the usage
+;; environment: a lexical variable (its gensym), a macro (its
+;; `(se handler)' entry) or a free/global name.  Unlike er's compare,
+;; the usage environment is consulted before the alias property, so an
+;; alias bound by a surrounding macro expansion is not taken as free.
+(define (sc-denotation id env)
+  (let* ((dse (##sys#slot env 2))
+	 (s (sc-lower id (##sys#slot env 1) '())))
+    (or (lookup s dse) s)))
+
+(define (sc-identifier=? env1 id1 env2 id2)
+  (sc-check-environment env1 'identifier=?)
+  (sc-check-environment env2 'identifier=?)
+  (and (sc-identifier? id1)
+       (sc-identifier? id2)
+       (sc-same-denotation? (sc-denotation id1 env1) (sc-denotation id2 env2))))
+
+;; Same rules as er's compare: two symbols (free/global names or
+;; lexical gensyms) must be the same, a global name equals a macro if it
+;; names that macro in the global macro environment.
+(define (sc-same-denotation? d1 d2)
+  (cond ((symbol? d1)
+	 (cond ((symbol? d2) (eq? d1 d2))
+	       ((assq d1 (##sys#macro-environment)) =>
+		(lambda (a) (eq? (cdr a) d2)))
+	       (else #f)))
+	((symbol? d2)
+	 (cond ((assq d2 (##sys#macro-environment)) =>
+		(lambda (a) (eq? d1 (cdr a))))
+	       (else #f)))
+	(else (eq? d1 d2))))
+
+;; The transformer.  The macro environment renames like er's `rename'
+;; (one alias per symbol and expansion); the usage environment leaves
+;; symbols alone, as input forms already denote usage meanings.  The
+;; result is lowered in the macro environment (sc) or in the usage
+;; environment (rsc).  A result `eq?' to the input form is returned
+;; unchanged, which lets compiler syntax decline and lets the expander
+;; report endless expansion.
+(define (make-sc-transformer handler reverse? loc)
+  (##sys#check-closure handler loc)
+  (##sys#make-structure
+   'transformer
+   (lambda (form se dse)
+     (let* ((renv '())
+	    (state (list #t '() '()))
+	    (menv (sc-make-environment
+		   (sc-base-context
+		    (lambda (sym)
+		      (cond ((assq sym renv) => cdr)
+			    (else
+			     (let ((a (sc-name-alias sym (macro-alias sym se))))
+			       (set! renv (cons (cons sym a) renv))
+			       a)))))
+		   dse state #f))
+	    (uenv (sc-make-environment (sc-base-context (lambda (sym) sym))
+				       dse state #f))
+	    (oenv (if reverse? uenv menv))
+	    (saved sc-current-env))
+       (set! sc-current-env oenv)
+       (let* ((result (handler form (if reverse? menv uenv)))
+	      (lowered (if (eq? result form)
+			   form
+			   (sc-lower result (##sys#slot oenv 1) '()))))
+	 (set-car! state #f)
+	 (set! sc-current-env saved)
+	 lowered)))))
+
+;;; Section 4 of the paper: advertised environments, extending
+;;; environments and expanders.
+
+;; The value and syntax exports of the `scheme' module.
+(define sc-scheme-exports #f)
+
+(define (sc-scheme-exports-ref)
+  (or sc-scheme-exports
+      (call-with-values
+	  (lambda ()
+	    (##sys#module-exports (##sys#find-module 'scheme.r5rs #t)))
+	(lambda (_ vexports sexports)
+	  (set! sc-scheme-exports (cons vexports sexports))
+	  sc-scheme-exports))))
+
+;; An advertised environment: a variable of `scheme' is its absolute
+;; name (scheme#cons), which no local binding can capture; a keyword of
+;; `scheme' is an alias of the standard binding; any other name is a
+;; fresh alias of the global name, one per name and expansion.  When
+;; PRIMITIVES is a list, a keyword not in it is no keyword but a
+;; variable that no definition can bind, core-syntactic-environment#NAME.
+(define (sc-advertised-environment primitives)
+  (letrec ((env (sc-make-environment
+		 (lambda (id)
+		   (if (symbol? id)
+		       (sc-advertised-name env id primitives)
+		       (sc-lower-closure id (##sys#slot env 1) '())))
+		 '() (list #t '() '()) #f)))
+    env))
+
+(define (sc-advertised-name env sym primitives)
+  (let* ((exports (sc-scheme-exports-ref))
+	 (kw (assq sym (cdr exports))))
+    (define (alias se)
+      (let ((tbl (sc-memo 2 env (lambda () (list '())))))
+	(cond ((assq sym (car tbl)) => cdr)
+	      (else (let ((a (sc-name-alias sym (macro-alias sym se))))
+		      (set-car! tbl (cons (cons sym a) (car tbl)))
+		      a)))))
+    (cond ((and kw (or (not primitives) (memq sym primitives)))
+	   (alias (cdr exports)))
+	  (kw (##sys#string->symbol
+	       (string-append "core-syntactic-environment#"
+			      (##sys#symbol->string/shared sym))))
+	  ((assq sym (car exports)) => cdr)
+	  (else (alias '())))))
+
+(define scheme-syntactic-environment (sc-advertised-environment #f))
+
+(define core-syntactic-environment
+  (sc-advertised-environment
+   '(lambda quote if begin set! define define-syntax let-syntax
+     letrec-syntax)))
+
+;; A new environment in which (KEYWORD ...) is expanded by EXPANDER, a
+;; procedure (lambda (syntactic-env form) ...) as in the paper; every
+;; other name means what it means in ENV.
+(define (extend-syntactic-environment env keyword expander)
+  (sc-check-environment env 'extend-syntactic-environment)
+  (##sys#check-symbol keyword 'extend-syntactic-environment)
+  (let ((t (expander-macro-transformer expander))
+	(alias (sc-name-alias keyword (macro-alias keyword '())))
+	(ectx (##sys#slot env 1)))
+    (putp alias '##core#macro-alias (list '() (##sys#slot t 1)))
+    (letrec ((ctx (lambda (id)
+		    (cond ((eq? id keyword) alias)
+			  ((symbol? id) (ectx id))
+			  (else (sc-lower-closure id ctx '()))))))
+      (sc-make-environment ctx (##sys#slot env 2) (##sys#slot env 3)
+			   (##sys#slot env 4)))))
+
+;; A transformer running EXPANDER, a procedure (lambda (syntactic-env
+;; form) ...) returning a syntactic closure, as in the paper.
+(define (expander-macro-transformer expander)
+  (##sys#check-closure expander 'expander-macro-transformer)
+  (make-sc-transformer (lambda (form env) (expander env form)) #f
+		       'expander-macro-transformer))
+
+(define (sc-macro-transformer handler)
+  (make-sc-transformer handler #f 'sc-macro-transformer))
+
+(define (rsc-macro-transformer handler)
+  (make-sc-transformer handler #t 'rsc-macro-transformer))
+
+(define (make-syntactic-closure env free form)
+  (sc-make-closure env free form 'make-syntactic-closure))
+
+(define (make-syntactic-closure-list env free forms)
+  (##sys#check-list forms 'make-syntactic-closure-list)
+  (map (lambda (form) (sc-make-closure env free form 'make-syntactic-closure-list))
+       forms))
+
+(define (close-syntax form env)
+  (sc-make-closure env '() form 'close-syntax))
+
+(define (capture-syntactic-environment proc)
+  (##sys#check-closure proc 'capture-syntactic-environment)
+  (##sys#make-structure 'syntactic-capture proc))
+
+(define (identifier? x) (sc-identifier? x))
+
+(define (identifier=? env1 id1 env2 id2)
+  (sc-identifier=? env1 id1 env2 id2))
+
+(define (identifier->symbol id)
+  (let loop ((x id))
+    (cond ((sc-closure? x) (loop (##sys#slot x 3)))
+	  ((symbol? x) (strip-syntax x))
+	  (else
+	   (##sys#signal-hook
+	    #:type-error 'identifier->symbol
+	    "bad argument type - not an identifier" id)))))
+
+(define (syntactic-closure? x) (sc-closure? x))
+(define (syntactic-environment? x) (sc-environment? x))
+(define (strip-syntactic-closures x) (strip-syntax x))
+
+(define ##sys#sc-transformer sc-macro-transformer)
+(define ##sys#rsc-transformer rsc-macro-transformer)
+
+(set-record-printer! 'syntactic-closure
+  (lambda (x p)
+    (##sys#print "#<syntactic-closure " #f p)
+    (##sys#print (strip-syntax (##sys#slot x 3)) #t p)
+    (##sys#write-char-0 #\> p)))
+
+(set-record-printer! 'syntactic-environment
+  (lambda (x p)
+    (##sys#print "#<syntactic-environment>" #f p)))
 
 
 ;; Expose some internals for use in core.scm and chicken-syntax.scm:

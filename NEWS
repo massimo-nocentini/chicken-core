@@ -144,6 +144,25 @@
     (thanks to Étienne Pflieger).
 
 - Syntax expander
+  - `(chicken syntax)' now provides syntactic closures (Bawden & Rees):
+    `sc-macro-transformer', `rsc-macro-transformer',
+    `make-syntactic-closure', `make-syntactic-closure-list',
+    `close-syntax', `capture-syntactic-environment', `identifier?',
+    `identifier=?', `identifier->symbol', `syntactic-closure?',
+    `syntactic-environment?' and `strip-syntactic-closures', largely
+    compatible with MIT Scheme, chibi-scheme and the CHICKEN 3
+    `syntactic-closures' egg, and the interface of section 4 of the
+    paper: `scheme-syntactic-environment', `core-syntactic-environment',
+    `extend-syntactic-environment' and `expander-macro-transformer',
+    which runs the paper's expanders as they are written.  They are
+    implemented on top of
+    the renaming expander and mix freely with er, ir and syntax-rules
+    macros.  As `(chicken syntax)' is imported by default, these names
+    are now visible in every toplevel.
+  - `strip-syntax' also removes syntactic closures.
+  - Vector literals in macro expansions no longer retain renamed
+    symbols (e.g. a syntax-rules template `#(a b)' evaluated to
+    `#(a12 b13)').
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
   - Disabled confusing warnings about indirect exports when using 

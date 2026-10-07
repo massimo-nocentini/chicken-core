@@ -208,9 +208,11 @@
 		   (bwp-object? x)
 		   (string? x)
 		   (bytevector? x)
-		   (vector? x)
 		   (##sys#srfi-4-vector? x))
 	       (lambda v x) )
+	      ((vector? x)
+	       (let ((x (strip-syntax x)))
+		 (lambda v x)))
 	      [(not (pair? x))
 	       (##sys#syntax-error/context "illegal non-atomic object" x)]
 	      [(symbol? (##sys#slot x 0))

@@ -224,6 +224,8 @@ fi
 check pp-test $interpret -s pp-test.scm
 check environment-tests $interpret -s environment-tests.scm
 check syntax-tests $interpret -s syntax-tests.scm
+check syntactic-closures-tests $interpret -s syntactic-closures-tests.scm
+check paper-oracle-tests $interpret -s paper-oracle-tests.scm
 check meta-syntax-test $interpret -bnq meta-syntax-test.scm -e '(import foo)' \
     -e '(assert (equal? (quote ((1))) (bar 1 2)))' -e '(assert (equal? (quote (list 1 2 3)) (listify)))' \
     -e '(import test-import-syntax-for-syntax)' -e '(assert (equal? (quote (1)) (test)))' \
@@ -471,6 +473,8 @@ cr "closure-sharing-reentry-tests -O3" -O3 closure-sharing-reentry-tests.scm
 cr "lolevel-tests -specialize" -specialize lolevel-tests.scm
 cr syntax-tests syntax-tests.scm
 cr syntax-tests-2 syntax-tests-2.scm
+cr syntactic-closures-tests syntactic-closures-tests.scm
+cr paper-oracle-tests paper-oracle-tests.scm
 cr reexport-tests reexport-tests.scm
 rm -f reexport-m*.import* foo.import.* square-functor.import.* sf1.import.* sf2.import.*
 check "emit import libraries" emit_import_libraries
