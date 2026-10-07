@@ -13,10 +13,9 @@
 ;;;;    wrappers over let-syntax / letrec-syntax;
 ;;;;  - an expected (*oracle-error* ...) means that CHICKEN must signal
 ;;;;    an error; an expansion-time error is checked through `eval';
-
 ;;;;  - the globals GV and IT are defined in a module (see section 1);
 ;;;;    section 7 repeats the cases where that matters with plain
-;;;;    toplevel globals, as documented deviations;
+;;;;    toplevel globals;
 ;;;;  - the oracle's appendix artifacts (sec. 5 of cases.scm) are
 ;;;;    checked with CHICKEN's values, see the end of this file.
 
@@ -40,16 +39,6 @@
   (syntax-rules ()
     ((_ name expr)
      (check name 'error (handle-exceptions e 'error expr)))))
-;; CHICKEN differs from the oracle: both values are given, CHICKEN's
-;; is checked
-(define *deviations* 0)
-(define-syntax check-deviation
-  (syntax-rules ()
-    ((_ name oracle-value chicken-value expr)
-     (begin
-       (set! *deviations* (+ *deviations* 1))
-       (check name chicken-value expr)))))
-
 ;;; ------------------------------------------------------------------
 ;;; Translation of WITH-MACRO and WITH-MACRO-REC (paper sec. 4.4): the
 ;;; replacement is computed from the closed arguments and interpreted
@@ -946,15 +935,10 @@
            (m))))
 
 ;;; ------------------------------------------------------------------
-;;; 7. [DEVIATION: pre-existing CHICKEN bug] the cases of section 4 that
-;;; refer to a global from under a local variable of the same name,
-;;; with plain toplevel globals.  Lowering gives the right identifier,
-;;; an alias of the global, but `##sys#alias-global-hook' (compiled
-;;; code) and eval.scm (csi) resolve an alias of a global that is not
-;;; module-qualified by its name at the use site, where the local
-;;; variable is bound.  syntax-rules and er macros behave the same:
-;;; (define x 1) (define-syntax g (syntax-rules () ((_) x)))
-;;; (let ((x 2)) (g)) gives 2 compiled and an error in csi.
+;;; 7. The cases of section 4 that refer to a global from under a
+;;; local variable of the same name, with plain toplevel globals rather
+;;; than module globals.  Lowering gives an alias of the global, which
+;;; the local must not capture.
 
 (define tl-gv 'global-gv)
 (define tl-it 'global-it)
@@ -976,17 +960,13 @@
         scheme-syntactic-environment '()
         `((lambda (tl-it) ,m) 'bound))))))
 
-(check-deviation tl-d1-macro-env-under-local-gv 'global-gv
-  (cond-expand (compiling 'local) (else 'error))
+(check tl-d1-macro-env-under-local-gv 'global-gv
   (handle-exceptions e 'error ((lambda (tl-gv) (tl-d1m)) 'local)))
-(check-deviation tl-d2-bind-lambda-free-raw-name 'global-it
-  (cond-expand (compiling 'outer) (else 'error))
+(check tl-d2-bind-lambda-free-raw-name 'global-it
   (handle-exceptions e 'error ((lambda (tl-it) (bind-lambda tl-it tl-it)) 'outer)))
-(check-deviation tl-free-nest-stops-at-advertised-env '(global-it)
-  (cond-expand (compiling '(user)) (else 'error))
+(check tl-free-nest-stops-at-advertised-env '(global-it)
   (handle-exceptions e 'error ((lambda (tl-it) (tl-nest-stop-global tl-it)) 'user)))
-(check-deviation tl-macrology-new-if-closes-in-new-env 'global-gv
-  (cond-expand (compiling 'user) (else 'error))
+(check tl-macrology-new-if-closes-in-new-env 'global-gv
   (handle-exceptions e 'error ((lambda (tl-gv) (with-new-if tl-gv)) 'user)))
 
 ;; the library's scheme-macrology (paper sec. 4.3 and appendix),
@@ -1034,5 +1014,5 @@
          (push 'foo stack)))
      stack)))
 
-(print *pass* " passed, " *fail* " failed, " *deviations* " documented deviations")
+(print *pass* " passed, " *fail* " failed")
 (unless (zero? *fail*) (exit 1))

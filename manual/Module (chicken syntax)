@@ -531,15 +531,6 @@ non-hygienic er, ir or rsc macro that the expansion calls, like any
 user code.  When an expansion uses a name of its usage environment
 that also occurs as it is in its own macro form, the name is taken to
 be that occurrence.
-* CHICKEN resolves an alias of a toplevel variable that is not in a
-module by its name where it is used.  So a closure referring to such a
-global from under a local variable of the same name, written by the
-user, refers to the local variable in compiled code and signals an
-unbound variable in the interpreter.  This is a property of the
-renaming expander that {{syntax-rules}} and er macros share.  A global
-defined in a module is affected in the same way where it is referred
-to from inside the body of that module; references from code that
-imports the module are not affected.
 * The code of a transformer that is itself part of lowered output (a
 {{let-syntax}}, {{letrec-syntax}} or {{define-syntax}} in the output
 of an sc macro, or written by the user inside a closure with free

@@ -1435,13 +1435,12 @@
 ;;; Expansions and environments
 
 ;; The expansion running now, or #f.  An expansion record is
-;; #(SE DSE UENV PASS CAPTURES LIVE? SYNTAX-NAMES HEADS GLOBALS TWINS
-;; BODY).
+;; #(SE DSE UENV PASS CAPTURES LIVE? SYNTAX-NAMES HEADS TWINS BODY).
 ;; PASS is 0 while the handler runs, 1 while the output is walked the
 ;; first time (to find out which usage aliases occur, building nothing)
 ;; and 2 while it is lowered; CAPTURES holds the results of capture
 ;; procedures, so that they are called only once; SYNTAX-NAMES and
-;; HEADS serve sc-note-context!, GLOBALS sc-choose-unrenamed, TWINS
+;; HEADS serve sc-note-context!, TWINS
 ;; lists the twins made (see sc-twin), BODY is the body that was being
 ;; scanned when the expansion ran (see sc-current-body).  A
 ;; parameter, so that each thread has its own (as for
@@ -1605,7 +1604,7 @@
 ;; environment UENV was made, or #f.
 (define (sc-usage-environment-body uenv)
   (let ((exp (##sys#slot uenv 5)))
-    (and exp (vector-ref exp 10))))
+    (and exp (vector-ref exp 9))))
 
 ;; A fresh alias for SYM as a name of the usage environment UENV, made
 ;; by the context identified by OWNER.  Its property ##core#sc-usage
@@ -1773,7 +1772,7 @@
 	id
 	(let ((exp (sc-expansion)))
 	  (putp h '##core#sc-twin (cons id env))
-	  (when exp (vector-set! exp 9 (cons h (vector-ref exp 9))))
+	  (when exp (vector-set! exp 8 (cons h (vector-ref exp 8))))
 	  h))))
 
 ;; What S stands for in the output: S itself if it is no twin.
@@ -1807,7 +1806,7 @@
 
 ;; X, the lowered output of the expansion, with its twins replaced.
 (define (sc-untwin x)
-  (if (null? (vector-ref (sc-expansion) 9))
+  (if (null? (vector-ref (sc-expansion) 8))
       x
       (sc-subst-symbols x sc-twin-target)))
 
@@ -1865,7 +1864,7 @@
   (let* ((exp (sc-expansion))
 	 (dse (vector-ref exp 1))
 	 (twins (filter (lambda (h) (eq? (cdr (getp h '##core#sc-twin)) env))
-			(vector-ref exp 9))))
+			(vector-ref exp 8))))
     (if (null? twins)
 	r
 	(let* ((tmap (map (lambda (h) (cons h (sc-twin-target h))) twins))
@@ -2563,11 +2562,6 @@
 	     s))
 	  ((or (not info)
 	       (not (eq? (vector-ref info 1) (vector-ref exp 2))))
-	   (when (eqv? 1 (vector-ref exp 3))
-	     (let ((m (getp s '##core#macro-alias)))
-	       (when (and (symbol? m)
-			  (not (sc-table-ref (vector-ref exp 8) m)))
-		 (sc-table-set! (vector-ref exp 8) m #t))))
 	   s)
 	  ((eqv? 1 (vector-ref exp 3))
 	   (vector-set! info 3 #t)
@@ -2579,10 +2573,7 @@
 ;; un-renamed: for every name, the alias if it is the only one that
 ;; occurs, otherwise the alias made for the raw output of an rsc
 ;; transformer, if any.  The chosen ones are kept in UENV for
-;; sc-protected?.  A name is not un-renamed at all if another alias in
-;; the output refers to the global variable of that name: the
-;; un-renamed name could be bound around it, and CHICKEN resolves an
-;; alias of a global by its name.
+;; sc-protected?.
 (define (sc-choose-unrenamed uenv)
   (let ((box (##sys#slot uenv 3))
 	(groups (sc-make-table))
@@ -2603,10 +2594,7 @@
       (for-each
        (lambda (sym)
 	 (let* ((infos (sc-table-ref groups sym))
-		(pick (cond ((sc-table-ref (vector-ref (sc-expansion) 8) sym)
-			     (sc-usage-alias-left! sym uenv)
-			     #f)
-			    ((null? (cdr infos)) (car infos))
+		(pick (cond ((null? (cdr infos)) (car infos))
 			    (else
 			     (sc-usage-alias-left! sym uenv)
 			     (find (lambda (i) (vector-ref i 2)) infos)))))
@@ -2663,7 +2651,7 @@
    'transformer
    (sc-tag-handler
    (lambda (form se dse)
-     (let* ((exp (vector se dse #f 0 '() #t '() (sc-make-table) (sc-make-table) '()
+     (let* ((exp (vector se dse #f 0 '() #t '() (sc-make-table) '()
 			 (sc-current-body)))
 	    (k (sc-form-context form))
 	    (uenv (sc-make-environment
@@ -2684,8 +2672,7 @@
 	      (vector-set! exp 3 0)
 	      (vector-set! exp 4 '())
 	      (vector-set! exp 5 #t)
-	      (vector-set! exp 7 (sc-make-table))
-	      (vector-set! exp 8 (sc-make-table)))
+	      (vector-set! exp 7 (sc-make-table)))
 	    (sc-expansion exp))
 	  (lambda ()
 	    (let ((result (handler form (if reverse? menv uenv))))
@@ -2714,7 +2701,7 @@
 		      (vector-set! exp 3 1)
 		      (vector-set! exp 4 '())
 		      (vector-set! exp 6 '())
-		      (vector-set! exp 9 '())
+		      (vector-set! exp 8 '())
 		      (sc-lower result ctx ids oenv)
 		      (sc-choose-unrenamed uenv)
 		      (vector-set! exp 3 2)
@@ -2730,8 +2717,7 @@
 	    (vector-set! exp 5 #f)
 	    (vector-set! exp 6 '())
 	    (vector-set! exp 7 #f)
-	    (vector-set! exp 8 #f)
-	    (vector-set! exp 9 '())
+	    (vector-set! exp 8 '())
 	    (vector-set! (##sys#slot uenv 3) 0 '())
 	    (let ((ki (##sys#slot uenv 4)))
 	      (when ki (sc-kinfo-symbols ki)))))))))))
