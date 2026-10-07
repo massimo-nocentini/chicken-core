@@ -1403,3 +1403,35 @@ other-eval
           x))))
    (m x)
    (t 'inner x))
+
+;; A macro's reference to a global must not be captured by a local
+;; of the same name at the use site (##sys#alias-global-hook used to
+;; resolve the global's name in the current environment, which holds
+;; the local's alias).
+
+(define shadowed-global 10)
+(define-syntax get-shadowed-global
+  (syntax-rules () ((_) shadowed-global)))
+(define-syntax inc-shadowed-global!
+  (syntax-rules () ((_) (set! shadowed-global 11))))
+(define-syntax er-get-shadowed-global
+  (er-macro-transformer (lambda (f r c) (r 'shadowed-global))))
+(define-syntax er-capture-shadowed-global
+  (er-macro-transformer (lambda (f r c) 'shadowed-global)))
+
+(t 10 (let ((shadowed-global 20)) (get-shadowed-global)))
+(t 10 ((lambda (shadowed-global) (get-shadowed-global)) 30))
+(t '(20 11)
+   (let ((shadowed-global 20))
+     (inc-shadowed-global!)
+     (list shadowed-global (get-shadowed-global))))
+(t 11 (let ((shadowed-global 20)) (er-get-shadowed-global)))
+(t 20 (let ((shadowed-global 20)) (er-capture-shadowed-global)))
+
+(module shadowed-module-global (shadowed-module-test)
+  (import scheme)
+  (define secret 'module-global)
+  (define-syntax get-secret (syntax-rules () ((_) secret)))
+  (define (shadowed-module-test) (let ((secret 'local)) (get-secret))))
+(import shadowed-module-global)
+(t 'module-global (shadowed-module-test))

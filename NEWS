@@ -144,6 +144,13 @@
     (thanks to Étienne Pflieger).
 
 - Syntax expander
+  - A macro's reference to a global variable, expanded under a local
+    variable of the same name, referred to the local in compiled code
+    and failed with "unbound variable" in the interpreter, e.g.
+    (define x 10) (define-syntax g (syntax-rules () ((_) x)))
+    (let ((x 20)) (g)) gave 20 instead of 10.  This affected
+    syntax-rules, er and ir macros, `set!' through such a reference,
+    and module globals referenced inside their own module.
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
   - Disabled confusing warnings about indirect exports when using 
