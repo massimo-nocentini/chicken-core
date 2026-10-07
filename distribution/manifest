@@ -210,6 +210,11 @@ tests/test-line-numbers.expected
 tests/syntax-rule-stress-test.scm
 tests/syntax-tests.scm
 tests/syntax-tests-2.scm
+tests/syntactic-closures-tests.scm
+tests/syntactic-closures-m1.scm
+tests/syntactic-closures-m2.scm
+tests/syntactic-closures-redefine.scm
+tests/paper-oracle-tests.scm
 tests/meta-syntax-test.scm
 tests/reexport-m1.scm
 tests/reexport-m2.scm

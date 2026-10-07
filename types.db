@@ -2451,19 +2451,75 @@
 
 ;; syntax
 
+(chicken.syntax#capture-syntactic-environment
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#capture-syntactic-environment
+  ((procedure ((struct syntactic-environment)) *))
+  (struct syntactic-capture)))
+(chicken.syntax#close-syntax
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#close-syntax
+  (* (struct syntactic-environment))
+  *))
 (chicken.syntax#er-macro-transformer
  (#(procedure #:clean #:enforce)
   chicken.syntax#er-macro-transformer
   ((procedure (* (procedure (*) *) (procedure (* *) *)) *))
   (struct transformer)))
 (chicken.syntax#expand (procedure chicken.syntax#expand (* #!optional list) *))
+(chicken.syntax#expander-macro-transformer
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#expander-macro-transformer
+  ((procedure ((struct syntactic-environment) *) *))
+  (struct transformer)))
+(chicken.syntax#extend-syntactic-environment
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#extend-syntactic-environment
+  ((struct syntactic-environment) symbol
+   (or (struct transformer) (procedure ((struct syntactic-environment) *) *)))
+  (struct syntactic-environment)))
+(chicken.syntax#identifier->symbol (#(procedure #:clean) chicken.syntax#identifier->symbol (*) symbol))
+(chicken.syntax#identifier=?
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#identifier=?
+  ((struct syntactic-environment) * (struct syntactic-environment) *)
+  boolean))
+(chicken.syntax#identifier? (#(procedure #:clean) chicken.syntax#identifier? (*) boolean))
 (chicken.syntax#ir-macro-transformer
  (#(procedure #:clean #:enforce)
   chicken.syntax#ir-macro-transformer
   ((procedure (* (procedure (*) *) (procedure (* *) *)) *))
   (struct transformer)))
+(chicken.syntax#make-syntactic-closure
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#make-syntactic-closure
+  ((struct syntactic-environment) list *)
+  *))
+(chicken.syntax#make-syntactic-closure-list
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#make-syntactic-closure-list
+  ((struct syntactic-environment) list list)
+  list))
 (chicken.syntax#read-with-source-info (#(procedure #:enforce) chicken.syntax#read-with-source-info (#!optional input-port) *))
+(chicken.syntax#rsc-macro-transformer
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#rsc-macro-transformer
+  ((procedure (* (struct syntactic-environment)) *))
+  (struct transformer)))
+(chicken.syntax#sc-macro-transformer
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#sc-macro-transformer
+  ((procedure (* (struct syntactic-environment)) *))
+  (struct transformer)))
+(chicken.syntax#scheme-macrology
+ (#(procedure #:clean #:enforce)
+  chicken.syntax#scheme-macrology
+  ((struct syntactic-environment))
+  (struct syntactic-environment)))
+(chicken.syntax#strip-syntactic-closures (#(procedure #:clean) chicken.syntax#strip-syntactic-closures (*) *))
 (chicken.syntax#strip-syntax (#(procedure #:clean) chicken.syntax#strip-syntax (*) *))
+(chicken.syntax#syntactic-closure? (#(procedure #:clean) chicken.syntax#syntactic-closure? (*) boolean))
+(chicken.syntax#syntactic-environment? (#(procedure #:clean) chicken.syntax#syntactic-environment? (*) boolean))
 
 ;; tcp
 

@@ -144,6 +144,44 @@
     (thanks to Étienne Pflieger).
 
 - Syntax expander
+  - `(chicken syntax)' now provides syntactic closures (Bawden & Rees,
+    "Syntactic Closures", LFP 1988): `sc-macro-transformer',
+    `rsc-macro-transformer', `make-syntactic-closure',
+    `make-syntactic-closure-list', `close-syntax',
+    `capture-syntactic-environment', `identifier?', `identifier=?',
+    `identifier->symbol', `syntactic-closure?', `syntactic-environment?'
+    and `strip-syntactic-closures', largely compatible with MIT Scheme,
+    chibi-scheme and the CHICKEN 3 `syntactic-closures' egg, and the
+    paper's own interface: `expander-macro-transformer' (expanders
+    called as (expander syntactic-env form)),
+    `scheme-syntactic-environment', `core-syntactic-environment',
+    `extend-syntactic-environment' and `scheme-macrology'.  They are
+    implemented on top of the renaming expander and mix freely with
+    er, ir and syntax-rules macros.  As in the paper, every syntactic
+    closure is an identifier of its own: a closure's names are never
+    captured by bindings that the surrounding output introduces, and
+    two closures of the same name are different identifiers (use the
+    free-names list, or one closure object, to make a binder and its
+    references match).  Definitions in a body through closures made in
+    the usage environment of a macro used in that body, e.g.
+    (define ,(close-syntax name env) ...), define the user's name.
+    Incompatible change: as `(chicken syntax)'
+    is imported by default, these 17 names are now visible in every
+    toplevel, and in every module that imports `(chicken syntax)'
+    without `only' or `except'.  A program that defines its own
+    `identifier?', `close-syntax' etc. at toplevel, or such a module
+    that defines one as a private helper, now assigns the
+    `(chicken syntax)' binding for the whole program (two libraries
+    that each define a helper `identifier?' overwrite each other's),
+    and the compiler warns about it ("assignment to imported value
+    binding").  Use e.g. (import (except (chicken syntax) identifier?))
+    to keep such a definition private.  The expander itself does not
+    use the exported bindings, so assigning them does not break it.
+  - `strip-syntax' also removes syntactic closures.
+  - Vector literals in macro expansions no longer retain renamed
+    symbols (e.g. a syntax-rules template `#(a b)' evaluated to
+    `#(a12 b13)').  A vector literal that holds no renamed symbol is
+    used as it is, as before.
   - Fixed bug in handling of "export-all" library declaration which caused
     the expansion of "define-library" to fail with an error.
   - Disabled confusing warnings about indirect exports when using 
