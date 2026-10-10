@@ -584,8 +584,7 @@ char *ttyname(int fd) {
 		   (chicken.io#read-bytevector! d i s (fx+ s n)))
 		 (lambda (_ l)           ; read-line
 		   (read-line i l))
-		 (lambda (_)              ; read-buffered
-		   (read-buffered i))     ; DEPRECATED
+		 ##sys#read-buffered-bytes  ; read-buffered
                  (lambda (_)            ; char-ready?
                    (char-ready? i))))
 	 (port (##sys#make-port 3 class "(bidirectional)" 'bidirectional)))
