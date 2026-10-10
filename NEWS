@@ -6,7 +6,7 @@
   - The default range used in `bytes->string' was calculated incorrectly.
   - Fixed various bugs in the implementation of the use of explicit port 
     methods for reading bytevectors in custom input ports.
-  - `read-buffered' has been deprecated.
+  - "read-buffered" has been deprecated as it interferes with UTF-8 input.
   - Printing at the REPL didn't implement output-limit handling, this has
     been added now.
   - "string-translate*" now properly checks the structure of the string
@@ -62,6 +62,10 @@
     whether their port argument is of the correct direction.  Previously
     e.g. close-input-port would silently ignore output port arguments
     (thanks to Étienne Pflieger).
+  - Deprecated "exit" and "emergency-exit" from the "(chicken base)" module,
+    please use the corresponding operations from "(scheme process-context)".
+  - Corrected use of "make-output-port" in "make-broadcast-port", which 
+    used an obsolete calling convention.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
