@@ -257,7 +257,7 @@ char *ttyname(int fd) {
   (make-output-port
    (lambda (s) (for-each (cut scheme#write-string s <>) ports))
    void
-   (lambda () (for-each flush-output ports)) ) )
+   force-output: (lambda () (for-each flush-output ports)) ) )
 
 (define (make-concatenated-port p1 . ports)
   (let ((ports (cons p1 ports)))
