@@ -7112,10 +7112,10 @@ EOF
 	(when handler
 	  (handler reason))
 	(loop (##core#inline "C_i_pending_interrupt" #f)))))
-    (cond ((fx> (##sys#slot ##sys#pending-finalizers 0) 0)
-	   (##sys#run-pending-finalizers state) )
-	  ((procedure? state) (state))
-	  (else (##sys#context-switch state) ) ) )
+  (cond ((fx> (##sys#slot ##sys#pending-finalizers 0) 0)
+          (##sys#run-pending-finalizers state) )
+        ((procedure? state) (state))
+	(else (##sys#context-switch state) ) ) )
 
 (define (##sys#dispatch-interrupt k)
   (##sys#interrupt-hook
