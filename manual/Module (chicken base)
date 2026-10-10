@@ -1196,15 +1196,6 @@ defined:
 
 === Process shutdown
 
-==== emergency-exit
-
-<procedure>(emergency-exit [CODE])</procedure>
-
-Exits the current process without flushing any buffered output (using
-the C function {{_exit}}).  Note that the {{exit-handler}} is not called
-when this procedure is invoked. The optional exit status code {{CODE}}
-defaults to {{0}}.
-
 
 ==== exit
 
@@ -1214,6 +1205,9 @@ Exit the running process and return exit-code, which defaults to 0
 (Invokes {{exit-handler}}).
 
 Note that pending {{dynamic-wind}} thunks are ''not'' invoked when exiting your program in this way.
+
+This procedure is deprecated in favor of the {{exit}} procedure in the
+[[Module (scheme process-context)|(scheme process-context)|] module.
 
 
 === exit-handler

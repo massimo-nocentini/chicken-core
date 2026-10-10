@@ -963,10 +963,10 @@ EOF
 (define (on-exit thunk)
   (set! cleanup-tasks (cons thunk chicken.base#cleanup-tasks)))
 
-(define (exit #!optional (code 0))
+(define (exit #!optional (code 0))      ; DEPRECATED
   ((exit-handler) code))
 
-(define (emergency-exit #!optional (code 0))
+(define (emergency-exit #!optional (code 0))    ; DEPRECATED (move to scheme.process-context)
   (##sys#check-fixnum code 'emergency-exit)
   (##core#inline "C_exit_runtime" code))
 

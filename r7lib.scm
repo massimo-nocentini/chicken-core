@@ -246,7 +246,7 @@
   (import scheme
           chicken.process-context
           chicken.type
-	  (rename chicken.base (exit chicken-exit)))
+          (except chicken.base exit))
 
 (define (command-line)
   ;; Don't cache these; they may be parameterized at any time!
@@ -267,7 +267,7 @@
         (after)
         (unwind))))
   ;; The built-in exit runs cleanup handlers for us.
-  (chicken-exit (->exit-status obj)))
+  ((exit-handler) (->exit-status obj)))
 
 )
 
