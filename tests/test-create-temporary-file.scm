@@ -41,13 +41,15 @@
 (for-each
   (lambda (ext)
     (let* ((tmp (create-temporary-file ext))
-           (suffix (if (zero? (string-length ext)) "" (string-append "." ext))))
+           (suffix (cond ((zero? (string-length ext)) "")
+                         ((char=? #\. (string-ref ext 0)) ext)
+                         (else (string-append "." ext)))))
       (assert (equal? (substring tmp (- (string-length tmp) (string-length suffix)))
                       suffix))
       (assert (file-exists? tmp))
       (assert (call-with-input-file tmp (lambda (p) (eof-object? (read-char p)))))
       (delete-file tmp)))
-  '("" "tmp" "привет"))
+  '("" "tmp" "привет" ".txt" ".привет"))
 
 (let ((dir (create-temporary-directory)))
   (with-environment-variable "TMPDIR" dir

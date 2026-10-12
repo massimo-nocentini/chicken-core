@@ -369,8 +369,11 @@ EOF
                   (loop)
                   (call-with-output-file pn (lambda (p) pn)))))
           (let* ((n (fx- (##sys#size (##sys#slot ext 0)) 1))
-                 ;; Account for the added dot.
-                 (n (if (fx= n 0) 0 (fx+ n 1)))
+                 ;; Account for the dot make-pathname adds, unless the
+                 ;; extension starts with one already.
+                 (n (if (or (fx= n 0) (char=? (string-ref ext 0) #\.))
+                        n
+                        (fx+ n 1)))
                  (pn (make-pathname
                       (tempdir)
                       (string-append temp-prefix "XXXXXX")
