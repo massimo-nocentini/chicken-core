@@ -10,12 +10,15 @@
     (if (zero? n)
         '()
         (cons (pseudo-random-integer 10000)
-              (nums (- n 1))))))
+              (loop (- n 1))))))
 
+;; The same seed gives the same sequence.  (The second argument of
+;; `assert' is only its message, so the comparison has to be explicit.)
 (set-pseudo-random-seed! seed)
 (define n1 (nums 100))
 (set-pseudo-random-seed! seed)
-(assert n1 (nums 100))
+(assert (equal? n1 (nums 100)))
+(assert (= 100 (length n1)))
 
 
 ;;; Seeding (set-pseudo-random-seed!)
