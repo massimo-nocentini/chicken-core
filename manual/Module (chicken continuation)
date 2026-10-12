@@ -101,6 +101,24 @@ Leaving a delimited segment runs the {{after}} thunks of any
 one runs the corresponding {{before}} thunks again, so a segment that is
 resumed twice is wound twice.
 
+A continuation captured by {{call/cc}} inside the body of a {{reset}}
+returns to the innermost live instance of that body. So when the body is
+part of a segment resumed from a {{shift}}, elsewhere or more than once,
+invoking it ends that resumption, whose caller gets the value of the
+body. That is what makes the handlers of {{guard}},
+{{handle-exceptions}} and {{condition-case}}, which escape through
+{{call/cc}}, work inside a resumed or multi-shot computation:
+
+<enscript highlight=scheme>
+(reset (guard (e (#t (list 'caught e)))
+         (raise (shift k (list (k 1) (k 2))))))
+                                           ; => ((caught 1) (caught 2))
+</enscript>
+
+A continuation captured outside every live instance of its body - outside
+any {{reset}}, or in a body that has returned - brings back the whole
+context it was captured in, leaving any {{reset}} entered since.
+
 Two things are worth knowing about the implementation. First, the
 compiler recognises {{shift}} and {{reset}} and compiles them directly
 through its CPS conversion, which is where the continuation they need

@@ -248,8 +248,12 @@
     an ordinary procedure that returns a value to its caller, so it
     composes and may be resumed zero, one or many times.  Leaving a
     delimited segment runs the `after' thunks of any enclosed
-    `dynamic-wind', and resuming one runs the `before' thunks again.  Note
-    that a delimiter passes a single value: `(reset (values 1 2))' is 1.
+    `dynamic-wind', and resuming one runs the `before' thunks again.  A
+    continuation captured by call/cc inside a `reset' body returns to the
+    innermost live instance of that body, so the handlers of `guard',
+    `handle-exceptions' and `condition-case' work inside a resumed or
+    multi-shot computation.  Note that a delimiter passes a single value:
+    `(reset (values 1 2))' is 1.
   - The per-thread state buffer has grown a seventh slot, holding the
     metacontinuation stack.  Code that constructs such a buffer itself,
     rather than through `##sys#make-thread', must be updated.

@@ -4278,9 +4278,7 @@ EOF
       (##sys#call-with-current-continuation
        (lambda (cont)
 	 (define (continuation . results)
-	   (unless (eq? ##sys#dynamic-winds winds)
-	     (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))) )
-	   (set! ##sys#dc-stack dcs)
+	   (##sys#dc-reenter winds dcs)
 	   (apply cont results) )
 	 (proc continuation) ))) ))
 
@@ -4303,7 +4301,7 @@ EOF
 ;
 ; ##sys#dc-stack is the metacontinuation: a list of frames
 ;
-;     ( <k> . <winds> )
+;     #( <k> <winds> <origin> )
 ;
 ; <k> is an ordinary ONE-ARGUMENT procedure that never returns.  It is
 ; either a continuation reified by the compiler's CPS conversion (see
@@ -4319,13 +4317,23 @@ EOF
 ; ABOVE that, so leaving and re-entering it runs the "after" and "before"
 ; thunks of the `dynamic-wind's it encloses, and touches nothing outside.
 ;
+; <origin> names the `reset' whose body the frame delimits.  It is #f in
+; the frame a `reset' pushes until a segment is captured under it, when
+; ##sys#dc-shift-enter gives it a token, so a `reset' costs one frame.  A
+; captured segment carries the origin of the frame it was captured under,
+; and the frame pushed to resume it carries it too, as it delimits another
+; instance of the same body.  It is a token, not the `reset''s frame, so
+; that a segment does not keep that frame's <k> - the delimiter's outer
+; continuation - alive.
+;
 ; Popping a frame and invoking its <k> is what realises the meta-level
 ; "(E (lambda (v) v))" of the rewriting rules: it is the only operation
 ; that can give a value back to a delimiter.
 ;
 ; The stack is part of the per-thread state buffer (scheduler.scm) and is
-; saved and restored by `call-with-current-continuation' above, so that a
-; non-local exit out of a `reset' body leaves it balanced.
+; saved by `call-with-current-continuation' above and reinstated by
+; ##sys#dc-reenter below, so that a non-local exit out of a `reset' body
+; leaves it balanced.
 
 ; Unwind ##sys#dynamic-winds down to BASE - which must be a tail of it -
 ; running the "after" thunk of every frame left behind, innermost first.
@@ -4367,8 +4375,12 @@ EOF
 ; or - when a delimited continuation is resumed - the continuation of the
 ; call to it.  It must be a continuation that never returns: compiled
 ; callers of ##sys#dc-abort keep no live continuation of their own.
+(define-inline (dc-frame k winds origin)
+  (##core#inline_allocate ("C_a_i_vector3" 4) k winds origin))
+
 (define (##sys#dc-push! k)
-  (set! ##sys#dc-stack (cons (cons k ##sys#dynamic-winds) ##sys#dc-stack))
+  (set! ##sys#dc-stack
+    (cons (dc-frame k ##sys#dynamic-winds #f) ##sys#dc-stack))
   (##core#undefined))
 
 ; "(lambda (v) v)": return V to the innermost delimiter.  Never returns.
@@ -4397,26 +4409,86 @@ EOF
 
 ; Entering a `shift': leave the delimited segment, running the "after"
 ; thunks of any `dynamic-wind' between the delimiter and here, and return
-; that segment so it can be re-entered if the continuation is resumed.
+; that segment so it can be re-entered if the continuation is resumed,
+; as ( <origin> . <winds above the delimiter> ).
 (define (##sys#dc-shift-enter)
   (let ((s ##sys#dc-stack))
     (if (eq? s '())
 	(##sys#error "no enclosing `reset' for `shift'")
-	(let* ((base (##sys#slot (##sys#slot s 0) 1))
+	(let* ((frame (##sys#slot s 0))
+	       (base (##sys#slot frame 1))
 	       (seg (##sys#dc-segment ##sys#dynamic-winds base)))
 	  (##sys#dc-unwind-to base)
-	  seg))))
+	  (unless (##sys#slot frame 2)
+	    (##sys#setslot frame 2 (##core#inline_allocate ("C_a_i_record1" 2) 'dc-origin)))
+	  (cons (##sys#slot frame 2) seg)))))
 
 ; Resume a captured delimited continuation - rule 5's
 ;    f = (lambda (x) (lambda (c2) (c2 (c x))))
 ; K2 is f's own return continuation, rule 5's c2; it becomes the delimiter
-; the resumed segment will return to.  SEG is the segment's own
-; dynamic-wind context, spliced on top of the one we are resuming in.
-; Never returns.
-(define (##sys#dc-resume k2 c x seg)
-  (##sys#dc-push! k2)
-  (##sys#dc-rewind seg)
+; the resumed segment will return to.  W is what ##sys#dc-shift-enter
+; returned: the segment's origin, and its own dynamic-wind context, spliced
+; on top of the one we are resuming in.  Never returns.
+(define (##sys#dc-resume k2 c x w)
+  (set! ##sys#dc-stack
+    (cons (dc-frame k2 ##sys#dynamic-winds (##sys#slot w 0)) ##sys#dc-stack))
+  (##sys#dc-rewind (##sys#slot w 1))
   (c x))
+
+; Reinstate the context of a continuation captured by call/cc, whose
+; dynamic-wind context and metacontinuation were WINDS and DCS.
+;
+; By Danvy and Filinski's rules, call/cc inside a `reset' captures the
+; continuation up to that `reset', and invoking it replaces the current
+; continuation up to the current delimiter - which, inside a resumed
+; segment, is the frame of the resumption, not the `reset' the segment was
+; first captured under.  So when an instance of the body DCS's top frame
+; delimits is live, the innermost one is the one to return to: the frame
+; of the capture itself when control is still in its extent (and any
+; `reset' entered since is left), or the frame of a resumption of a
+; segment captured in that body.  The winds of the capture are then
+; rebased from its delimiter onto that frame's.  This is what lets
+; `guard', `handle-exceptions' and `condition-case', which escape through
+; call/cc, work inside a segment resumed elsewhere or more than once: the
+; handler's value goes back to the resumption, not to the `reset' of the
+; first run.  When no instance is live - the continuation was captured
+; outside every delimiter, or its body was left - the captured context is
+; reinstated as it was, re-entering the bodies it was in.
+(define (##sys#dc-reenter winds dcs)
+  (let ((here (##sys#dc-instance dcs)))
+    (cond ((not here) (##sys#dc-wind-to winds dcs))
+	  ((eq? (##sys#slot here 0) (##sys#slot dcs 0))
+	   (##sys#dc-wind-to winds here))
+	  ((##sys#dc-rebase winds
+			    (##sys#slot (##sys#slot dcs 0) 1)
+			    (##sys#slot (##sys#slot here 0) 1))
+	   => (lambda (w) (##sys#dc-wind-to w here)))
+	  (else (##sys#dc-wind-to winds dcs)))))
+
+(define (##sys#dc-wind-to winds dcs)
+  (unless (eq? ##sys#dynamic-winds winds)
+    (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))))
+  (set! ##sys#dc-stack dcs))
+
+; The tail of the current metacontinuation headed by the innermost frame
+; that is DCS's top frame or has its origin, or #f.
+(define (##sys#dc-instance dcs)
+  (and (pair? dcs)
+       (let* ((frame (##sys#slot dcs 0))
+	      (origin (##sys#slot frame 2)))
+	 (let loop ((s ##sys#dc-stack))
+	   (cond ((eq? s '()) #f)
+		 ((or (eq? (##sys#slot s 0) frame)
+		      (and origin (eq? (##sys#slot (##sys#slot s 0) 2) origin)))
+		  s)
+		 (else (loop (##sys#slot s 1))))))))
+
+; WS with its tail BASE replaced by INTO, or #f if BASE is not a tail of it.
+(define (##sys#dc-rebase ws base into)
+  (cond ((eq? ws base) into)
+	((eq? ws '()) #f)
+	(else (let ((r (##sys#dc-rebase (##sys#slot ws 1) base into)))
+		(and r (cons (##sys#slot ws 0) r))))))
 
 (define (##sys#reset thunk)
   (##sys#call-with-current-continuation

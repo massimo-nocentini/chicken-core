@@ -370,6 +370,96 @@
      200000)
 
 
+;;; Q. call/cc continuations captured inside a resumed segment
+;
+; By the rules above, call/cc inside a `reset' captures the continuation
+; up to that `reset', and invoking it replaces the continuation up to the
+; current delimiter.  Inside a resumed segment that delimiter is the
+; resumption, so a handler of `guard', `handle-exceptions' or
+; `condition-case' - which all escape through call/cc - gives its value
+; back to the caller of the captured procedure, once per resumption.  A
+; continuation captured outside every live instance of its body still
+; brings back the whole context of its capture (L8, M3, Q9).
+
+(import (only (scheme base) guard raise make-parameter parameterize))
+
+(chk "Q1 guard in a segment resumed once"
+     (reset (guard (e (#t 'caught))
+	      (shift k (list 'outer (k 1)))
+	      (raise 'boom)))
+     '(outer caught))
+(chk "Q2 call/cc escape in a resumed segment"
+     (reset (call-with-current-continuation
+	     (lambda (esc) (shift k (list 'outer (k 1))) (esc 5))))
+     '(outer 5))
+(chk "Q3 guard in a segment resumed twice"
+     (reset (guard (e (#t (list 'caught e)))
+	      (raise (shift k (list (k 1) (k 2))))))
+     '((caught 1) (caught 2)))
+(chk "Q4 condition-case in a segment resumed twice"
+     (reset (condition-case
+		(let ((x (shift k (list (k 1) (k 2))))) (error "e" x))
+	      (e (exn) (cons 'a ((condition-property-accessor 'exn 'arguments) e)))))
+     '((a 1) (a 2)))
+
+(define q (make-parameter 'top))
+(chk "Q5 the handler runs in the context of the resumption"
+     (reset (handle-exceptions e (list 'caught (q))
+	      (shift k (list 'outer (parameterize ((q 'resume)) (k 1))))
+	      (error "boom")))
+     '(outer (caught resume)))
+(chk "Q6 ... which is left balanced" (q) 'top)
+
+(define (dwt tag thunk)
+  (dynamic-wind (lambda () (em (list 'in tag))) thunk
+		(lambda () (em (list 'out tag)))))
+(chk "Q7 winds of an escape inside a resumption"
+     (outs (lambda ()
+	     (reset (guard (e (#t 'c))
+		      (dwt 'seg (lambda ()
+				  (shift k (dwt 'site (lambda () (k 1))))
+				  (raise 'x)))))))
+     '((in seg) (out seg) (in site) (in seg) (out seg) (out site)))
+
+(define late #f)
+(reset (guard (e (#t (list 'caught e)))
+	 (shift k (set! late k) 'first)
+	 (raise 'late)))
+(chk "Q8 a segment resumed after its reset returned"
+     (reset (list 'wrap (late 1))) '(wrap (caught late)))
+(chk "Q9 ... and outside any reset" (late 1) '(caught late))
+
+(chk "Q10 escape from an inner reset into the outer one's body"
+     (reset (+ 1 (call-with-current-continuation
+		  (lambda (esc) (reset (+ 10 (shift k (esc 5))))))))
+     6)
+(chk "Q11 ... leaves no stale delimiter behind"
+     (caught (lambda () (+ 1 (shift f 99)))) 'caught)
+
+(define reenter #f)
+(define entries 0)
+(chk "Q12 re-entering a reset body that has returned"
+     (let ((r (reset (+ 1 (call-with-current-continuation
+			   (lambda (c) (set! reenter c) 0))))))
+       (set! entries (+ entries 1))
+       (if (< entries 3) (reenter r) (list entries r)))
+     '(3 3))
+
+(chk "Q13 nested enumeration, a handler in every branch"
+     (reset (let* ((a (shift k (append (k 1) (k 2))))
+		   (b (shift k (append (k 0) (k 1))))
+		   (n (+ (* 2 (- a 1)) b 1)))
+	      (list (list n (guard (e ((symbol? e) e))
+			      (if (even? n) (raise 'bad) 'ok))))))
+     '((1 ok) (2 bad) (3 ok) (4 bad)))
+(chk "Q14 2000 resumptions, each caught by its own handler"
+     (let ((l (reset (let ((i (shift k (let loop ((i 0) (acc '()))
+					 (if (= i 2000) acc
+					     (loop (+ i 1) (cons (k i) acc)))))))
+		       (handle-exceptions e e (raise i))))))
+       (list (length l) (car l) (car (list-tail l 1999))))
+     '(2000 1999 0))
+
 (newline)
 (printf "~a failure(s)~%" failures)
 (when (positive? failures)
