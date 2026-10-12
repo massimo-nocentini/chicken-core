@@ -252,7 +252,9 @@
     continuation captured by call/cc inside a `reset' body returns to the
     innermost live instance of that body, so the handlers of `guard',
     `handle-exceptions' and `condition-case' work inside a resumed or
-    multi-shot computation.  Note that a delimiter passes a single value:
+    multi-shot computation, and a `parameterize' in a segment binds its
+    parameter even when the segment is resumed from within a resumption
+    of itself.  Note that a delimiter passes a single value:
     `(reset (values 1 2))' is 1.
   - The per-thread state buffer has grown a seventh slot, holding the
     metacontinuation stack.  Code that constructs such a buffer itself,

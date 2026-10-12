@@ -460,6 +460,39 @@
        (list (length l) (car l) (car (list-tail l 1999))))
      '(2000 1999 0))
 
+;;; R. parameterize in a segment resumed from within itself
+;
+; Resuming a segment enters its `dynamic-wind' frames again on top of the
+; current ones, so a continuation resumed from within a resumption of
+; itself enters a `parameterize' frame that it has not left.  The frame
+; must then still bind its parameter, and restore, on each exit, the value
+; of its own entry.
+
+(define r (make-parameter 'top))
+(define rk (reset (parameterize ((r 'inner))
+		    (let ((x (shift k k)))
+		      (if (procedure? x)
+			  (list 'nested (x 'leaf) (r))
+			  (list x (r)))))))
+(chk "R1 a resumption nested in a resumption of itself"
+     (rk rk) '(nested (leaf inner) inner))
+(chk "R2 ... leaves the parameter as it was" (r) 'top)
+(chk "R3 sequential resumptions" (list (rk 'a) (rk 'b) (r))
+     '((a inner) (b inner) top))
+(define rm (reset (parameterize ((r 'a))
+		    (shift k k)
+		    (let ((v (r))) (r 'b) v))))
+(chk "R4 a value set in the extent is seen by the next entry"
+     (list (rm #f) (rm #f) (r)) '(a b top))
+(define rc-count 0)
+(define rc (make-parameter 0 (lambda (x) (set! rc-count (+ rc-count 1)) x)))
+(define rck (reset (parameterize ((rc 10))
+		     (let ((x (shift k k)))
+		       (if (procedure? x) (list (x 'leaf) (rc)) (list x (rc)))))))
+(chk "R5 the converter runs once, nested or not"
+     (list (rck rck) (rck 'again) (rc) rc-count)
+     '(((leaf 10) 10) (again 10) 0 2))
+
 (newline)
 (printf "~a failure(s)~%" failures)
 (when (positive? failures)

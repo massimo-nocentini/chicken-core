@@ -501,7 +501,14 @@
 	   (vals (##sys#map cadr bindings))
 	   (param-aliases (##sys#map (lambda (z) (r (pname z))) params))
 	   (saveds (##sys#map (lambda (z) (r (gensym 'saved))) params))
+	   (outers (##sys#map (lambda (z) (r (gensym 'outer))) params))
 	   (temps (##sys#map (lambda (z) (r (gensym 'tmp))) params)) )
+      ;; SAVED holds the value the parameter takes inside the extent,
+      ;; OUTER a stack of the values it had where the extent was entered.
+      ;; It is a stack because a continuation captured by `shift' may be
+      ;; resumed from within a resumption of itself, entering this frame
+      ;; again before leaving it; entries and exits still come in LIFO
+      ;; order, as they all happen at the top of ##sys#dynamic-winds.
       `(##core#let
 	,(map ##sys#list param-aliases params) ; These may be expressions
 	(##core#let
@@ -512,7 +519,8 @@
 	  ;; value expressions (see first example in #1336).
 	  ,(map ##sys#list saveds saveds)
 	  (##core#let
-	   ((,convert? (##core#the boolean #t #t))) ; Convert only first time extent is entered!
+	   ((,convert? (##core#the boolean #t #t)) ; Convert only first time extent is entered!
+	    ,@(map (lambda (o) `(,o '())) outers))
 	   (##sys#dynamic-wind
 	    (##core#lambda ()
 	      (##core#let
@@ -521,23 +529,24 @@
 		       `(,temp (##core#if ,convert? (,p ,s #t #f) ,s)))
 		     param-aliases saveds temps)
 	       ;; Save current values so we can restore them later
-	       ,@(map (lambda (p s) `(##core#set! ,s (,p)))
-		      param-aliases saveds)
+	       ,@(map (lambda (p o) `(##core#set! ,o (##sys#cons (,p) ,o)))
+		      param-aliases outers)
 	       ;; Set parameters to their new values.  This can't fail.
 	       ,@(map (lambda (p t) `(,p ,t #f #t)) param-aliases temps)
+	       ,@(map (lambda (s t) `(##core#set! ,s ,t)) saveds temps)
 	       ;; Remember we already converted (only call converters once!)
 	       (##core#set! ,convert? #f)))
 	    (##core#lambda () ,@body)
 	    (##core#lambda ()
-	      (##core#let
-	       ;; Remember the current value of each parameter.
-	       ,(map (lambda (p s temp) `(,temp (,p)))
-		     param-aliases saveds temps)
-	       ;; Restore each parameter to its old value.
-	       ,@(map (lambda (p s) `(,p ,s #f #t)) param-aliases saveds)
-	       ;; Save current value for later re-invocations.
-	       ,@(map (lambda (s temp) `(##core#set! ,s ,temp))
-		      saveds temps))))))))))))
+	      ;; Save the current value of each parameter for later
+	      ;; re-invocations, and restore it to the value it had
+	      ;; where this entry was made.
+	      ,@(map (lambda (p s) `(##core#set! ,s (,p)))
+		     param-aliases saveds)
+	      ,@(map (lambda (p o) `(,p (##sys#slot ,o 0) #f #t))
+		     param-aliases outers)
+	      ,@(map (lambda (o) `(##core#set! ,o (##sys#slot ,o 1)))
+		     outers)))))))))))
 
 (##sys#extend-macro-environment
  'require-library
