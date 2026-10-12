@@ -176,6 +176,17 @@ $time ./fft1.out 1000 7
 echo "unboxing:"
 $time ./fft2.out 1000 7
 
+echo "======================================== flonum unboxing tests ..."
+# A misspelt name in lfa2's +unboxed-map+ only leaves the operation boxed,
+# so besides running the program, look for the boxed forms in its C.
+$compile flonum-unboxing-tests.scm -O3 -k -o flonum-unboxing.out
+./flonum-unboxing.out
+if grep -E 'C_a_i_flonum_expt|C_u_i_flonum_(finite|infinite|nan)p' flonum-unboxing.c; then
+    echo "lfa2 left a flonum operation boxed"
+    exit 1
+fi
+rm -f flonum-unboxing.c
+
 echo "======================================== callback tests ..."
 $compile -extend c-id-valid.scm callback-tests.scm
 ./a.out

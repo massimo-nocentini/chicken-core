@@ -343,6 +343,15 @@ messages_test() {
 }
 check messages-test messages_test
 
+# rt:179-188: lfa2 must unbox every flonum operation in this file (no
+# -ignore-repository: (chicken flonum) is found in the repository)
+flonum_unboxing() {
+    $wchicken flonum-unboxing-tests.scm -consult-types-file "$WASM_REPO/types.db" \
+	-optimize-level 3 -output-file flonum-unboxing.wasm.c &&
+    ! grep -E 'C_a_i_flonum_expt|C_u_i_flonum_(finite|infinite|nan)p' flonum-unboxing.wasm.c
+}
+check flonum-unboxing flonum_unboxing
+
 # The generated C must not depend on the compiler's platform.  First
 # make sure the host output does not depend on the symbol table's hash
 # seed, then compare the host and the wasm output bodies (the header
@@ -443,6 +452,7 @@ fft() {
     $compile fft.scm -O4 -debug x -d0 -disable-interrupts -b && $run 1000 7
 }
 check "fft -O2/-O4" fft
+cr "flonum-unboxing-tests -O3" -O3 flonum-unboxing-tests.scm
 
 cr "callback-tests" -extend c-id-valid.scm callback-tests.scm
 check_fail "callback-tests twice" '\[panic\] callback returned twice' $run twice

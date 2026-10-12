@@ -266,6 +266,11 @@
     rewrites (the number vector names lacked their "#" module separator,
     and `c128vector?' was listed as a nonexistent `f128vector?'), added
     rewrites for R7RS bytevector operations (thanks to Massimo Nocentini).
+  - The "lfa2" pass never unboxed `fpexpt' or the flonum case of `finite?':
+    its table of unboxed replacements misspelt them as
+    "C_a_i_flonum_expr" and "C_u_i_flonum_finitepp".  A chain of flonum
+    operations through either of them now stays in unboxed doubles
+    instead of allocating a flonum for the intermediate result.
 
 - Runtime system
   - Bignum multiplication and division now work a whole digit at a time
