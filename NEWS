@@ -22,6 +22,12 @@
     was never returned: (pseudo-random-integer (- (expt 2 65) 1)) never
     returned anything at or above 2^64, half of its range.  It now draws
     as many bits as the range has and rejects draws outside it.
+  - `(chicken random)' has state objects: independent generators made
+    by `make-pseudo-random-state' from a bytevector or integer seed (or
+    from the entropy source), copied by `pseudo-random-state-copy' and
+    split by `pseudo-random-state-split'.  `pseudo-random-integer' and
+    `pseudo-random-real' take one as an optional last argument, and the
+    compiler open-codes both with and without it.
   - `(chicken flonum)' has new special functions: `fplog1p', `fpexpm1',
     `fplgamma', `fptgamma', `fperf' and `fperfc', the C library's
     log1p, expm1, lgamma, tgamma, erf and erfc.  Like the other flonum

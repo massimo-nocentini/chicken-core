@@ -141,3 +141,104 @@
   (do ((i 0 (+ i 1))) ((= i 2000))
     (let ((r (pseudo-random-integer n)))
       (assert (and (<= 0 r) (< r n))))))
+
+
+;;; State objects
+
+(define (draws st)
+  (list (pseudo-random-integer 1000000000 st)
+        (pseudo-random-real st)
+        (pseudo-random-integer (expt 10 40) st)
+        (pseudo-random-integer 7 st)
+        (pseudo-random-real st)))
+
+(define (reals st n)
+  (let loop ((i 0) (acc '()))
+    (if (= i n) acc (loop (+ i 1) (cons (pseudo-random-real st) acc)))))
+
+(import (chicken condition))
+
+(define (raises? f . args)
+  (handle-exceptions e #t (begin (apply f args) #f)))
+
+;; the predicate, and a state is not anything else
+(let ((st (make-pseudo-random-state 1)))
+  (assert (pseudo-random-state? st))
+  (assert (not (pseudo-random-state? (bytevector 1))))
+  (assert (not (pseudo-random-state? 1))))
+
+;; the same seed gives the same stream, and an integer seed stands for its
+;; little-endian bytes, as `set-pseudo-random-seed!' reads them
+(assert (equal? (draws (make-pseudo-random-state 42))
+                (draws (make-pseudo-random-state 42))))
+(assert (equal? (draws (make-pseudo-random-state 17))
+                (draws (make-pseudo-random-state (bytevector 17)))))
+(assert (equal? (draws (make-pseudo-random-state #x0201))
+                (draws (make-pseudo-random-state (bytevector 1 2)))))
+(assert (equal? (draws (make-pseudo-random-state (expt 2 100)))
+                (draws (make-pseudo-random-state (expt 2 100)))))
+(assert (not (equal? (draws (make-pseudo-random-state 42))
+                     (draws (make-pseudo-random-state 43)))))
+(set-pseudo-random-seed! (bytevector 17))
+(assert (equal? (draws #f) (draws (make-pseudo-random-state 17))))
+
+;; without a seed, from the entropy source
+(assert (not (equal? (draws (make-pseudo-random-state))
+                     (draws (make-pseudo-random-state)))))
+
+;; a state is independent of the default generator: drawing from it
+;; leaves the default stream where it was
+(set-pseudo-random-seed! (bytevector 9 9))
+(define default-stream (draws #f))
+(set-pseudo-random-seed! (bytevector 9 9))
+(let ((st (make-pseudo-random-state 5)))
+  (draws st)
+  (assert (equal? default-stream (draws #f))))
+
+;; a copy replays, and drawing from one does not advance the other
+(let* ((st (make-pseudo-random-state 1234))
+       (_ (draws st))
+       (cp (pseudo-random-state-copy st))
+       (a (draws st))
+       (b (draws st)))
+  (assert (equal? a (draws cp)))
+  (assert (equal? b (draws cp)))
+  (assert (not (equal? a b))))
+
+;; a split is deterministic in its parent's state, advances the parent,
+;; and its stream is neither the parent's continuation nor correlated
+;; with it
+(let* ((p1 (make-pseudo-random-state 99))
+       (p2 (make-pseudo-random-state 99))
+       (c1 (pseudo-random-state-split p1))
+       (c2 (pseudo-random-state-split p2)))
+  (assert (equal? (draws c1) (draws c2)))
+  (assert (equal? (draws p1) (draws p2)))
+  (assert (not (equal? (draws (make-pseudo-random-state 99)) (draws p1))))
+  (let* ((n 4000)
+         (xs (reals p1 n))
+         (ys (reals c1 n))
+         (mean (lambda (l) (/ (apply + l) n)))
+         (mx (mean xs))
+         (my (mean ys))
+         (cov (mean (map (lambda (x y) (* (- x mx) (- y my))) xs ys)))
+         (var (lambda (l m) (mean (map (lambda (x) (* (- x m) (- x m))) l))))
+         (r (/ cov (sqrt (* (var xs mx) (var ys my))))))
+    (assert (< (abs (- my 0.5)) 0.03) "split stream mean" my)
+    (assert (< (abs r) 0.08) "parent/child correlation" r)))
+
+;; splitting the default generator is deterministic in its seed too
+(set-pseudo-random-seed! (bytevector 3 1 4))
+(define split-a (draws (pseudo-random-state-split)))
+(set-pseudo-random-seed! (bytevector 3 1 4))
+(assert (equal? split-a (draws (pseudo-random-state-split #f))))
+
+;; bad arguments (passed through `raises?' so the compiler cannot see them)
+(assert (raises? pseudo-random-integer 10 'foo))
+(assert (raises? pseudo-random-real (bytevector 1 2 3)))
+(assert (raises? pseudo-random-integer 1.5 (make-pseudo-random-state 1)))
+(assert (raises? pseudo-random-integer -1 (make-pseudo-random-state 1)))
+(assert (raises? make-pseudo-random-state -1))
+(assert (raises? make-pseudo-random-state "seed"))
+(assert (raises? pseudo-random-state-copy 'foo))
+(assert (raises? pseudo-random-state-split 'foo))

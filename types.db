@@ -1670,9 +1670,18 @@
 
 ;; random
 
-(chicken.random#pseudo-random-integer (#(procedure #:clean #:enforce) chicken.random#pseudo-random-integer (integer) integer)
-                                      ((fixnum) (##core#inline "C_random_fixnum" #(1))))
-(chicken.random#pseudo-random-real (#(procedure #:clean #:enforce) chicken.random#pseudo-random-real () float))
+(chicken.random#pseudo-random-integer (#(procedure #:clean #:enforce) chicken.random#pseudo-random-integer (integer #!optional (or false (struct pseudo-random-state))) integer)
+                                      ((fixnum) (##core#inline "C_random_fixnum" #(1)))
+                                      ((fixnum (struct pseudo-random-state))
+                                       (##core#inline "C_random_fixnum_s" #(1) (##sys#slot #(2) '1))))
+(chicken.random#pseudo-random-real (#(procedure #:clean #:enforce) chicken.random#pseudo-random-real (#!optional (or false (struct pseudo-random-state))) float)
+                                   (() (##core#inline_allocate ("C_a_i_random_real" 4)))
+                                   (((struct pseudo-random-state))
+                                    (##core#inline_allocate ("C_a_i_random_real_s" 4) (##sys#slot #(1) '1))))
+(chicken.random#make-pseudo-random-state (#(procedure #:clean #:enforce) chicken.random#make-pseudo-random-state (#!optional (or false bytevector integer)) (struct pseudo-random-state)))
+(chicken.random#pseudo-random-state? (#(procedure #:pure #:predicate (struct pseudo-random-state)) chicken.random#pseudo-random-state? (*) boolean))
+(chicken.random#pseudo-random-state-copy (#(procedure #:clean #:enforce) chicken.random#pseudo-random-state-copy ((struct pseudo-random-state)) (struct pseudo-random-state)))
+(chicken.random#pseudo-random-state-split (#(procedure #:enforce) chicken.random#pseudo-random-state-split (#!optional (or false (struct pseudo-random-state))) (struct pseudo-random-state)))
 (chicken.random#set-pseudo-random-seed! (#(procedure #:clean #:enforce) chicken.random#set-pseudo-random-seed! (bytevector #!optional fixnum) undefined))
 (chicken.random#random-bytes (#(procedure #:clean #:enforce) chicken.random#random-bytes (#!optional * fixnum) *))
 

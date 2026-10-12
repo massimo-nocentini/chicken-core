@@ -465,6 +465,8 @@ $compile -unsafe fixnum-tests.scm
 
 echo "======================================== random number tests ..."
 $interpret -s random-tests.scm
+$compile -specialize random-tests.scm
+./a.out
 
 # Processes started together draw different numbers; with -:R they
 # draw the same ones.  (Runtime options must come first.)

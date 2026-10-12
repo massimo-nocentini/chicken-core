@@ -2300,6 +2300,11 @@ C_fctexport C_word C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn) C_reg
 C_fctexport C_word C_a_i_random_real(C_word **ptr, C_word n) C_regparm;
 C_fctexport C_word C_random_bytes(C_word buf, C_word size);
 C_fctexport C_word C_set_random_seed(C_word buf, C_word n);
+C_fctexport C_word C_random_fixnum_s(C_word n, C_word st) C_regparm;
+C_fctexport C_word C_s_a_u_i_random_int_s(C_word **ptr, C_word n, C_word rn, C_word st) C_regparm;
+C_fctexport C_word C_a_i_random_real_s(C_word **ptr, C_word n, C_word st) C_regparm;
+C_fctexport C_word C_set_random_seed_s(C_word st, C_word buf, C_word n);
+C_fctexport C_word C_random_state_split(C_word parent, C_word child);
 
 #ifdef C_SIXTY_FOUR
 C_fctexport C_cpsproc(C_peek_signed_integer_32);

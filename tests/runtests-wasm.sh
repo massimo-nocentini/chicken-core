@@ -271,7 +271,7 @@ skip "ec.so" "needs ec.so and ec.import.so (rt:398-400); no dynamic loading"
 skip port-tests "runs a subprocess and pipes (rt:411); process creation is not available"
 check read-lines-tests $interpret -s read-lines-tests.scm
 check random-tests $interpret -s random-tests.scm
-# rt:466-486
+# rt:466-488
 startup_seed() {
     csi="timeout 600 $WASM_DIR/csi"
     draw='(import (chicken random)) (display (pseudo-random-integer 1000000000000))'
@@ -473,6 +473,7 @@ fft() {
 }
 check "fft -O2/-O4" fft
 cr "flonum-unboxing-tests -O3" -O3 flonum-unboxing-tests.scm
+cr "random-tests -specialize" -specialize random-tests.scm
 
 cr "callback-tests" -extend c-id-valid.scm callback-tests.scm
 check_fail "callback-tests twice" '\[panic\] callback returned twice' $run twice

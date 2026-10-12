@@ -36,18 +36,70 @@ carry no more randomness than it holds.
 
 ==== pseudo-random-integer
 
-<procedure>(pseudo-random-integer RANGE)</procedure>
+<procedure>(pseudo-random-integer RANGE [STATE])</procedure>
 
 Returns a uniformly distributed pseudo random integer between 0 and
-{{RANGE-1}}, which may be a big integer.
+{{RANGE-1}}, which may be a big integer.  It is drawn from the state
+object {{STATE}} if given, and from the default generator otherwise.
 
 
 ==== pseudo-random-real
 
-<procedure>(pseudo-random-real)</procedure>
+<procedure>(pseudo-random-real [STATE])</procedure>
 
 Returns a uniformly distributed pseudo-random inexact number between
-0 and 1.
+0 and 1, drawn from the state object {{STATE}} if given, and from the
+default generator otherwise.  The result is the uniformly chosen real
+number rounded to the nearest flonum, so it can be 1.0 (with a
+probability of about 2^-54) and, in principle, 0.0.
+
+
+=== State objects
+
+The procedures above draw from one default generator shared by the
+whole program.  A ''state object'' is an independent generator with the
+same algorithm: drawing from it leaves the default generator, and every
+other state object, unchanged.  This lets a program run several
+reproducible streams side by side, save and replay a stream, or give
+each of several simulations its own.
+
+==== make-pseudo-random-state
+
+<procedure>(make-pseudo-random-state [SEED])</procedure>
+
+Returns a new state object seeded from {{SEED}}, a bytevector or an
+exact nonnegative integer.  A bytevector is used as by
+{{set-pseudo-random-seed!}}, so {{(make-pseudo-random-state SEED)}}
+draws the same sequence that the default generator draws after
+{{(set-pseudo-random-seed! SEED)}}.  An integer stands for its bytes in
+little-endian order, at least one: {{17}} seeds like
+{{(bytevector 17)}}.  Without {{SEED}}, the state is seeded from the
+entropy source.
+
+==== pseudo-random-state?
+
+<procedure>(pseudo-random-state? X)</procedure>
+
+Returns {{#t}} if {{X}} is a state object, {{#f}} otherwise.
+
+==== pseudo-random-state-copy
+
+<procedure>(pseudo-random-state-copy STATE)</procedure>
+
+Returns a new state object in the same state as {{STATE}}.  The copy
+draws the same sequence as {{STATE}} draws from now on, and drawing
+from either does not advance the other.
+
+==== pseudo-random-state-split
+
+<procedure>(pseudo-random-state-split [STATE])</procedure>
+
+Returns a new state object seeded from numbers drawn from {{STATE}},
+or from the default generator if {{STATE}} is not given or {{#f}}.  This
+advances {{STATE}}.  The new state's sequence is determined by
+{{STATE}}'s state, so splitting a copy gives the same new state, but it
+is neither a continuation of {{STATE}}'s sequence nor linearly related
+to it: the numbers are passed through a nonlinear mixing function first.
 
 
 ==== random-bytes

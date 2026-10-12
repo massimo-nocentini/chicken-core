@@ -495,8 +495,11 @@ static int
   pending_interrupts[ MAX_PENDING_INTERRUPTS ],
   pending_interrupts_count,
   handling_interrupts;
-static C_uword random_state[ C_RANDOM_STATE_SIZE / sizeof(C_uword) ];
-static int random_state_index = 0;
+/* The state of the default generator, laid out as a state object of
+   (chicken random): RANDOM_STATE_WORDS words of WELL512 state, then the
+   index of the current word. */
+#define RANDOM_STATE_WORDS        (C_RANDOM_STATE_SIZE / sizeof(C_uword))
+static C_uword random_state[ RANDOM_STATE_WORDS + 1 ];
 
 
 /* Prototypes: */
@@ -512,7 +515,7 @@ static void usual_panic(C_char *msg) C_noret;
 static void horror(C_char *msg) C_noret;
 static void really_mark(C_word *x, C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
 static int random_fill(C_uchar *p, int count, int keep_fd);
-static void random_state_leave_zero(void);
+static void random_state_leave_zero(C_uword *s);
 static C_cpsproc(values_continuation) C_noret;
 static C_word add_symbol(C_word **ptr, C_word key, C_word string, C_SYMBOL_TABLE *stable);
 static C_regparm int C_in_new_heapp(C_word x);
@@ -901,16 +904,16 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
     random_state_initialized = 1;
 
     if(!random_fill((C_uchar *)random_state, C_RANDOM_STATE_SIZE, 0)) {
-      for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
+      for(i = 0; i < RANDOM_STATE_WORDS; ++i)
         random_state[ i ] = C_fast_rand();
     }
   } else {
-    for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
+    for(i = 0; i < RANDOM_STATE_WORDS; ++i)
       random_state[ i ] = C_fast_rand();
   }
 
-  random_state_index = 0;
-  random_state_leave_zero();
+  random_state[ RANDOM_STATE_WORDS ] = 0;
+  random_state_leave_zero(random_state);
 
   initialize_symbol_table();
 
@@ -14183,27 +14186,38 @@ C_word C_random_bytes(C_word buf, C_word size)
 /* WELL512 pseudo random number generator, see also:
    https://en.wikipedia.org/wiki/Well_equidistributed_long-period_linear
    http://lomont.org/Math/Papers/2008/Lomont_PRNG_2008.pdf
+
+   Every function below takes the state S it draws from: either
+   `random_state', the default generator, or the data of a state object
+   of (chicken random), a bytevector with the same layout -- 16 words of
+   state, then the index of the current word.  A bytevector holds no
+   pointers, so it is updated in place without a write barrier, and
+   nothing here allocates on the Scheme heap, so it cannot move while
+   it is being drawn from.
 */
 
-static C_uword random_word(void)
+#define random_state_of(st)  ((C_uword *)C_data_pointer(st))
+
+static C_uword random_word(C_uword *s)
 {
-  C_uword a, b, c, d, r;
-  a  = random_state[random_state_index];
-  c  = random_state[(random_state_index+13)&15];
+  C_uword a, b, c, d, r, i = s[ RANDOM_STATE_WORDS ] & 15;
+  a  = s[i];
+  c  = s[(i+13)&15];
   b  = a^c^(a<<16)^(c<<15);
-  c  = random_state[(random_state_index+9)&15];
+  c  = s[(i+9)&15];
   c ^= (c>>11);
-  a  = random_state[random_state_index] = b^c;
+  a  = s[i] = b^c;
   d  = a^((a<<5)&0xDA442D24UL);
-  random_state_index = (random_state_index + 15)&15;
-  a  = random_state[random_state_index];
-  random_state[random_state_index] = a^b^d^(a<<2)^(b<<18)^(c<<28);
-  r = random_state[random_state_index];
+  i = (i + 15)&15;
+  a  = s[i];
+  s[i] = a^b^d^(a<<2)^(b<<18)^(c<<28);
+  r = s[i];
+  s[ RANDOM_STATE_WORDS ] = i;
   return r;
 }
 
 
-static C_uword random_uniform(C_uword bound)
+static C_uword random_uniform(C_uword *s, C_uword bound)
 {
   C_uword r, min;
 
@@ -14211,7 +14225,7 @@ static C_uword random_uniform(C_uword bound)
 
   min = (1U + ~bound) % bound; /* = 2**<wordsize> mod bound */
 
-  do r = random_word(); while (r < min);
+  do r = random_word(s); while (r < min);
 
   /* r is now clamped to a set whose size mod upper_bound == 0
    * the worst case (2**<wordsize-1>+1) requires ~ 2 attempts */
@@ -14220,7 +14234,7 @@ static C_uword random_uniform(C_uword bound)
 }
 
 
-C_regparm C_word C_random_fixnum(C_word n)
+static C_word random_fixnum(C_uword *s, C_word n)
 {
   C_word nf;
 
@@ -14232,14 +14246,23 @@ C_regparm C_word C_random_fixnum(C_word n)
   if(nf < 0)
     barf(C_OUT_OF_BOUNDS_ERROR, "pseudo-random-integer", n, C_fix(0));
 
-  return C_fix(random_uniform(nf));
+  return C_fix(random_uniform(s, nf));
+}
+
+C_regparm C_word C_random_fixnum(C_word n)
+{
+  return random_fixnum(random_state, n);
+}
+
+C_regparm C_word C_random_fixnum_s(C_word n, C_word st)
+{
+  return random_fixnum(random_state_of(st), n);
 }
 
 
 /* A uniform bignum in [0, RN): draw as many random bits as RN has and
    reject draws of RN or more, which happens less than half the time. */
-C_regparm C_word
-C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn)
+static C_word random_bignum(C_uword *s, C_word **ptr, C_word rn)
 {
   C_uword *start, *bound, top_mask;
   C_word size, result;
@@ -14258,7 +14281,7 @@ C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn)
   top_mask = top_bits == 0 ? ~(C_uword)0 : ((C_uword)1 << top_bits) - 1;
 
   for(;;) {
-    for(i = 0; i < k; ++i) start[ i ] = random_word();
+    for(i = 0; i < k; ++i) start[ i ] = random_word(s);
 
     start[ k - 1 ] &= top_mask;
 
@@ -14271,6 +14294,18 @@ C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn)
   return C_bignum_simplify(result);
 }
 
+C_regparm C_word
+C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn)
+{
+  return random_bignum(random_state, ptr, rn);
+}
+
+C_regparm C_word
+C_s_a_u_i_random_int_s(C_word **ptr, C_word n, C_word rn, C_word st)
+{
+  return random_bignum(random_state_of(st), ptr, rn);
+}
+
 /*
  * C_a_i_random_real: Generate a stream of bits uniformly at random and
  * interpret it as the fractional part of the binary expansion of a
@@ -14278,13 +14313,13 @@ C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn)
  * More information on https://mumble.net/~campbell/2014/04/28/uniform-random-float
  */
 
-static inline C_u64 random64() {
+static inline C_u64 random64(C_uword *s) {
 #ifdef C_SIXTY_FOUR
-    return random_word();
+    return random_word(s);
 #else
     C_u64 v = 0;
-    v |= ((C_u64) random_word()) << 32;
-    v |= (C_u64) random_word();
+    v |= ((C_u64) random_word(s)) << 32;
+    v |= (C_u64) random_word(s);
     return v;
 #endif
 }
@@ -14315,27 +14350,36 @@ int clz64(C_u64 x)
 }
 #endif
 
-C_regparm C_word
-C_a_i_random_real(C_word **ptr, C_word n) {
+static double random_real(C_uword *s) {
   int exponent = -64;
   uint64_t significand;
   unsigned shift;
 
-  while (C_unlikely((significand = random64()) == 0)) {
+  while (C_unlikely((significand = random64(s)) == 0)) {
     exponent -= 64;
     if (C_unlikely(exponent < -1074))
-      return C_flonum(ptr, 0.0);
+      return 0.0;
   }
 
   shift = clz64(significand);
   if (shift != 0) {
     exponent -= shift;
     significand <<= shift;
-    significand |= (random64() >> (64 - shift));
+    significand |= (random64(s) >> (64 - shift));
   }
 
   significand |= 1;
-  return C_flonum(ptr, ldexp((double)significand, exponent));
+  return ldexp((double)significand, exponent);
+}
+
+C_regparm C_word
+C_a_i_random_real(C_word **ptr, C_word n) {
+  return C_flonum(ptr, random_real(random_state));
+}
+
+C_regparm C_word
+C_a_i_random_real_s(C_word **ptr, C_word n, C_word st) {
+  return C_flonum(ptr, random_real(random_state_of(st)));
 }
 
 /* SplitMix64 (Steele, Lea and Flood, "Fast splittable pseudorandom
@@ -14351,7 +14395,7 @@ static C_u64 splitmix64(C_u64 *x)
   return z ^ (z >> 31);
 }
 
-/* Seed the generator from the first N bytes of BUF (the caller has
+/* Seed the state S from the first N bytes of BUF (the caller has
    checked that N is no more than its size).
 
    The bytes are read as little-endian words, the last one zero-padded,
@@ -14363,16 +14407,16 @@ static C_u64 splitmix64(C_u64 *x)
    different states, and spreads a short seed over all 16 words.  The
    one seed of each length that would still give the all-zero state is
    nudged off it by random_state_leave_zero. */
-C_word C_set_random_seed(C_word buf, C_word n)
+static void random_seed(C_uword *s, C_word buf, C_word n)
 {
   C_uchar *bytes = (C_uchar *)C_data_pointer(buf);
   C_uword nbytes = C_unfix(n), nwords, i, j, k, base;
-  C_uword nstate = C_RANDOM_STATE_SIZE / sizeof(C_uword);
+  C_uword nstate = RANDOM_STATE_WORDS;
   C_uword w;
   C_u64 key = (C_u64)nbytes;
 
   for(i = 0; i < nstate; ++i)
-    random_state[ i ] = (C_uword)splitmix64(&key);
+    s[ i ] = (C_uword)splitmix64(&key);
 
   nwords = (nbytes + sizeof(C_uword) - 1) / sizeof(C_uword);
 
@@ -14384,26 +14428,59 @@ C_word C_set_random_seed(C_word buf, C_word n)
       for(k = 0; k < sizeof(C_uword) && base + k < nbytes; ++k)
         w |= (C_uword)bytes[ base + k ] << (8 * k);
 
-      random_state[ j % nstate ] ^= w;
+      s[ j % nstate ] ^= w;
     }
   }
 
-  random_state_index = 0;
-  random_state_leave_zero();
+  s[ nstate ] = 0;
+  random_state_leave_zero(s);
+}
+
+C_word C_set_random_seed(C_word buf, C_word n)
+{
+  random_seed(random_state, buf, n);
+  return C_SCHEME_FALSE;
+}
+
+C_word C_set_random_seed_s(C_word st, C_word buf, C_word n)
+{
+  random_seed(random_state_of(st), buf, n);
+  return C_SCHEME_FALSE;
+}
+
+/* Seed the state object CHILD from the generator PARENT (#f for the
+   default one), advancing PARENT.  Each word of CHILD is a SplitMix64
+   mix of 64 bits drawn from PARENT.  WELL512 is linear over GF(2), so
+   copying PARENT's output as it is would make CHILD's state, and so
+   its whole stream, a linear function of PARENT's state; the
+   multiplications of the mix break that relation. */
+C_word C_random_state_split(C_word parent, C_word child)
+{
+  C_uword *p = C_truep(parent) ? random_state_of(parent) : random_state;
+  C_uword *c = random_state_of(child), i;
+  C_u64 key;
+
+  for(i = 0; i < RANDOM_STATE_WORDS; ++i) {
+    key = random64(p);
+    c[ i ] = (C_uword)splitmix64(&key);
+  }
+
+  c[ RANDOM_STATE_WORDS ] = 0;
+  random_state_leave_zero(c);
   return C_SCHEME_FALSE;
 }
 
 /* WELL512 is linear, so the all-zero state is a fixed point: from it
    every word drawn is 0, and the rejection loop of `random_uniform'
    never ends.  Whatever filled the state, never leave it there. */
-static void random_state_leave_zero(void)
+static void random_state_leave_zero(C_uword *s)
 {
   C_uword i, any = 0;
 
-  for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
-    any |= random_state[ i ];
+  for(i = 0; i < RANDOM_STATE_WORDS; ++i)
+    any |= s[ i ];
 
-  if(any == 0) random_state[ 0 ] = 1;
+  if(any == 0) s[ 0 ] = 1;
 }
 
 C_word C_a_extract_struct_2(C_word **ptr, size_t sz, void *sp)

@@ -431,10 +431,26 @@
 
 ;;; Random numbers:
 
-(module chicken.random
-  (set-pseudo-random-seed! pseudo-random-integer pseudo-random-real random-bytes)
+;; A state object wraps a bytevector laid out like the default
+;; generator's state in runtime.c: C_RANDOM_STATE_SIZE bytes of WELL512
+;; state, then one word holding the index of the current word.
 
-(import scheme chicken.base chicken.time chicken.io chicken.foreign)
+(module chicken.random
+  (set-pseudo-random-seed! pseudo-random-integer pseudo-random-real random-bytes
+   make-pseudo-random-state pseudo-random-state? pseudo-random-state-copy
+   pseudo-random-state-split)
+
+(import scheme chicken.base chicken.time chicken.io chicken.foreign
+        (only chicken.bytevector bytevector bytevector-copy))
+
+(define nstate (foreign-value "C_RANDOM_STATE_SIZE" unsigned-int))
+
+(define state-size
+  (+ nstate (foreign-value "sizeof(C_uword)" unsigned-int)))
+
+(define (state-bytes st loc)
+  (##sys#check-structure st 'pseudo-random-state loc)
+  (##sys#slot st 1))
 
 (define (set-pseudo-random-seed! buf #!optional n)
   (cond (n (##sys#check-fixnum n 'set-pseudo-random-seed!)
@@ -447,36 +463,75 @@
                                 n 
                                 (##sys#size buf))))
 
-(define (pseudo-random-integer n)
-  (cond ((##core#inline "C_fixnump" n)
-         (##core#inline "C_random_fixnum" n))
-        ((not (##core#inline "C_i_bignump" n))
-         (##sys#error 'pseudo-random-integer "bad argument type" n))
-        (else
-          (##core#inline_allocate ("C_s_a_u_i_random_int" 2) n))))
+(define (pseudo-random-integer n #!optional st)
+  (let ((s (and st (state-bytes st 'pseudo-random-integer))))
+    (cond ((##core#inline "C_fixnump" n)
+           (if s
+               (##core#inline "C_random_fixnum_s" n s)
+               (##core#inline "C_random_fixnum" n)))
+          ((not (##core#inline "C_i_bignump" n))
+           (##sys#error 'pseudo-random-integer "bad argument type" n))
+          (s (##core#inline_allocate ("C_s_a_u_i_random_int_s" 2) n s))
+          (else (##core#inline_allocate ("C_s_a_u_i_random_int" 2) n)))))
 
-(define (pseudo-random-real)
-  (##core#inline_allocate ("C_a_i_random_real" 4)))
+(define (pseudo-random-real #!optional st)
+  (if st
+      (let ((s (state-bytes st 'pseudo-random-real)))
+        (##core#inline_allocate ("C_a_i_random_real_s" 4) s))
+      (##core#inline_allocate ("C_a_i_random_real" 4))))
 
 (define random-bytes
-  (let ((nstate (foreign-value "C_RANDOM_STATE_SIZE" unsigned-int)))
-    (lambda (#!optional buf size)
-      (when size
-        (##sys#check-fixnum size 'random-bytes)
-        (when (< size 0) 
-          (##sys#error 'random-bytes "invalid size" size)))
-      (let* ((dest (cond (buf
-                         (when (or (##sys#immediate? buf)
-                                   (not (##core#inline "C_byteblockp" buf)))
-                           (##sys#error 'random-bytes
-                                        "invalid buffer type" buf))
-                         buf)
-                        (else (##sys#make-bytevector (or size nstate)))))
-             (r (##core#inline "C_random_bytes" dest
-                               (or size (##sys#size dest)))))
-        (unless r
-          (##sys#error 'random-bytes "unable to read random bytes"))
-        dest))))
+  (lambda (#!optional buf size)
+    (when size
+      (##sys#check-fixnum size 'random-bytes)
+      (when (< size 0) 
+        (##sys#error 'random-bytes "invalid size" size)))
+    (let* ((dest (cond (buf
+                       (when (or (##sys#immediate? buf)
+                                 (not (##core#inline "C_byteblockp" buf)))
+                         (##sys#error 'random-bytes
+                                      "invalid buffer type" buf))
+                       buf)
+                      (else (##sys#make-bytevector (or size nstate)))))
+           (r (##core#inline "C_random_bytes" dest
+                             (or size (##sys#size dest)))))
+      (unless r
+        (##sys#error 'random-bytes "unable to read random bytes"))
+      dest)))
+
+;; An exact nonnegative integer seed stands for its little-endian bytes,
+;; at least one, so 17 seeds like (bytevector 17).
+(define (integer->seed n)
+  (let loop ((n (quotient n 256)) (bytes (list (remainder n 256))))
+    (if (eq? n 0)
+        (apply bytevector (reverse bytes))
+        (loop (quotient n 256) (cons (remainder n 256) bytes)))))
+
+(define (make-pseudo-random-state #!optional seed)
+  (let ((seed (cond ((not seed) (random-bytes))
+                    ((##core#inline "C_i_bytevectorp" seed) seed)
+                    ((and (##core#inline "C_i_exact_integerp" seed) (>= seed 0))
+                     (integer->seed seed))
+                    (else
+                     (##sys#error 'make-pseudo-random-state
+                                  "invalid seed" seed))))
+        (bv (##sys#make-bytevector state-size 0)))
+    (##core#inline "C_set_random_seed_s" bv seed (##sys#size seed))
+    (##sys#make-structure 'pseudo-random-state bv)))
+
+(define (pseudo-random-state? x)
+  (##sys#structure? x 'pseudo-random-state))
+
+(define (pseudo-random-state-copy st)
+  (##sys#make-structure
+   'pseudo-random-state
+   (bytevector-copy (state-bytes st 'pseudo-random-state-copy))))
+
+(define (pseudo-random-state-split #!optional st)
+  (let ((parent (and st (state-bytes st 'pseudo-random-state-split)))
+        (child (##sys#make-bytevector state-size 0)))
+    (##core#inline "C_random_state_split" parent child)
+    (##sys#make-structure 'pseudo-random-state child)))
 
 )
 
