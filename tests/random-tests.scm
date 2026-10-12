@@ -120,3 +120,24 @@
       (b (make-bytevector 300 1)))
   (bytevector-u8-set! b 299 2)
   (assert (not (equal? (stream a) (stream b)))))
+
+
+;;; Bignum ranges
+
+;; The whole range is reachable.  Drawing only the most significant digit
+;; below the range's top digit made (- (expt 2 65) 1), whose top digit is
+;; 1, return nothing at or above 2^64: half of its range.
+(set-pseudo-random-seed! (bytevector 1 2 3 4 5 6 7 8))
+(let ((n (- (expt 2 65) 1)))
+  (let loop ((i 0) (high 0))
+    (if (= i 2000)
+        (assert (< 800 high 1200) "upper half of a bignum range" high)
+        (let ((r (pseudo-random-integer n)))
+          (assert (and (integer? r) (exact? r) (<= 0 r) (< r n)))
+          (loop (+ i 1) (if (>= r (expt 2 64)) (+ high 1) high))))))
+
+;; and never exceeded, also just above a power of two
+(let ((n (+ (expt 2 128) 1)))
+  (do ((i 0 (+ i 1))) ((= i 2000))
+    (let ((r (pseudo-random-integer n)))
+      (assert (and (<= 0 r) (< r n))))))

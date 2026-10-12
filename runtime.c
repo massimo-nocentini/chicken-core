@@ -14236,28 +14236,38 @@ C_regparm C_word C_random_fixnum(C_word n)
 }
 
 
+/* A uniform bignum in [0, RN): draw as many random bits as RN has and
+   reject draws of RN or more, which happens less than half the time. */
 C_regparm C_word
 C_s_a_u_i_random_int(C_word **ptr, C_word n, C_word rn)
 {
-  C_uword *start, *end;
+  C_uword *start, *bound, top_mask;
+  C_word size, result;
+  int len, top_bits, i, k;
 
   if(C_bignum_negativep(rn))
     barf(C_OUT_OF_BOUNDS_ERROR, "pseudo-random-integer", rn, C_fix(0));
 
-  int len = integer_length_abs(rn);
-  C_word size = C_fix(C_BIGNUM_BITS_TO_DIGITS(len));
-  C_word result = C_allocate_scratch_bignum(ptr, size, C_SCHEME_FALSE, C_SCHEME_FALSE);
-  C_uword *p;
-  C_uword highest_word = C_bignum_digits(rn)[C_bignum_size(rn)-1];
+  len = integer_length_abs(rn);
+  k = C_BIGNUM_BITS_TO_DIGITS(len);
+  size = C_fix(k);
+  result = C_allocate_scratch_bignum(ptr, size, C_SCHEME_FALSE, C_SCHEME_FALSE);
   start = C_bignum_digits(result);
-  end = start + C_bignum_size(result);
+  bound = C_bignum_digits(rn);
+  top_bits = len % C_BIGNUM_DIGIT_LENGTH;
+  top_mask = top_bits == 0 ? ~(C_uword)0 : ((C_uword)1 << top_bits) - 1;
 
-  for(p = start; p < (end - 1); ++p) {
-    *p = random_word();
-    len -= sizeof(C_uword);
+  for(;;) {
+    for(i = 0; i < k; ++i) start[ i ] = random_word();
+
+    start[ k - 1 ] &= top_mask;
+
+    /* compare from the most significant digit down */
+    for(i = k - 1; i >= 0 && start[ i ] == bound[ i ]; --i);
+
+    if(i >= 0 && start[ i ] < bound[ i ]) break;
   }
 
-  *p = random_uniform(highest_word);
   return C_bignum_simplify(result);
 }
 

@@ -17,6 +17,11 @@
     longer draw the same numbers.  With the -:R runtime option it is
     still seeded from the given number, and draws the same numbers as
     before.
+  - `pseudo-random-integer' with a bignum range drew the most significant
+    digit of its result below that of the range, so part of the range
+    was never returned: (pseudo-random-integer (- (expt 2 65) 1)) never
+    returned anything at or above 2^64, half of its range.  It now draws
+    as many bits as the range has and rejects draws outside it.
   - `(chicken flonum)' has new special functions: `fplog1p', `fpexpm1',
     `fplgamma', `fptgamma', `fperf' and `fperfc', the C library's
     log1p, expm1, lgamma, tgamma, erf and erfc.  Like the other flonum
