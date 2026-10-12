@@ -14293,17 +14293,61 @@ C_a_i_random_real(C_word **ptr, C_word n) {
   return C_flonum(ptr, ldexp((double)significand, exponent));
 }
 
+/* SplitMix64 (Steele, Lea and Flood, "Fast splittable pseudorandom
+   number generators", OOPSLA 2014): each call steps X by an odd constant
+   and returns a bijective mix of it, so no two of any 2^64 consecutive
+   outputs are equal. */
+static C_u64 splitmix64(C_u64 *x)
+{
+  C_u64 z = (*x += 0x9E3779B97F4A7C15ULL);
+
+  z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+  return z ^ (z >> 31);
+}
+
+/* Seed the generator from the first N bytes of BUF (the caller has
+   checked that N is no more than its size).
+
+   The bytes are read as little-endian words, the last one zero-padded,
+   repeated cyclically when there are fewer than 16 and folded in with
+   XOR when there are more, so every byte counts and no byte past N is
+   read.  The result is XORed onto a SplitMix64 stream keyed on N: that
+   keeps a full-size seed's entropy (XOR with a fixed stream is a
+   bijection), makes seeds that differ only in trailing zero bytes give
+   different states, and spreads a short seed over all 16 words.
+
+   WELL512 is linear, so the all-zero state is a fixed point: from it
+   every word drawn is 0, and the rejection loop of `random_uniform'
+   never ends.  A seed that would produce it is nudged off it. */
 C_word C_set_random_seed(C_word buf, C_word n)
 {
-  int i, nsu = C_unfix(n) / sizeof(C_uword);
-  int off = 0;
+  C_uchar *bytes = (C_uchar *)C_data_pointer(buf);
+  C_uword nbytes = C_unfix(n), nwords, i, j, k, base;
+  C_uword nstate = C_RANDOM_STATE_SIZE / sizeof(C_uword);
+  C_uword w, any = 0;
+  C_u64 key = (C_u64)nbytes;
 
-  for(i = 0; i < (C_RANDOM_STATE_SIZE / sizeof(C_uword)); ++i) {
-    if(off >= nsu) off = 0;
+  for(i = 0; i < nstate; ++i)
+    random_state[ i ] = (C_uword)splitmix64(&key);
 
-    random_state[ i ] = *((C_uword *)C_data_pointer(buf) + off);
-    ++off;
+  nwords = (nbytes + sizeof(C_uword) - 1) / sizeof(C_uword);
+
+  if(nwords > 0) {
+    for(j = 0; j < (nwords > nstate ? nwords : nstate); ++j) {
+      base = (j % nwords) * sizeof(C_uword);
+      w = 0;
+
+      for(k = 0; k < sizeof(C_uword) && base + k < nbytes; ++k)
+        w |= (C_uword)bytes[ base + k ] << (8 * k);
+
+      random_state[ j % nstate ] ^= w;
+    }
   }
+
+  for(i = 0; i < nstate; ++i) any |= random_state[ i ];
+
+  if(any == 0) random_state[ 0 ] = 1;
 
   random_state_index = 0;
   return C_SCHEME_FALSE;

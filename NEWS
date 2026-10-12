@@ -1,6 +1,16 @@
 6.1.0
 
 - Core libraries
+  - `set-pseudo-random-seed!' with an all-zero seed, such as
+    (make-bytevector 16 0), left the generator in a state it never
+    leaves: `pseudo-random-real' returned 0.0 forever and
+    `pseudo-random-integer' never returned.  A seed shorter than a
+    machine word was read a whole word past its end, so it gave a
+    different sequence on every call and ignored the SIZE argument, and
+    the bytes of a partial last word were ignored.  Seeds are now mixed
+    into the state through SplitMix64, every byte of the seed counts and
+    no other byte is read; as a consequence, a given seed produces a
+    different sequence than it did before.
   - `string-foldcase' could write past the end of its output buffer: it
     sized the buffer for a 2x expansion, but U+0390 and U+03B0 fold to
     three codepoints each, a 3x byte expansion.  `string-upcase' and
