@@ -192,6 +192,15 @@ for f in C_pow C_log1p C_expm1 C_lgamma C_tgamma C_erf C_erfc; do
 	exit 1
     fi
 done
+# At -O2 -unsafe nothing is specialized: the rewrites in c-platform.scm
+# must open-code every flonum operation, leaving no call to a procedure
+# of (chicken flonum).
+$compile flonum-unboxing-tests.scm -O2 -unsafe -k -o flonum-unboxing.out
+./flonum-unboxing.out
+if grep -E 'C_text\("chicken\.flonum#' flonum-unboxing.c; then
+    echo "a flonum operation was not open-coded at -O2 -unsafe"
+    exit 1
+fi
 rm -f flonum-unboxing.c
 
 echo "======================================== callback tests ..."

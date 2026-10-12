@@ -39,12 +39,29 @@
 	 (g (fperfc c)))
     (fp+ (fp+ d (fplog e)) (fp+ f g))))
 
+;; Unlike the chains above, this one takes its argument untouched, so at
+;; -O2 -unsafe, where nothing is specialized, only the rewrites in
+;; c-platform.scm open-code it (runtests.sh compiles this file that way too).
+(define (hyperbolic-chain x)
+  (let ((s (fpsinh x))
+	(c (fpcosh x))
+	(t (fptanh x)))
+    (fp+ (fp- (fp* c c) (fp* s s))
+	 (fp+ (fp- t (fp/ s c))
+	      (fp+ (fp- (fpasinh s) x)
+		   (fp+ (fp- (fpacosh c) (fpabs x))
+			(fp- (fpatanh t) x)))))))
+
 (define (inexact= a b)
   (fp< (fpabs (fp- a b)) (fp* 1e-12 (fpmax 1.0 (fpabs b)))))
 
 ;; log1p and expm1 cancel; lgamma(5) = log(24) = log(tgamma(5));
 ;; erf + erfc = 1
 (assert (inexact= (special-chain 2.0) (fp+ (fp* 2.0 (log 24.0)) 1.0)))
+
+;; cosh^2 - sinh^2 = 1, tanh = sinh/cosh, and each inverse undoes its function
+(assert (inexact= (hyperbolic-chain 0.75) 1.0))
+(assert (inexact= (hyperbolic-chain -0.5) 1.0))
 
 ;; exp(2x)^1.5 = exp(3x)
 (assert (inexact= (expt-chain 0.25) (exp 0.75)))

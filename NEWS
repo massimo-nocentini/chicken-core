@@ -253,6 +253,10 @@
 - Compiler
   - Added missing option "-merge-reusable-closures" at optimization level
     2, making this actually match the documentation.
+  - `fpsinh', `fpcosh', `fptanh', `fpasinh', `fpacosh' and `fpatanh' are
+    open-coded in unsafe code like the other flonum operations; they were
+    only open-coded when the scrutinizer could prove their argument a
+    flonum.
   - Closure sharing no longer chooses a procedure as the container of a
     shared closure, only a compiler-introduced continuation.  A procedure's
     single closure is entered by every call, so a nested activation, or a

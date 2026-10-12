@@ -271,7 +271,7 @@ skip "ec.so" "needs ec.so and ec.import.so (rt:398-400); no dynamic loading"
 skip port-tests "runs a subprocess and pipes (rt:411); process creation is not available"
 check read-lines-tests $interpret -s read-lines-tests.scm
 check random-tests $interpret -s random-tests.scm
-# rt:466-488
+# rt:475-497
 startup_seed() {
     csi="timeout 600 $WASM_DIR/csi"
     draw='(import (chicken random)) (display (pseudo-random-integer 1000000000000))'
@@ -359,7 +359,7 @@ messages_test() {
 }
 check messages-test messages_test
 
-# rt:179-195: lfa2 must unbox every flonum operation in this file (no
+# rt:179-204: lfa2 must unbox every flonum operation in this file (no
 # -ignore-repository: (chicken flonum) is found in the repository)
 flonum_unboxing() {
     $wchicken flonum-unboxing-tests.scm -consult-types-file "$WASM_REPO/types.db" \
@@ -371,6 +371,14 @@ flonum_unboxing() {
     done
 }
 check flonum-unboxing flonum_unboxing
+# ... and at -O2 -unsafe the rewrites in c-platform.scm must open-code
+# every flonum operation, leaving no call to (chicken flonum)
+flonum_rewrites() {
+    $wchicken flonum-unboxing-tests.scm -consult-types-file "$WASM_REPO/types.db" \
+	-optimize-level 2 -unsafe -output-file flonum-rewrites.wasm.c &&
+    ! grep -E 'C_text\("chicken\.flonum#' flonum-rewrites.wasm.c
+}
+check flonum-rewrites flonum_rewrites
 
 # The generated C must not depend on the compiler's platform.  First
 # make sure the host output does not depend on the symbol table's hash
@@ -473,6 +481,7 @@ fft() {
 }
 check "fft -O2/-O4" fft
 cr "flonum-unboxing-tests -O3" -O3 flonum-unboxing-tests.scm
+cr "flonum-unboxing-tests -O2 -unsafe" -O2 -unsafe flonum-unboxing-tests.scm
 cr "random-tests -specialize" -specialize random-tests.scm
 
 cr "callback-tests" -extend c-id-valid.scm callback-tests.scm
