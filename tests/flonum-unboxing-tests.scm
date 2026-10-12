@@ -29,8 +29,22 @@
   (let ((a (fp* x 2.0)))
     (if (nan? a) 1.0 0.0)))
 
+(define (special-chain x)
+  (let* ((a (fp* x 0.5))
+	 (b (fplog1p a))
+	 (c (fpexpm1 b))
+	 (d (fplgamma (fp+ c 4.0)))
+	 (e (fptgamma (fp+ c 4.0)))
+	 (f (fperf c))
+	 (g (fperfc c)))
+    (fp+ (fp+ d (fplog e)) (fp+ f g))))
+
 (define (inexact= a b)
   (fp< (fpabs (fp- a b)) (fp* 1e-12 (fpmax 1.0 (fpabs b)))))
+
+;; log1p and expm1 cancel; lgamma(5) = log(24) = log(tgamma(5));
+;; erf + erfc = 1
+(assert (inexact= (special-chain 2.0) (fp+ (fp* 2.0 (log 24.0)) 1.0)))
 
 ;; exp(2x)^1.5 = exp(3x)
 (assert (inexact= (expt-chain 0.25) (exp 0.75)))

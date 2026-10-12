@@ -50,6 +50,12 @@ your code.
 <procedure>(fplog X)</procedure>
 <procedure>(fpexp X)</procedure>
 <procedure>(fpexpt X Y)</procedure>
+<procedure>(fplog1p X)</procedure>
+<procedure>(fpexpm1 X)</procedure>
+<procedure>(fplgamma X)</procedure>
+<procedure>(fptgamma X)</procedure>
+<procedure>(fperf X)</procedure>
+<procedure>(fperfc X)</procedure>
 <procedure>(fpsqrt X)</procedure>
 <procedure>(fpabs X)</procedure>
 <procedure>(fpinteger? X)</procedure>
@@ -60,6 +66,17 @@ In safe mode, these procedures throw a type error when given non-float
 arguments. In unsafe mode, these procedures do not check their
 arguments. A non-flonum argument in unsafe mode can crash the
 application. {{fp*+}} implements fused multiply-add {{(X * Y) + Z}}.
+
+{{fplog1p}} computes {{log(1 + X)}} and {{fpexpm1}} computes
+{{exp(X) - 1}}, both accurately also when {{X}} is near zero, where
+{{(fplog (fp+ 1.0 X))}} and {{(fp- (fpexp X) 1.0)}} lose most or all
+of their precision.  {{fptgamma}} is the gamma function and
+{{fplgamma}} the natural logarithm of its absolute value, which stays
+finite where the gamma function overflows.  {{fperf}} is the error
+function and {{fperfc}} the complementary error function
+{{1 - erf(X)}}, which keeps its precision for large {{X}}.  They are
+the C library's {{log1p}}, {{expm1}}, {{lgamma}}, {{tgamma}}, {{erf}}
+and {{erfc}}, and their accuracy is that of the C library.
 
 Note: {{fpround}} uses the rounding mode that your C library
 implements, which is usually different from R7RS.

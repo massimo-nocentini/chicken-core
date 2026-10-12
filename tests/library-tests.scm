@@ -363,6 +363,74 @@
 (assert (fp= (fpatanh 0.0) 0.0))
 (assert (fp= (fpatanh 1.0) +inf.0))
 
+;; Special functions.  The literal calls may be folded at compile time,
+;; so each function is also called on a value the compiler cannot see.
+
+(define (opaque x) (string->number (number->string x)))
+
+;; log1p and expm1 keep the precision that log (1 + x) and exp x - 1 lose
+(assert (fp= (fplog1p 1e-17) 1e-17))
+(assert (fp= (fplog1p (opaque 1e-17)) 1e-17))
+(assert (fp= 0.0 (log (+ 1.0 1e-17))))	; what fplog1p avoids
+(assert (fp= (fplog1p 0.0) 0.0))
+(assert (fp= (fplog1p -1.0) -inf.0))
+(assert (inexact= (fplog1p 1.0) (log 2.0)))
+(assert (nan? (fplog1p -2.0)))
+
+(assert (fp= (fpexpm1 1e-17) 1e-17))
+(assert (fp= (fpexpm1 (opaque 1e-17)) 1e-17))
+(assert (fp= (fpexpm1 0.0) 0.0))
+(assert (fp= (fpexpm1 -inf.0) -1.0))
+(assert (inexact= (fpexpm1 1.0) (- (exp 1.0) 1.0)))
+(assert (inexact= (fplog1p (fpexpm1 (opaque 0.25))) 0.25))
+
+;; lgamma is log |Gamma(x)|, tgamma is Gamma(x)
+(assert (inexact= (fplgamma 5.0) (log 24.0)))
+(assert (inexact= (fplgamma (opaque 5.0)) (log 24.0)))
+(assert (fp= (fplgamma 1.0) 0.0))
+(assert (fp= (fplgamma 2.0) 0.0))
+(assert (inexact= (fplgamma 0.5) (* 0.5 (log (acos -1.0)))))
+(assert (inexact= (fplgamma -0.5) (log (* 2.0 (sqrt (acos -1.0))))))
+(assert (inexact= (fplgamma 171.5) 709.1431630309282))
+(assert (fp= (fplgamma 0.0) +inf.0))
+(assert (fp= (fplgamma -1.0) +inf.0))
+
+(assert (inexact= (fptgamma 5.0) 24.0))
+(assert (inexact= (fptgamma (opaque 5.0)) 24.0))
+(assert (inexact= (fptgamma 0.5) (sqrt (acos -1.0))))
+(assert (inexact= (fptgamma -0.5) (* -2.0 (sqrt (acos -1.0)))))
+(assert (fp= (fptgamma 1.0) 1.0))
+(assert (fp= (fptgamma 0.0) +inf.0))
+(assert (fp= (fptgamma 172.0) +inf.0))
+
+;; erf and erfc, with erfc keeping the tail that 1 - erf x loses
+(assert (fp= (fperf 0.0) 0.0))
+(assert (inexact= (fperf 1.0) 0.8427007929497149))
+(assert (inexact= (fperf (opaque 1.0)) 0.8427007929497149))
+(assert (inexact= (fperf -1.0) -0.8427007929497149))
+(assert (fp= (fperf +inf.0) 1.0))
+(assert (fp= (fperf -inf.0) -1.0))
+
+(assert (fp= (fperfc 0.0) 1.0))
+(assert (inexact= (fperfc 1.0) 0.15729920705028513))
+(assert (inexact= (fperfc (opaque 1.0)) 0.15729920705028513))
+(assert (inexact= (fperfc 10.0) 2.088487583762545e-45))
+(assert (fp= 0.0 (- 1.0 (fperf 10.0))))	; what fperfc avoids
+(assert (fp= (fperfc +inf.0) 0.0))
+(assert (fp= (fperfc -inf.0) 2.0))
+
+(for-each (lambda (f)
+	    (assert (handle-exceptions e #t (f (opaque 1)) #f)))
+	  (list fplog1p fpexpm1 fplgamma fptgamma fperf fperfc))
+
+;; the complex atan uses log1p internally (Kahan's atanh), also on an
+;; exact argument
+(for-each (lambda (z)
+	    (let ((w (atan z)))
+	      (assert (inexact= (real-part w) 0.9078874949608804))
+	      (assert (inexact= (imag-part w) 0.708303336014054))))
+	  (list (make-rectangular 0.5 1.0) (make-rectangular 1/2 1)))
+
 ;; string->symbol
 
 ;; by Jim Ursetto

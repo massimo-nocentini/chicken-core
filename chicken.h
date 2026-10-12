@@ -1006,6 +1006,12 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 # define C_atan2                    atan2
 # define C_log                      log
 # define C_exp                      exp
+# define C_log1p                    log1p
+# define C_expm1                    expm1
+# define C_lgamma                   lgamma
+# define C_tgamma                   tgamma
+# define C_erf                      erf
+# define C_erfc                     erfc
 # define C_pow                      pow
 # define C_sqrt                     sqrt
 # define C_ceil                     ceil
@@ -1703,6 +1709,12 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_a_i_flonum_exp(ptr, c, x)     C_flonum(ptr, C_exp(C_flonum_magnitude(x)))
 #define C_a_i_flonum_expt(ptr, c, x, y)  C_flonum(ptr, C_pow(C_flonum_magnitude(x), C_flonum_magnitude(y)))
 #define C_a_i_flonum_log(ptr, c, x)     C_flonum(ptr, C_log(C_flonum_magnitude(x)))
+#define C_a_i_flonum_log1p(ptr, c, x)   C_flonum(ptr, C_log1p(C_flonum_magnitude(x)))
+#define C_a_i_flonum_expm1(ptr, c, x)   C_flonum(ptr, C_expm1(C_flonum_magnitude(x)))
+#define C_a_i_flonum_lgamma(ptr, c, x)  C_flonum(ptr, C_lgamma(C_flonum_magnitude(x)))
+#define C_a_i_flonum_tgamma(ptr, c, x)  C_flonum(ptr, C_tgamma(C_flonum_magnitude(x)))
+#define C_a_i_flonum_erf(ptr, c, x)     C_flonum(ptr, C_erf(C_flonum_magnitude(x)))
+#define C_a_i_flonum_erfc(ptr, c, x)    C_flonum(ptr, C_erfc(C_flonum_magnitude(x)))
 #define C_a_i_flonum_sqrt(ptr, c, x)    C_flonum(ptr, C_sqrt(C_flonum_magnitude(x)))
 #define C_a_i_flonum_abs(ptr, c, x)     C_flonum(ptr, C_fabs(C_flonum_magnitude(x)))
 #define C_u_i_flonum_nanp(x)            C_mk_bool(C_isnan(C_flonum_magnitude(x)))

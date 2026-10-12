@@ -39,7 +39,7 @@
 	make-complex flonum->ratnum ratnum
 	+maximum-allowed-exponent+ mantexp->dbl ldexp ldexp*
 	round-quotient
-	fllog1+ ##sys#sign ##sys#atanh ##sys#internal-atanh
+	##sys#sign ##sys#atanh ##sys#internal-atanh
 	##sys#sign-bit ##sys#tanh
 	##sys#string->compnum ##sys#internal-gcd)
   (not inline chicken.base#sleep-hook ##sys#change-directory-hook
@@ -2313,6 +2313,30 @@ EOF
   (fp-check-flonum x 'fplog)
   (##core#inline_allocate ("C_a_i_flonum_log" 4) x))
 
+(define (fplog1p x)
+  (fp-check-flonum x 'fplog1p)
+  (##core#inline_allocate ("C_a_i_flonum_log1p" 4) x))
+
+(define (fpexpm1 x)
+  (fp-check-flonum x 'fpexpm1)
+  (##core#inline_allocate ("C_a_i_flonum_expm1" 4) x))
+
+(define (fplgamma x)
+  (fp-check-flonum x 'fplgamma)
+  (##core#inline_allocate ("C_a_i_flonum_lgamma" 4) x))
+
+(define (fptgamma x)
+  (fp-check-flonum x 'fptgamma)
+  (##core#inline_allocate ("C_a_i_flonum_tgamma" 4) x))
+
+(define (fperf x)
+  (fp-check-flonum x 'fperf)
+  (##core#inline_allocate ("C_a_i_flonum_erf" 4) x))
+
+(define (fperfc x)
+  (fp-check-flonum x 'fperfc)
+  (##core#inline_allocate ("C_a_i_flonum_erfc" 4) x))
+
 (define (fpsqrt x)
   (fp-check-flonum x 'fpsqrt)
   (##core#inline_allocate ("C_a_i_flonum_sqrt" 4) x))
@@ -2839,9 +2863,6 @@ EOF
 
 ;;; Start Kahan's atan (with modifications from Gambit)
 
-(define fllog1+
-  (foreign-lambda double "log1p" double))
-
 (define (##sys#sign-bit x)
   (cond
     ((eq? x 0) +1)
@@ -2877,7 +2898,7 @@ EOF
          (make-rectangular (cond
                              ((eqv? x 0) 0)
                              (else
-                              (/ (fllog1+ (/ (* 4.0 x)
+                              (/ (fplog1p (/ (* 4.0 x)
                                              (+ (* (- 1.0 x) (- 1.0 x))
                                                 y^2)))
                                  4.0)))

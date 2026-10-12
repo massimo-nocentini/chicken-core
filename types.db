@@ -1321,11 +1321,20 @@
 (chicken.flonum#fpcosh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpcosh (float) float)
 		       ((float) (##core#inline_allocate ("C_a_i_flonum_cosh" 4) #(1) )))
 
+(chicken.flonum#fperf (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fperf (float) float)
+	((float) (##core#inline_allocate ("C_a_i_flonum_erf" 4) #(1) )))
+
+(chicken.flonum#fperfc (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fperfc (float) float)
+	((float) (##core#inline_allocate ("C_a_i_flonum_erfc" 4) #(1) )))
+
 (chicken.flonum#fpexp (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpexp (float) float)
 		      ((float) (##core#inline_allocate ("C_a_i_flonum_exp" 4) #(1) )))
 
 (chicken.flonum#fpexpt (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpexpt (float float) float)
 	((float float) (##core#inline_allocate ("C_a_i_flonum_expt" 4) #(1) #(2))))
+
+(chicken.flonum#fpexpm1 (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpexpm1 (float) float)
+	((float) (##core#inline_allocate ("C_a_i_flonum_expm1" 4) #(1) )))
 
 (chicken.flonum#fpfloor (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpfloor (float) float)
 	 ((float) (##core#inline_allocate ("C_a_i_flonum_floor" 4) #(1) )))
@@ -1333,8 +1342,14 @@
 (chicken.flonum#fpinteger? (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpinteger? (float) boolean)
 	    ((float) (##core#inline "C_u_i_fpintegerp" #(1) )))
 
+(chicken.flonum#fplgamma (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fplgamma (float) float)
+	((float) (##core#inline_allocate ("C_a_i_flonum_lgamma" 4) #(1) )))
+
 (chicken.flonum#fplog (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fplog (float) float)
        ((float) (##core#inline_allocate ("C_a_i_flonum_log" 4) #(1) )))
+
+(chicken.flonum#fplog1p (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fplog1p (float) float)
+	((float) (##core#inline_allocate ("C_a_i_flonum_log1p" 4) #(1) )))
 
 (chicken.flonum#fpmax (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fpmax (float float) float)
        ((float float) (##core#inline "C_i_flonum_max" #(1) #(2))))
@@ -1362,6 +1377,9 @@
 
 (chicken.flonum#fptanh (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fptanh (float) float)
 		       ((float) (##core#inline_allocate ("C_a_i_flonum_tanh" 4) #(1) )))
+
+(chicken.flonum#fptgamma (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fptgamma (float) float)
+	((float) (##core#inline_allocate ("C_a_i_flonum_tgamma" 4) #(1) )))
 
 (chicken.flonum#fptruncate (#(procedure #:clean #:enforce #:foldable) chicken.flonum#fptruncate (float) float)
 			   ((float) (##core#inline_allocate ("C_a_i_flonum_truncate" 4) #(1) )))

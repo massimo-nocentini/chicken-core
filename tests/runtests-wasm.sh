@@ -271,7 +271,7 @@ skip "ec.so" "needs ec.so and ec.import.so (rt:398-400); no dynamic loading"
 skip port-tests "runs a subprocess and pipes (rt:411); process creation is not available"
 check read-lines-tests $interpret -s read-lines-tests.scm
 check random-tests $interpret -s random-tests.scm
-# rt:459-479
+# rt:466-486
 startup_seed() {
     csi="timeout 600 $WASM_DIR/csi"
     draw='(import (chicken random)) (display (pseudo-random-integer 1000000000000))'
@@ -359,12 +359,16 @@ messages_test() {
 }
 check messages-test messages_test
 
-# rt:179-188: lfa2 must unbox every flonum operation in this file (no
+# rt:179-195: lfa2 must unbox every flonum operation in this file (no
 # -ignore-repository: (chicken flonum) is found in the repository)
 flonum_unboxing() {
     $wchicken flonum-unboxing-tests.scm -consult-types-file "$WASM_REPO/types.db" \
 	-optimize-level 3 -output-file flonum-unboxing.wasm.c &&
-    ! grep -E 'C_a_i_flonum_expt|C_u_i_flonum_(finite|infinite|nan)p' flonum-unboxing.wasm.c
+    ! grep -E 'C_a_i_flonum_(expt|log1p|expm1|lgamma|tgamma|erfc?)\(|C_u_i_flonum_(finite|infinite|nan)p' \
+	flonum-unboxing.wasm.c &&
+    for f in C_pow C_log1p C_expm1 C_lgamma C_tgamma C_erf C_erfc; do
+	grep -q "$f(" flonum-unboxing.wasm.c || return 1
+    done
 }
 check flonum-unboxing flonum_unboxing
 

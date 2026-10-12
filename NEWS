@@ -17,6 +17,11 @@
     longer draw the same numbers.  With the -:R runtime option it is
     still seeded from the given number, and draws the same numbers as
     before.
+  - `(chicken flonum)' has new special functions: `fplog1p', `fpexpm1',
+    `fplgamma', `fptgamma', `fperf' and `fperfc', the C library's
+    log1p, expm1, lgamma, tgamma, erf and erfc.  Like the other flonum
+    operations they are open-coded by the compiler, and unboxed in
+    chains of flonum operations.
   - `string-foldcase' could write past the end of its output buffer: it
     sized the buffer for a 2x expansion, but U+0390 and U+03B0 fold to
     three codepoints each, a 3x byte expansion.  `string-upcase' and

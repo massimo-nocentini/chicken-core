@@ -181,10 +181,17 @@ echo "======================================== flonum unboxing tests ..."
 # so besides running the program, look for the boxed forms in its C.
 $compile flonum-unboxing-tests.scm -O3 -k -o flonum-unboxing.out
 ./flonum-unboxing.out
-if grep -E 'C_a_i_flonum_expt|C_u_i_flonum_(finite|infinite|nan)p' flonum-unboxing.c; then
+if grep -E 'C_a_i_flonum_(expt|log1p|expm1|lgamma|tgamma|erfc?)\(|C_u_i_flonum_(finite|infinite|nan)p' \
+     flonum-unboxing.c; then
     echo "lfa2 left a flonum operation boxed"
     exit 1
 fi
+for f in C_pow C_log1p C_expm1 C_lgamma C_tgamma C_erf C_erfc; do
+    if ! grep -q "$f(" flonum-unboxing.c; then
+	echo "$f was not open-coded"
+	exit 1
+    fi
+done
 rm -f flonum-unboxing.c
 
 echo "======================================== callback tests ..."

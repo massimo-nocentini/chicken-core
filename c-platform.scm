@@ -156,7 +156,8 @@
   (map (lambda (x) (symbol-append 'chicken.flonum# x))
        '(fp/? fp+ fp- fp* fp/ fp> fp< fp= fp>= fp<= fpmin fpmax fpneg fpgcd fp*+
 	 fpfloor fpceiling fptruncate fpround fpsin fpcos fptan fpasin fpacos
-	 fpatan fpatan2 fpexp fpexpt fplog fpsqrt fpabs fpinteger?)))
+	 fpatan fpatan2 fpexp fpexpt fplog fpsqrt fpabs fpinteger?
+	 fplog1p fpexpm1 fplgamma fptgamma fperf fperfc)))
 
 (define-constant +fixnum-bindings+
   (map (lambda (x) (symbol-append 'chicken.fixnum# x))
@@ -953,6 +954,12 @@
 (rewrite 'chicken.flonum#fpexp 16 1 "C_a_i_flonum_exp" #f words-per-flonum)
 (rewrite 'chicken.flonum#fpexpt 16 2 "C_a_i_flonum_expt" #f words-per-flonum)
 (rewrite 'chicken.flonum#fplog 16 1 "C_a_i_flonum_log" #f words-per-flonum)
+(rewrite 'chicken.flonum#fplog1p 16 1 "C_a_i_flonum_log1p" #f words-per-flonum)
+(rewrite 'chicken.flonum#fpexpm1 16 1 "C_a_i_flonum_expm1" #f words-per-flonum)
+(rewrite 'chicken.flonum#fplgamma 16 1 "C_a_i_flonum_lgamma" #f words-per-flonum)
+(rewrite 'chicken.flonum#fptgamma 16 1 "C_a_i_flonum_tgamma" #f words-per-flonum)
+(rewrite 'chicken.flonum#fperf 16 1 "C_a_i_flonum_erf" #f words-per-flonum)
+(rewrite 'chicken.flonum#fperfc 16 1 "C_a_i_flonum_erfc" #f words-per-flonum)
 (rewrite 'chicken.flonum#fpsqrt 16 1 "C_a_i_flonum_sqrt" #f words-per-flonum)
 (rewrite 'chicken.flonum#fpabs 16 1 "C_a_i_flonum_abs" #f words-per-flonum)
 (rewrite 'chicken.flonum#fptruncate 16 1 "C_a_i_flonum_truncate" #f words-per-flonum)
