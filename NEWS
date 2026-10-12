@@ -11,6 +11,12 @@
     into the state through SplitMix64, every byte of the seed counts and
     no other byte is read; as a consequence, a given seed produces a
     different sequence than it did before.
+  - The pseudo random number generator of `(chicken random)' is seeded
+    from the operating system's entropy source at startup instead of
+    from the current time, so programs started in the same second no
+    longer draw the same numbers.  With the -:R runtime option it is
+    still seeded from the given number, and draws the same numbers as
+    before.
   - `string-foldcase' could write past the end of its output buffer: it
     sized the buffer for a 2x expansion, but U+0390 and U+03B0 fold to
     three codepoints each, a 3x byte expansion.  `string-upcase' and

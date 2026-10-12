@@ -276,7 +276,7 @@ runtime options.
 
 ; {{-:r}} : Writes trace output to stderr. This option has no effect in files compiled with the {{-no-trace}} options.
 
-; {{-:RNUMBER}} : Specifies the initial number passed to seed the {{rand()}} PRNG (which is currently only used to randomize the symbol table).  If not supplied, the current system time is used.  This can be useful when debugging or benchmarking because it removes a source of nondeterminism which can affect how soon or how often the GC is triggered.
+; {{-:RNUMBER}} : Specifies the number that seeds the internal {{rand()}} PRNG, which randomizes the symbol table, and from which the initial state of the PRNG of [[Module (chicken random)|(chicken random)]] is then drawn.  If not supplied, the current system time seeds the former and the operating system's entropy source the latter, so that programs started at the same time still draw different pseudo random numbers.  Supplying it can be useful when debugging or benchmarking because it removes a source of nondeterminism which can affect how soon or how often the GC is triggered, and makes {{pseudo-random-integer}} and {{pseudo-random-real}} repeat the same sequence on every run.
 
 ; {{-:sNUMBER}} : Specifies stack size.
 

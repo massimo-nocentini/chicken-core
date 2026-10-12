@@ -511,6 +511,8 @@ static void panic(C_char *msg) C_noret;
 static void usual_panic(C_char *msg) C_noret;
 static void horror(C_char *msg) C_noret;
 static void really_mark(C_word *x, C_byte *tgt_space_start, C_byte **tgt_space_top, C_byte *tgt_space_limit) C_regparm;
+static int random_fill(C_uchar *p, int count, int keep_fd);
+static void random_state_leave_zero(void);
 static C_cpsproc(values_continuation) C_noret;
 static C_word add_symbol(C_word **ptr, C_word key, C_word string, C_SYMBOL_TABLE *stable);
 static C_regparm int C_in_new_heapp(C_word x);
@@ -889,13 +891,26 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
   weak_pair_chain = (C_word)NULL;
   locative_chain = (C_word)NULL;
   gc_ms = 0;
+  /* With -:R the PRNG is filled from the seeded C_fast_rand, so that a
+     run can be repeated.  Otherwise it is filled from the OS entropy
+     source: from time(NULL), processes started in the same second
+     would all draw the same numbers.  C_fast_rand itself, which also
+     seeds the symbol tables, stays seeded from the time. */
   if (!random_state_initialized) {
     C_fast_srand(time(NULL));
     random_state_initialized = 1;
+
+    if(!random_fill((C_uchar *)random_state, C_RANDOM_STATE_SIZE, 0)) {
+      for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
+        random_state[ i ] = C_fast_rand();
+    }
+  } else {
+    for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
+      random_state[ i ] = C_fast_rand();
   }
 
-  for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
-    random_state[ i ] = C_fast_rand();
+  random_state_index = 0;
+  random_state_leave_zero();
 
   initialize_symbol_table();
 
@@ -14065,22 +14080,33 @@ C_i_pending_interrupt(C_word dummy)
 
 
 #if !defined(_WIN32)
-static C_word random_urandom(C_word buf, int count)
+/* Read COUNT bytes from /dev/urandom.  With KEEP_FD the descriptor is
+   opened once and kept for later calls, as `random-bytes' does;
+   without it, as when seeding the PRNG at startup, it is closed again,
+   so that a program that never asks for random bytes holds no extra
+   descriptor. */
+static int random_urandom(C_uchar *p, int count, int keep_fd)
 {
-  static int fd = -1;
-  int off = 0, r;
+  static int kept_fd = -1;
+  int fd = keep_fd ? kept_fd : -1;
+  int off = 0, r, ok = 1;
 
   if(fd == -1) {
     fd = open("/dev/urandom", O_RDONLY);
 
-    if(fd == -1) return C_SCHEME_FALSE;
+    if(fd == -1) return 0;
+
+    if(keep_fd) kept_fd = fd;
   }
 
   while(count > 0) {
-    r = read(fd, C_data_pointer(buf) + off, count);
+    r = read(fd, p + off, count);
 
     if(r == -1) {
-      if(errno != EINTR && errno != EAGAIN) return C_SCHEME_FALSE;
+      if(errno != EINTR && errno != EAGAIN) {
+        ok = 0;
+        break;
+      }
       else r = 0;
     }
 
@@ -14088,34 +14114,37 @@ static C_word random_urandom(C_word buf, int count)
     off += r;
    }
 
-  return C_SCHEME_TRUE;
+  if(!keep_fd) close(fd);
+
+  return ok;
 }
 #endif
 
 
-C_word C_random_bytes(C_word buf, C_word size)
+/* Fill P with COUNT bytes from the OS entropy source; KEEP_FD is passed
+   on to random_urandom.  Returns 0 on failure. */
+static int random_fill(C_uchar *p, int count, int keep_fd)
 {
-  int count = C_unfix(size);
   int r = 0;
   int off = 0;
 
 #if defined(__OpenBSD__) || defined(__FreeBSD__)
-  arc4random_buf(C_data_pointer(buf), count);
+  arc4random_buf(p, count);
 #elif defined(SYS_getrandom) && defined(__NR_getrandom)
   static int use_urandom = 0;
 
-  if(use_urandom) return random_urandom(buf, count);
+  if(use_urandom) return random_urandom(p, count, keep_fd);
 
   while(count > 0) {
     /* GRND_NONBLOCK = 0x0001 */
-    r = syscall(SYS_getrandom, C_data_pointer(buf) + off, count, 1);
+    r = syscall(SYS_getrandom, p + off, count, 1);
 
     if(r == -1) {
       if(errno == ENOSYS) {
         use_urandom = 1;
-        return random_urandom(buf, count);
+        return random_urandom(p + off, count, keep_fd);
       }
-      else if(errno != EINTR) return C_SCHEME_FALSE;
+      else if(errno != EINTR) return 0;
       else r = 0;
     }
 
@@ -14129,19 +14158,25 @@ C_word C_random_bytes(C_word buf, C_word size)
   if(RtlGenRandom == NULL) {
      HMODULE mod = LoadLibrary("advapi32.dll");
 
-     if(mod == NULL) return C_SCHEME_FALSE;
+     if(mod == NULL) return 0;
 
      if((RtlGenRandom = (func)GetProcAddress(mod, "SystemFunction036")) == NULL)
-       return C_SCHEME_FALSE;
+       return 0;
   }
 
-  if(!RtlGenRandom((PVOID)C_data_pointer(buf), (LONG)count))
-    return C_SCHEME_FALSE;
+  if(!RtlGenRandom((PVOID)p, (LONG)count))
+    return 0;
 #else
-  return random_urandom(buf, count);
+  return random_urandom(p, count, keep_fd);
 #endif
 
-  return C_SCHEME_TRUE;
+  return 1;
+}
+
+
+C_word C_random_bytes(C_word buf, C_word size)
+{
+  return C_mk_bool(random_fill((C_uchar *)C_data_pointer(buf), C_unfix(size), 1));
 }
 
 
@@ -14315,17 +14350,15 @@ static C_u64 splitmix64(C_u64 *x)
    read.  The result is XORed onto a SplitMix64 stream keyed on N: that
    keeps a full-size seed's entropy (XOR with a fixed stream is a
    bijection), makes seeds that differ only in trailing zero bytes give
-   different states, and spreads a short seed over all 16 words.
-
-   WELL512 is linear, so the all-zero state is a fixed point: from it
-   every word drawn is 0, and the rejection loop of `random_uniform'
-   never ends.  A seed that would produce it is nudged off it. */
+   different states, and spreads a short seed over all 16 words.  The
+   one seed of each length that would still give the all-zero state is
+   nudged off it by random_state_leave_zero. */
 C_word C_set_random_seed(C_word buf, C_word n)
 {
   C_uchar *bytes = (C_uchar *)C_data_pointer(buf);
   C_uword nbytes = C_unfix(n), nwords, i, j, k, base;
   C_uword nstate = C_RANDOM_STATE_SIZE / sizeof(C_uword);
-  C_uword w, any = 0;
+  C_uword w;
   C_u64 key = (C_u64)nbytes;
 
   for(i = 0; i < nstate; ++i)
@@ -14345,12 +14378,22 @@ C_word C_set_random_seed(C_word buf, C_word n)
     }
   }
 
-  for(i = 0; i < nstate; ++i) any |= random_state[ i ];
+  random_state_index = 0;
+  random_state_leave_zero();
+  return C_SCHEME_FALSE;
+}
+
+/* WELL512 is linear, so the all-zero state is a fixed point: from it
+   every word drawn is 0, and the rejection loop of `random_uniform'
+   never ends.  Whatever filled the state, never leave it there. */
+static void random_state_leave_zero(void)
+{
+  C_uword i, any = 0;
+
+  for(i = 0; i < C_RANDOM_STATE_SIZE / sizeof(C_uword); ++i)
+    any |= random_state[ i ];
 
   if(any == 0) random_state[ 0 ] = 1;
-
-  random_state_index = 0;
-  return C_SCHEME_FALSE;
 }
 
 C_word C_a_extract_struct_2(C_word **ptr, size_t sz, void *sp)

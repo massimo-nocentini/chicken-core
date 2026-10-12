@@ -271,6 +271,22 @@ skip "ec.so" "needs ec.so and ec.import.so (rt:398-400); no dynamic loading"
 skip port-tests "runs a subprocess and pipes (rt:411); process creation is not available"
 check read-lines-tests $interpret -s read-lines-tests.scm
 check random-tests $interpret -s random-tests.scm
+# rt:459-479
+startup_seed() {
+    csi="timeout 600 $WASM_DIR/csi"
+    draw='(import (chicken random)) (display (pseudo-random-integer 1000000000000))'
+    $csi -n -e "$draw" >random1.wasm.txt &
+    $csi -n -e "$draw" >random2.wasm.txt &
+    $csi -n -e "$draw" >random3.wasm.txt &
+    wait
+    ! cmp -s random1.wasm.txt random2.wasm.txt &&
+    ! cmp -s random1.wasm.txt random3.wasm.txt &&
+    ! cmp -s random2.wasm.txt random3.wasm.txt &&
+    $csi -:R42 -n -e "$draw" >random1.wasm.txt &&
+    $csi -:R42 -n -e "$draw" >random2.wasm.txt &&
+    cmp random1.wasm.txt random2.wasm.txt
+}
+check "random startup seed" startup_seed
 check numbers-string-conversion-tests $interpret -s numbers-string-conversion-tests.scm
 check numbers-test $interpret -s numbers-test.scm
 check numbers-test-ashinn $interpret -s numbers-test-ashinn.scm

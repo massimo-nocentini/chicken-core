@@ -459,6 +459,25 @@ $compile -unsafe fixnum-tests.scm
 echo "======================================== random number tests ..."
 $interpret -s random-tests.scm
 
+# Processes started together draw different numbers; with -:R they
+# draw the same ones.  (Runtime options must come first.)
+draw='(import (chicken random)) (display (pseudo-random-integer 1000000000000))'
+../${PROGRAM_PREFIX}csi${PROGRAM_SUFFIX} -n -e "$draw" > random1.out &
+../${PROGRAM_PREFIX}csi${PROGRAM_SUFFIX} -n -e "$draw" > random2.out &
+../${PROGRAM_PREFIX}csi${PROGRAM_SUFFIX} -n -e "$draw" > random3.out &
+wait
+if cmp -s random1.out random2.out || cmp -s random1.out random3.out ||
+   cmp -s random2.out random3.out; then
+    echo "processes started together drew the same random numbers"
+    exit 1
+fi
+../${PROGRAM_PREFIX}csi${PROGRAM_SUFFIX} -:R42 -n -e "$draw" > random1.out
+../${PROGRAM_PREFIX}csi${PROGRAM_SUFFIX} -:R42 -n -e "$draw" > random2.out
+if ! cmp -s random1.out random2.out; then
+    echo "-:R42 did not make the random numbers reproducible"
+    exit 1
+fi
+
 echo "======================================== string->number tests ..."
 $interpret -s numbers-string-conversion-tests.scm
 $compile -specialize numbers-string-conversion-tests.scm

@@ -12,6 +12,10 @@ On OpenBSD it is {{arc4random_buf(3)}}, on Windows {{RtlGenRandom}}.
 
 The pseudo random number generator is an implementation of the
 [[https://en.wikipedia.org/wiki/Well_equidistributed_long-period_linear|WELL]] algorithm.
+At startup it is seeded from the entropy source, so every process
+draws a different sequence, unless the program was started with the
+{{-:R}} runtime option (see [[Using the compiler]]), in which case it
+draws the same sequence on every run.
 
 ==== set-pseudo-random-seed!
 
