@@ -6638,17 +6638,25 @@ EOF
   	    '(exn . arguments) '()
 	    '(exn . location) #f) ) ) ) )
 
-(define (signal x)
-  ;; Continuable, so the handler is reinstated when it returns (as in
-  ;; scheme#raise-continuable): only its own dynamic extent runs under
-  ;; the outer handler.
+;; Call the current handler on X continuably, as signal and
+;; scheme#raise-continuable do: the handler is reinstated when it
+;; returns, so only its own dynamic extent runs under the outer
+;; handler.  The before thunk of the dynamic-wind frame around the
+;; call is always ##sys#pop-exception-handler!, which identifies the
+;; frame: code that records the dynamic-winds of a raise from within
+;; its handler (delimited continuations, say) can leave it out.
+(define (##sys#pop-exception-handler!)
+  (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
+
+(define (##sys#call-exception-handler/continuable x)
   (let ((h (car ##sys#current-exception-handler)))
     (##sys#dynamic-wind
-      (lambda ()
-        (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
+      ##sys#pop-exception-handler!
       (lambda () (h x))
       (lambda ()
         (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
+
+(define (signal x) (##sys#call-exception-handler/continuable x))
 
 (define ##sys#error-handler
   (make-parameter
@@ -7004,13 +7012,7 @@ EOF
 ;;; R7RS exceptions
 
 (define (scheme#raise-continuable obj)
-  (let ((h (car ##sys#current-exception-handler)))
-    (dynamic-wind
-      (lambda () 
-        (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
-      (lambda () (h obj))
-      (lambda ()
-        (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
+  (##sys#call-exception-handler/continuable obj))
 
 (define scheme#error-object? condition?)
 (define scheme#error-object-message (condition-property-accessor 'exn 'message))

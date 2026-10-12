@@ -940,3 +940,21 @@ A
                    (with-exception-handler
                     (lambda (c) (signal (cons 'inner c)))
                     (lambda () (signal '(x))))))))
+
+;;; signal and raise-continuable call the handler inside a dynamic-wind
+;;; frame whose before thunk is ##sys#pop-exception-handler!, so that the
+;;; dynamic-winds of the raise can be told from within the handler
+
+(define (raise-winds)
+  (let ((ws ##sys#dynamic-winds))
+    (and (pair? ws) (eq? (caar ws) ##sys#pop-exception-handler!) (cdr ws))))
+
+(for-each
+ (lambda (raise)
+   (let* ((ws #f)
+          (rws (with-exception-handler
+                (lambda (c) (raise-winds))
+                (lambda () (set! ws ##sys#dynamic-winds) (raise 'x)))))
+     (assert (pair? ws))
+     (assert (eq? ws rws))))
+ (list signal scheme#raise-continuable))
