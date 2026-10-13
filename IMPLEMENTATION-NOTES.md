@@ -2705,6 +2705,50 @@ seventeen names are now visible in every toplevel. Code that defines its own
 `identifier?` now assigns the imported binding and the compiler warns. NEWS
 documents this, with the `(import (except ...))` workaround.
 
+### 11.11 Support for a probabilistic-programming library: numerics — `c6e27c49`..`4c9b673f`
+
+These changes were made for a port of Kiselyov's Hakaru10 to aux.scm, `(aux hakaru10)`.
+That library samples heavily from `(chicken random)` and needs the special functions
+of log-densities; what it needs of delimited control is a separate series. Every
+claimed bug was reproduced on the stock build before it was fixed. The commits were
+first made on a branch interleaved with the delimited-control series, where each
+passed `make check` and those from the bignum one to `111123e0`, and `5314b07a`, the
+wasm32 lanes of `runtests-wasm.sh`; they were moved here without conflicts, and the
+tip passes `make check`. `4c9b673f` answers an audit of that branch.
+
+| commit | change | evidence |
+|---|---|---|
+| `c6e27c49` | lfa2's unboxed map misspelt `C_a_i_flonum_expt` and `C_u_i_flonum_finitep` (since `79cf7427`), so `fpexpt` and `finite?` boxed in flonum chains | at -O3 `(fpexpt (fpexp (fp* x 2.)) 1.5)` is `C_pow` on doubles; runtests.sh greps the C |
+| `f8d27925` | `set-pseudo-random-seed!`: an all-zero seed hung `pseudo-random-integer` (WELL512's zero fixed point), and a seed shorter than a word was read past its end; its tail bytes were ignored. The seed is now mixed through SplitMix64 | the stock build hangs on `(make-bytevector 16 0)` |
+| `c773b118` | `(assert n1 (nums 100))` in random-tests.scm asserted nothing (the second argument is the message) | a copy reseeding randomly passed before, fails now |
+| `663ad8b7` | the startup seed was `time(NULL)`, so processes started in one second drew the same numbers; it now comes from the entropy source, and `-:R` is unchanged | three concurrent `csi` agreed on stock |
+| `de6fc5e5` | `pseudo-random-real` reserved 2 words for a flonum: 4 on 32-bit/wasm32 | C probe on the allocation pointer; no Scheme-level symptom, so no test |
+| `94b18eb0` | `fplog1p`, `fpexpm1`, `fplgamma`, `fptgamma`, `fperf`, `fperfc`, wired through chicken.h, library.scm, types.db, c-platform.scm and lfa2.scm | values at special points; the unboxing check requires `C_log1p` … `C_erfc` |
+| `5c702500` | `pseudo-random-integer` on a bignum drew its top digit below the range's: `(- (expt 2 65) 1)` never gave anything ≥ 2^64 | 0 of 10000 draws on stock, 5009 after |
+| `8efba860` | state objects: `make-pseudo-random-state` (bytevector, integer or entropy seed), `-copy`, `-split`, and an optional STATE argument to both draws, open-coded with `-specialize` | 47.7 vs 45.8 ns per `pseudo-random-real` on a let-bound state |
+| `111123e0` | the six hyperbolics had no c-platform rewrite, so they stayed CPS calls at -O2 -unsafe | runtests.sh requires no `chicken.flonum#` reference at -O2 -unsafe |
+| `54833717` | `de6fc5e5` had no NEWS entry, though it fixes an out-of-bounds write shipped since 5.0.0 on 32-bit | NEWS only |
+| `5314b07a` | random-tests.scm drew from states only through procedures, so its `-specialize` compile never generated the state rewrites of `8efba860` | runtests.sh and wasm lane C require `C_random_fixnum_s` and `C_a_i_random_real_s` in the C |
+| `4c9b673f` | NEWS: a module importing `(chicken flonum)` or `(chicken random)` whole that defines one of the new names assigns the library's binding, and compiled code open-codes the six flonum functions past it (csi and -O0 call it); open-coding `pseudo-random-real` lets draws in one call's arguments change order with -O | `(define (fplog1p x) 'user-log1p)`: `user-log1p` in csi, 0.693… at the default level |
+
+**Cost and consequences.** At -O3, in ns, minimum of seven alternating runs on one
+core, stock `main` `55615603` → this series (as measured on the combined branch,
+whose other changes do not touch these paths): `pseudo-random-real` 49.0 → 38.8,
+`(fpsinh (pseudo-random-real))` 76.5 → 62.4, `pseudo-random-integer` on a fixnum
+33.8 → 31.6, and on 10^23 69.3 → 71.7. That last one draws more: its 77 bits take
+two words, rejected a third of the time, where stock drew one word and the top
+digit below the range's (`5c702500`). A seeded program draws different numbers
+than on stock (`f8d27925`, in NEWS), except fixnum and real draws under `-:R`.
+Open-coding `pseudo-random-real` lets the draws in the arguments of one call happen
+in another order at -O3 than at -O0 or in csi, and the six new flonum names shadow a
+program's own definitions of them; NEWS says both (`4c9b673f`). In unsafe code
+(-O5) `fpsinh` on a fixnum now crashes instead of signalling "bad argument type",
+as `fpsin` already did on stock: `111123e0` open-codes it like the others.
+
+**Not done.** The bignum draw could draw digits from the top and stop at the first
+one below the range's, so a rejected draw would cost fewer words; it would change
+the sequence a given seed gives again.
+
 ## Appendix: file map
 
 | File | Role |
