@@ -2705,16 +2705,24 @@ seventeen names are now visible in every toplevel. Code that defines its own
 `identifier?` now assigns the imported binding and the compiler warns. NEWS
 documents this, with the `(import (except ...))` workaround.
 
-### 11.11 Support for a probabilistic-programming library: numerics — `c6e27c49`..`4c9b673f`
+### 11.11 Support for a probabilistic-programming library — `c6e27c49`..`d2d15a9d`
 
 These changes were made for a port of Kiselyov's Hakaru10 to aux.scm, `(aux hakaru10)`.
-That library samples heavily from `(chicken random)` and needs the special functions
-of log-densities; what it needs of delimited control is a separate series. Every
-claimed bug was reproduced on the stock build before it was fixed. The commits were
-first made on a branch interleaved with the delimited-control series, where each
-passed `make check` and those from the bignum one to `111123e0`, and `5314b07a`, the
-wasm32 lanes of `runtests-wasm.sh`; they were moved here without conflicts, and the
-tip passes `make check`. `4c9b673f` answers an audit of that branch.
+That library samples heavily from `(chicken random)`, needs the special functions of
+log-densities, and runs models under handlers built on `shift`/`reset`: multi-shot
+for exact enumeration, one-shot for sampling. Every claimed bug was reproduced on
+the stock build before it was fixed. Each commit passes `make check`; every commit
+from the bignum one to `111123e0` also passed the wasm32 lanes of `runtests-wasm.sh`,
+and so do `5314b07a` and `df9d0b15`. An audit of the series against stock, for code that uses no
+`shift`, found a crash, a lost setter and slowdowns of up to 60%; `4c9b673f`..`d2d15a9d`
+answer it (they were not run in the wasm32 lanes). The commits were made on a branch
+that interleaved the numerics and the delimited control; on this one, the numerics
+come first (`c6e27c49`..`4c9b673f`, with a notes commit of their own) and the
+delimited control on top (`f11f304b`..`d2d15a9d`), cherry-picked without conflicts
+except for the notes, which this commit brings up to date in one piece. The checks
+above were run on the original commits; here the tip passes `make check`. The
+hashes in this section are this branch's, `df9d0b15` standing for the original
+branch's tip before the audit fixes, whose code it has.
 
 | commit | change | evidence |
 |---|---|---|
@@ -2726,28 +2734,141 @@ tip passes `make check`. `4c9b673f` answers an audit of that branch.
 | `94b18eb0` | `fplog1p`, `fpexpm1`, `fplgamma`, `fptgamma`, `fperf`, `fperfc`, wired through chicken.h, library.scm, types.db, c-platform.scm and lfa2.scm | values at special points; the unboxing check requires `C_log1p` … `C_erfc` |
 | `5c702500` | `pseudo-random-integer` on a bignum drew its top digit below the range's: `(- (expt 2 65) 1)` never gave anything ≥ 2^64 | 0 of 10000 draws on stock, 5009 after |
 | `8efba860` | state objects: `make-pseudo-random-state` (bytevector, integer or entropy seed), `-copy`, `-split`, and an optional STATE argument to both draws, open-coded with `-specialize` | 47.7 vs 45.8 ns per `pseudo-random-real` on a let-bound state |
+| `f11f304b` | a call/cc continuation captured in a `reset` body restored the whole saved metacontinuation, so inside a resumed segment `guard`/`handle-exceptions`/`condition-case` returned to the first run's `reset` | `(reset (guard (e (#t 'c)) (raise (shift k (list (k 1) (k 2))))))` gave `c`, now `(c c)`, matching aux's delimcc |
+| `428e11e7` | a `parameterize` frame entered twice without leaving (a segment resumed from within a resumption of itself) swapped the outer value back in | `(k0 k0)` saw `top`, now `inner`; +12 ns per `parameterize` |
 | `111123e0` | the six hyperbolics had no c-platform rewrite, so they stayed CPS calls at -O2 -unsafe | runtests.sh requires no `chicken.flonum#` reference at -O2 -unsafe |
+| `b29737e8` | `f11f304b` returned an escape to any resumption of the captured body, including one nested in the capture's own instance that did not contain it, so a handler set up in a resumption, raised to from a nested resumption of the first run's segment, ran the rest of the outer resumption twice | `(k0 k0)` gave `(outer (outer (caught leaf)))`, now `(outer (caught leaf))` as on stock (Q15-Q17) |
+| `0d398032` | rebasing an escape onto a resumption consed every frame afresh, so `##sys#dynamic-unwind` left and re-entered each `dynamic-wind`/`parameterize` between the delimiter and a handler whenever it fired | `in out shift in out in handler out`, now `in out shift in handler out` (Q18-Q20) |
+| `d39419ef` | `428e11e7`'s expansion initialised OUTER with a bare `'()`, so `parameterize` broke where `quote` is renamed or shadowed | `(import (rename (scheme base) (quote kwote)))` made it an error, now 2 as on stock; two syntax-tests.scm cases |
 | `54833717` | `de6fc5e5` had no NEWS entry, though it fixes an out-of-bounds write shipped since 5.0.0 on 32-bit | NEWS only |
+| `11901e6d` | `with-exception-handler` had the frame `428e11e7` fixed for `parameterize`: it installed its handler on the stack of the first entry, so in a resumed segment a raise its handler declined skipped the handlers around the resumption, and a nested resumption took the handler away from the outer one; `guard`, `handle-exceptions` and `condition-case` with it | `(guard (e ((symbol? e) (list 'outer e))) (sk 'sym))` was uncaught, now `(outer sym)`; +11 ns per `with-exception-handler` (section S) |
 | `5314b07a` | random-tests.scm drew from states only through procedures, so its `-specialize` compile never generated the state rewrites of `8efba860` | runtests.sh and wasm lane C require `C_random_fixnum_s` and `C_a_i_random_real_s` in the C |
+| `b3c1aab1` | `11901e6d` broke plain call/cc re-entry: `abort` popped the handler stack with a bare `set!`, so a continuation captured in a nested `with-exception-handler` and re-entered from a `raise` handler entered the inner frame on the popped stack and lost the handlers in between. `abort` now calls the handler in `signal`'s frame. A resumed segment captured in a `raise` handler also no longer calls that handler a second time with "exception handler returned" | `(h1 (declined again))` on stock, uncaught on `11901e6d`, `(h1 (declined again))` again (S9, S11); `guard` around `raise` 240 → 297 ns |
+| `df9d0b15` | the frame around a handler call (`abort`, `signal`, `raise-continuable`) popped whatever was on top when a resumption entered it again, and pushed the capture's handler on exit, so a `guard` around the resumption was replaced by it (pre-existing on stock) | `(k 'v)` then `(signal 'after)` in a `guard` gave "no enclosing `reset`", now `(site-guard after)` (S13-S17) |
 | `4c9b673f` | NEWS: a module importing `(chicken flonum)` or `(chicken random)` whole that defines one of the new names assigns the library's binding, and compiled code open-codes the six flonum functions past it (csi and -O0 call it); open-coding `pseudo-random-real` lets draws in one call's arguments change order with -O | `(define (fplog1p x) 'user-log1p)`: `user-log1p` in csi, 0.693… at the default level |
+| `a28785e2` | a call/cc continuation captured outside every `reset` went through `##sys#dc-reenter` and its two out-of-line calls, though it only winds | escape 87.6 → 66.8 ns, generator 202 → 153 (stock 64.6, 150) |
+| `9bb3d419` | the handler-call frame is pushed in place: no `##sys#dynamic-wind`, thunk or PROC closures, and the pop is inline | with `e297e2ea`, `signal` under a handler 209 → 180 ns (stock 195) |
+| `e297e2ea` | `11901e6d`/`b3c1aab1` put every `with-exception-handler` and `abort` on the delimited path: a raise escaping its handler paid a frame (+55-60%), a thread that left an inherited frame emptied OUTER and its creator's exit failed on `(car '())`, and the `current-exception-handler` setter was lost on call/cc re-entry. Outside every `reset` both now work as on stock; `with-exception-handler` also does its `dynamic-wind` in place | `guard` around `raise` 284.5 → 185.0 ns (stock 191.5); inherited-frames-tests.scm; S18-S20 `(sh-2 sh-2)` as on stock, `(sh-2 sh-1)` before |
+| `d2d15a9d` | `parameterize` likewise: outside every `reset` one saved outer value per parameter, inside the OUTER stack, ending in `#f` so its test is no interpreted call; the thread case segfaulted on `(##sys#slot outer 0)` | inherited-frames-tests.scm, which stock fails too (`inner` left after the extent); csi `parameterize` +8-16% → within 3% |
 
-**Cost and consequences.** At -O3, in ns, minimum of seven alternating runs on one
-core, stock `main` `55615603` → this series (as measured on the combined branch,
-whose other changes do not touch these paths): `pseudo-random-real` 49.0 → 38.8,
-`(fpsinh (pseudo-random-real))` 76.5 → 62.4, `pseudo-random-integer` on a fixnum
-33.8 → 31.6, and on 10^23 69.3 → 71.7. That last one draws more: its 77 bits take
-two words, rejected a third of the time, where stock drew one word and the top
-digit below the range's (`5c702500`). A seeded program draws different numbers
-than on stock (`f8d27925`, in NEWS), except fixnum and real draws under `-:R`.
-Open-coding `pseudo-random-real` lets the draws in the arguments of one call happen
-in another order at -O3 than at -O0 or in csi, and the six new flonum names shadow a
-program's own definitions of them; NEWS says both (`4c9b673f`). In unsafe code
-(-O5) `fpsinh` on a fixnum now crashes instead of signalling "bad argument type",
-as `fpsin` already did on stock: `111123e0` open-codes it like the others.
+**Delimited control, in more detail.** Metacontinuation frames became
+`#(k winds path depth)`. Instances of a delimited body - a `reset`'s, or a
+resumption's - form a tree, a resumption being a child of the instance its
+segment was captured in. The tree is cut into paths, each
+`#(parent-path parent-depth length)`, and a frame's place on one is assigned
+lazily, by the first `shift` under it: the first child of the last place on a path
+extends it, any other child starts a new path. A chain of single resumptions (a
+generator) thus allocates nothing per step and keeps one path alive; a first
+version with a parent link per instance kept every step of a generator alive and
+cost 113 ns per coroutine switch. `##sys#dc-reenter`, which call/cc continuations
+now use, returns to the innermost live frame that is the captured top frame or
+descends from it, and rebases the captured winds onto it. A first version marked
+every resumption of a body with that body's origin instead, and so returned to a
+resumption nested inside the capture's own instance that did not contain it
+(Q15, Q16). The rebase reuses the cells of the live `##sys#dynamic-winds` for the
+frames it shares with the capture: `##sys#dynamic-unwind` compares cells with
+`eq?`, and a first version that consed every rebased frame afresh left and
+re-entered every `dynamic-wind` and `parameterize` between the delimiter and a
+handler each time the handler fired in a resumption (Q18-Q20). It falls back to the old wholesale restore when no instance is
+live, so escapes out of a `reset` and re-entry into a finished body are unchanged.
+core.scm is unchanged, because compiled code treats `##sys#dc-shift-enter`'s
+result, `#(path depth seg)`, as opaque.
 
-**Not done.** The bignum draw could draw digits from the top and stop at the first
-one below the range's, so a rejected draw would cost fewer words; it would change
-the sequence a given seed gives again.
+Resuming a segment splices its frames onto the current `##sys#dynamic-winds`, so a
+segment resumed from within a resumption of itself enters a frame it has not left.
+call/cc cannot do that, and two frames assumed it could not happen: `parameterize`'s,
+which swapped one saved value per parameter, and `with-exception-handler`'s, which
+installed its handler on the handler stack read when the extent was created (which
+also put the capture's handlers below it in every resumption, rather than those
+around the resumption). Inside a delimiter both now keep a stack OUTER of what was
+current at each entry; an entry pushes, an exit restores and pops its own, and as
+every entry and exit happens at the top of the winds they come in LIFO order
+(sections R and S). Installing the handler on the stack current at the entry is
+right only if that stack is the one of the frames below, so there every change to
+it must be a frame: `abort` used to pop it bare, which broke plain call/cc re-entry
+until `b3c1aab1` gave it `signal`'s frame. That frame,
+around every handler call, pops the handler on entry and conses it back on exit. A
+resumption cannot simply leave it out of the segment, since `dynamic-wind` runs the
+after thunk when the call returns whether or not the frame was entered; instead
+`##sys#dc-rewind` and `##sys#dynamic-unwind` enter it through its after thunk,
+called with `#t`, which pushes the current stack on its own OUTER and pops only
+when the called handler is on top, that is, when the segment installed it
+(`df9d0b15`). Its before thunk is still `##sys#pop-exception-handler!`, by which
+aux's delimcc recognises it. In the `parameterize` expansion
+OUTER started as `(##core#quote ())`, because a bare `quote` is resolved where the
+macro is used (`d39419ef`); it now starts, and ends, as `#f`.
+
+Outside every delimiter (`##sys#dc-stack` empty at the entry) the frames work as on
+stock since `e297e2ea` and `d2d15a9d`: `with-exception-handler` installs its handler on the stack
+of its creation, `parameterize` saves one outer value per parameter, and `abort`
+pops bare. Only call/cc can enter a frame again there, and it reinstates the whole
+context, so the stock behaviour is right, and the delimited path cost code that
+never uses `shift`: the `abort` frame made a `raise` whose handler escapes 90 ns
+slower (`guard` around `raise` 191.5 → 284.5 ns), the OUTER cons and box slowed every
+`with-exception-handler` by 10%, interpreted `parameterize` by 8-16%, and a thread
+that left a frame it inherited from its creator (by invoking a continuation the
+creator captured outside it) popped the creator's OUTER, so the creator's own exit
+read an empty stack: a segfault in `parameterize`, `(car '())` in
+`with-exception-handler`. An exit finds an empty OUTER only after an entry outside
+every delimiter or a first entry, which saved the outer value instead: no entry
+outside a delimiter can come within the extent of one made inside, which lies in
+the delimiter's body. So the thread case now restores the creator's value, which
+stock got wrong for `parameterize` (it left the inner value). The split also gives
+back stock's quirks outside delimiters that `b3c1aab1` had fixed in passing: a
+`guard` that declines re-raises through its own handler a second time, and a handler
+that re-enters its `with-exception-handler`'s thunk after `raise` runs it without
+that handler (R7RS wants it installed); inside a delimiter both are right. That
+trade was the condition for keeping the delimited fixes rather than reverting
+them: with it no operation of code without `shift` is more than 5% slower than on
+stock (below).
+
+Code without `shift`, at -O3, in ns, minimum of seven alternating runs on one core,
+each tree built in two stages with its own compiler (the audit's `mb.scm`):
+
+| operation | stock `55615603` | `df9d0b15` (before the fixes) | `d2d15a9d` |
+|---|---|---|---|
+| call/cc escape | 68.6 | 86.6 | 70.8 |
+| call/cc generator | 151.7 | 203.3 | 155.3 |
+| generator in `with-exception-handler` | 216.5 | 267.0 | 219.5 |
+| generator in `parameterize` | 356.0 | 379.0 | 307.5 |
+| `with-exception-handler`, no raise | 98.0 | 108.8 | 90.6 |
+| `raise-continuable` | 188.7 | 210.3 | 178.7 |
+| `guard`, no raise | 183.3 | 208.3 | 176.3 |
+| `condition-case`, no raise | 173.0 | 203.7 | 173.0 |
+| `guard` around `raise` | 191.5 | 284.5 | 185.0 |
+| escape from a `raise` handler | 172.0 | 262.0 | 162.0 |
+| `guard` around `error` | 1486 | 1516 | 1393 |
+| `parameterize`, one parameter | 252.6 | 273.0 | 246.4 |
+| `dynamic-wind` (same code) | 82.8 | 80.4 | 80.0 |
+
+Nothing is more than 3.4% slower than on stock, which is what `dynamic-wind` moves
+with code layout. Interpreted (`csi`, 900000 iterations, minimum of five) every case
+of the audit is within 3% of stock, `parameterize` 2257 vs 2202 ns (`df9d0b15`:
+2500). `delimcc-bench` is as at `df9d0b15`, except the call/cc coroutine switch, back
+to stock's 186 ns from 207.
+
+`delimcc-bench` at -O3, stock `main` (`55615603`) → `5314b07a`, each built and
+compiled with its own tree, medians of three runs, in ns: pair 151 → 156,
+reset_only 45 → 47, abort 77 → 90, resume_twice 229 → 230, fallback_pair 202 →
+208, coroutine switch 240 → 273 via shift/reset and 178 → 205 via call/cc. The
+first attempt called `##sys#vector`, which is not open-coded
+inside library.scm, and doubled every `reset`. `delimcc-retention` still frees
+dropped segments; a held segment holds 64 bytes more (a path and the segment
+vector).
+
+**Not done.** `continuation-graft` and `continuation-return` still restore the
+recorded metacontinuation wholesale, and a compiled `continuation-graft` is
+rewritten to `C_continuation_graft`, which skips the winds altogether, as it did
+before. `##sys#dc-reenter` looks only for an instance of the captured top frame.
+A continuation captured in a nested `reset` that has since returned, invoked from
+a resumption, is reinstated as captured. Code outside the core that winds by
+running before thunks itself (aux's `continuation-rewind!`, say) enters the
+handler-call frame the old way, so it pops whatever handler is on top; that is
+right for call/cc re-entry, not for a resumption. A thread that leaves a frame
+entered inside a delimiter pops its creator's OUTER, and the creator's exit then
+restores the value or handlers of the frame's first entry. Code compiled by an older compiler,
+library.scm included until the next bootstrap, keeps the old `parameterize`
+expansion.
 
 ## Appendix: file map
 
