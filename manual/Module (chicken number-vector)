@@ -11,7 +11,7 @@ When loaded, the feature identifier {{srfi-4}} is defined.
 
 === CHICKEN implementation specifics and extensions to SRFI-4
 
-* Procedures for [[Module (chicken bytevector)|bytevector]] conversion, subvectors and vector I/O are provided.
+* Procedures for [[Module (chicken bytevector)|bytevector]] conversion and subvectors are provided.
 * SRFI-17 setters for {{XXXvector-ref}} are defined.
 * Constructors allow allocating the storage in non garbage collected memory.
 * Vectors for 64 and 128-bit complex numbers are provided.
@@ -23,6 +23,9 @@ to the Scheme vector type, but they are distinct datatypes. An external
 representation is specified which must be supported by the {{read}} and
 {{write}} procedures and by the program parser (i.e. programs can contain
 references to literal homogeneous vectors).
+
+For I/O operations on {{u8vectors}}, see [[Module (scheme base)|read-bytevector]]
+and [[Module (scheme base)|write-bytevector]].
 
 === Datatypes
 
