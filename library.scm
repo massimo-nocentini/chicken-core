@@ -4546,11 +4546,38 @@ EOF
 		 (else (loop (##sys#slot s 1))))))))
 
 ; WS with its tail BASE replaced by INTO, or #f if BASE is not a tail of it.
+;
+; ##sys#dynamic-unwind tells the frames to leave and to enter by comparing
+; the cells of two wind lists with eq?, and the live list holds the frames
+; that resuming a segment re-entered in cells of its own.  So the result
+; reuses the cells of ##sys#dynamic-winds for as many of its frames above
+; INTO, outermost first, as are the same frames as those of WS above BASE,
+; and conses only the rest: an escape within one dynamic extent of a
+; resumed segment leaves and enters nothing, and one out of a frame leaves
+; just that frame.
 (define (##sys#dc-rebase ws base into)
-  (cond ((eq? ws base) into)
-	((eq? ws '()) #f)
-	(else (let ((r (##sys#dc-rebase (##sys#slot ws 1) base into)))
-		(and r (cons (##sys#slot ws 0) r))))))
+  (let collect ((ws ws) (es '()))	; frames of WS above BASE, outermost first
+    (cond ((eq? ws base)
+	   (let share ((cs (##sys#dc-cells-above ##sys#dynamic-winds into))
+		       (es es)
+		       (tail into))
+	     (if (and (pair? es) (pair? cs)
+		      (eq? (##sys#slot es 0) (##sys#slot (##sys#slot cs 0) 0)))
+		 (share (##sys#slot cs 1) (##sys#slot es 1) (##sys#slot cs 0))
+		 (let build ((es es) (tail tail))
+		   (if (eq? es '())
+		       tail
+		       (build (##sys#slot es 1) (cons (##sys#slot es 0) tail)))))))
+	  ((eq? ws '()) #f)
+	  (else (collect (##sys#slot ws 1) (cons (##sys#slot ws 0) es))))))
+
+; The cells of WS above BASE, outermost first, or () if BASE is not a tail
+; of WS.
+(define (##sys#dc-cells-above ws base)
+  (let loop ((ws ws) (cs '()))
+    (cond ((eq? ws base) cs)
+	  ((eq? ws '()) '())
+	  (else (loop (##sys#slot ws 1) (cons ws cs))))))
 
 (define (##sys#reset thunk)
   (##sys#call-with-current-continuation

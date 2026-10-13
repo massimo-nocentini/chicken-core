@@ -486,6 +486,38 @@
 		(raise (+ a b)))))
      '(((caught 11)) ((caught 12))))
 
+;; An escape within one dynamic extent of a resumed segment leaves and
+;; enters nothing, and one out of a `dynamic-wind' leaves just that one.
+(chk "Q18 a handler inside a dynamic-wind, in a resumed segment"
+     (outs (lambda ()
+	     (reset (dwt 'seg (lambda ()
+				(guard (e (#t (em 'handler) (list 'caught e)))
+				  (raise (shift k (begin (em 'shift) (k 1))))))))))
+     '((in seg) (out seg) shift (in seg) handler (out seg)))
+(chk "Q19 ... and outside an inner one"
+     (outs (lambda ()
+	     (reset (dwt 'seg (lambda ()
+				(guard (e (#t (em 'handler) e))
+				  (dwt 'in (lambda ()
+					     (raise (shift k (k 2)))))))))))
+     '((in seg) (in in) (out in) (out seg) (in seg) (in in) (out in)
+       handler (out seg)))
+(define q20-k #f)
+(define q20-n 0)
+(chk "Q20 a call/cc loop inside a dynamic-wind, in resumed segments"
+     (out (lambda ()
+	     (set! q20-n 0)
+	     (reset (dwt 'seg (lambda ()
+				(call-with-current-continuation
+				 (lambda (k) (set! q20-k k)))
+				(set! q20-n (+ q20-n 1))
+				(shift s (s #f))
+				(if (< q20-n 3)
+				    (begin (em 'jump) (q20-k #f))
+				    q20-n))))))
+     '(((in seg) (out seg) (in seg) jump (out seg) (in seg) jump
+	(out seg) (in seg) (out seg)) . 3))
+
 ;;; R. parameterize in a segment resumed from within itself
 ;
 ; Resuming a segment enters its `dynamic-wind' frames again on top of the
