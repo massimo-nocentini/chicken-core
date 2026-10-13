@@ -501,14 +501,23 @@
 	   (vals (##sys#map cadr bindings))
 	   (param-aliases (##sys#map (lambda (z) (r (pname z))) params))
 	   (saveds (##sys#map (lambda (z) (r (gensym 'saved))) params))
-	   (outers (##sys#map (lambda (z) (r (gensym 'outer))) params))
+	   (olds (##sys#map (lambda (z) (r (gensym 'old))) params))
+	   (outer (r (gensym 'outer)))
 	   (temps (##sys#map (lambda (z) (r (gensym 'tmp))) params)) )
-      ;; SAVED holds the value the parameter takes inside the extent,
-      ;; OUTER a stack of the values it had where the extent was entered.
-      ;; It is a stack because a continuation captured by `shift' may be
-      ;; resumed from within a resumption of itself, entering this frame
-      ;; again before leaving it; entries and exits still come in LIFO
-      ;; order, as they all happen at the top of ##sys#dynamic-winds.
+      ;; SAVED holds the value the parameter takes inside the extent, OLD
+      ;; the one it had where the extent was entered, as long as it is
+      ;; entered outside every delimiter: there it can only be entered
+      ;; again by call/cc, which leaves it first.  Inside a delimiter,
+      ;; resuming a continuation captured by `shift' may enter the frame
+      ;; again before leaving it, from within a resumption of itself, so
+      ;; those entries push the value onto OUTER, a stack, and their
+      ;; exits pop it; entries and exits come in LIFO order, as they all
+      ;; happen at the top of ##sys#dynamic-winds.  An exit with OUTER
+      ;; empty is that of an entry outside every delimiter, or of the
+      ;; first: no entry outside a delimiter can come within the extent
+      ;; of one made inside, which is inside the delimiter's body.  An
+      ;; entry pushes the values of all the parameters, in order, and
+      ;; the stack ends in #f, so its test is no call to the interpreter.
       `(##core#let
 	,(map ##sys#list param-aliases params) ; These may be expressions
 	(##core#let
@@ -520,22 +529,31 @@
 	  ,(map ##sys#list saveds saveds)
 	  (##core#let
 	   ((,convert? (##core#the boolean #t #t)) ; Convert only first time extent is entered!
-	    ,@(map (lambda (o) `(,o (##core#quote ()))) outers))
+	    ,@(map (lambda (o) `(,o #f)) olds)
+	    (,outer #f))
 	   (##sys#dynamic-wind
 	    (##core#lambda ()
-	      (##core#let
-	       ;; First, call converters (which may throw exceptions!)
-	       ,(map (lambda (p s temp)
-		       `(,temp (##core#if ,convert? (,p ,s #t #f) ,s)))
-		     param-aliases saveds temps)
-	       ;; Save current values so we can restore them later
-	       ,@(map (lambda (p o) `(##core#set! ,o (##sys#cons (,p) ,o)))
-		      param-aliases outers)
-	       ;; Set parameters to their new values.  This can't fail.
-	       ,@(map (lambda (p t) `(,p ,t #f #t)) param-aliases temps)
-	       ,@(map (lambda (s t) `(##core#set! ,s ,t)) saveds temps)
-	       ;; Remember we already converted (only call converters once!)
-	       (##core#set! ,convert? #f)))
+	      (##core#if
+	       ,convert?
+	       ;; First, call converters (which may throw exceptions!),
+	       ;; the first time only, then save current values so we
+	       ;; can restore them later
+	       (##core#let
+		,(map (lambda (p s temp) `(,temp (,p ,s #t #f)))
+		      param-aliases saveds temps)
+		,@(map (lambda (s t) `(##core#set! ,s ,t)) saveds temps)
+		;; Remember we already converted (only call converters once!)
+		(##core#set! ,convert? #f)
+		,@(map (lambda (p o) `(##core#set! ,o (,p))) param-aliases olds))
+	       (##core#if
+		(##sys#eq? ##sys#dc-stack (##core#quote ()))
+		(##core#begin
+		 ,@(map (lambda (p o) `(##core#set! ,o (,p))) param-aliases olds))
+		(##core#begin
+		 ,@(map (lambda (p) `(##core#set! ,outer (##sys#cons (,p) ,outer)))
+			param-aliases))))
+	      ;; Set parameters to their new values.  This can't fail.
+	      ,@(map (lambda (p s) `(,p ,s #f #t)) param-aliases saveds))
 	    (##core#lambda () ,@body)
 	    (##core#lambda ()
 	      ;; Save the current value of each parameter for later
@@ -543,10 +561,16 @@
 	      ;; where this entry was made.
 	      ,@(map (lambda (p s) `(##core#set! ,s (,p)))
 		     param-aliases saveds)
-	      ,@(map (lambda (p o) `(,p (##sys#slot ,o 0) #f #t))
-		     param-aliases outers)
-	      ,@(map (lambda (o) `(##core#set! ,o (##sys#slot ,o 1)))
-		     outers)))))))))))
+	      (##core#if
+	       ,outer
+	       (##core#begin
+		,@(map (lambda (p)
+			 `(##core#begin
+			   (,p (##sys#slot ,outer 0) #f #t)
+			   (##core#set! ,outer (##sys#slot ,outer 1))))
+		       (reverse param-aliases)))
+	       (##core#begin
+		,@(map (lambda (p o) `(,p ,o #f #t)) param-aliases olds)))))))))))))
 
 (##sys#extend-macro-environment
  'require-library

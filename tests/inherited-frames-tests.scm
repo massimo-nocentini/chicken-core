@@ -10,7 +10,8 @@
 (declare (uses scheduler))
 
 (import (chicken condition)
-	(chicken format))
+	(chicken format)
+	(only (scheme base) make-parameter parameterize))
 
 (define failures 0)
 
@@ -50,6 +51,16 @@
 		   (spawn (lambda () (k (list 'child))))
 		   (let wait ()
 		     (unless child-saw (##sys#thread-yield!) (wait)))))))))
+
+(define p (make-parameter 'top))
+
+(chk "parameterize frame left by a thread, then by its creator"
+     (list (leave-in-child
+	    (lambda (body) (parameterize ((p 'inner)) (body) (p)))
+	    (lambda () (list 'child (p))))
+	   child-saw
+	   (p))
+     '(inner (child top) top))
 
 (chk "with-exception-handler frame left by a thread, then by its creator"
      (list (leave-in-child

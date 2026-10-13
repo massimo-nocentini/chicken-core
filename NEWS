@@ -48,6 +48,11 @@
     functions, except at -O0, and so does not call such a definition at
     all, while csi does.  Use e.g. (import (except (chicken flonum)
     fperf)) to keep such a definition.
+  - When a thread left a `parameterize' frame it inherited from its
+    creator, by invoking a continuation the creator had captured outside
+    the frame, the creator kept the parameter's inner value after
+    leaving the frame itself.  Both now restore the value the parameter
+    had where the frame was entered.
   - `string-foldcase' could write past the end of its output buffer: it
     sized the buffer for a 2x expansion, but U+0390 and U+03B0 fold to
     three codepoints each, a 3x byte expansion.  `string-upcase' and
