@@ -195,6 +195,25 @@
   (draws st)
   (assert (equal? default-stream (draws #f))))
 
+;; draws from a state whose type the compiler knows: under -specialize
+;; these go through the (struct pseudo-random-state) rewrites in
+;; types.db (runtests.sh looks for them in the C), and must agree with
+;; the same draws made through the library procedures, which `small'
+;; calls on a state it cannot see the type of
+(define (small st)
+  (list (pseudo-random-integer 1000 st) (pseudo-random-real st)
+        (pseudo-random-integer 7 st) (pseudo-random-real st)))
+(let ((a (make-pseudo-random-state 7))
+      (b (make-pseudo-random-state 7)))
+  (let* ((i1 (pseudo-random-integer 1000 a))
+         (r1 (pseudo-random-real a))
+         (i2 (pseudo-random-integer 7 a))
+         (r2 (pseudo-random-real a)))
+    (assert (equal? (list i1 r1 i2 r2) (small b)))
+    (assert (equal? (small a) (small b)))
+    (assert (and (fixnum? i1) (< -1 i1 1000) (< -1 i2 7)))
+    (assert (and (flonum? r1) (<= 0.0 r1) (< r1 1.0) (flonum? r2) (<= 0.0 r2) (< r2 1.0)))))
+
 ;; a copy replays, and drawing from one does not advance the other
 (let* ((st (make-pseudo-random-state 1234))
        (_ (draws st))

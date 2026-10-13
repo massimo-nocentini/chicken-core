@@ -379,6 +379,17 @@ flonum_rewrites() {
     ! grep -E 'C_text\("chicken\.flonum#' flonum-rewrites.wasm.c
 }
 check flonum-rewrites flonum_rewrites
+# rt:random number tests: under -specialize the draws from a state of
+# known type must go through the state rewrites in types.db (no
+# -ignore-repository: (chicken random) is found in the repository)
+random_specialize() {
+    $wchicken random-tests.scm -consult-types-file "$WASM_REPO/types.db" \
+	-specialize -output-file random-specialize.wasm.c &&
+    for f in C_random_fixnum_s C_a_i_random_real_s; do
+	grep -q "$f(" random-specialize.wasm.c || return 1
+    done
+}
+check random-specialize random_specialize
 
 # The generated C must not depend on the compiler's platform.  First
 # make sure the host output does not depend on the symbol table's hash

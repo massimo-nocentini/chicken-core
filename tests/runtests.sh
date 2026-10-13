@@ -474,8 +474,18 @@ $compile -unsafe fixnum-tests.scm
 
 echo "======================================== random number tests ..."
 $interpret -s random-tests.scm
-$compile -specialize random-tests.scm
-./a.out
+# Draws from a state whose type is known must be open-coded through the
+# state rewrites in types.db, so besides running the program, look for
+# them in its C.
+$compile -specialize random-tests.scm -k -o random-specialize.out
+./random-specialize.out
+for f in C_random_fixnum_s C_a_i_random_real_s; do
+    if ! grep -q "$f(" random-specialize.c; then
+	echo "$f was not open-coded under -specialize"
+	exit 1
+    fi
+done
+rm -f random-specialize.c random-specialize.o random-specialize.out
 
 # Processes started together draw different numbers; with -:R they
 # draw the same ones.  (Runtime options must come first.)
