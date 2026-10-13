@@ -102,10 +102,13 @@ one runs the corresponding {{before}} thunks again, so a segment that is
 resumed twice is wound twice.
 
 A continuation captured by {{call/cc}} inside the body of a {{reset}}
-returns to the innermost live instance of that body. So when the body is
-part of a segment resumed from a {{shift}}, elsewhere or more than once,
-invoking it ends that resumption, whose caller gets the value of the
-body. That is what makes the handlers of {{guard}},
+returns to the innermost live instance of that body: the one it was
+captured in, or a resumption of a segment captured there or in a
+resumption of one. So when the body is part of a segment resumed from a
+{{shift}}, elsewhere or more than once, invoking it ends that resumption,
+whose caller gets the value of the body. A resumption of a segment that
+was captured before the continuation, and so does not contain it, is not
+an instance of it: the continuation returns past it. That is what makes the handlers of {{guard}},
 {{handle-exceptions}} and {{condition-case}}, which escape through
 {{call/cc}}, work inside a resumed or multi-shot computation:
 

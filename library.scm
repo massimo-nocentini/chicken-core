@@ -4301,7 +4301,7 @@ EOF
 ;
 ; ##sys#dc-stack is the metacontinuation: a list of frames
 ;
-;     #( <k> <winds> <origin> )
+;     #( <k> <winds> <path> <depth> )
 ;
 ; <k> is an ordinary ONE-ARGUMENT procedure that never returns.  It is
 ; either a continuation reified by the compiler's CPS conversion (see
@@ -4317,15 +4317,33 @@ EOF
 ; ABOVE that, so leaving and re-entering it runs the "after" and "before"
 ; thunks of the `dynamic-wind's it encloses, and touches nothing outside.
 ;
-; <origin> names the `reset' whose body the frame delimits.  It is #f in
-; the frame a `reset' pushes until a segment is captured under it, when
-; ##sys#dc-shift-enter gives it a token, so a `reset' costs one frame.  A
-; captured segment carries the origin of the frame it was captured under,
-; and the frame pushed to resume it carries it too, as it delimits another
-; instance of the same body.  It is a token, not the `reset''s frame, so
-; that a segment does not keep that frame's <k> - the delimiter's outer
-; continuation - alive.
+; <path> and <depth> name the instance of a delimited body the frame
+; delimits: the body of a `reset', or of a resumption of a segment.
+; Instances form a tree, a resumption being a child of the instance its
+; segment was captured in, and ##sys#dc-reenter needs to know whether one
+; descends from another.  An instance does not point to its parent: in a
+; generator every step is a child of the previous one, and such a chain
+; would keep something of every step alive for as long as the generator
+; runs.  Instead the tree is cut into paths, each a vector
 ;
+;     #( <parent path> <parent depth> <length> )
+;
+; and an instance is a place on one, a path and a depth.  The first child
+; of an instance at depth D on path P, when P is D long, extends P to
+; D + 1 and takes that place; any other child starts a new path from
+; (P, D).  One instance is then an ancestor of another when, going up the
+; paths from the other, one meets the first's path at its depth or deeper.
+; A chain of single resumptions is one path: it allocates nothing and
+; keeps nothing alive but that path.  A path and its parents are all that
+; a segment keeps of the frame it was captured under; in particular, not
+; its <k>, the delimiter's outer continuation.
+;
+; A frame does not need its place until a segment is captured under it,
+; when ##sys#dc-shift-enter assigns it, so a `reset' costs one frame:
+; until then <path> is #f in the frame of a `reset', and in the frame of a
+; resumption <path> and (fxnot <depth>), a negative fixnum, are the place
+; of its parent.
+
 ; Popping a frame and invoking its <k> is what realises the meta-level
 ; "(E (lambda (v) v))" of the rewriting rules: it is the only operation
 ; that can give a value back to a delimiter.
@@ -4375,12 +4393,38 @@ EOF
 ; or - when a delimited continuation is resumed - the continuation of the
 ; call to it.  It must be a continuation that never returns: compiled
 ; callers of ##sys#dc-abort keep no live continuation of their own.
-(define-inline (dc-frame k winds origin)
-  (##core#inline_allocate ("C_a_i_vector3" 4) k winds origin))
+(define-inline (dc-frame k winds path depth)
+  (##core#inline_allocate ("C_a_i_vector4" 5) k winds path depth))
+
+; Give FRAME its place, unless it has one.
+(define-inline (dc-place! frame)
+  (let ((path (##sys#slot frame 2))
+	(depth (##sys#slot frame 3)))
+    (cond ((not path)
+	   (##sys#setslot frame 2
+			  (##core#inline_allocate ("C_a_i_vector3" 4) #f 0 0)))
+	  ((fx< depth 0)
+	   (let ((d (##core#inline "C_fixnum_not" depth)))
+	     (cond ((fx= (##sys#slot path 2) d)
+		    (##sys#setislot path 2 (fx+ d 1))
+		    (##sys#setislot frame 3 (fx+ d 1)))
+		   (else
+		    (##sys#setslot frame 2
+				   (##core#inline_allocate
+				    ("C_a_i_vector3" 4) path d 0))
+		    (##sys#setislot frame 3 0))))))))
+
+; Whether the instance at (PATH, DEPTH) is the one at (Q, D) or one of its
+; ancestors.
+(define (##sys#dc-ancestor? path depth q d)
+  (cond ((eq? q path) (fx>= d depth))
+	((##sys#slot q 0)
+	 (##sys#dc-ancestor? path depth (##sys#slot q 0) (##sys#slot q 1)))
+	(else #f)))
 
 (define (##sys#dc-push! k)
   (set! ##sys#dc-stack
-    (cons (dc-frame k ##sys#dynamic-winds #f) ##sys#dc-stack))
+    (cons (dc-frame k ##sys#dynamic-winds #f 0) ##sys#dc-stack))
   (##core#undefined))
 
 ; "(lambda (v) v)": return V to the innermost delimiter.  Never returns.
@@ -4410,7 +4454,8 @@ EOF
 ; Entering a `shift': leave the delimited segment, running the "after"
 ; thunks of any `dynamic-wind' between the delimiter and here, and return
 ; that segment so it can be re-entered if the continuation is resumed,
-; as ( <origin> . <winds above the delimiter> ).
+; as #( <path> <depth> <winds above the delimiter> ), the first two being
+; the place of the frame it was captured under.
 (define (##sys#dc-shift-enter)
   (let ((s ##sys#dc-stack))
     (if (eq? s '())
@@ -4419,20 +4464,23 @@ EOF
 	       (base (##sys#slot frame 1))
 	       (seg (##sys#dc-segment ##sys#dynamic-winds base)))
 	  (##sys#dc-unwind-to base)
-	  (unless (##sys#slot frame 2)
-	    (##sys#setslot frame 2 (##core#inline_allocate ("C_a_i_record1" 2) 'dc-origin)))
-	  (cons (##sys#slot frame 2) seg)))))
+	  (dc-place! frame)
+	  (##core#inline_allocate ("C_a_i_vector3" 4)
+				  (##sys#slot frame 2) (##sys#slot frame 3) seg)))))
 
 ; Resume a captured delimited continuation - rule 5's
 ;    f = (lambda (x) (lambda (c2) (c2 (c x))))
 ; K2 is f's own return continuation, rule 5's c2; it becomes the delimiter
 ; the resumed segment will return to.  W is what ##sys#dc-shift-enter
-; returned: the segment's origin, and its own dynamic-wind context, spliced
-; on top of the one we are resuming in.  Never returns.
+; returned: the place of the instance the segment was captured in, the new
+; frame's parent, and the segment's own dynamic-wind context, spliced on
+; top of the one we are resuming in.  Never returns.
 (define (##sys#dc-resume k2 c x w)
   (set! ##sys#dc-stack
-    (cons (dc-frame k2 ##sys#dynamic-winds (##sys#slot w 0)) ##sys#dc-stack))
-  (##sys#dc-rewind (##sys#slot w 1))
+    (cons (dc-frame k2 ##sys#dynamic-winds (##sys#slot w 0)
+		    (##core#inline "C_fixnum_not" (##sys#slot w 1)))
+	  ##sys#dc-stack))
+  (##sys#dc-rewind (##sys#slot w 2))
   (c x))
 
 ; Reinstate the context of a continuation captured by call/cc, whose
@@ -4446,8 +4494,12 @@ EOF
 ; delimits is live, the innermost one is the one to return to: the frame
 ; of the capture itself when control is still in its extent (and any
 ; `reset' entered since is left), or the frame of a resumption of a
-; segment captured in that body.  The winds of the capture are then
-; rebased from its delimiter onto that frame's.  This is what lets
+; segment captured in that instance, or in one resumed from it.  A
+; resumption of a segment captured elsewhere - in an instance of the same
+; body that the capture's own frame did not give rise to - is not one: it
+; does not contain the capture, so the value goes past it to the capture's
+; own frame.  The winds of the capture are then rebased from its delimiter
+; onto that frame's.  This is what lets
 ; `guard', `handle-exceptions' and `condition-case', which escape through
 ; call/cc, work inside a segment resumed elsewhere or more than once: the
 ; handler's value goes back to the resumption, not to the `reset' of the
@@ -4471,15 +4523,25 @@ EOF
   (set! ##sys#dc-stack dcs))
 
 ; The tail of the current metacontinuation headed by the innermost frame
-; that is DCS's top frame or has its origin, or #f.
+; that is DCS's top frame or descends from it by resumption, or #f.  When
+; DCS's top frame has no place yet, nothing descends from it.  A frame
+; without a place of its own is tested by the place of its parent.
 (define (##sys#dc-instance dcs)
   (and (pair? dcs)
        (let* ((frame (##sys#slot dcs 0))
-	      (origin (##sys#slot frame 2)))
+	      (path (##sys#slot frame 2))
+	      (depth (##sys#slot frame 3)))
 	 (let loop ((s ##sys#dc-stack))
 	   (cond ((eq? s '()) #f)
-		 ((or (eq? (##sys#slot s 0) frame)
-		      (and origin (eq? (##sys#slot (##sys#slot s 0) 2) origin)))
+		 ((let ((f (##sys#slot s 0)))
+		    (or (eq? f frame)
+			(and path
+			     (fx>= depth 0)
+			     (##sys#slot f 2)
+			     (let ((d (##sys#slot f 3)))
+			       (##sys#dc-ancestor?
+				path depth (##sys#slot f 2)
+				(if (fx< d 0) (##core#inline "C_fixnum_not" d) d))))))
 		  s)
 		 (else (loop (##sys#slot s 1))))))))
 

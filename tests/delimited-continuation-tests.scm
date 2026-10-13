@@ -460,6 +460,32 @@
        (list (length l) (car l) (car (list-tail l 1999))))
      '(2000 1999 0))
 
+;; A handler set up inside a resumption, raised to from a resumption of
+;; the first run's segment nested in it.  That inner resumption does not
+;; contain the handler - the segment was captured before it was set up -
+;; so the value goes back to the frame of the capture, the outer
+;; resumption, and the rest of it runs once.  The same with a plain
+;; call/cc escape.
+(define qg (reset (let ((x (shift k k)))
+		    (if (procedure? x)
+			(list 'outer (guard (e (#t (list 'caught e))) (x 'leaf)))
+			(raise x)))))
+(chk "Q15 a handler set up inside a resumption, raised to from a nested one"
+     (qg qg) '(outer (caught leaf)))
+(define qc (reset (let ((x (shift k k)))
+		    (if (procedure? x)
+			(list 'outer (call-with-current-continuation
+				      (lambda (esc) (x (cons 'esc esc)))))
+			((cdr x) 'escaped)))))
+(chk "Q16 ... and a call/cc escape captured there"
+     (qc qc) '(outer escaped))
+(chk "Q17 a handler set up before two nested shifts, still per branch"
+     (reset (guard (e (#t (list 'caught e)))
+	      (let* ((a (shift k (list (k 1) (k 2))))
+		     (b (shift k (list (k 10)))))
+		(raise (+ a b)))))
+     '(((caught 11)) ((caught 12))))
+
 ;;; R. parameterize in a segment resumed from within itself
 ;
 ; Resuming a segment enters its `dynamic-wind' frames again on top of the
