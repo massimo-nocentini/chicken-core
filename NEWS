@@ -259,12 +259,16 @@
     `guard', `handle-exceptions' and `condition-case', installs its
     handler on top of the handlers current where the segment is
     resumed, so an exception it declines reaches theirs.  For that,
-    `abort' and `raise' now call the handler inside a `dynamic-wind'
-    frame, as `signal' and `raise-continuable' do, which reinstates it
-    when control leaves the call: a continuation re-entered from within
-    the handler finds the handlers of the raise below its own, and a
-    handler resumed by a delimited continuation that returns signals
-    "exception handler returned" to the handlers around the resumption.
+    inside a `reset' `abort' and `raise' now call the handler inside a
+    `dynamic-wind' frame, as `signal' and `raise-continuable' do, which
+    reinstates it when control leaves the call: a continuation re-entered
+    from within the handler finds the handlers of the raise below its
+    own, and a handler resumed by a delimited continuation that returns
+    signals "exception handler returned" to the handlers around the
+    resumption.  Outside every `reset', where only call/cc can enter a
+    frame again, `abort' calls the handler without a frame and a
+    `with-exception-handler' frame installs its handler on the handlers
+    of its creation, as before.
     A segment captured within a call to a handler, entered again by a
     resumption, takes that handler away only if the segment installed
     it, and leaves the handlers around the resumption as they were.

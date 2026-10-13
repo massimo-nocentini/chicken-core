@@ -6834,9 +6834,9 @@ EOF
 ;; by an escape, so the handler stack stays the one of
 ;; ##sys#dynamic-winds: an escape from a handler into the extent of a
 ;; `with-exception-handler' it is outside of enters that frame on top of
-;; the handlers of the raise.  `abort' never leaves it by a return.  The
-;; before thunk of the frame is always ##sys#pop-exception-handler!,
-;; which identifies it:
+;; the handlers of the raise.  `abort' enters it only inside a
+;; delimiter, and never leaves it by a return.  The before thunk of the
+;; frame is always ##sys#pop-exception-handler!, which identifies it:
 ;; code that records the dynamic-winds of a raise from within its
 ;; handler (delimited continuations, say) can leave it out.
 ;;
@@ -6878,8 +6878,15 @@ EOF
 	    ##sys#dynamic-winds))
     h))
 
+;; Outside every delimiter `abort' pops the handler bare, as nothing
+;; there installs a handler on the current stack (see
+;; `with-exception-handler'); inside one it calls it in the frame.
 (define (abort x)
-  ((enter-exception-handler-frame!) x)
+  (if (eq? ##sys#dc-stack '())
+      (let ((h (car ##sys#current-exception-handler)))
+	(pop-exception-handler!)
+	(h x))
+      ((enter-exception-handler-frame!) x))
   (abort
    (##sys#make-structure
     'condition
@@ -6985,27 +6992,52 @@ EOF
        (##sys#setslot eh 1 eh)
        eh)))
 
-;; The frame pushes HANDLER onto the handler stack current at each
-;; entry, not at the first: resuming a delimited continuation enters
-;; the frame again where the resumption runs, possibly from within an
-;; extent of the same frame that has not been left yet.  OUTER keeps a
-;; stack of the handler stacks at the entries, and each exit restores
-;; and pops the one of its own entry; entries and exits come in LIFO
-;; order, as they all happen at the top of ##sys#dynamic-winds.  This
-;; is the frame `parameterize' winds, for the same reason.  The stack
-;; current at an entry is the one of the frames below it, because every
-;; change to it is a frame of its own, the one of
-;; `enter-exception-handler-frame!' included.
+;; Outside every delimiter, the frame installs HANDLER on the stack OLD
+;; of its creation, as there a frame can only be entered again by
+;; call/cc, which reinstates the whole context of the continuation.
+;; Inside one, the frame pushes HANDLER onto the handler stack current
+;; at each entry: resuming a delimited continuation enters the frame
+;; again where the resumption runs, possibly from within an extent of
+;; the same frame that has not been left yet.  OUTER keeps a stack of
+;; the handler stacks at those entries, and each exit restores and pops
+;; the one of its own entry; entries and exits come in LIFO order, as
+;; they all happen at the top of ##sys#dynamic-winds.  This is the
+;; frame `parameterize' winds, for the same reason.  An exit with OUTER
+;; empty is that of an entry outside every delimiter, or of the first,
+;; which finds OLD: no entry outside a delimiter can come within the
+;; extent of one made inside, which is inside the delimiter's body.
+;; The stack current at an entry inside a delimiter is the one of the
+;; frames below it, because there every change to it is a frame of its
+;; own, the one of `enter-exception-handler-frame!' included.
+;;
+;; This is `dynamic-wind' with the first entry and the exit on return
+;; done in place.
 (define (with-exception-handler handler thunk)
-  (let ((outer '()))
-    (##sys#dynamic-wind
-      (lambda ()
-        (set! outer (cons ##sys#current-exception-handler outer))
-        (set! ##sys#current-exception-handler (cons handler (car outer))))
-      thunk
-      (lambda ()
-        (set! ##sys#current-exception-handler (car outer))
-        (set! outer (cdr outer))))))
+  (let ((old ##sys#current-exception-handler)
+	(outer '()))
+    (define (exit!)
+      (let ((o outer))
+	(cond ((pair? o)
+	       (set! ##sys#current-exception-handler (##sys#slot o 0))
+	       (set! outer (##sys#slot o 1)))
+	      (else (set! ##sys#current-exception-handler old)))))
+    (set! ##sys#current-exception-handler (cons handler old))
+    (set! ##sys#dynamic-winds
+      (cons (cons (lambda ()
+		    (if (eq? ##sys#dc-stack '())
+			(set! ##sys#current-exception-handler (cons handler old))
+			(let ((s ##sys#current-exception-handler))
+			  (set! outer (cons s outer))
+			  (set! ##sys#current-exception-handler
+			    (cons handler s)))))
+		  exit!)
+	    ##sys#dynamic-winds))
+    (##sys#call-with-values
+     thunk
+     (lambda results
+       (set! ##sys#dynamic-winds (##sys#slot ##sys#dynamic-winds 1))
+       (exit!)
+       (apply ##sys#values results)))))
 
 (define (current-exception-handler . args)
   (if (null? args)

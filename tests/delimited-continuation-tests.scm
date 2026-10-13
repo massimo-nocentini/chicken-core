@@ -600,11 +600,11 @@
 (chk "S8 the handler stack is as it was afterwards"
      (eq? ##sys#current-exception-handler s-handlers) #t)
 
-;; No `shift' here: the frame pushes its handler onto the handlers current
-;; at each entry, so a call/cc continuation re-entered from within the
+;; No `shift' here: a call/cc continuation re-entered from within the
 ;; handler of a `raise' must find the handlers of the raise there, not
 ;; the ones the handler runs under (R7RS: the continuation's dynamic
-;; environment is (H2 H1 ...)).
+;; environment is (H2 H1 ...)).  Outside every delimiter the frame
+;; installs its handler on the handlers of its creation.
 (define s-k #f)
 (chk "S9 call/cc re-entry from a raise's handler keeps the handlers between"
      (call-with-current-continuation
@@ -673,6 +673,38 @@
 			       (let* ((r (sp 'w))) (list r (signal 'after)))))))
      '((handled w) (site after)))
 (chk "S17 the handler stack is as it was afterwards"
+     (eq? ##sys#current-exception-handler s-handlers) #t)
+
+;; No `shift' here either.  The setter of `current-exception-handler'
+;; replaces the handler in its place on the stack, which is the cell an
+;; enclosing frame consed; call/cc re-entry finds it there again.
+(define (sh-1 e) 'sh-1)
+(define (sh-2 e) 'sh-2)
+(define (sh-3 e) 'sh-3)
+(define (sh-name h)
+  (cond ((eq? h sh-1) 'sh-1) ((eq? h sh-2) 'sh-2) ((eq? h sh-3) 'sh-3)
+	(else 'other)))
+(define (sh-reenter set-in-handler?)
+  (let ((k #f) (n 0) (seen '()))
+    (with-exception-handler
+     sh-1
+     (lambda ()
+       (unless set-in-handler? (current-exception-handler sh-2))
+       (with-exception-handler
+	(lambda (e)
+	  (when set-in-handler? (current-exception-handler sh-3))
+	  (call-with-current-continuation (lambda (c) (set! k c)))
+	  (set! seen (cons (sh-name (current-exception-handler)) seen))
+	  e)
+	(lambda () (signal 'x)))))
+    (set! n (+ n 1))
+    (when (< n 2) (k #f))
+    (reverse seen)))
+(chk "S18 call/cc re-entry finds a handler the setter put in an outer frame"
+     (sh-reenter #f) '(sh-2 sh-2))
+(chk "S19 ... or in the frame the handler runs under"
+     (sh-reenter #t) '(sh-3 sh-3))
+(chk "S20 the handler stack is as it was afterwards"
      (eq? ##sys#current-exception-handler s-handlers) #t)
 
 (newline)

@@ -175,6 +175,7 @@ tests/condition-tests.scm
 tests/file-access-tests.scm
 tests/fixnum-tests.scm
 tests/flonum-unboxing-tests.scm
+tests/inherited-frames-tests.scm
 tests/numbers-string-conversion-tests.scm
 tests/numbers-test.scm
 tests/numbers-test-ashinn.scm

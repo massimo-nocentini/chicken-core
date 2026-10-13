@@ -273,6 +273,15 @@ $compile delimcc-retention.scm
 $compile -O3 delimcc-retention.scm
 ./a.out
 
+echo "======================================== inherited frames tests ..."
+$interpret -s inherited-frames-tests.scm >inherited-frames.out
+$compile inherited-frames-tests.scm
+./a.out >inherited-frames-compiled.out
+diff $DIFF_OPTS inherited-frames.out inherited-frames-compiled.out
+$compile -O3 inherited-frames-tests.scm
+./a.out >inherited-frames-compiled.out
+diff $DIFF_OPTS inherited-frames.out inherited-frames-compiled.out
+
 echo "======================================== closure sharing re-entry tests ..."
 # -O2 exercises the local-procedure case; -O3 implies -local and the global ones.
 $compile -O2 closure-sharing-reentry-tests.scm
