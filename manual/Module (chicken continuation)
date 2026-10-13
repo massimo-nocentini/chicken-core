@@ -122,8 +122,10 @@ Resuming a segment enters its handler frames again on top of the
 handlers current where the resumption runs, even when it is resumed from
 within a resumption of itself, so an exception that a handler in the
 segment declines, or raises again, goes on to the handlers around the
-resumption. A {{parameterize}} in a segment binds its parameter the same
-way.
+resumption. A segment captured within a call to a handler runs, when
+resumed, without that handler only if the segment installed it, so the
+handlers around the resumption stay as they were. A {{parameterize}} in a
+segment binds its parameter the same way.
 
 A continuation captured outside every live instance of its body - outside
 any {{reset}}, or in a body that has returned - brings back the whole

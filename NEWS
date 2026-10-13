@@ -265,6 +265,9 @@
     the handler finds the handlers of the raise below its own, and a
     handler resumed by a delimited continuation that returns signals
     "exception handler returned" to the handlers around the resumption.
+    A segment captured within a call to a handler, entered again by a
+    resumption, takes that handler away only if the segment installed
+    it, and leaves the handlers around the resumption as they were.
     Note that a delimiter passes a single value: `(reset (values 1 2))'
     is 1.
   - The per-thread state buffer has grown a seventh slot, holding the

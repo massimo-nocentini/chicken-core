@@ -634,6 +634,47 @@
 (chk "S12 ... and the handler stack is as it was afterwards"
      (eq? ##sys#current-exception-handler s-handlers) #t)
 
+;; A segment captured inside a call to a handler holds the frame that
+;; `abort', `signal' and `raise-continuable' wind around the call, which
+;; pops the handler.  Resumed, it must pop the handler only if the
+;; segment has installed it (S15), and leave the handlers of the
+;; resumption as they were (S13, S14, S16).
+(define (site-handler thunk)
+  (with-exception-handler (lambda (e) (list 'site e)) thunk))
+(define sp (with-exception-handler
+	    (lambda (e) (shift k k))
+	    (lambda () (reset (list 'handled (signal 'x))))))
+(chk "S13 a segment captured in a handler call keeps the resumption's guard"
+     (around (lambda ()
+	       (let* ((r #f)
+		      (g (guard (e (#t (list 'site-guard e)))
+			   (set! r (sp 'v))
+			   (signal 'after))))
+		 (list r g))))
+     '((handled v) (site-guard after)))
+(define sq (with-exception-handler
+	    (lambda (e) (list 'h-returned (signal (shift k k))))
+	    (lambda () (reset (list 'handled (signal 'x))))))
+(chk "S14 ... and a raise in the resumed call reaches the resumption's handler"
+     (around (lambda () (site-handler (lambda () (sq 'inner)))))
+     '(handled (h-returned (site inner))))
+(define sr (reset (with-exception-handler
+		   (lambda (e)
+		     (if (eq? e 'x)
+			 (list 'h-returned (signal (shift k k)))
+			 (list 'h-saw e)))
+		   (lambda () (list 'handled (signal 'x))))))
+(chk "S15 ... even when the segment installs the handler it calls"
+     (around (lambda () (site-handler (lambda () (sr 'inner)))))
+     '(handled (h-returned (site inner))))
+(chk "S16 ... and leaves the resumption's handlers as they were"
+     (around (lambda ()
+	       (site-handler (lambda ()
+			       (let* ((r (sp 'w))) (list r (signal 'after)))))))
+     '((handled w) (site after)))
+(chk "S17 the handler stack is as it was afterwards"
+     (eq? ##sys#current-exception-handler s-handlers) #t)
+
 (newline)
 (printf "~a failure(s)~%" failures)
 (when (positive? failures)

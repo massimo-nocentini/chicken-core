@@ -4271,6 +4271,16 @@ EOF
 
 (define ##sys#dynamic-wind dynamic-wind)
 
+; Enter the frame F of ##sys#dynamic-winds again, by running its before
+; thunk, except for the frame around a call to an exception handler,
+; which the core enters through its after thunk instead (see
+; ##sys#call-exception-handler).
+(define-inline (wind-enter! f)
+  (let ((before (##sys#slot f 0)))
+    (if (eq? before ##sys#pop-exception-handler!)
+	((##sys#slot f 1) #t)
+	(before))))
+
 (set! scheme#call-with-current-continuation
   (lambda (proc)
     (let ((winds ##sys#dynamic-winds)
@@ -4288,7 +4298,7 @@ EOF
   (cond [(eq? ##sys#dynamic-winds winds)]
 	[(fx< n 0)
 	 (##sys#dynamic-unwind (##sys#slot winds 1) (fx+ n 1))
-	 ((##sys#slot (##sys#slot winds 0) 0))
+	 (wind-enter! (##sys#slot winds 0))
 	 (set! ##sys#dynamic-winds winds) ]
 	[else
 	 (let ([after (##sys#slot (##sys#slot ##sys#dynamic-winds 0) 1)])
@@ -4386,7 +4396,7 @@ EOF
 (define (##sys#dc-rewind seg)
   (unless (eq? seg '())
     (##sys#dc-rewind (##sys#slot seg 1))
-    ((##sys#slot (##sys#slot seg 0) 0))
+    (wind-enter! (##sys#slot seg 0))
     (set! ##sys#dynamic-winds (cons (##sys#slot seg 0) ##sys#dynamic-winds))))
 
 ; Install a new delimiter.  K is the continuation of the `reset' expression,
@@ -6831,16 +6841,39 @@ EOF
 ;; the frame is always ##sys#pop-exception-handler!, which identifies it:
 ;; code that records the dynamic-winds of a raise from within its
 ;; handler (delimited continuations, say) can leave it out.
+;;
+;; Resuming a delimited continuation captured within the call enters
+;; the frame again where the resumption runs, on top of handlers that
+;; need not have H on top: H may have been installed outside the
+;; segment.  Popping there would take away a handler of the resumption,
+;; and consing H back on the way out would leave H installed in its
+;; place.  So the core enters the frame again through its after thunk,
+;; called with #t (see `wind-enter!'): that entry pops only when H is
+;; the current handler, which a `with-exception-handler' in the segment
+;; has made it, and pushes the stack it found onto OUTER; each exit
+;; reinstates and pops the one of its own entry, in LIFO order as for
+;; `with-exception-handler''s frame.  The first entry, and one that runs
+;; the before thunk itself, pushes nothing, and its exit puts H back.
 (define (##sys#pop-exception-handler!)
   (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
 
 (define (##sys#call-exception-handler proc)
-  (let ((h (car ##sys#current-exception-handler)))
+  (let ((h (car ##sys#current-exception-handler))
+	(outer '()))
     (##sys#dynamic-wind
       ##sys#pop-exception-handler!
       (lambda () (proc h))
-      (lambda ()
-        (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
+      (lambda (#!optional entering)
+	(cond (entering
+	       (set! outer (cons ##sys#current-exception-handler outer))
+	       (when (eq? (car ##sys#current-exception-handler) h)
+		 (##sys#pop-exception-handler!)))
+	      ((pair? outer)
+	       (set! ##sys#current-exception-handler (car outer))
+	       (set! outer (cdr outer)))
+	      (else
+	       (set! ##sys#current-exception-handler
+		 (cons h ##sys#current-exception-handler))))))))
 
 ;; Call the current handler on X continuably: it is reinstated when the
 ;; handler returns.
