@@ -4288,7 +4288,15 @@ EOF
       (##sys#call-with-current-continuation
        (lambda (cont)
 	 (define (continuation . results)
-	   (##sys#dc-reenter winds dcs)
+	   ;; Captured outside every delimiter, the continuation needs
+	   ;; of ##sys#dc-reenter only the winding to WINDS: spare
+	   ;; plain call/cc its two out-of-line calls.
+	   (if (eq? dcs '())
+	       (begin
+		 (unless (eq? ##sys#dynamic-winds winds)
+		   (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))))
+		 (set! ##sys#dc-stack '()))
+	       (##sys#dc-reenter winds dcs))
 	   (apply cont results) )
 	 (proc continuation) ))) ))
 
