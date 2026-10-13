@@ -32,12 +32,22 @@
     from the entropy source), copied by `pseudo-random-state-copy' and
     split by `pseudo-random-state-split'.  `pseudo-random-integer' and
     `pseudo-random-real' take one as an optional last argument, and the
-    compiler open-codes both with and without it.
+    compiler open-codes both with and without it.  As the order in which
+    the arguments of a call are evaluated is unspecified, and open-coded
+    ones may go first, several draws in the arguments of one call can
+    now happen in a different order at different optimization levels.
   - `(chicken flonum)' has new special functions: `fplog1p', `fpexpm1',
     `fplgamma', `fptgamma', `fperf' and `fperfc', the C library's
     log1p, expm1, lgamma, tgamma, erf and erfc.  Like the other flonum
     operations they are open-coded by the compiler, and unboxed in
-    chains of flonum operations.
+    chains of flonum operations.  A program or module that imports
+    `(chicken flonum)' or `(chicken random)' without `only' or `except'
+    and defines one of the new names itself now assigns the library's
+    binding, and the compiler warns about it ("assignment to imported
+    value binding"); compiled code open-codes calls to the six flonum
+    functions, except at -O0, and so does not call such a definition at
+    all, while csi does.  Use e.g. (import (except (chicken flonum)
+    fperf)) to keep such a definition.
   - `string-foldcase' could write past the end of its output buffer: it
     sized the buffer for a 2x expansion, but U+0390 and U+03B0 fold to
     three codepoints each, a 3x byte expansion.  `string-upcase' and
