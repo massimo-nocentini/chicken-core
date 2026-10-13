@@ -600,6 +600,40 @@
 (chk "S8 the handler stack is as it was afterwards"
      (eq? ##sys#current-exception-handler s-handlers) #t)
 
+;; No `shift' here: the frame pushes its handler onto the handlers current
+;; at each entry, so a call/cc continuation re-entered from within the
+;; handler of a `raise' must find the handlers of the raise there, not
+;; the ones the handler runs under (R7RS: the continuation's dynamic
+;; environment is (H2 H1 ...)).
+(define s-k #f)
+(chk "S9 call/cc re-entry from a raise's handler keeps the handlers between"
+     (call-with-current-continuation
+      (lambda (out)
+	(with-exception-handler
+	 (lambda (e) (if (eq? e 'x) (s-k 'again) (out (list 'h1 e))))
+	 (lambda ()
+	   (with-exception-handler
+	    (lambda (e) (signal (list 'declined e)))
+	    (lambda ()
+	      (let ((v (call-with-current-continuation
+			(lambda (c) (set! s-k c) 'first))))
+		(if (eq? v 'first) 'left (raise v)))))
+	   (raise 'x)))))
+     '(h1 (declined again)))
+(chk "S10 ... and the handler stack is as it was afterwards"
+     (eq? ##sys#current-exception-handler s-handlers) #t)
+(define s-calls 0)
+(define sa (reset (with-exception-handler
+		   (lambda (e) (set! s-calls (+ s-calls 1)) (shift k k))
+		   (lambda () (list 'raised (raise 'x))))))
+(chk "S11 a raise's handler resumed by a segment returns to the resumption's handlers"
+     (list (guard (e ((condition? e) (get-condition-property e 'exn 'message)))
+		  (sa 'v))
+	   s-calls)
+     '("exception handler returned" 1))
+(chk "S12 ... and the handler stack is as it was afterwards"
+     (eq? ##sys#current-exception-handler s-handlers) #t)
+
 (newline)
 (printf "~a failure(s)~%" failures)
 (when (positive? failures)

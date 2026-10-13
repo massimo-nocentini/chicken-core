@@ -6809,34 +6809,43 @@ EOF
              (string-append msg " - " strerror) args))))
 
 (define (abort x)
-  (let ((h (car ##sys#current-exception-handler)))
-    (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler))
-    (h x)
-    (abort
-     (##sys#make-structure
-      'condition
-      '(exn)
-      (list '(exn . message) "exception handler returned"
-  	    '(exn . arguments) '()
-	    '(exn . location) #f) ) ) ) )
+  (##sys#call-exception-handler
+   (lambda (h)
+     (h x)
+     (abort
+      (##sys#make-structure
+       'condition
+       '(exn)
+       (list '(exn . message) "exception handler returned"
+	     '(exn . arguments) '()
+	     '(exn . location) #f) ) ) ) ) )
 
-;; Call the current handler on X continuably, as signal and
-;; scheme#raise-continuable do: the handler is reinstated when it
-;; returns, so only its own dynamic extent runs under the outer
-;; handler.  The before thunk of the dynamic-wind frame around the
-;; call is always ##sys#pop-exception-handler!, which identifies the
-;; frame: code that records the dynamic-winds of a raise from within
-;; its handler (delimited continuations, say) can leave it out.
+;; Call PROC on the current handler, which it is to call, with that
+;; handler popped, as `abort', `signal' and scheme#raise-continuable do:
+;; only the dynamic extent of the call runs under the outer handler.
+;; The pop is a `dynamic-wind' frame, which reinstates the handler when
+;; control leaves the call, by a return or by an escape, so the handler
+;; stack stays the one of ##sys#dynamic-winds: an escape from a handler
+;; into the extent of a `with-exception-handler' it is outside of enters
+;; that frame on top of the handlers of the raise.  The before thunk of
+;; the frame is always ##sys#pop-exception-handler!, which identifies it:
+;; code that records the dynamic-winds of a raise from within its
+;; handler (delimited continuations, say) can leave it out.
 (define (##sys#pop-exception-handler!)
   (set! ##sys#current-exception-handler (cdr ##sys#current-exception-handler)))
 
-(define (##sys#call-exception-handler/continuable x)
+(define (##sys#call-exception-handler proc)
   (let ((h (car ##sys#current-exception-handler)))
     (##sys#dynamic-wind
       ##sys#pop-exception-handler!
-      (lambda () (h x))
+      (lambda () (proc h))
       (lambda ()
         (set! ##sys#current-exception-handler (cons h ##sys#current-exception-handler))))))
+
+;; Call the current handler on X continuably: it is reinstated when the
+;; handler returns.
+(define (##sys#call-exception-handler/continuable x)
+  (##sys#call-exception-handler (lambda (h) (h x))))
 
 (define (signal x) (##sys#call-exception-handler/continuable x))
 
@@ -6929,7 +6938,10 @@ EOF
 ;; stack of the handler stacks at the entries, and each exit restores
 ;; and pops the one of its own entry; entries and exits come in LIFO
 ;; order, as they all happen at the top of ##sys#dynamic-winds.  This
-;; is the frame `parameterize' winds, for the same reason.
+;; is the frame `parameterize' winds, for the same reason.  The stack
+;; current at an entry is the one of the frames below it, because every
+;; change to it is a frame of its own, ##sys#call-exception-handler's
+;; included.
 (define (with-exception-handler handler thunk)
   (let ((outer '()))
     (##sys#dynamic-wind
