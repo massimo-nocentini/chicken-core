@@ -551,6 +551,55 @@
      (list (rck rck) (rck 'again) (rc) rc-count)
      '(((leaf 10) 10) (again 10) 0 2))
 
+;;; S. Exception handlers in a segment resumed from within itself
+;
+; `with-exception-handler', and with it `guard', `handle-exceptions'
+; and `condition-case', winds a frame that a resumption enters again
+; where it runs.  The frame must then push its handler onto the handlers
+; current there, so that a raise its handler declines reaches the ones
+; around the resumption, and a resumption nested in a resumption of
+; itself must not take the handler away from the outer one when it
+; leaves.
+
+(define (around thunk)
+  (call-with-current-continuation
+   (lambda (out)
+     (with-exception-handler (lambda (e) (out (list 'escaped e))) thunk))))
+(define (nested-then-raise x)
+  (if (procedure? x) (begin (x 'leaf) (raise 'after-nested)) x))
+(define sg (reset (guard (e (#t (list 'caught e)))
+		    (nested-then-raise (shift k k)))))
+(define sh (reset (handle-exceptions e (list 'caught e)
+		    (nested-then-raise (shift k k)))))
+(define sc (reset (condition-case (nested-then-raise (shift k k))
+		    (e () (list 'caught e)))))
+(define sw (reset (with-exception-handler
+		   (lambda (e) (list 'handled e))
+		   (lambda ()
+		     (let ((x (shift k k)))
+		       (if (procedure? x)
+			   (begin (x 'leaf) (list 'got (signal 'after-nested)))
+			   x))))))
+(define ss (reset (guard (e ((string? e) 'string)) (raise (shift k k)))))
+(define s-handlers ##sys#current-exception-handler)
+(chk "S1 guard, raised to after a resumption nested in its own"
+     (around (lambda () (sg sg))) '(caught after-nested))
+(chk "S2 ... handle-exceptions" (around (lambda () (sh sh)))
+     '(caught after-nested))
+(chk "S3 ... condition-case" (around (lambda () (sc sc)))
+     '(caught after-nested))
+(chk "S4 ... with-exception-handler and signal" (around (lambda () (sw sw)))
+     '(got (handled after-nested)))
+(chk "S5 a raise a resumed guard declines reaches the resumption's handler"
+     (around (lambda () (ss 'sym))) '(escaped sym))
+(chk "S6 ... and a guard around the resumption"
+     (guard (e ((symbol? e) (list 'outer-guard e))) (ss 'sym))
+     '(outer-guard sym))
+(chk "S7 ... while the resumed guard still handles its own"
+     (around (lambda () (ss "s"))) 'string)
+(chk "S8 the handler stack is as it was afterwards"
+     (eq? ##sys#current-exception-handler s-handlers) #t)
+
 (newline)
 (printf "~a failure(s)~%" failures)
 (when (positive? failures)

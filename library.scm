@@ -6922,14 +6922,24 @@ EOF
        (##sys#setslot eh 1 eh)
        eh)))
 
+;; The frame pushes HANDLER onto the handler stack current at each
+;; entry, not at the first: resuming a delimited continuation enters
+;; the frame again where the resumption runs, possibly from within an
+;; extent of the same frame that has not been left yet.  OUTER keeps a
+;; stack of the handler stacks at the entries, and each exit restores
+;; and pops the one of its own entry; entries and exits come in LIFO
+;; order, as they all happen at the top of ##sys#dynamic-winds.  This
+;; is the frame `parameterize' winds, for the same reason.
 (define (with-exception-handler handler thunk)
-  (let ((old ##sys#current-exception-handler))
+  (let ((outer '()))
     (##sys#dynamic-wind
-      (lambda () 
-        (set! ##sys#current-exception-handler (cons handler old)))
+      (lambda ()
+        (set! outer (cons ##sys#current-exception-handler outer))
+        (set! ##sys#current-exception-handler (cons handler (car outer))))
       thunk
-      (lambda () 
-        (set! ##sys#current-exception-handler old)) ) ) )
+      (lambda ()
+        (set! ##sys#current-exception-handler (car outer))
+        (set! outer (cdr outer))))))
 
 (define (current-exception-handler . args)
   (if (null? args)
