@@ -1435,3 +1435,16 @@ other-eval
   (define (shadowed-module-test) (let ((secret 'local)) (get-secret))))
 (import shadowed-module-global)
 (t 'module-global (shadowed-module-test))
+
+;; `parameterize' must not depend on what `quote' means where it is used.
+
+(module parameterize-renamed-quote (parameterize-renamed-quote-test)
+  (import (rename (scheme base) (quote kwote)))
+  (define p (make-parameter 1))
+  (define (parameterize-renamed-quote-test) (parameterize ((p 2)) (p))))
+(import parameterize-renamed-quote)
+(t 2 (parameterize-renamed-quote-test))
+(import (only (scheme base) make-parameter))
+(define parameterize-quote-p (make-parameter 1))
+(t 2 (let ((quote (lambda (x) x)))
+       (parameterize ((parameterize-quote-p 2)) (parameterize-quote-p))))

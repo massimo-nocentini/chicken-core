@@ -520,7 +520,7 @@
 	  ,(map ##sys#list saveds saveds)
 	  (##core#let
 	   ((,convert? (##core#the boolean #t #t)) ; Convert only first time extent is entered!
-	    ,@(map (lambda (o) `(,o '())) outers))
+	    ,@(map (lambda (o) `(,o (##core#quote ()))) outers))
 	   (##sys#dynamic-wind
 	    (##core#lambda ()
 	      (##core#let
