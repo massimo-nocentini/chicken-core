@@ -22,6 +22,11 @@
     was never returned: (pseudo-random-integer (- (expt 2 65) 1)) never
     returned anything at or above 2^64, half of its range.  It now draws
     as many bits as the range has and rejects draws outside it.
+  - `pseudo-random-real' reserved too little memory for its flonum
+    result on 32-bit platforms (including wasm32): two words where a
+    flonum takes up to four, so each call could write up to two words
+    past the space it had reserved, and under-reported the memory it
+    needed.  It now reserves a whole flonum.
   - `(chicken random)' has state objects: independent generators made
     by `make-pseudo-random-state' from a bytevector or integer seed (or
     from the entropy source), copied by `pseudo-random-state-copy' and
