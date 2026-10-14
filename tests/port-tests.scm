@@ -1,10 +1,10 @@
 (import chicken.condition chicken.file chicken.file.posix
 	chicken.flonum chicken.format chicken.io chicken.port
-        chicken.bytevector
+        chicken.bytevector chicken.port 
 	chicken.process chicken.process.signal chicken.tcp chicken.number-vector)
 
 (import (only (scheme base) input-port-open? output-port-open? open-input-string
-              write-string open-output-string get-output-string
+              write-string open-output-string get-output-string open-input-bytevector
               flush-output-port peek-u8 u8-ready? read-u8 write-u8))
 
 (include "test.scm")
@@ -430,6 +430,23 @@ EOF
     (test-equal "read-string! at EOF doesn't mutate the buffer"
                 buf
                 "89067")))
+
+(test-group "read incomplete string from bytevector"
+  (test-equal "one byte, incomplete 2 byte sequence"
+              (map char->integer (string->list (read-string 10 (open-input-bytevector #u8(#xC3)))))
+              '(#xdcc3))
+  (test-equal "two bytes, incomplete 2 byte sequence"
+              (map char->integer (string->list (read-string 10 (open-input-bytevector #u8(#xC3 65)))))
+              '(#xdcc3 65))
+  (test-equal "three bytes, incomplete 2 byte sequence"
+              (map char->integer (string->list (read-string 10 (open-input-bytevector #u8(#xC3 65 66)))))
+              '(#xdcc3 65 66))
+  (test-equal "three bytes, complete 2 byte sequence"
+              (map char->integer (string->list (read-string 10 (open-input-bytevector #u8(#xC3 #x81 65)))))
+              '(193 65))
+  (test-equal "four bytes, complete 2 byte sequence"
+              (map char->integer (string->list (read-string 10 (open-input-bytevector #u8(#xC3 #x81 65 66)))))
+              '(193 65 66)))
 
 (test-group "line endings"
   (let ((s "foo\nbar\rbaz\r\nqux")

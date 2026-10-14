@@ -8378,12 +8378,12 @@ static C_word C_curdir(C_word buf, C_word size) {
                         (lambda (dbuf start len)
                           (##core#inline "C_copy_memory_with_offset" buf dbuf p start len)
                           len)))))
-       (define (finish un bytes)
+       (define (finish un bytes left)
          (##core#inline "C_utf_overwrite" dest start un buf bytes)
-         un)
-       (let loop ((p 0) (n n) (un 0) (bn 0))    ; pos, count, codepoints, rest bytes
+         (fx+ un left))
+       (let loop ((p 0) (n n) (un 0) (bn 0))    ; pos, count, codepoints, total bytes
          (let ((bytes (readb n buf port p)))
-           (cond ((eq? bytes 0) (finish un bn))
+           (cond ((eq? bytes 0) (finish un bn 0))
                  ((eq? enc 'utf-8)
                   ;; read incomplete fragments
                   ;; FIXME: hardcoded, should be encoding-specific!
@@ -8397,11 +8397,10 @@ static C_word C_curdir(C_word buf, C_word size) {
                       (cond ((fx> left 0)
                              (let ((b2 (readb left buf port (fx+ p bytes))))
                                (if (fx< b2 left)
-                                   (finish total tbytes)
+                                   (finish total tbytes (fx+ left b2))
                                    (recount (fx+ bytes b2)))))
-                            ((eq? remain 0) (finish total tbytes))
-                            (else (loop (fx+ p bytes) remain total
-                                        tbytes))))))
+                            ((eq? remain 0) (finish total tbytes 0))
+                            (else (loop (fx+ p bytes) remain total tbytes))))))
                  (else
                   (loop (fx+ p bytes) (fx- n bytes)
                         (fx+ un bytes) (fx+ bn bytes))))))))))
