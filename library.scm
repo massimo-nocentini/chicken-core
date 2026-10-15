@@ -61,7 +61,7 @@
 # define EX_SOFTWARE	70
 #endif
 
-#define C_close_file(p)	      (C_fclose((C_FILEPTR)(C_port_file(p))), C_SCHEME_UNDEFINED)
+#define C_close_file(p)	      C_mk_bool(C_fclose((C_FILEPTR)(C_port_file(p))) == 0)
 #define C_a_f64peek(ptr, c, b, i)  C_flonum(ptr, ((double *)C_data_pointer(b))[ C_unfix(i) ])
 #define C_fetch_c_strlen(b, i) C_fix(strlen((C_char *)C_block_item(b, C_unfix(i))))
 #define C_asciiz_strlen(str) C_fix(strlen(C_c_string(str)))
@@ -4337,10 +4337,17 @@ EOF
              (lambda (bv start len)
                (##core#inline "C_display_string" p bv start len))))
           (lambda (p d)                ; close
-            (##core#inline "C_close_file" p)
-            (##sys#update-errno) )
+            (unless (##core#inline "C_close_file" p)
+              (##sys#signal-hook/errno
+                #:file-error (##sys#update-errno) 'close-output-port
+                (##sys#string-append "error while closing port - " strerror)
+                p)))
           (lambda (p)      ; flush-output
-            (##core#inline "C_flush_output" p) )
+            (unless (##core#inline "C_flush_output" p)
+              (##sys#signal-hook/errno
+                #:file-error (##sys#update-errno) 'flush-output-port
+                (##sys#string-append "error while flushing output port - " strerror)
+                p)))
           (lambda (p)      ; u8-ready?
             (or (##sys#slot p 10)
                 (##core#inline "C_char_ready_p" p) ))

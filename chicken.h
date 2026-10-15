@@ -1243,7 +1243,7 @@ typedef void (C_ccall *C_proc)(C_word, C_word *) C_noret;
 #define C_display_char(p, c)            (C_utf_putc(C_character_code(c), C_port_file(p)), C_SCHEME_UNDEFINED)
 #define C_display_string(p, s, start, len)  \
                                          (C_fwrite(C_c_string(s) + C_unfix(start), sizeof(C_char), C_unfix(len), C_port_file(p)), C_SCHEME_UNDEFINED)
-#define C_flush_output(port)            (C_fflush(C_port_file(port)), C_SCHEME_UNDEFINED)
+#define C_flush_output(port)            C_mk_bool(C_fflush(C_port_file(port)) == 0)
 
 #define C_fix_to_char(x)                (C_make_character(C_unfix(x)))
 #define C_char_to_fix(x)                (C_fix(C_character_code(x)))
