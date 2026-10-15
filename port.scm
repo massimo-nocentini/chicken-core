@@ -357,7 +357,7 @@ char *ttyname(int fd) {
     (define (insert dest start c)
       (let* ((bv (##sys#make-bytevector 4))
              (m (##core#inline "C_utf_insert" bv 0 c)))
-        (##core#inline "C_copy_memory_with_offset" dest bv 0 start m)
+        (##core#inline "C_copy_memory_with_offset" dest bv start 0 m)
         m))
     (let* ((class
 	    (vector
@@ -383,7 +383,7 @@ char *ttyname(int fd) {
 	     #f				; flush-output
 	     (lambda (p)		; u8-ready?
 	       (ready?) )
-	     (if read-bytevector	; read-bytevector!
+	     (if read-bytevector	      ; read-bytevector!
                  (lambda (p n dest start)
                   (let ((last (and (not peek-char) (##sys#slot p 10)))
                         (m 0))
