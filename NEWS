@@ -68,6 +68,9 @@
     used an obsolete calling convention.
   - exact->inexact on negative rational numbers now preserves the precision
     by rounding correctly (reported by "Juan")
+  - "string->number" and "read" now preserve precision by avoiding accumulated
+    flonum errors for inexact numerics with combined fraction and integral
+    components (reported by "Juan").
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused

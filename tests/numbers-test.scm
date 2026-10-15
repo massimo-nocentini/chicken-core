@@ -1100,6 +1100,12 @@
    (test-equal "inexact are 0" +0.0 i1)
    (test-equal "exact are equal" e2 e1)
    (test-equal "exact are false" #f e1))
+ ;; However, we do need to keep exact numbers exact as long as we can
+ ;; to avoid accumulating floating point errors, as reported by "Juan"
+ (test-equal 5597974336821527/4503599627370496
+             (inexact->exact (string->number "1.243")))
+ (test-equal 5597974336821527/4503599627370496
+             (inexact->exact (exact->inexact 1243/1000)))
 
  (test-group "read/write invariance of simple integers for different radices"
    (let lp ((radix 2)

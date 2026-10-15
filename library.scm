@@ -3228,7 +3228,7 @@ EOF
                      (set! quo (round-quotient num (* scl 2)))))
               (ldexp (exact->inexact quo) bex))
             ;; Fall back to exact calculation in extreme cases
-            (* mant (##sys#integer-power 10 point))))))
+            (exact->inexact (* mant (##sys#integer-power 10 point)))))))
 
 (define ldexp (foreign-lambda double "ldexp" double int))
 
@@ -3247,17 +3247,18 @@ EOF
     (unless (eq? exactness 'e)
       (set! exactness 'i)
       (set! negative (or negative neg?))))
-  (define (safe-exponent value e)
+  (define (safe-exponent value e allow-inexact?)
     (and e (cond
             ((not value) 0)
             ((> e +maximum-allowed-exponent+)
-             (and (eq? exactness 'i)
+             (and allow-inexact?
+                  (eq? exactness 'i)
                   (cond ((zero? value) 0.0)
                         ((> value 0.0) +inf.0)
                         (else -inf.0))))
             ((< e (fxneg +maximum-allowed-exponent+))
-             (and (eq? exactness 'i) +0.0))
-            ((eq? exactness 'i) (mantexp->dbl value e))
+             (and allow-inexact? (eq? exactness 'i) +0.0))
+            ((and allow-inexact? (eq? exactness 'i)) (mantexp->dbl value e))
             (else (* value (##sys#integer-power 10 e))))))
   (define (make-nan)
     ;; Return fresh NaNs, so eqv? returns #f on two read NaNs.  This
@@ -3353,17 +3354,26 @@ EOF
                            (and-let* (((fx> len next))
                                       (ee (scan-exponent (fx+ next 1)))
                                       (e (car ee))
-                                      (h (safe-exponent decimal-head e)))
-                             (let* ((te (and tail (fx- e (fx- (cdr tail) start))))
-                                    (num (and tail (car tail)))
-                                    (t (safe-exponent num te)))
-                               (cons (if t (+ h t) h) (cdr ee)))))
-                          (else (let* ((last (or next len))
-                                       (te (and tail (fx- start last)))
-                                       (num (and tail (car tail)))
-                                       (t (safe-exponent num te))
-                                       (h (or decimal-head 0)))
-                                  (cons (if t (+ h t) h) next)))))))))
+                                      (val (if tail
+                                               (let* ((num (or (car tail) 0))
+                                                      (te (fx- e (fx- (cdr tail) start)))
+                                                      (h (if decimal-head
+                                                             (safe-exponent decimal-head (- e te) #f)
+                                                             0)))
+                                                 (safe-exponent (+ h num) te #t))
+                                               (safe-exponent decimal-head e #t))))
+                             (cons val (cdr ee))))
+                          (else (cons (if tail
+                                          (let* ((last (or next len))
+                                                 (te (fx- start last))
+                                                 (num (or (car tail) 0))
+                                                 (h (if decimal-head
+                                                        (safe-exponent decimal-head (- te) #f)
+                                                        0)))
+                                            (safe-exponent (+ h num) te #t))
+                                          ;; NOTE: May convert to inexact or +inf.0 etc, so this is not a no-op
+                                          (safe-exponent decimal-head 0 #t))
+                                      next))))))))
          (scan-ureal
           (lambda (start neg? cplx?)
             (if (and (fx> len (fx+ start 1)) (eq? radix 10)
@@ -3386,7 +3396,7 @@ EOF
                                 ((fx> len (cdr end)))
                                 (ee (scan-exponent (fx+ (cdr end) 1)))
                                 (num (car end))
-                                (val (safe-exponent num (car ee))))
+                                (val (safe-exponent num (car ee) #t)))
                        (cons val (cdr ee))))
                     ((#\/)
                      (set! seen-hashes? #f) ; Reset flag for denominator
