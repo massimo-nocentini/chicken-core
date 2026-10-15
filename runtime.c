@@ -10769,14 +10769,22 @@ C_a_i_exact_to_inexact(C_word **ptr, int c, C_word n)
               * e_w in M2.  TODO: What if b!=2 (ie, flonum-radix isn't 2)?
               */
              e = integer_length_abs(num) - integer_length_abs(denom),
-             ab[C_SIZEOF_FIX_BIGNUM*5+C_SIZEOF_FLONUM], *a = ab, tmp, q, r, len,
+             ab[C_SIZEOF_FIX_BIGNUM*6+C_SIZEOF_FLONUM], *a = ab, tmp, q, r, len,
              shift_amount, negp = C_i_integer_negativep(num);
      C_uword *d;
      double res, fraction;
 
+     /* From here on, calculate with a positive numerator (will restore sign at the end) */
+     if (C_truep(negp)) num = C_s_a_u_i_integer_abs(&a, 1, num);
+
      /* Align by shifting the smaller to the size of the larger */
-     if (e < 0)      num = C_s_a_i_arithmetic_shift(&a, 2, num, C_fix(-e));
-     else if (e > 0) denom = C_s_a_i_arithmetic_shift(&a, 2, denom, C_fix(e));
+     if (e < 0) {
+       tmp = C_s_a_i_arithmetic_shift(&a, 2, num, C_fix(-e));
+       clear_buffer_object(ab, num); /* "knows" shift creates fresh numbers */
+       num = tmp;
+     } else if (e > 0) {
+       denom = C_s_a_i_arithmetic_shift(&a, 2, denom, C_fix(e));
+     }
 
      /* Here, 1/2 <= n/d < 2 [N3] */
      if (C_truep(C_i_integer_lessp(num, denom))) { /* n/d < 1? */
@@ -10798,7 +10806,7 @@ C_a_i_exact_to_inexact(C_word **ptr, int c, C_word n)
 
      /* We multiply the remainder by two to simulate adding 1/2 for
       * round.  However, we don't do it if num = denom (q=1,r=0) */
-     if (!((q == C_fix(1) || q == C_fix(-1)) && r == C_fix(0))) {
+     if (!(q == C_fix(1) && r == C_fix(0))) {
        tmp = C_s_a_i_arithmetic_shift(&a, 2, r, C_fix(1));
        clear_buffer_object(ab, r); /* "knows" shift creates fresh numbers */
        r = tmp;
@@ -10810,7 +10818,7 @@ C_a_i_exact_to_inexact(C_word **ptr, int c, C_word n)
       * case of exactly halfway, we round up if odd.
       */
      tmp = C_a_i_exact_to_inexact(&a, 1, q);
-     fraction = fabs(C_flonum_magnitude(tmp));
+     fraction = C_flonum_magnitude(tmp);
      switch (basic_cmp(r, denom, "", 0)) {
      case C_fix(0):
        if (C_truep(C_i_oddp(q))) fraction += 1.0;

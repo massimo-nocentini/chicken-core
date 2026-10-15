@@ -726,6 +726,8 @@
  (test-error "inexact->exact +inf" (inexact->exact +inf.0))
  (test-error "inexact->exact -inf" (inexact->exact -inf.0))
  (test-error "inexact->exact -NaN" (inexact->exact +nan.0))
+ (test-assert "exact->inexact preserves precision"
+              (= (exact->inexact -1/11) (- (exact->inexact 1/11))))
  (test-equal "sqrt (integer result)" (sqrt 16) 4)
  (test-equal "sqrt (exact result)" (sqrt 1/4) 1/2)
  (parameterize ((current-test-epsilon 1e-10))

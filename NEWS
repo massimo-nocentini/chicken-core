@@ -66,6 +66,8 @@
     please use the corresponding operations from "(scheme process-context)".
   - Corrected use of "make-output-port" in "make-broadcast-port", which 
     used an obsolete calling convention.
+  - exact->inexact on negative rational numbers now preserves the precision
+    by rounding correctly (reported by "Juan")
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
