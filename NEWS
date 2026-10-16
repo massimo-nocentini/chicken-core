@@ -71,6 +71,9 @@
   - "string->number" and "read" now preserve precision by avoiding accumulated
     flonum errors for inexact numerics with combined fraction and integral
     components (reported by "Juan").
+  - File port closing and flushing checks for and raises file-system errors.
+  - Fixed a number of edge cases in string-resizing when inserting
+    UTF sequences.
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
