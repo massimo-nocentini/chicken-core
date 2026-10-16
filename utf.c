@@ -267,8 +267,9 @@ C_regparm C_word C_utf_setsubchar(C_word s, C_word i, C_word c)
 
     if(nl > ol) {
         int tl = bvlen + nl - ol;
-        if(C_in_scratchspacep(bv)) C_mutate_scratch_slot(NULL, bv);
         C_word bvn = C_scratch_alloc(C_SIZEOF_BYTEVECTOR(tl + 1));
+        bv = C_block_item(s, 0);    // scratch_alloc may move object
+        if(C_in_scratchspacep(bv)) C_mutate_scratch_slot(NULL, bv);
         C_block_header_init(bvn, C_make_header(C_BYTEVECTOR_TYPE, tl + 1));
         if(prefix) C_memcpy(C_c_string(bvn), C_c_string(bv), prefix);
         C_memcpy((C_char *)C_data_pointer(bvn) + prefix, buf, nl);
@@ -300,7 +301,10 @@ C_regparm C_word C_utf_overwrite(C_word s, C_word i, C_word len, C_word bv,
 
     if(count > d) {
         int tl = bvlen + count - d;
+        // C_scratch_alloc() may move bvs
         C_word bvn = C_scratch_alloc(C_SIZEOF_BYTEVECTOR(tl + 1));
+        bvs = C_block_item(s, 0);
+        p2 = (C_char *)C_data_pointer(bvs) + prefix + d;
         if(C_in_scratchspacep(bvs)) C_mutate_scratch_slot(NULL, bvs);
         C_block_header_init(bvn, C_make_header(C_BYTEVECTOR_TYPE, tl + 1));
         if(prefix) C_memcpy(C_c_string(bvn), C_data_pointer(bvs), prefix);
