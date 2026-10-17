@@ -1064,6 +1064,10 @@
  (test-assert "comp" (show (string->number "99@55")))
  (test-assert "comp" (show (string->number "1/2@3/4")))
  (test-assert "comp2" (show (string->number "#x99+55i")))
+ (test-equal "negative zero real part" (string->number "-0.0+1.0i") 
+   (make-rectangular -0.0 1.0))
+ (test-equal "positive zero real part" (string->number "0.0+1.0i") 
+   (make-rectangular 0.0 1.0))
  ;; This is to check for a silly problem cause by representing numbers exactly
  ;; all the way until the end, then converting to inexact.  This "silly problem"
  ;; could probably be exploited in a resource consumption attack.

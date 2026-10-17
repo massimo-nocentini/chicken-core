@@ -3247,18 +3247,20 @@ EOF
     (unless (eq? exactness 'e)
       (set! exactness 'i)
       (set! negative (or negative neg?))))
-  (define (safe-exponent value e allow-inexact?)
+  (define (safe-exponent value e allow-inexact? neg?)
     (and e (cond
             ((not value) 0)
             ((> e +maximum-allowed-exponent+)
              (and allow-inexact?
                   (eq? exactness 'i)
-                  (cond ((zero? value) 0.0)
+                  (cond ((zero? value) (if neg? -0.0 0.0))
                         ((> value 0.0) +inf.0)
                         (else -inf.0))))
             ((< e (fxneg +maximum-allowed-exponent+))
-             (and allow-inexact? (eq? exactness 'i) +0.0))
-            ((and allow-inexact? (eq? exactness 'i)) (mantexp->dbl value e))
+             (and allow-inexact? (eq? exactness 'i) (if neg? -0.0 +0.0)))
+            ((and allow-inexact? (eq? exactness 'i)) 
+             (let ((r (mantexp->dbl value e)))
+               (if (and neg? (zero? r)) -0.0 r)))
             (else (* value (##sys#integer-power 10 e))))))
   (define (make-nan)
     ;; Return fresh NaNs, so eqv? returns #f on two read NaNs.  This
@@ -3358,21 +3360,21 @@ EOF
                                                (let* ((num (or (car tail) 0))
                                                       (te (fx- e (fx- (cdr tail) start)))
                                                       (h (if decimal-head
-                                                             (safe-exponent decimal-head (- e te) #f)
+                                                             (safe-exponent decimal-head (- e te) #f neg?)
                                                              0)))
-                                                 (safe-exponent (+ h num) te #t))
-                                               (safe-exponent decimal-head e #t))))
+                                                 (safe-exponent (+ h num) te #t neg?))
+                                               (safe-exponent decimal-head e #t neg?))))
                              (cons val (cdr ee))))
                           (else (cons (if tail
                                           (let* ((last (or next len))
                                                  (te (fx- start last))
                                                  (num (or (car tail) 0))
                                                  (h (if decimal-head
-                                                        (safe-exponent decimal-head (- te) #f)
+                                                        (safe-exponent decimal-head (- te) #f neg?)
                                                         0)))
-                                            (safe-exponent (+ h num) te #t))
+                                            (safe-exponent (+ h num) te #t neg?))
                                           ;; NOTE: May convert to inexact or +inf.0 etc, so this is not a no-op
-                                          (safe-exponent decimal-head 0 #t))
+                                          (safe-exponent decimal-head 0 #t neg?))
                                       next))))))))
          (scan-ureal
           (lambda (start neg? cplx?)
@@ -3388,7 +3390,9 @@ EOF
                      (and (eq? radix 10)
                           (if (fx> len (fx+ (cdr end) 1))
                               (scan-decimal-tail (fx+ (cdr end) 1) neg? (car end))
-                              (cons (car end) #f))))
+                              (if (and neg? (eq? exactness 'i) (zero? (car end)))
+                                  (cons -0.0 #f)
+                                  (cons (car end) #f)))))
                     ((#\e #\s #\f #\d #\l
                       #\E #\S #\F #\D #\L)
                      (go-inexact! neg?)
@@ -3396,7 +3400,7 @@ EOF
                                 ((fx> len (cdr end)))
                                 (ee (scan-exponent (fx+ (cdr end) 1)))
                                 (num (car end))
-                                (val (safe-exponent num (car ee) #t)))
+                                (val (safe-exponent num (car ee) #t neg?)))
                        (cons val (cdr ee))))
                     ((#\/)
                      (set! seen-hashes? #f) ; Reset flag for denominator
@@ -3453,9 +3457,10 @@ EOF
                      (case (and (cdr r1) (string-ref str (cdr r1)))
                        ((#f) (car r1))
                        ((#\i #\I) (and (fx= len (fx+ (cdr r1) 1))
-                                     (or (eq? (string-ref str offset) #\+) ; ugh
-                                         (eq? (string-ref str offset) #\-))
-                                     (make-rectangular 0 (if nf (- (car r1)) (car r1)))))
+                                       (let ((c (string-ref str offset)))
+                                         (or (eq? c #\+)
+                                             (eq? c #\-)))
+                                       (make-rectangular 0 (if nf (- (car r1)) (car r1)))))
                        ((#\+ #\-)
                         (set! seen-hashes? #f) ; Reset flag for imaginary part
                         (set! negative #f)
@@ -3479,11 +3484,7 @@ EOF
                           (make-polar (car r1) (car r2))))
                        (else #f))))))
     (and number (if (eq? exactness 'i)
-                    (let ((r (exact->inexact number)))
-                      ;; Stupid hack because flonums can represent negative zero,
-                      ;; but we're coming from an exact which has no such thing.
-                      (if (and negative (zero? r)) (fpneg r) r))
-                    ;; Ensure we didn't encounter +inf.0 or +nan.0 with #e
+                    (exact->inexact number)
                     (and (finite? number) number)))))
 
 (set! scheme#string->number
