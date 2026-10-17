@@ -304,17 +304,6 @@
 	  ((ratnum) (ratnum) #(1))
 	  ((cplxnum) (cplxnum) #(1))
 	  ((number) (number) #(1))
-	  ((float fixnum) (float)
-	   (##core#inline_allocate
-	    ("C_a_i_flonum_plus" 4)
-	    #(1)
-	    (##core#inline_allocate ("C_a_i_fix_to_flo" 4) #(2))))
-	  ((fixnum float)
-	   (float)
-	   (##core#inline_allocate
-	    ("C_a_i_flonum_plus" 4)
-	    (##core#inline_allocate ("C_a_i_fix_to_flo" 4) #(1))
-	    #(2)))
 	  ((float float) (float)
 	   (##core#inline_allocate ("C_a_i_flonum_plus" 4) #(1) #(2)))
 	  ((fixnum fixnum) (integer)
