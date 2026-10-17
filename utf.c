@@ -632,6 +632,10 @@ next:
 C_regparm void C_utf_putc(int chr, C_FILEPTR fp)
 {
     C_char buf[ 5 ];
+    if(chr < 128) {
+        C_fputc(chr, fp);   // just to preserve compatibility to C5
+        return;
+    }
     C_char *p = utf8_encode(chr, buf);
     *p = '\0';
     C_fputs(buf, fp);
