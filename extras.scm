@@ -456,7 +456,7 @@
           (##core#inline_allocate ("C_s_a_u_i_random_int" 2) n))))
 
 (define (pseudo-random-real)
-  (##core#inline_allocate ("C_a_i_random_real" 2)))
+  (##core#inline_allocate ("C_a_i_random_real" 4)))
 
 (define random-bytes
   (let ((nstate (foreign-value "C_RANDOM_STATE_SIZE" unsigned-int)))
