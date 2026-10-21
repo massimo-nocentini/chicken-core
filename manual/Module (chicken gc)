@@ -59,8 +59,10 @@ NOTE 2: When a finalizable object has any weak references (i.e., weak
 locatives or weak pairs) to objects that are only reachable through it
 or other finalizable objects, those references will be broken like
 when the objects had already been collected.  This is done in order to
-avoid user code from accessing objects that are possibly in an
-invalid state.
+avoid user code from accessing objects that are possibly in an invalid
+state.  This also applies to any references held by the finalizer
+procedure - the procedure and the finalizable object are treated as a
+unit that gets collected together.
 
 
 === make-finalizer
