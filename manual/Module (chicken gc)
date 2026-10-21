@@ -60,9 +60,9 @@ locatives or weak pairs) to objects that are only reachable through it
 or other finalizable objects, those references will be broken like
 when the objects had already been collected.  This is done in order to
 avoid user code from accessing objects that are possibly in an invalid
-state.  This also applies to any references held by the finalizer
-procedure - the procedure and the finalizable object are treated as a
-unit that gets collected together.
+state.  The finalizer procedure ''can'' hold onto objects, however.
+This means finalizable objects are '''uncollectable''' if they are
+referred to directly by their own or another finalizer.
 
 
 === make-finalizer

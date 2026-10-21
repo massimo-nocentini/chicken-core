@@ -209,8 +209,9 @@
   (gc #t) ; Improve chances we don't get a minor GC in between
   (let* ((not-held-onto-value (vector 42))
 	 (held-onto-value (vector 99))
-	 (garbage-a (vector (weak-cons not-held-onto-value '()) (weak-cons held-onto-value '()) #f))
-	 (garbage-b (vector (weak-cons not-held-onto-value '()) (weak-cons held-onto-value '()) #f))
+         (indirectly-held-onto-value (vector 123))
+	 (garbage-a (vector (weak-cons not-held-onto-value '()) (weak-cons held-onto-value '()) (weak-cons indirectly-held-onto-value '()) #f))
+	 (garbage-b (vector (weak-cons not-held-onto-value '()) (weak-cons held-onto-value '()) (weak-cons indirectly-held-onto-value '()) #f))
 
 	 (garbage-a-weak-ref (weak-cons garbage-a '()))
 	 (garbage-b-weak-ref (weak-cons garbage-b '()))
@@ -218,23 +219,34 @@
 	 (observed-garbage-a-0 #f)
 	 (observed-garbage-a-1 #f)
 	 (observed-garbage-a-2 #f)
+	 (observed-garbage-a-3 #f)
+         (observed-symbol #f)
 	 (observed-garbage-b-0 #f)
 	 (observed-garbage-b-1 #f)
-	 (observed-garbage-b-2 #f))
+	 (observed-garbage-b-2 #f)
+         (observed-garbage-b-3 #f))
 
     ;; Garbage weakly references eachother
-    (vector-set! garbage-a 2 (weak-cons garbage-b '()))
-    (vector-set! garbage-b 2 (weak-cons garbage-a '()))
+    (vector-set! garbage-a 3 (weak-cons garbage-b '()))
+    (vector-set! garbage-b 3 (weak-cons garbage-a '()))
 
-    (set-finalizer! garbage-a (lambda (vec)
-				(set! observed-garbage-a-0 (car (vector-ref vec 0)))
-				(set! observed-garbage-a-1 (car (vector-ref vec 1)))
-				(set! observed-garbage-a-2 (car (vector-ref vec 2)))))
-    (set-finalizer! garbage-b (lambda (vec)
-				(set! observed-garbage-b-0 (car (vector-ref vec 0)))
-				(set! observed-garbage-b-1 (car (vector-ref vec 1)))
-				(set! observed-garbage-b-2 (car (vector-ref vec 2)))))
+    (set-finalizer! garbage-a (let ((no-other-refs-sym (string->symbol (string-append "unique-symbol" (number->string 1234)))))
+                                (lambda (vec)
+				  (set! observed-garbage-a-0 (car (vector-ref vec 0)))
+				  (set! observed-garbage-a-1 (car (vector-ref vec 1)))
+				  (set! observed-garbage-a-2 (car (vector-ref vec 2)))
+                                  (set! observed-garbage-a-3 (car (vector-ref vec 3)))
+                                  (set! observed-symbol no-other-refs-sym))))
+    (set-finalizer! garbage-b (let ((keep indirectly-held-onto-value))
+                                (lambda (vec)
+				  (set! observed-garbage-b-0 (car (vector-ref vec 0)))
+				  (set! observed-garbage-b-1 (car (vector-ref vec 1)))
+				  (set! observed-garbage-b-2 (car (vector-ref vec 2)))
+                                  (set! observed-garbage-b-3 (car (vector-ref vec 3)))
+                                  ;; To avoid this being dropped, read *and* write it
+                                  (set! keep (cons keep keep)))))
 
+    (set! indirectly-held-onto-value #f)
     (set! not-held-onto-value #f)
     (set! garbage-a #f)
     (set! garbage-b #f)
@@ -252,11 +264,19 @@
     (test-assert "Weak pair's car which pointed to first garbage contains broken weak pointer" (bwp-object? (car garbage-a-weak-ref)))
     (test-assert "Weak pair's car in first garbage which pointed to collected object contains broken weak pointer" (bwp-object? observed-garbage-a-0))
     (test-equal "Weak pair's car in first garbage which pointed to retained object contains the original object" observed-garbage-a-1 held-onto-value)
-    (test-assert "Weak pair's car in first garbage which pointed to second garbage contains broken weak pointer" (bwp-object? observed-garbage-a-2))
+    ;; NOTE: We can't check easily check it's the exact same object because we have no other ref, but it should be fine
+    (test-assert "Weak pair's car in first garbage which pointed to indirectly retained object contains the original object" (and (vector? observed-garbage-a-2)
+                                                                                                                                   (= 123 (vector-ref observed-garbage-a-2 0))))
+    (test-assert "Weak pair's car in first garbage which pointed to second garbage contains broken weak pointer" (bwp-object? observed-garbage-a-3))
     (test-assert "Weak pair's car which pointed to second garbage contains broken weak pointer" (bwp-object? (car garbage-b-weak-ref)))
     (test-assert "Weak pair's car in second garbage which pointed to collected object contains broken weak pointer" (bwp-object? observed-garbage-b-0))
     (test-equal "Weak pair's car in second garbage which pointed to retained object contains the original object" observed-garbage-b-1 held-onto-value)
-    (test-assert "Weak pair's car in second garbage which pointed to first garbage contains broken weak pointer" (bwp-object? observed-garbage-b-2))))
+    ;; NOTE: We can't check easily check it's the exact same object because we have no other ref, but it should be fine
+    (test-assert "Weak pair's car in second garbage which pointed to indirectly retained object contains the original object" (and (vector? observed-garbage-b-2)
+                                                                                                                                   (= 123 (vector-ref observed-garbage-b-2 0))))
+    (test-assert "Weak pair's car in second garbage which pointed to first garbage contains broken weak pointer" (bwp-object? observed-garbage-b-3))
+
+    (test-equal "Symbol does not get garbage collected when only referenced by finalizer proc" observed-symbol (string->symbol (string-append "unique-symbol" (number->string 1234))))))
 
 
 ;; Safe version of locative-ref, returns !#bwp instead of raising an exception

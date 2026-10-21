@@ -3502,16 +3502,24 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
 
   mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
   if(gc_mode == GC_MINOR) count = (C_uword)*tgt_space_top - (C_uword)start;
-  start = *tgt_space_top;
 
   if(gc_mode == GC_MINOR) {
     ++gc_count_1;
     ++gc_count_1_total;
-    update_locatives(GC_MINOR, start, *tgt_space_top);
-    update_weak_pairs(GC_MINOR, start, *tgt_space_top);
+    update_locatives(GC_MINOR, *tgt_space_top, *tgt_space_top);
+    update_weak_pairs(GC_MINOR, *tgt_space_top, *tgt_space_top);
   }
   else {
-    /* Mark finalizer list and remember pointers to non-forwarded items: */
+    /* Mark finalizer procedures which may the last to hold on to other objects, making them live */
+    for(flist = finalizer_list; flist != NULL; flist = flist->next) {
+      mark(&flist->finalizer);
+      ++fcount;
+    }
+
+    mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
+    start = *tgt_space_top;
+
+    /* Mark finalizable objects and remember pointers to non-forwarded items: */
     last = C_block_item(pending_finalizers_symbol, 0);
 
     if(!C_immediatep(last) && (j = C_unfix(C_block_item(last, 0))) != 0) {
@@ -3523,7 +3531,6 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
 
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
         mark(&flist->item);
-        mark(&flist->finalizer);
         ++fcount;
       }
 
@@ -3549,7 +3556,6 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
       /* mark */
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
         mark(&flist->item);
-        mark(&flist->finalizer);
       }
 
       /* mark finalizable GC roots: */

@@ -74,6 +74,11 @@
   - File port closing and flushing checks for and raises file-system errors.
   - Fixed a number of edge cases in string-resizing when inserting
     UTF sequences.
+  - Objects which are referred to only by finalizer procedures are now
+    retained, so that they won't cause uninterned symbols to be resurrected.
+    Note that this means finalizable objects are now uncollectable if they
+    are referred to directly by their own or another finalizer (reported by
+    Igor Santos-Grueiro).
 
 - Syntax expander
   - Fixed bug in handling of "export-all" library declaration which caused
