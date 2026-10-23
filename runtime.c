@@ -470,7 +470,6 @@ static int signal_mapping_table[ NSIG ];
 static int
   live_finalizer_count,
   allocated_finalizer_count,
-  pending_finalizer_count,
   callback_returned_flag;
 static C_GC_ROOT *gc_root_list = NULL;
 static FINALIZER_NODE
@@ -3408,13 +3407,12 @@ static void _mark(C_word *x, C_byte *s, C_byte **t, C_byte *l) {   \
 
 C_regparm void C_reclaim(void *trampoline, C_word c)
 {
-  int i, j, fcount;
+  int i, fcount;
   C_uword count;
   C_word **msp, last;
   C_byte *tmp, *start;
   C_GC_ROOT *gcrp;
   double tgc = 0;
-  volatile int finalizers_checked;
   FINALIZER_NODE *flist;
   C_DEBUG_INFO cell;
   C_byte *tgt_space_start, **tgt_space_top, *tgt_space_limit;
@@ -3435,7 +3433,6 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
   /* Note: the mode argument will always be GC_MINOR or GC_REALLOC. */
   if(C_pre_gc_hook != NULL) C_pre_gc_hook(GC_MINOR);
 
-  finalizers_checked = 0;
   C_restart_trampoline = trampoline;
   C_restart_c = c;
   gc_mode = GC_MINOR;
@@ -3513,7 +3510,6 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
     /* Mark finalizer procedures which may the last to hold on to other objects, making them live */
     for(flist = finalizer_list; flist != NULL; flist = flist->next) {
       mark(&flist->finalizer);
-      ++fcount;
     }
 
     mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
@@ -3522,12 +3518,12 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
     /* Mark finalizable objects and remember pointers to non-forwarded items: */
     last = C_block_item(pending_finalizers_symbol, 0);
 
-    if(!C_immediatep(last) && (j = C_unfix(C_block_item(last, 0))) != 0) {
+    if(!C_immediatep(last) && (fcount = C_unfix(C_block_item(last, 0))) != 0) {
       /* still finalizers pending: just mark table items... */
       if(gc_report_flag)
-        C_dbg(C_text("GC"), C_text("%d finalized item(s) still pending\n"), j);
+        C_dbg(C_text("GC"), C_text("%d finalized item(s) still pending\n"), fcount);
 
-      j = fcount = 0;
+      fcount = 0;
 
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
         mark(&flist->item);
@@ -3543,13 +3539,13 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
         C_dbg(C_text("GC"), C_text("%d finalizer value(s) marked\n"), fcount);
     }
     else {
-      j = fcount = 0;
+      fcount = 0;
 
       /* move into pending */
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
-        if(j < C_max_pending_finalizers) {
+        if(fcount < C_max_pending_finalizers) {
           if(!is_fptr(C_block_header(flist->item)))
-            pending_finalizer_indices[ j++ ] = flist;
+            pending_finalizer_indices[ fcount++ ] = flist;
         }
       }
 
@@ -3562,44 +3558,41 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
       for(gcrp = gc_root_list; gcrp != NULL; gcrp = gcrp->next) {
         if(gcrp->finalizable) mark(&gcrp->value);
       }
+
+      if(fcount > 0 && gc_report_flag)
+        C_dbg(C_text("GC"), C_text("%d finalizer(s) pending (%d live)\n"),
+              fcount, live_finalizer_count);
+
+      /* Copy finalized items with remembered indices into `##sys#pending-finalizers'
+         (and release finalizer node): */
+      if(fcount > 0) {
+        if(gc_report_flag)
+          C_dbg(C_text("GC"), C_text("queueing %d finalizer(s)\n"), fcount);
+
+        last = C_block_item(pending_finalizers_symbol, 0);
+        assert(C_block_item(last, 0) == C_fix(0));
+        C_set_block_item(last, 0, C_fix(fcount));
+
+        for(i = 0; i < fcount; ++i) {
+          flist = pending_finalizer_indices[ i ];
+          C_set_block_item(last, 1 + i * 2, flist->item);
+          C_set_block_item(last, 2 + i * 2, flist->finalizer);
+
+          if(flist->previous != NULL) flist->previous->next = flist->next;
+          else finalizer_list = flist->next;
+
+          if(flist->next != NULL) flist->next->previous = flist->previous;
+
+          flist->next = finalizer_free_list;
+          flist->previous = NULL;
+          finalizer_free_list = flist;
+          --live_finalizer_count;
+        }
+      }
     }
-
-    pending_finalizer_count = j;
-    finalizers_checked = 1;
-
-    if(pending_finalizer_count > 0 && gc_report_flag)
-      C_dbg(C_text("GC"), C_text("%d finalizer(s) pending (%d live)\n"),
-            pending_finalizer_count, live_finalizer_count);
 
     /* Once more mark nested objects after (maybe) copying finalizer objects: */
     mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
-
-    /* Copy finalized items with remembered indices into `##sys#pending-finalizers'
-       (and release finalizer node): */
-    if(pending_finalizer_count > 0) {
-      if(gc_report_flag)
-        C_dbg(C_text("GC"), C_text("queueing %d finalizer(s)\n"), pending_finalizer_count);
-
-      last = C_block_item(pending_finalizers_symbol, 0);
-      assert(C_block_item(last, 0) == C_fix(0));
-      C_set_block_item(last, 0, C_fix(pending_finalizer_count));
-
-      for(i = 0; i < pending_finalizer_count; ++i) {
-        flist = pending_finalizer_indices[ i ];
-        C_set_block_item(last, 1 + i * 2, flist->item);
-        C_set_block_item(last, 2 + i * 2, flist->finalizer);
-
-        if(flist->previous != NULL) flist->previous->next = flist->next;
-        else finalizer_list = flist->next;
-
-        if(flist->next != NULL) flist->next->previous = flist->previous;
-
-        flist->next = finalizer_free_list;
-        flist->previous = NULL;
-        finalizer_free_list = flist;
-        --live_finalizer_count;
-      }
-    }
 
     update_locatives(gc_mode, start, *tgt_space_top);
     update_weak_pairs(gc_mode, start, *tgt_space_top);
