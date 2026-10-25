@@ -136,7 +136,6 @@ tests/record-printer-test.scm
 tests/r4rstest.scm
 tests/r4rstest.expected
 tests/null.scm
-tests/sgrep.scm
 tests/r7rs-tests.scm
 tests/runtests.sh
 tests/srfi-4-tests.scm
