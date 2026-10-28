@@ -2436,28 +2436,29 @@
 			     (db-put! db (first lparams) 'explicit-rest #t)
 			     (db-put! db rest 'consed-rest-arg #t) ) ) ) ) ) ) ) ) )
 
-         ;; If it has a known or local value which is a procedure, and referenced only once
-         ;; and only one call site or is an internal procedure, mark it as 'shareable-user so that
-         ;; its closed over variables may be shared with its containing procedure.
+         ;; If it has a known or local value which is a procedure, and is an internal procedure,
+         ;; mark it as 'shareable-user so that its closed over variables may be shared with its
+         ;; containing procedure.
+         ;;
+         ;; It would also work for non-escaping procedures in general, but different threads may
+         ;; re-invoke the same continuation at different times, which means internal values may
+         ;; get clobbered when a different thread runs, so we can do this for internal procedures
+         ;; only, as those never get shared between threads.
+         ;;
          ;; Note that callbacks are exempt from this, because callback_wrapper creates an empty closure
          ;; manually, throwing away our carefully crafted closure. TODO: can maybe be done better?
          ;;
          ;; If furthermore it only contains a single other procedure, mark it as 'shareable-container
-         ;; so that may share closed-over variables with that one procedure.
+         ;; so that it may share closed-over variables with that one procedure.
          (and-let* ((val (or local-value value))
                     ((eq? '##core#lambda (node-class val)))
                     (lparams (node-parameters val))
-                    ((or (= 1 nreferences ncall-sites)
-                         (not (second lparams))))
+                    ((not (second lparams)))
 	            ((not (rassoc sym callback-names eq?))))
 	   (db-put! db (first lparams) 'shareable-user #t)
            (and-let* ((id (first lparams))
                       (contains (or (db-get db id 'contains) '()))
                       ((= (length contains) 1)))
-             ;; TODO: It should be possible to have escaping / global procedures be containers, but
-             ;; they should not call themselves because then they might be setting variables in
-             ;; the closure to different values at different times.  So for now we're extra careful
-             ;; about which are containers.
              (db-put! db (first lparams) 'shareable-container #t)))
 
 	 ;; Make 'removable, if it has no references and is not assigned to, and one of the following:

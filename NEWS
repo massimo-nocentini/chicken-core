@@ -99,6 +99,8 @@
     rewrites, added rewrites for R7RS bytevector operations (thanks
     to Massimo Nocentini).
   - Refuse block compilation while emitting import libs (reported by "Juan").
+  - Restrict shared closures to "internal" procedures, to avoid state
+    corruption in the presence of threads (reported by Ivan Raikov).
 
 6.0.0
 
