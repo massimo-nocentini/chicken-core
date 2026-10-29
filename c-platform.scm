@@ -1081,10 +1081,14 @@
 (rewrite '##sys#foreign-unsigned-ranged-integer-argument 17 2 "C_i_foreign_unsigned_ranged_integer_argumentp")
 
 (rewrite 'chicken.bytevector#bytevector-length 2 1 "C_block_size" #f)
-(rewrite 'chicken.number-vector#bytevector-u8-set! 2 3 "C_u_i_u8vector_set" #f)
-(rewrite 'chicken.number-vector#bytevector-u8-set! 2 3 "C_i_u8vector_set" #t)
+(rewrite 'chicken.bytevector#bytevector-u8-ref 2 2 "C_u_i_bytevector_ref" #f)
+(rewrite 'chicken.bytevector#bytevector-u8-ref 2 2 "C_i_bytevector_ref" #t)
+(rewrite 'chicken.bytevector#bytevector-u8-set! 2 3 "C_u_i_bytevector_set" #f)
+(rewrite 'chicken.bytevector#bytevector-u8-set! 2 3 "C_i_bytevector_set" #t)
 
 ;; TODO: Move this stuff to types.db
+(rewrite 'chicken.number-vector#u8vector-ref 2 2 "C_u_i_u8vector_ref" #f)
+(rewrite 'chicken.number-vector#u8vector-ref 2 2 "C_i_bytevector_ref" #t)
 (rewrite 'chicken.number-vector#s8vector-ref 2 2 "C_u_i_s8vector_ref" #f)
 (rewrite 'chicken.number-vector#s8vector-ref 2 2 "C_i_s8vector_ref" #t)
 (rewrite 'chicken.number-vector#u16vector-ref 2 2 "C_u_i_u16vector_ref" #f)
