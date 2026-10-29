@@ -605,8 +605,7 @@
 
 (scheme#string=? (#(procedure #:clean #:enforce #:foldable) scheme#string=? (string string) boolean)
 		 ((* *) (##core#inline "C_i_string_equal_p" #(1) #(2))))
-(scheme#string>? (#(procedure #:clean #:enforce #:foldable) scheme#string>? (string string #!rest string) boolean)
-                 ((string string) (##core#inline "C_i_string_equal_p" #(1) #(2))))
+(scheme#string>? (#(procedure #:clean #:enforce #:foldable) scheme#string>? (string string #!rest string) boolean))
 (scheme#string<? (#(procedure #:clean #:enforce #:foldable) scheme#string<? (string string #!rest string) boolean))
 (scheme#string>=? (#(procedure #:clean #:enforce #:foldable) scheme#string>=? (string string #!rest string) boolean))
 (scheme#string<=? (#(procedure #:clean #:enforce #:foldable) scheme#string<=? (string string #!rest string) boolean))
