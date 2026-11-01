@@ -4348,17 +4348,24 @@ EOF
              (lambda (bv start len)
                (##core#inline "C_display_string" p bv start len))))
           (lambda (p d)                ; close
-            (unless (##core#inline "C_close_file" p)
-              (##sys#signal-hook/errno
-                #:file-error (##sys#update-errno) 'close-output-port
-                (##sys#string-append "error while closing port - " strerror)
-                p)))
+            (let loop ()
+              (unless (##core#inline "C_close_file" p)
+                (if (eq? err (foreign-value "EINTR" int))
+                    (##sys#dispatch-interrupt loop)
+                    (##sys#signal-hook/errno
+                      #:file-error (##sys#update-errno) 'close-output-port
+                      (##sys#string-append "error while closing port - " strerror)
+                      p)))))
           (lambda (p)      ; flush-output
-            (unless (##core#inline "C_flush_output" p)
-              (##sys#signal-hook/errno
-                #:file-error (##sys#update-errno) 'flush-output-port
-                (##sys#string-append "error while flushing output port - " strerror)
-                p)))
+            (let loop ()
+              (unless (##core#inline "C_flush_output" p)
+                (let ((err (##sys#update-errno)))
+                  (if (eq? err (foreign-value "EINTR" int))
+                      (##sys#dispatch-interrupt loop)
+                      (##sys#signal-hook/errno
+                        #:file-error err 'flush-output-port
+                        (##sys#string-append "error while flushing output port - " strerror)
+                        p))))))
           (lambda (p)      ; u8-ready?
             (or (##sys#slot p 10)
                 (##core#inline "C_char_ready_p" p) ))
