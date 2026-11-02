@@ -155,8 +155,8 @@ if a signal occurred.
 <procedure>(process COMMANDLINE)</procedure><br>
 <procedure>(process COMMAND ARGUMENT-LIST [ENVIRONMENT-ALIST ENCODING])</procedure>
 
-Creates a subprocess and returns a process object, with the input- and output
-ports stored in the object, which can be accessed using accessors described
+Creates a subprocess and returns a process object, with the input-, output- and
+error ports stored in the object, which can be accessed using accessors described
 below.
 
 * The single parameter version passes the string {{COMMANDLINE}} to the host-system's shell that
