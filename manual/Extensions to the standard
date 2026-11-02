@@ -55,7 +55,7 @@ An abbreviation for {{(location EXPRESSION)}}.
 
 <read>#u8"..."</read>
 
-String syntax for bytevectors, as an alternative to {{#u8(...)}}. The usual escape sequences for strings are recognized.
+String syntax for bytevectors, as an alternative to {{#u8(...)}}. The usual escape sequences for strings are recognized. Note that this syntax is also available for other numeric vectors, like "s8", "u16", "f32", etc. In each case the elements will be the codepoint values of the strings' characters.
 
 <read>#u8{HEX...}</read>
 
