@@ -29,8 +29,7 @@
   (unit library)
   (uses build-version)
   (disable-interrupts)
-  (hide ##sys#dynamic-unwind
-	##sys#vector-resize ##sys#default-parameter-vector
+  (hide ##sys#vector-resize ##sys#default-parameter-vector
 	setter-tag
 	##sys#print-exit ##sys#r7rs-exn-handlers
 	##sys#format-here-doc-warning
