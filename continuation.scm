@@ -26,6 +26,7 @@
 
 (declare
   (unit continuation)
+  (always-bound ##sys#dynamic-winds ##sys#dynamic-unwind)
   (disable-interrupts))
 
 (foreign-declare "#define C_direct_continuation(dummy) t1")
