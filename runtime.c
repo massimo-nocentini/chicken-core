@@ -478,7 +478,6 @@ static int signal_mapping_table[ NSIG ];
 static int
   live_finalizer_count,
   allocated_finalizer_count,
-  pending_finalizer_count,
   callback_returned_flag;
 static C_GC_ROOT *gc_root_list = NULL;
 static FINALIZER_NODE
@@ -3582,13 +3581,12 @@ static void _mark(C_word *x, C_byte *s, C_byte **t, C_byte *l) {   \
 
 C_regparm void C_reclaim(void *trampoline, C_word c)
 {
-  int i, j, fcount;
+  int i, fcount;
   C_uword count;
   C_word **msp, last;
   C_byte *tmp, *start;
   C_GC_ROOT *gcrp;
   double tgc = 0;
-  volatile int finalizers_checked;
   FINALIZER_NODE *flist;
   C_DEBUG_INFO cell;
   C_byte *tgt_space_start, **tgt_space_top, *tgt_space_limit;
@@ -3609,7 +3607,6 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
   /* Note: the mode argument will always be GC_MINOR or GC_REALLOC. */
   if(C_pre_gc_hook != NULL) C_pre_gc_hook(GC_MINOR);
 
-  finalizers_checked = 0;
   C_restart_trampoline = trampoline;
   C_restart_c = c;
   gc_mode = GC_MINOR;
@@ -3676,28 +3673,34 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
 
   mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
   if(gc_mode == GC_MINOR) count = (C_uword)*tgt_space_top - (C_uword)start;
-  start = *tgt_space_top;
 
   if(gc_mode == GC_MINOR) {
     ++gc_count_1;
     ++gc_count_1_total;
-    update_locatives(GC_MINOR, start, *tgt_space_top);
-    update_weak_pairs(GC_MINOR, start, *tgt_space_top);
+    update_locatives(GC_MINOR, *tgt_space_top, *tgt_space_top);
+    update_weak_pairs(GC_MINOR, *tgt_space_top, *tgt_space_top);
   }
   else {
-    /* Mark finalizer list and remember pointers to non-forwarded items: */
+    /* Mark finalizer procedures which may the last to hold on to other objects, making them live */
+    for(flist = finalizer_list; flist != NULL; flist = flist->next) {
+      mark(&flist->finalizer);
+    }
+
+    mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
+    start = *tgt_space_top;
+
+    /* Mark finalizable objects and remember pointers to non-forwarded items: */
     last = C_block_item(pending_finalizers_symbol, 0);
 
-    if(!C_immediatep(last) && (j = C_unfix(C_block_item(last, 0))) != 0) {
+    if(!C_immediatep(last) && (fcount = C_unfix(C_block_item(last, 0))) != 0) {
       /* still finalizers pending: just mark table items... */
       if(gc_report_flag)
-        C_dbg(C_text("GC"), C_text("%d finalized item(s) still pending\n"), j);
+        C_dbg(C_text("GC"), C_text("%d finalized item(s) still pending\n"), fcount);
 
-      j = fcount = 0;
+      fcount = 0;
 
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
         mark(&flist->item);
-        mark(&flist->finalizer);
         ++fcount;
       }
 
@@ -3710,64 +3713,60 @@ C_regparm void C_reclaim(void *trampoline, C_word c)
         C_dbg(C_text("GC"), C_text("%d finalizer value(s) marked\n"), fcount);
     }
     else {
-      j = fcount = 0;
+      fcount = 0;
 
       /* move into pending */
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
-        if(j < C_max_pending_finalizers) {
+        if(fcount < C_max_pending_finalizers) {
           if(!is_fptr(C_block_header(flist->item)))
-            pending_finalizer_indices[ j++ ] = flist;
+            pending_finalizer_indices[ fcount++ ] = flist;
         }
       }
 
       /* mark */
       for(flist = finalizer_list; flist != NULL; flist = flist->next) {
         mark(&flist->item);
-        mark(&flist->finalizer);
       }
 
       /* mark finalizable GC roots: */
       for(gcrp = gc_root_list; gcrp != NULL; gcrp = gcrp->next) {
         if(gcrp->finalizable) mark(&gcrp->value);
       }
+
+      if(fcount > 0 && gc_report_flag)
+        C_dbg(C_text("GC"), C_text("%d finalizer(s) pending (%d live)\n"),
+              fcount, live_finalizer_count);
+
+      /* Copy finalized items with remembered indices into `##sys#pending-finalizers'
+         (and release finalizer node): */
+      if(fcount > 0) {
+        if(gc_report_flag)
+          C_dbg(C_text("GC"), C_text("queueing %d finalizer(s)\n"), fcount);
+
+        last = C_block_item(pending_finalizers_symbol, 0);
+        assert(C_block_item(last, 0) == C_fix(0));
+        C_set_block_item(last, 0, C_fix(fcount));
+
+        for(i = 0; i < fcount; ++i) {
+          flist = pending_finalizer_indices[ i ];
+          C_set_block_item(last, 1 + i * 2, flist->item);
+          C_set_block_item(last, 2 + i * 2, flist->finalizer);
+
+          if(flist->previous != NULL) flist->previous->next = flist->next;
+          else finalizer_list = flist->next;
+
+          if(flist->next != NULL) flist->next->previous = flist->previous;
+
+          flist->next = finalizer_free_list;
+          flist->previous = NULL;
+          finalizer_free_list = flist;
+          --live_finalizer_count;
+        }
+      }
     }
-
-    pending_finalizer_count = j;
-    finalizers_checked = 1;
-
-    if(pending_finalizer_count > 0 && gc_report_flag)
-      C_dbg(C_text("GC"), C_text("%d finalizer(s) pending (%d live)\n"),
-            pending_finalizer_count, live_finalizer_count);
 
     /* Once more mark nested objects after (maybe) copying finalizer objects: */
     mark_nested_objects(start, tgt_space_start, tgt_space_top, tgt_space_limit);
-
-    /* Copy finalized items with remembered indices into `##sys#pending-finalizers'
-       (and release finalizer node): */
-    if(pending_finalizer_count > 0) {
-      if(gc_report_flag)
-        C_dbg(C_text("GC"), C_text("queueing %d finalizer(s)\n"), pending_finalizer_count);
-
-      last = C_block_item(pending_finalizers_symbol, 0);
-      assert(C_block_item(last, 0) == C_fix(0));
-      C_set_block_item(last, 0, C_fix(pending_finalizer_count));
-
-      for(i = 0; i < pending_finalizer_count; ++i) {
-        flist = pending_finalizer_indices[ i ];
-        C_set_block_item(last, 1 + i * 2, flist->item);
-        C_set_block_item(last, 2 + i * 2, flist->finalizer);
-
-        if(flist->previous != NULL) flist->previous->next = flist->next;
-        else finalizer_list = flist->next;
-
-        if(flist->next != NULL) flist->next->previous = flist->previous;
-
-        flist->next = finalizer_free_list;
-        flist->previous = NULL;
-        finalizer_free_list = flist;
-        --live_finalizer_count;
-      }
-    }
 
     update_locatives(gc_mode, start, *tgt_space_top);
     update_weak_pairs(gc_mode, start, *tgt_space_top);
@@ -8853,12 +8852,16 @@ C_s_a_i_plus(C_word **ptr, C_word n, C_word x, C_word y)
     } else if (C_immediatep(y)) {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "+", y);
     } else if (C_block_header(y) == C_FLONUM_TAG) {
+      if(x == C_fix(0)) return y;
       return C_flonum(ptr, (double)C_unfix(x) + C_flonum_magnitude(y));
     } else if (C_truep(C_bignump(y))) {
+      if(x == C_fix(0)) return y;
       return C_s_a_u_i_integer_plus(ptr, 2, x, y);
     } else if (C_block_header(y) == C_RATNUM_TAG) {
+      if(x == C_fix(0)) return y;
       return rat_plusmin_integer(ptr, y, x, C_s_a_u_i_integer_plus);
     } else if (C_block_header(y) == C_CPLXNUM_TAG) {
+      if(x == C_fix(0)) return y;
       C_word real_sum = C_s_a_i_plus(ptr, 2, x, C_u_i_cplxnum_real(y)),
              imag = C_u_i_cplxnum_imag(y);
       if (C_truep(C_u_i_inexactp(real_sum)))
@@ -8871,6 +8874,7 @@ C_s_a_i_plus(C_word **ptr, C_word n, C_word x, C_word y)
     barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "+", x);
   } else if (C_block_header(x) == C_FLONUM_TAG) {
     if (y & C_FIXNUM_BIT) {
+      if(y == C_fix(0)) return x;
       return C_flonum(ptr, C_flonum_magnitude(x) + (double)C_unfix(y));
     } else if (C_immediatep(y)) {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "+", y);
@@ -8891,6 +8895,7 @@ C_s_a_i_plus(C_word **ptr, C_word n, C_word x, C_word y)
     }
   } else if (C_truep(C_bignump(x))) {
     if (y & C_FIXNUM_BIT) {
+      if(y == C_fix(0)) return x;
       return C_s_a_u_i_integer_plus(ptr, 2, x, y);
     } else if (C_immediatep(y)) {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "+", y);
@@ -8911,6 +8916,7 @@ C_s_a_i_plus(C_word **ptr, C_word n, C_word x, C_word y)
     }
   } else if (C_block_header(x) == C_RATNUM_TAG) {
     if (y & C_FIXNUM_BIT) {
+      if(y == C_fix(0)) return x;
       return rat_plusmin_integer(ptr, x, y, C_s_a_u_i_integer_plus);
     } else if (C_immediatep(y)) {
       barf(C_BAD_ARGUMENT_TYPE_NO_NUMBER_ERROR, "+", y);
@@ -11409,14 +11415,22 @@ C_a_i_exact_to_inexact(C_word **ptr, int c, C_word n)
               * e_w in M2.  TODO: What if b!=2 (ie, flonum-radix isn't 2)?
               */
              e = integer_length_abs(num) - integer_length_abs(denom),
-             ab[C_SIZEOF_FIX_BIGNUM*5+C_SIZEOF_FLONUM], *a = ab, tmp, q, r, len,
+             ab[C_SIZEOF_FIX_BIGNUM*6+C_SIZEOF_FLONUM], *a = ab, tmp, q, r, len,
              shift_amount, negp = C_i_integer_negativep(num);
      C_uword *d;
      double res, fraction;
 
+     /* From here on, calculate with a positive numerator (will restore sign at the end) */
+     if (C_truep(negp)) num = C_s_a_u_i_integer_abs(&a, 1, num);
+
      /* Align by shifting the smaller to the size of the larger */
-     if (e < 0)      num = C_s_a_i_arithmetic_shift(&a, 2, num, C_fix(-e));
-     else if (e > 0) denom = C_s_a_i_arithmetic_shift(&a, 2, denom, C_fix(e));
+     if (e < 0) {
+       tmp = C_s_a_i_arithmetic_shift(&a, 2, num, C_fix(-e));
+       clear_buffer_object(ab, num); /* "knows" shift creates fresh numbers */
+       num = tmp;
+     } else if (e > 0) {
+       denom = C_s_a_i_arithmetic_shift(&a, 2, denom, C_fix(e));
+     }
 
      /* Here, 1/2 <= n/d < 2 [N3] */
      if (C_truep(C_i_integer_lessp(num, denom))) { /* n/d < 1? */
@@ -11438,7 +11452,7 @@ C_a_i_exact_to_inexact(C_word **ptr, int c, C_word n)
 
      /* We multiply the remainder by two to simulate adding 1/2 for
       * round.  However, we don't do it if num = denom (q=1,r=0) */
-     if (!((q == C_fix(1) || q == C_fix(-1)) && r == C_fix(0))) {
+     if (!(q == C_fix(1) && r == C_fix(0))) {
        tmp = C_s_a_i_arithmetic_shift(&a, 2, r, C_fix(1));
        clear_buffer_object(ab, r); /* "knows" shift creates fresh numbers */
        r = tmp;
@@ -11450,7 +11464,7 @@ C_a_i_exact_to_inexact(C_word **ptr, int c, C_word n)
       * case of exactly halfway, we round up if odd.
       */
      tmp = C_a_i_exact_to_inexact(&a, 1, q);
-     fraction = fabs(C_flonum_magnitude(tmp));
+     fraction = C_flonum_magnitude(tmp);
      switch (basic_cmp(r, denom, "", 0)) {
      case C_fix(0):
        if (C_truep(C_i_oddp(q))) fraction += 1.0;

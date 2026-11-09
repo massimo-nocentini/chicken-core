@@ -737,24 +737,35 @@ C_regparm C_word C_utf_fragment_counts(C_word bv, C_word pos, C_word len)
     int full = 0;
     C_uchar *ptr = C_data_pointer(bv) + C_unfix(pos);
     int count = C_unfix(len);
+    unsigned int byte;
 
     while(count) {
-        unsigned int byte = *(ptr++);
+next:
+        byte = *(ptr++);
         int n = lengths[ byte >> 3 ];
         int bn = n + !n;
         if(count >= bn) {
+            for(int cont = bn - 1; cont > 0; --cont) {
+                if((*(ptr++) & 0x80) == 0) {
+                    full += bn - cont;
+                    count -= cont;
+                    goto next;
+                }
+            }
             ++full;
             count -= bn;
-            ptr += bn - 1;
         } else return C_fix((full << 4) | (bn - count));
     }
-
     return C_fix(full << 4);
 }
 
 C_regparm void C_utf_putc(int chr, C_FILEPTR fp)
 {
     C_char buf[ 5 ];
+    if(chr < 128) {
+        C_fputc(chr, fp);   // just to preserve compatibility to C5
+        return;
+    }
     C_char *p = utf8_encode(chr, buf);
     *p = '\0';
     C_fputs(buf, fp);

@@ -29,8 +29,7 @@
   (unit library)
   (uses build-version)
   (disable-interrupts)
-  (hide ##sys#dynamic-unwind
-	##sys#vector-resize ##sys#default-parameter-vector
+  (hide ##sys#vector-resize ##sys#default-parameter-vector
 	setter-tag
 	##sys#r7rs-exn-handlers
 	##sys#format-here-doc-warning
@@ -61,7 +60,7 @@
 # define EX_SOFTWARE	70
 #endif
 
-#define C_close_file(p)	      (C_fclose((C_FILEPTR)(C_port_file(p))), C_SCHEME_UNDEFINED)
+#define C_close_file(p)	      C_mk_bool(C_fclose((C_FILEPTR)(C_port_file(p))) == 0)
 #define C_a_f64peek(ptr, c, b, i)  C_flonum(ptr, ((double *)C_data_pointer(b))[ C_unfix(i) ])
 #define C_fetch_c_strlen(b, i) C_fix(strlen((C_char *)C_block_item(b, C_unfix(i))))
 #define C_asciiz_strlen(str) C_fix(strlen(C_c_string(str)))
@@ -981,10 +980,10 @@ EOF
 (define (on-exit thunk)
   (set! cleanup-tasks (cons thunk chicken.base#cleanup-tasks)))
 
-(define (exit #!optional (code 0))
+(define (exit #!optional (code 0))      ; DEPRECATED
   ((exit-handler) code))
 
-(define (emergency-exit #!optional (code 0))
+(define (emergency-exit #!optional (code 0))    ; DEPRECATED (move to scheme.process-context)
   (##sys#check-fixnum code 'emergency-exit)
   (##core#inline "C_exit_runtime" code))
 
@@ -3252,7 +3251,7 @@ EOF
                      (set! quo (round-quotient num (* scl 2)))))
               (ldexp (exact->inexact quo) bex))
             ;; Fall back to exact calculation in extreme cases
-            (* mant (##sys#integer-power 10 point))))))
+            (exact->inexact (* mant (##sys#integer-power 10 point)))))))
 
 (define ldexp (foreign-lambda double "ldexp" double int))
 
@@ -3271,17 +3270,20 @@ EOF
     (unless (eq? exactness 'e)
       (set! exactness 'i)
       (set! negative (or negative neg?))))
-  (define (safe-exponent value e)
+  (define (safe-exponent value e allow-inexact? neg?)
     (and e (cond
             ((not value) 0)
             ((> e +maximum-allowed-exponent+)
-             (and (eq? exactness 'i)
-                  (cond ((zero? value) 0.0)
+             (and allow-inexact?
+                  (eq? exactness 'i)
+                  (cond ((zero? value) (if neg? -0.0 0.0))
                         ((> value 0.0) +inf.0)
                         (else -inf.0))))
             ((< e (fxneg +maximum-allowed-exponent+))
-             (and (eq? exactness 'i) +0.0))
-            ((eq? exactness 'i) (mantexp->dbl value e))
+             (and allow-inexact? (eq? exactness 'i) (if neg? -0.0 +0.0)))
+            ((and allow-inexact? (eq? exactness 'i)) 
+             (let ((r (mantexp->dbl value e)))
+               (if (and neg? (zero? r)) -0.0 r)))
             (else (* value (##sys#integer-power 10 e))))))
   (define (make-nan)
     ;; Return fresh NaNs, so eqv? returns #f on two read NaNs.  This
@@ -3377,17 +3379,26 @@ EOF
                            (and-let* (((fx> len next))
                                       (ee (scan-exponent (fx+ next 1)))
                                       (e (car ee))
-                                      (h (safe-exponent decimal-head e)))
-                             (let* ((te (and tail (fx- e (fx- (cdr tail) start))))
-                                    (num (and tail (car tail)))
-                                    (t (safe-exponent num te)))
-                               (cons (if t (+ h t) h) (cdr ee)))))
-                          (else (let* ((last (or next len))
-                                       (te (and tail (fx- start last)))
-                                       (num (and tail (car tail)))
-                                       (t (safe-exponent num te))
-                                       (h (or decimal-head 0)))
-                                  (cons (if t (+ h t) h) next)))))))))
+                                      (val (if tail
+                                               (let* ((num (or (car tail) 0))
+                                                      (te (fx- e (fx- (cdr tail) start)))
+                                                      (h (if decimal-head
+                                                             (safe-exponent decimal-head (- e te) #f neg?)
+                                                             0)))
+                                                 (safe-exponent (+ h num) te #t neg?))
+                                               (safe-exponent decimal-head e #t neg?))))
+                             (cons val (cdr ee))))
+                          (else (cons (if tail
+                                          (let* ((last (or next len))
+                                                 (te (fx- start last))
+                                                 (num (or (car tail) 0))
+                                                 (h (if decimal-head
+                                                        (safe-exponent decimal-head (- te) #f neg?)
+                                                        0)))
+                                            (safe-exponent (+ h num) te #t neg?))
+                                          ;; NOTE: May convert to inexact or +inf.0 etc, so this is not a no-op
+                                          (safe-exponent decimal-head 0 #t neg?))
+                                      next))))))))
          (scan-ureal
           (lambda (start neg? cplx?)
             (if (and (fx> len (fx+ start 1)) (eq? radix 10)
@@ -3402,7 +3413,9 @@ EOF
                      (and (eq? radix 10)
                           (if (fx> len (fx+ (cdr end) 1))
                               (scan-decimal-tail (fx+ (cdr end) 1) neg? (car end))
-                              (cons (car end) #f))))
+                              (if (and neg? (eq? exactness 'i) (zero? (car end)))
+                                  (cons -0.0 #f)
+                                  (cons (car end) #f)))))
                     ((#\e #\s #\f #\d #\l
                       #\E #\S #\F #\D #\L)
                      (go-inexact! neg?)
@@ -3410,7 +3423,7 @@ EOF
                                 ((fx> len (cdr end)))
                                 (ee (scan-exponent (fx+ (cdr end) 1)))
                                 (num (car end))
-                                (val (safe-exponent num (car ee))))
+                                (val (safe-exponent num (car ee) #t neg?)))
                        (cons val (cdr ee))))
                     ((#\/)
                      (set! seen-hashes? #f) ; Reset flag for denominator
@@ -3467,9 +3480,10 @@ EOF
                      (case (and (cdr r1) (string-ref str (cdr r1)))
                        ((#f) (car r1))
                        ((#\i #\I) (and (fx= len (fx+ (cdr r1) 1))
-                                     (or (eq? (string-ref str offset) #\+) ; ugh
-                                         (eq? (string-ref str offset) #\-))
-                                     (make-rectangular 0 (if nf (- (car r1)) (car r1)))))
+                                       (let ((c (string-ref str offset)))
+                                         (or (eq? c #\+)
+                                             (eq? c #\-)))
+                                       (make-rectangular 0 (if nf (- (car r1)) (car r1)))))
                        ((#\+ #\-)
                         (set! seen-hashes? #f) ; Reset flag for imaginary part
                         (set! negative #f)
@@ -3493,11 +3507,7 @@ EOF
                           (make-polar (car r1) (car r2))))
                        (else #f))))))
     (and number (if (eq? exactness 'i)
-                    (let ((r (exact->inexact number)))
-                      ;; Stupid hack because flonums can represent negative zero,
-                      ;; but we're coming from an exact which has no such thing.
-                      (if (and negative (zero? r)) (fpneg r) r))
-                    ;; Ensure we didn't encounter +inf.0 or +nan.0 with #e
+                    (exact->inexact number)
                     (and (finite? number) number)))))
 
 (set! scheme#string->number
@@ -4525,10 +4535,24 @@ EOF
              (lambda (bv start len)
                (##core#inline "C_display_string" p bv start len))))
           (lambda (p d)                ; close
-            (##core#inline "C_close_file" p)
-            (##sys#update-errno) )
+            (let loop ()
+              (unless (##core#inline "C_close_file" p)
+                (if (eq? err (foreign-value "EINTR" int))
+                    (##sys#dispatch-interrupt loop)
+                    (##sys#signal-hook/errno
+                      #:file-error (##sys#update-errno) 'close-output-port
+                      (##sys#string-append "error while closing port - " strerror)
+                      p)))))
           (lambda (p)      ; flush-output
-            (##core#inline "C_flush_output" p) )
+            (let loop ()
+              (unless (##core#inline "C_flush_output" p)
+                (let ((err (##sys#update-errno)))
+                  (if (eq? err (foreign-value "EINTR" int))
+                      (##sys#dispatch-interrupt loop)
+                      (##sys#signal-hook/errno
+                        #:file-error err 'flush-output-port
+                        (##sys#string-append "error while flushing output port - " strerror)
+                        p))))))
           (lambda (p)      ; u8-ready?
             (or (##sys#slot p 10)
                 (##core#inline "C_char_ready_p" p) ))
@@ -7338,10 +7362,10 @@ EOF
 	(when handler
 	  (handler reason))
 	(loop (##core#inline "C_i_pending_interrupt" #f)))))
-    (cond ((fx> (##sys#slot ##sys#pending-finalizers 0) 0)
-	   (##sys#run-pending-finalizers state) )
-	  ((procedure? state) (state))
-	  (else (##sys#context-switch state) ) ) )
+  (cond ((fx> (##sys#slot ##sys#pending-finalizers 0) 0)
+          (##sys#run-pending-finalizers state) )
+        ((procedure? state) (state))
+	(else (##sys#context-switch state) ) ) )
 
 (define (##sys#dispatch-interrupt k)
   (##sys#interrupt-hook
@@ -8612,12 +8636,12 @@ static C_word C_curdir(C_word buf, C_word size) {
                         (lambda (dbuf start len)
                           (##core#inline "C_copy_memory_with_offset" buf dbuf p start len)
                           len)))))
-       (define (finish un bytes)
+       (define (finish un bytes left)
          (##core#inline "C_utf_overwrite" dest start un buf bytes)
-         un)
-       (let loop ((p 0) (n n) (un 0) (bn 0))    ; pos, count, codepoints, rest bytes
+         (fx+ un left))
+       (let loop ((p 0) (n n) (un 0) (bn 0))    ; pos, count, codepoints, total bytes
          (let ((bytes (readb n buf port p)))
-           (cond ((eq? bytes 0) (finish un bn))
+           (cond ((eq? bytes 0) (finish un bn 0))
                  ((eq? enc 'utf-8)
                   ;; read incomplete fragments
                   ;; FIXME: hardcoded, should be encoding-specific!
@@ -8631,11 +8655,10 @@ static C_word C_curdir(C_word buf, C_word size) {
                       (cond ((fx> left 0)
                              (let ((b2 (readb left buf port (fx+ p bytes))))
                                (if (fx< b2 left)
-                                   (finish total tbytes)
+                                   (finish total tbytes (fx+ left b2))
                                    (recount (fx+ bytes b2)))))
-                            ((eq? remain 0) (finish total tbytes))
-                            (else (loop (fx+ p bytes) remain total
-                                        tbytes))))))
+                            ((eq? remain 0) (finish total tbytes 0))
+                            (else (loop (fx+ p bytes) remain total tbytes))))))
                  (else
                   (loop (fx+ p bytes) (fx- n bytes)
                         (fx+ un bytes) (fx+ bn bytes))))))))))

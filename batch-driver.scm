@@ -572,6 +572,9 @@
 	       '() ) ) )
 	(dribble "generating ~aprofiled code" (if acc "accumulative " "")) ))
 
+    (when (and block-compilation (or all-import-libraries (pair? import-libraries)))
+      (quit-compiling "Cannot combine block compilation mode with emitting import libraries"))
+
     ;;XXX hardcoded "modules.db" is bad (also used in chicken-install.scm)
     (load-identifier-database "modules.db")
 

@@ -8,6 +8,9 @@ Deprecated functions and variables
   future.
 - "include-relative" is not needed, as "include" already takes the
   including file directory into account.
+- "exit" and "emergency-exit" from "(chicken base)" are deprecated, 
+  use the R7RS standard procedures from "(scheme process-context)" 
+  instead.
 
 6.0.0
 - The foreign type "blob" is obsolete and equivalent to the 

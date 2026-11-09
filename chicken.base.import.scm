@@ -46,12 +46,12 @@
    (current-error-port . chicken.base#current-error-port)
    (disjoin . chicken.base#disjoin)
    (each . chicken.base#each)
-   (emergency-exit . chicken.base#emergency-exit)
+   (emergency-exit . chicken.base#emergency-exit)   ; DEPRECATED
    (enable-warnings . chicken.base#enable-warnings)
    (equal=? . chicken.base#equal=?)
    (error . chicken.base#error)
    (exact-integer-nth-root . chicken.base#exact-integer-nth-root)
-   (exit . chicken.base#exit)
+   (exit . chicken.base#exit)                       ; DEPRECATED
    (exit-handler . chicken.base#exit-handler)
    (finite? . chicken.base#finite?)
    (fixnum? . chicken.base#fixnum?)

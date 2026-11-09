@@ -124,6 +124,7 @@ tests/arithmetic-test.32.expected
 tests/arithmetic-test.64.expected
 tests/library-tests.scm
 tests/linking-tests.scm
+tests/include-path.scm
 tests/inline-me.scm
 tests/inline-unroll.scm
 tests/compiler-tests.scm
@@ -290,6 +291,7 @@ tests/i-dont-know-i-just-work-here.latin-1.txt
 tests/r7rs-tests-2.scm
 tests/r7rs-library-tests.scm
 tests/r7rs-library-tests-code.scm
+tests/test-copy-file.scm
 tests/life.scm
 tests/include.scm
 tests/include-ci.scm

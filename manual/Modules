@@ -113,7 +113,7 @@ at toplevel.
 <macro>(export EXPORT ...)</macro>
 
 Allows augmenting module-exports from inside the module-body.
-{{EXPORT}} is if the same form as an export-specifier in a
+{{EXPORT}} is of the same form as an export-specifier in a
 {{module}} export list. An export must precede its first occurrence
 (either use or definition).
 

@@ -726,6 +726,8 @@
  (test-error "inexact->exact +inf" (inexact->exact +inf.0))
  (test-error "inexact->exact -inf" (inexact->exact -inf.0))
  (test-error "inexact->exact -NaN" (inexact->exact +nan.0))
+ (test-assert "exact->inexact preserves precision"
+              (= (exact->inexact -1/11) (- (exact->inexact 1/11))))
  (test-equal "sqrt (integer result)" (sqrt 16) 4)
  (test-equal "sqrt (exact result)" (sqrt 1/4) 1/2)
  (parameterize ((current-test-epsilon 1e-10))
@@ -1062,6 +1064,10 @@
  (test-assert "comp" (show (string->number "99@55")))
  (test-assert "comp" (show (string->number "1/2@3/4")))
  (test-assert "comp2" (show (string->number "#x99+55i")))
+ (test-equal "negative zero real part" (string->number "-0.0+1.0i") 
+   (make-rectangular -0.0 1.0))
+ (test-equal "positive zero real part" (string->number "0.0+1.0i") 
+   (make-rectangular 0.0 1.0))
  ;; This is to check for a silly problem cause by representing numbers exactly
  ;; all the way until the end, then converting to inexact.  This "silly problem"
  ;; could probably be exploited in a resource consumption attack.
@@ -1098,6 +1104,12 @@
    (test-equal "inexact are 0" +0.0 i1)
    (test-equal "exact are equal" e2 e1)
    (test-equal "exact are false" #f e1))
+ ;; However, we do need to keep exact numbers exact as long as we can
+ ;; to avoid accumulating floating point errors, as reported by "Juan"
+ (test-equal 5597974336821527/4503599627370496
+             (inexact->exact (string->number "1.243")))
+ (test-equal 5597974336821527/4503599627370496
+             (inexact->exact (exact->inexact 1243/1000)))
 
  (test-group "read/write invariance of simple integers for different radices"
    (let lp ((radix 2)

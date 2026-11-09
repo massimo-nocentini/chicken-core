@@ -49,8 +49,11 @@ a fix that unfortunately disables finalizers in the interpreter
 
 (define foo-f #f)
 
-(let ((foo (vector 1 2 3)))
-  (set-finalizer! foo (lambda _ (set! foo-f #t)))
+(let ((foo (vector 1 2 3))
+      ;; NOTE: foo should not be in scope for f, as the lambda retains
+      ;; this info via its display vector
+      (f (lambda _ (set! foo-f #t))))
+  (set-finalizer! foo f)
   #t)
 
 (gc #t)

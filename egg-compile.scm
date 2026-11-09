@@ -686,8 +686,10 @@
 			 platform)
     (when (pair? link-objects)
       (let ((lobjs (filelist srcdir
-                             (map (cut conc <> ".static" (object-extension platform))
-                               link-objects))))
+                             (map (lambda (lo)
+                                    (target-file (conc lo ".static" (object-extension platform))
+                                                 mode))
+                              link-objects))))
 	(print-build-command (list out3)
 			     `(,out2 ,@lobjs)
 			     `(,target-librarian ,target-librarian-options ,out3 ,out2 ,@lobjs)
@@ -1208,7 +1210,12 @@ EOF
 	      str)))
 
 (define (target-file fname mode)
-  (if (eq? mode 'target) (string-append fname ".target") fname))
+  (if (eq? mode 'target)
+      (make-pathname
+        (pathname-directory fname)
+        (string-append (pathname-file fname) ".target")
+        (pathname-extension fname))
+      fname))
 
 (define (joins strs platform)
   (string-intersperse (map qs* strs) " "))

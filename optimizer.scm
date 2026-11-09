@@ -47,8 +47,6 @@
 (include "tweaks")
 (include "mini-srfi-1.scm")
 
-(define-constant maximal-number-of-free-variables-for-liftable 16)
-
 ;; These are parameterized by the platform implementation
 (define eq-inline-operator (make-parameter #f))
 (define membership-test-operators (make-parameter #f))

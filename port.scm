@@ -257,7 +257,7 @@ char *ttyname(int fd) {
   (make-output-port
    (lambda (s) (for-each (cut scheme#write-string s <>) ports))
    void
-   (lambda () (for-each flush-output ports)) ) )
+   force-output: (lambda () (for-each flush-output ports)) ) )
 
 (define (make-concatenated-port p1 . ports)
   (let ((ports (cons p1 ports)))
@@ -389,7 +389,7 @@ char *ttyname(int fd) {
 	     #f				; flush-output
 	     (lambda (p)		; u8-ready?
 	       (ready?) )
-	     (if read-bytevector	; read-bytevector!
+	     (if read-bytevector	      ; read-bytevector!
                  (lambda (p n dest start)
                   (let ((last (and (not peek-char) (##sys#slot p 10)))
                         (m 0))
@@ -429,7 +429,17 @@ char *ttyname(int fd) {
                                     (set! tail bv)
                                     (loop n c)))))))))
 	     read-line			; read-line
-	     read-buffered     ; read-buffered
+	     (or read-buffered	; read-buffered
+                 ;; Without a read-buffered: procedure, the only
+                 ;; buffered input is a character held in slot 10 by
+                 ;; peek-char, which is used only when there is no
+                 ;; peek-char: procedure.
+                 (lambda (p)
+                   (let ((last (and (not peek-char) (##sys#slot p 10))))
+                     (cond ((char? last) ; not a peeked end of file
+                            (##sys#setislot p 10 #f)
+                            (string last))
+                           (else "")))))
              (lambda (p) (ready?))  ; char-ready?
              ))
 	   (data (vector #f))
@@ -604,7 +614,7 @@ char *ttyname(int fd) {
 		 (lambda (_ l)           ; read-line
 		   (read-line i l))
 		 (lambda (_)              ; read-buffered
-		   (read-buffered i))     ; DEPRECATED
+		   (##sys#read-buffered-bytes i))
                  (lambda (_)            ; char-ready?
                    (char-ready? i))))
 	 (port (##sys#make-port 3 class "(bidirectional)" 'bidirectional)))

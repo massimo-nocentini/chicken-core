@@ -1314,7 +1314,9 @@ EOF
                                ;; reuse already created bytevector
                                (##core#inline "C_chop_bv" (##sys#slot d 0)))
                               (else 
-                               ((cadr c) (##sys#canonicalize-number-list! (list d))))))))
+                               ;; elements are the code points of the string's
+                               ;; characters, as the manual documents
+                               ((cadr c) (##sys#map char->integer (##sys#string->list d))))))))
 		  (else (##sys#read-error port "invalid sharp-sign read syntax" tag)) ) )
 	  (old-hook char port) ) ) ) )
 

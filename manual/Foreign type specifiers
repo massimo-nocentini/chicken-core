@@ -147,10 +147,13 @@ converts to inexact.
 
 A zero-terminated C string. The argument value {{#f}} is allowed and
 is passed as a {{NULL}} pointer; similarly, a NULL pointer is returned
-as {{#f}}.  Note that the string contents are copied into (automatically
-managed) temporary storage with a zero byte appended when passed as an
-argument. Also, a return value of this type is copied into garbage
-collected memory using {{strcpy(3)}}.
+as {{#f}}.  Note that the C function should not write into the string,
+as this may invalidate guarantees made by the runtime about the string
+containing valid UTF-8 encoded data and cause silent corruption of
+internal string position bookkeeping.
+
+A return value of this type is copied into garbage collected memory
+using {{strcpy(3)}}.
 
 For the {{nonnull-}} variant, passing {{#f}} will raise an exception, and returning
 a NULL pointer will result in undefined behavior (e.g. a segfault).
