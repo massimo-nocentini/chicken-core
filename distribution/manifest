@@ -146,6 +146,7 @@ tests/wasm/in-worker.js
 tests/wasm/repl-harness.js
 tests/wasm/worker-harness.js
 tests/wasm/notebook-harness.js
+tests/wasm/sessions-harness.js
 tests/wasm/egg-harness.js
 tests/wasm/page.spec.mjs
 tests/wasm/wasm-arch.js
@@ -328,6 +329,8 @@ emscripten/web/compiler-worker.js
 emscripten/web/nb-kernel.js
 emscripten/web/notebook.js
 emscripten/web/notebook-lib.js
+emscripten/web/session-store.js
+emscripten/web/sessions.js
 emscripten/deploy/README.txt
 emscripten/deploy/serve.py
 GNUmakefile

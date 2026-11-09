@@ -395,8 +395,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     build-wasm/web/
       A static web site: a REPL running the unmodified "csi" in a
       Web Worker, with streaming output, a Stop button (Ctrl-C),
-      file upload, a ".csirc", a "Notebook" tab and a "Compile to
-      C" tab that runs the wasm "chicken".  It needs no special
+      file upload, a ".csirc", sessions saved in the browser
+      (Ctrl-S), a "Notebook" tab and a "Compile to C" tab that runs
+      the wasm "chicken".  It needs no special
       HTTP headers (no COOP/COEP) but must be served over HTTP, not
       opened from a file:// URL.  Any static web server will do.
 
@@ -489,6 +490,37 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       settings' csi arguments it takes the "-:" runtime options,
       -R, -I, -K, -D, -no-feature, -w, -i, -r7rs-syntax and
       -no-parentheses-synonyms; settings apply after "Restart".
+
+      "Saved" in the REPL's toolbar (or Ctrl+S there) and, in the
+      notebook, More, "Save in this browser…" and "Saved
+      notebooks…" keep named copies of the console session and of
+      notebooks in the browser's IndexedDB (emscripten/web/
+      session-store.js and sessions.js), with Open, Rename, Delete
+      (with Undo), Download and Import.  A console session keeps
+      its transcript (up to 2,000,000 characters, the end), the
+      line not yet sent, the inputs sent to that interpreter, its
+      uploads and the files csi wrote at the top of its home
+      directory.  An interpreter's heap cannot be saved: opening a
+      session starts a fresh csi, shows the transcript and runs
+      again, one at a time and with their output hidden, the inputs
+      that had finished when it was saved (those that were still
+      running or were stopped are skipped), which rebuilds its
+      definitions; Stop ends that, and "transcript only" skips it.
+      The Settings are not part of a session (a note says when it
+      was saved with others), nor are subdirectories of home, open
+      ports and threads, or the input history.  A notebook keeps
+      its cells, outputs up to 1 MB per cell and the uploads; it
+      comes back with stale outputs and "Run all", as after a
+      reload.  The notebook's autosave remains the current
+      notebook: opening a copy replaces it, and Ctrl+S in the
+      notebook also updates the copy it was opened from.  A copy
+      changed in another tab since this one saved or opened it is
+      never overwritten without asking.  When the browser's storage
+      is full, less is saved (the files csi wrote and the start of
+      the transcript, or larger outputs, then everything but the
+      inputs or the cells) and the page says what was left out.
+      Without browser storage (blocked site data, some private
+      windows) Download and Import still work, with files.
 
     build-wasm/stage/chicken/
       An SDK for compiling your own programs to WebAssembly: the

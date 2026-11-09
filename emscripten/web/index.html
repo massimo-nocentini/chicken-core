@@ -28,7 +28,9 @@
 <!-- The page runs the unmodified csi in a Web Worker (repl-worker.js) and
   the chicken compiler in another (compiler-worker.js); repl.js drives
   both.  The Notebook tab (notebook.js, with notebook-lib.js and the
-  kernel client nb-kernel.js) runs a second csi worker of its own.  The build rule replaces the BUILD placeholder (in the
+  kernel client nb-kernel.js) runs a second csi worker of its own.
+  session-store.js and sessions.js keep named saves of the console and
+  of notebooks in the browser's IndexedDB.  The build rule replaces the BUILD placeholder (in the
   chicken-build meta tag and the URLs below) with a build id, which the
   page passes as ?v= on every script, worker and .wasm URL, and the ARCH,
   EH and BUILDS ones with the builds the page has (WASM_WEB_ARCHS), of
@@ -880,6 +882,28 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 #nb-shortcuts dt { white-space: nowrap; text-align: right; }
 #nb-shortcuts dd { margin: 0; color: var(--muted); }
 
+/* saved states dialog (sessions.js) */
+#saves { width: min(640px, calc(100vw - 32px)); }
+.saves-kind { display: flex; flex-wrap: wrap; gap: 4px 16px; border: 0; padding: 0; margin: 0; }
+.saves-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.saves-row .input { flex: 1 1 160px; min-width: 0; }
+.saves-msg { flex-direction: column; align-items: stretch; gap: 8px; margin: 0; }
+.saves-msg p { margin: 0; overflow-wrap: anywhere; }
+.saves-msg-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.saves-list { list-style: none; margin: 0; padding: 0; max-height: min(45vh, 380px); overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.saves-list:empty { display: none; }
+.saves-list li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--border); }
+.saves-list li:first-child { border-top: 0; }
+.saves-list li[aria-current="true"] { background: var(--accent-soft); }
+.saves-who { flex: 1 1 12rem; min-width: 0; }
+.saves-name { font-weight: 600; overflow-wrap: anywhere; }
+.saves-badge { margin-left: 6px; font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); }
+.saves-meta { display: block; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.saves-acts { display: flex; flex-wrap: wrap; gap: 4px; }
+.saves-acts .btn.danger { color: var(--bad); }
+.saves-broken .saves-name { color: var(--bad); }
+#saves .actions { flex-wrap: wrap; }
+
 @media (max-width: 640px) {
   .nb-cell {
     grid-template-columns: auto minmax(0, 1fr) auto;
@@ -906,6 +930,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   .nb-tools .btn { min-height: 36px; width: 36px; }
   .nb-tools { opacity: 1; }
   .nb-menu [role="menuitem"] { min-height: 40px; }
+  .saves-list .btn { min-height: 40px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .nb-cell::before { animation: none !important; }
@@ -917,6 +942,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   .nb-editor { border-color: CanvasText; }
   .nb-hl mark { background: Mark; forced-color-adjust: none; }
   .nb-editor.syn .nb-hl, .nb-editor.syn .nb-hl * { forced-color-adjust: none; color: transparent; }
+  .saves-list li[aria-current="true"] { outline: 1px solid CanvasText; }
 }
 @media print {
   .top, .bar, .nb-gutter .nb-run, .nb-tools, .nb-add, .hints, .notice, .nb-log, .nb-toast, .nb-stdin, .nb-bal, .nb-more { display: none !important; }
@@ -966,6 +992,9 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="M7 8l5-5 5 5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg><span class="label">Upload</span>
       </button>
       <input type="file" id="upload" multiple hidden>
+      <button class="btn ghost" id="saves-btn" type="button" aria-label="Saved sessions" title="Save this console in the browser, or open a saved one (Ctrl+S)" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3"/><path d="M8 21v-7h8v7"/></svg><span class="label">Saved</span>
+      </button>
       <button class="btn ghost" id="settings-btn" type="button" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="label">Settings</span>
       </button>
@@ -994,6 +1023,8 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
         <button type="button" role="menuitem" tabindex="-1" data-act="new">New notebook</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="example">Load example</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="import">Import…</button>
+        <button type="button" role="menuitem" tabindex="-1" data-act="saves-save">Save in this browser…</button>
+        <button type="button" role="menuitem" tabindex="-1" data-act="saves-open">Saved notebooks…</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-scm">Export .scm</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-json">Export .json</button>
         <button type="button" role="menuitem" tabindex="-1" data-act="export-html">Export .html</button>
@@ -1024,7 +1055,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <button class="btn primary" id="send" type="submit" disabled>Run</button>
         </form>
       </div>
-      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops, <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>.</p>
+      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops, <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves the session in this browser (Saved).</p>
     </section>
 
     <section class="panel" id="panel-notebook" role="tabpanel" aria-labelledby="tab-notebook" hidden>
@@ -1053,7 +1084,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <button class="btn" id="nb-end-code" type="button">+ Code</button>
           <button class="btn" id="nb-end-text" type="button">+ Text</button>
         </div>
-        <p class="hints" id="nb-keys"><kbd>Shift</kbd>+<kbd>Enter</kbd> runs a cell and moves on, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs it in place, <kbd>Esc</kbd> then <kbd>?</kbd> lists every shortcut. The notebook is saved in this browser; export it from More as .scm, .json or .html.</p>
+        <p class="hints" id="nb-keys"><kbd>Shift</kbd>+<kbd>Enter</kbd> runs a cell and moves on, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> runs it in place, <kbd>Esc</kbd> then <kbd>?</kbd> lists every shortcut. The notebook is saved in this browser as you type; More → Save in this browser… keeps named copies, and More → Export saves .scm, .json or .html files.</p>
       </div>
       <div class="sr-only" id="nb-live" aria-live="polite"></div>
       <div class="nb-toast" id="nb-toast" role="status" hidden>
@@ -1159,7 +1190,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt><dd>Run, stay</dd>
           <dt><kbd>Alt</kbd>+<kbd>Enter</kbd></dt><dd>Run, insert a cell below</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>C</kbd></dt><dd>Stop (when nothing is selected)</dd>
-          <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>Save now</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>Save now (and update the saved copy it was opened from)</dd>
         </dl>
         <h3>Editing a cell</h3>
         <dl>
@@ -1193,10 +1224,49 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   </form>
 </dialog>
 
+<dialog id="saves" aria-labelledby="saves-title">
+  <form method="dialog" id="saves-form">
+    <h2 id="saves-title">Saved in this browser</h2>
+    <fieldset class="saves-kind" id="saves-kind">
+      <legend class="sr-only">Show</legend>
+      <label class="check"><input type="radio" name="saves-kind" value="console"> <span>Console sessions</span></label>
+      <label class="check" id="saves-kind-nb"><input type="radio" name="saves-kind" value="notebook"> <span>Notebooks</span></label>
+    </fieldset>
+    <div class="saves-new">
+      <label class="f" for="saves-name" id="saves-name-label">Save the current console as</label>
+      <div class="saves-row">
+        <input class="input" id="saves-name" maxlength="120" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off">
+        <button class="btn primary" id="saves-save" type="button">Save</button>
+      </div>
+    </div>
+    <div class="notice saves-msg" id="saves-msg" hidden>
+      <p id="saves-msg-text"></p>
+      <div class="saves-msg-acts">
+        <button class="btn primary" id="saves-msg-a" type="button" hidden>OK</button>
+        <button class="btn" id="saves-msg-b" type="button" hidden>Cancel</button>
+        <button class="btn" id="saves-msg-c" type="button" hidden>Cancel</button>
+      </div>
+    </div>
+    <p class="help" id="saves-empty" hidden></p>
+    <ul class="saves-list" id="saves-list" aria-label="Saved console sessions"></ul>
+    <label class="check" id="saves-replay-wrap"><input type="checkbox" id="saves-replay"> <span>Run a session's inputs again when opening it<br><span class="help">This rebuilds its definitions in a fresh interpreter, with their output hidden; Stop ends it. Without it only the transcript comes back.</span></span></label>
+    <p class="help" id="saves-usage"></p>
+    <p class="sr-only" id="saves-live" aria-live="polite"></p>
+    <div class="actions">
+      <button class="btn" id="saves-import" type="button">Import…</button>
+      <input type="file" id="saves-file" accept=".json,application/json" hidden>
+      <button class="btn" id="saves-download" type="button">Download current</button>
+      <button class="btn primary" value="close" type="submit">Close</button>
+    </div>
+  </form>
+</dialog>
+
 <noscript><p style="padding:16px">This REPL needs JavaScript and WebAssembly.</p></noscript>
+<script src="session-store.js?v=@BUILD@"></script>
 <script src="repl.js?v=@BUILD@"></script>
 <script src="notebook-lib.js?v=@BUILD@"></script>
 <script src="nb-kernel.js?v=@BUILD@"></script>
 <script src="notebook.js?v=@BUILD@"></script>
+<script src="sessions.js?v=@BUILD@"></script>
 </body>
 </html>

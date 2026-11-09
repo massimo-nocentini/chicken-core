@@ -45,7 +45,12 @@
  *   worker loads that one's modules (see "the build" below).
  * - window.ChickenPage gives the Notebook tab (notebook.js) the settings,
  *   the storage, the compiled .wasm and the uploads; the page sends it
- *   "chicken:tab" and "chicken:settings" events. */
+ *   "chicken:tab" and "chicken:settings" events.
+ * - Named saves of the console (transcript, inputs, files) are kept in
+ *   IndexedDB by sessions.js; opening one starts a fresh csi and runs its
+ *   finished inputs again (see "saved sessions" below).  The heap of an
+ *   interpreter is never saved, nor subdirectories of its home, its open
+ *   ports and threads, the history or the Settings. */
 
 (function () {
   'use strict';
@@ -56,7 +61,7 @@
   const HISTORY_MAX = 500;
   const WATCHDOG_MS = 3000;
   const HOME = '/home/web_user/';
-  const PROMPT_END = /#;\d+> $/;
+  const PROMPT_END = /#;(?:[^\s>]*:)?\d+> $/;    // "#;3> ", in a module "#;m:3> " (csi.scm)
 
   const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
   const BUILD = meta('chicken-build');
@@ -318,7 +323,7 @@
   function outNode(text) {
     // stdout, with csi's "#;N> " prompts dimmed
     const span = document.createElement('span');
-    const parts = text.split(/(#;\d+> )/);
+    const parts = text.split(/(#;(?:[^\s>]*:)?\d+> )/);   // one group: the prompts at odd indices
     for (let i = 0; i < parts.length; i++) {
       if (!parts[i]) continue;
       if (i % 2) {
@@ -417,6 +422,16 @@
   const reqs = new Map();
   let reqId = 0;
 
+  // saved sessions (session-store.js; sessions.js has the dialog)
+  const SS = window.ChickenSessionStore || null;
+  const ilog = SS ? SS.createInputLog() : null;   // the inputs of this interpreter
+  // consoleGen counts the changes a save would keep; cleanGen is its
+  // value when the console was last saved or opened
+  let consoleGen = 0, cleanGen = 0, spawned = false;
+  let origin = null;                    // {id, rev, name}: the saved state it was saved to or opened from
+  let replay = null;                    // a saved session's inputs being run again (see replayStep)
+  const saveProviders = new Map();      // kind -> provider (ChickenPage.provideSaves)
+
   const atPrompt = () => PROMPT_END.test(tail);
 
   function setStatus(key, text) {
@@ -473,6 +488,11 @@
   }
 
   function kill() {
+    if (replay) {                       // Restart, the watchdog, Settings, exit, crash
+      const r = replay;
+      replay = null;
+      note('; replay stopped at input ' + r.i + ' of ' + r.n);
+    }
     gen++;
     clearTimeout(watchdog);
     if (worker) worker.terminate();
@@ -492,9 +512,16 @@
     showNotice(msg.split('\n')[0].replace(/^; /, ''));
   }
 
-  async function spawn() {
+  // opts: {files: [{name, data}] written to the home directory after the
+  // uploads (not kept as uploads: Restart drops them, as it drops the
+  // files csi writes), quiet: not a change of the console (an open)}
+  async function spawn(opts) {
+    opts = opts || {};
     if (unavailable) return;
     kill();
+    if (ilog) ilog.reset();
+    if (spawned && !opts.quiet) consoleGen++;
+    spawned = true;
     const g = gen;
     alive = true;
     eofSent = false;
@@ -526,7 +553,8 @@
       type: 'init',
       args: csiArgs(),
       csirc: settings.csirc.trim() ? settings.csirc : null,
-      files: [...uploads].map(([name, data]) => ({ path: HOME + name, data })),
+      files: [...[...uploads].map(([name, data]) => ({ path: HOME + name, data })),
+              ...(opts.files || []).map(f => ({ path: HOME + f.name, data: f.data }))],
       sliceMs: settings.sliceMs,
       wasmModule: mod,
     });
@@ -552,23 +580,40 @@
         if (CHOICE.notes.length && term.querySelector('.loading')) term.querySelector('.loading').remove();
         for (const t of CHOICE.notes) note(t);
       }
+      if (replay) {                     // no input until it is done; Stop ends it
+        setInputEnabled(false);
+        $('stop').disabled = false;
+        setStatus('running', 'replaying ' + replay.i + '/' + replay.n);
+        break;
+      }
       setInputEnabled(true);
-      if (!touch && document.activeElement !== $('src') && !$('settings').open &&
+      if (!touch && document.activeElement !== $('src') && !document.querySelector('dialog[open]') &&
           !$('panel-repl').hidden) line.focus();
       updateStatus();
       break;
     case 'output':
+      if (replay) {
+        // hidden, but acked (the worker pauses csi above 1 MB unacked)
+        tail = (tail + m.text).slice(-64);
+        worker.postMessage({ type: 'ack', bytes: m.text.length });
+        if (m.fd === 2) { if (replay.i === 0) replay.startErr = true; else replay.curErr = true; }
+        break;
+      }
       emit(m.fd === 2 ? 'err' : 'out', m.text, true);
       break;
     case 'state':
       state = m.state;
+      if (state === WAITING && atPrompt() && ilog) ilog.prompt();
+      if (replay) { replayStep(); break; }
       updateStatus();
       break;
     case 'exit':
+      if (ilog) ilog.exited();
       if (eofSent && m.code === 0) finished('; session ended', 'The session ended.');
       else finished('; process exited (code ' + m.code + ')', 'csi exited with code ' + m.code + '.');
       break;
     case 'crash':
+      if (ilog) ilog.interrupted();
       emit('err', String(m.message).replace(/\n?$/, '\n'));
       finished('; the interpreter crashed', 'The interpreter crashed.');
       break;
@@ -590,11 +635,38 @@
       worker.postMessage(Object.assign({ id }, msg));
     });
   }
+  // the same, given up after ms (csi in a long primitive answers nothing;
+  // a late answer is then ignored)
+  function requestT(msg, ms) {
+    return new Promise((resolve, reject) => {
+      if (!worker) { reject(new Error('the interpreter is not running')); return; }
+      const id = ++reqId;
+      const timer = setTimeout(() => {
+        if (!reqs.has(id)) return;
+        reqs.delete(id);
+        reject(new Error('timeout'));
+      }, ms);
+      reqs.set(id, { resolve: v => { clearTimeout(timer); resolve(v); }, reject: e => { clearTimeout(timer); reject(e); } });
+      worker.postMessage(Object.assign({ id }, msg));
+    });
+  }
 
   // ---- Stop, Restart, EOF
 
   function stop() {
     if (!worker || !alive) return;
+    if (replay) {                       // the inputs before it stay run
+      const r = replay;
+      replay = null;
+      note('; replay stopped at input ' + r.i + ' of ' + r.n + '; the inputs before it were run (saving now keeps only those)');
+      consoleGen++;                     // its saved copy has more: ask before replacing it
+      // (an interrupt at a fresh prompt prints nothing: show the prompt)
+      const p = state === WAITING && PROMPT_END.exec(tail);
+      if (p) emit('out', p[0], false);
+      writeHome(r.home);
+      setInputEnabled(true);
+    }
+    if (ilog) ilog.interrupted();
     worker.postMessage({ type: 'interrupt' });
     if (state === WAITING) { line.value = ''; autosize(); }
     // The interrupt makes the worker report at once, whatever state it
@@ -619,10 +691,13 @@
   }
 
   function sendEof() {
-    if (!worker || !alive) return;
-    if (state === WAITING && atPrompt() && !confirm('End session?')) return;
+    if (!worker || !alive || replay) return;
+    const atP = state === WAITING && atPrompt();
+    if (atP && !confirm('End session?')) return;
     eofSent = true;
     worker.postMessage({ type: 'input', text: '', eof: true });
+    if (!atP && ilog) ilog.addEof();     // (at a prompt it ends the session: not logged)
+    consoleGen++;
   }
 
   // ---- input and history
@@ -660,7 +735,7 @@
   }
 
   function submit() {
-    if (!worker || !alive || !ready) return;
+    if (!worker || !alive || !ready || replay) return;
     let text = line.value;
     if (settings.quotes) text = straightenQuotes(text);
     if (text.trim() && history[history.length - 1] !== text) {
@@ -670,10 +745,13 @@
     }
     histIdx = history.length;
     draft = '';
+    const atP = state === WAITING && atPrompt();    // (before the echo, which goes in tail)
     emit('in', text + '\n');
     render();
     term.scrollTop = term.scrollHeight;
     worker.postMessage({ type: 'input', text: text + '\n', eof: false });
+    if (ilog) ilog.add(text, atP);
+    consoleGen++;
     line.value = '';
     autosize();
     // csi is evaluating until the worker reports otherwise, which may be
@@ -716,7 +794,7 @@
   });
 
   document.addEventListener('keydown', e => {
-    if ($('settings').open || $('panel-repl').hidden) return;
+    if (document.querySelector('dialog[open]') || $('panel-repl').hidden) return;
     const k = e.key.toLowerCase();
     if (e.key === 'Escape') { e.preventDefault(); stop(); }
     else if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && k === 'c') {
@@ -725,9 +803,14 @@
       if ((sel && !sel.isCollapsed) || line.selectionStart !== line.selectionEnd) return;
       e.preventDefault();
       stop();
+    } else if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && k === 's') {
+      e.preventDefault();
+      if (window.ChickenSaves) window.ChickenSaves.open({ kind: 'console', mode: 'quick' });
+      else note('; saved sessions are not available: sessions.js did not load');
     } else if (e.ctrlKey && !e.shiftKey && !e.altKey && k === 'l') {
       e.preventDefault();
       clearTerm();
+      consoleGen++;
     }
   });
 
@@ -741,7 +824,7 @@
   $('stop').addEventListener('click', () => { stop(); if (!touch) line.focus(); });
   $('restart').addEventListener('click', restart);
   $('notice-restart').addEventListener('click', () => { restart(); });
-  $('clear').addEventListener('click', () => { clearTerm(); if (!touch && !line.disabled) line.focus(); });
+  $('clear').addEventListener('click', () => { clearTerm(); consoleGen++; if (!touch && !line.disabled) line.focus(); });
   $('hist-up').addEventListener('click', () => { recall(-1); line.focus(); });
   $('hist-down').addEventListener('click', () => { recall(1); line.focus(); });
 
@@ -750,12 +833,14 @@
   const uploadHooks = [];               // ChickenPage.onUpload (the notebook)
   async function uploadFiles(files) {
     if (unavailable) return;            // nothing could load them
+    let stored = false;
     for (const f of files) {
       const name = f.name.replace(/^.*[\\/]/, '') || 'upload';
       let data;
       try { data = new Uint8Array(await f.arrayBuffer()); }
       catch (e) { note('; could not read ' + name + ': ' + e.message); continue; }
       uploads.set(name, data);
+      if (!stored) { stored = true; consoleGen++; }
       for (const hook of uploadHooks) { try { hook(name, data); } catch (e) { /* the hook's problem */ } }
       try {
         if (worker && ready) await request({ type: 'writeFile', path: HOME + name, data });
@@ -1004,6 +1089,216 @@
     setTimeout(() => { b.textContent = 'Copy'; }, 1500);
   });
 
+  // ---- saved sessions (the dialog is sessions.js's, the format session-store.js's)
+  //
+  // A save keeps the transcript, the unsent line, the inputs sent to this
+  // interpreter with how each ended (ilog), the uploads and the regular
+  // files at the top of the home directory; the .csirc and arguments are
+  // only recorded.  Not the heap: opening a session starts a fresh csi,
+  // shows the transcript and runs again, one at a time and with their
+  // output hidden, the inputs that had finished, which rebuilds the
+  // definitions; then the home files are written back.  An input that
+  // behaves differently the second time (random, the time, files) is not
+  // noticed beyond its errors being counted; "#N" history references
+  // shift when inputs were skipped; files the replay made that were not
+  // saved stay.
+
+  const fmtDate = d => (SS ? SS.fmtDate(d) : new Date(d).toLocaleString());
+  const plural = (n, w) => n + ' ' + w + (n === 1 ? '' : 's');
+  const hasContent = () => !!(ilog && (ilog.entries.length || ilog.broken)) || !!term.querySelector('span.in') ||
+    pending.some(p => p.cls === 'in');
+  const isDirty = () => hasContent() && consoleGen !== cleanGen;
+  const isBusy = () => !!replay || (alive && !(ready && state === WAITING && atPrompt()));
+  const sameBytes = (a, b) => !!a && !!b && a.length === b.length && a.every((x, i) => x === b[i]);
+  const someNames = l => l.slice(0, 5).join(', ') + (l.length > 5 ? ' and ' + (l.length - 5) + ' more' : '');
+
+  // the regular files at the top of the home directory, but the uploads
+  // unchanged and .csirc: {files, note} (note: what was not saved, and why)
+  async function readHome() {
+    if (!alive) return { files: [], note: 'The files csi wrote were not saved: it had ended.' };
+    if (replay || !ready) return { files: [], note: 'The files csi wrote were not saved: it was starting or re-running inputs.' };
+    let dir;
+    try { dir = await requestT({ type: 'listDir', path: HOME }, 3000); }
+    catch (e) {
+      return { files: [], note: e.message === 'timeout' ? 'csi was busy, so the files it wrote were not saved (uploads were).'
+               : 'The files csi wrote could not be read: ' + e.message + '.' };
+    }
+    const L = SS.LIMITS;
+    const names = (dir.entries || []).filter(n => typeof n === 'string' && n !== '.' && n !== '..' && n !== '.csirc').sort();
+    let bytes = 0, count = uploads.size;
+    for (const d of uploads.values()) bytes += d.length;
+    const files = [], odd = [], big = [], many = [];
+    for (const name of names) {
+      if (count >= L.FILES_COUNT) { many.push(name); continue; }
+      let r;
+      try { r = await requestT({ type: 'readFile', path: HOME + name }, 3000); }
+      catch (e) { odd.push(name); continue; }          // a directory (EISDIR), or unreadable
+      if (!(r.data instanceof Uint8Array)) { odd.push(name); continue; }
+      if (sameBytes(r.data, uploads.get(name))) continue;
+      if (r.data.length > L.FILE_MAX || bytes + r.data.length > L.FILES_BYTES) { big.push(name); continue; }
+      bytes += r.data.length;
+      count++;
+      files.push({ name, data: r.data });
+    }
+    const why = [odd.length && someNames(odd) + ' (not regular files)',
+                 big.length && someNames(big) + ' (over ' + SS.fmtSize(L.FILE_MAX) + ' each or ' +
+                   SS.fmtSize(L.FILES_BYTES) + ' in all)',
+                 many.length && someNames(many) + ' (over ' + L.FILES_COUNT + ' files)'].filter(Boolean);
+    return { files, note: why.length ? 'Not saved from the home directory: ' + why.join('; ') + '.' : null };
+  }
+
+  // level 0: everything; 1: without the files csi wrote and the start of
+  // the transcript; 2: without the transcript and files (when browser
+  // storage is too full for more)
+  async function capture(level, cache) {
+    // While a saved session's inputs run again, the input log holds only
+    // those run so far and the home directory is not yet restored: what
+    // is saved is the session being re-run (its plan and its home files),
+    // so a save then (Ctrl+S on the session opened) loses nothing.
+    const r = replay;
+    render();
+    const L = SS.LIMITS;
+    const pieces = [];
+    for (const n of term.childNodes) {
+      if (n.nodeType !== 1 || n.classList.contains('loading')) continue;
+      const cls = n.className || 'out';
+      if (cls === 'out' || cls === 'err' || cls === 'in' || cls === 'sys') pieces.push([cls, n.textContent]);
+    }
+    const t = level >= 2 ? { chunks: [], cut: true }
+      : SS.trimTranscript(SS.mergeChunks(pieces), level ? L.TRANSCRIPT_LEAN : L.TRANSCRIPT_MAX);
+    const inputs = r ? r.list.map(e => Object.assign({}, e)) : ilog.snapshot();
+    const up = level < 2 ? [...uploads].map(([name, data]) => ({ name, data })) : [];
+    let home = { files: [], note: null };
+    if (level === 0) home = r ? { files: r.home, note: null } : cache.home || (cache.home = await readHome());
+    const data = {
+      format: SS.CONSOLE_FORMAT, version: 1, minReader: 1,
+      transcript: t.chunks, transcriptCut: t.cut,
+      inputs, entry: line.value.slice(0, L.ENTRY_MAX),
+      uploads: up, home: home.files, homeNote: home.note,
+      settings: { csirc: settings.csirc, args: settings.args },
+      saved: { build: BUILD, arch: ARCH, eh: EH },
+    };
+    const warnings = [];
+    if (home.note) warnings.push(home.note);
+    if (r) warnings.push('csi was still running again the inputs of “' + r.name + '”: all of them are saved, ' +
+                         'with its files, and run again when it is opened.');
+    else if (isBusy()) warnings.push('csi was busy, so the unfinished input is skipped when the session is opened.');
+    if (inputs === null) warnings.push('Its inputs were too many to keep: opening it brings back the transcript only.');
+    return {
+      data, summary: SS.consoleSummary(data), warnings,
+      dropped: level === 0 ? null : level === 1 ? 'the files csi wrote and the start of the transcript'
+        : 'the transcript and all files (uploaded files are needed again to load them)',
+    };
+  }
+
+  // opens a saved session (checked: SS.checkConsole's {data, warnings});
+  // opts.replay: run its finished inputs again
+  function applySession(meta, checked, opts) {
+    const s = checked.data;
+    replay = null;                      // (the worker goes below)
+    clearTerm();
+    for (const [cls, text] of SS.stripTrailingPrompt(s.transcript)) emit(cls, text, false);
+    if (s.transcriptCut && !s.transcript.length) note('; its transcript was not saved');
+    render();
+    note('; opened “' + meta.name + '”, saved ' + fmtDate(meta.modified));
+    for (const w of checked.warnings) note('; ' + w);
+    if (s.homeNote) note('; ' + s.homeNote);
+    if (s.uploads.length) {
+      for (const f of s.uploads) {
+        uploads.set(f.name, f.data);
+        for (const hook of uploadHooks) { try { hook(f.name, f.data); } catch (e) { /* the hook's problem */ } }
+      }
+      note('; restored ' + plural(s.uploads.length, 'uploaded file') + ': ' + someNames(s.uploads.map(f => f.name)));
+    }
+    if (s.settings.csirc !== settings.csirc || s.settings.args !== settings.args)
+      note('; it was saved with another .csirc or other csi arguments (see Settings); this interpreter uses the current ones');
+    line.value = s.entry;
+    autosize();
+    histIdx = history.length;
+    draft = '';
+    const plan = s.inputs ? SS.planReplay(s.inputs) : { send: [], skipped: 0 };
+    if (opts && opts.replay && plan.send.length) {
+      spawn({ quiet: true });
+      replay = { gen, list: plan.send, i: 0, n: plan.send.length, errs: 0, curErr: false, startErr: false,
+                 skipped: plan.skipped, home: s.home, name: meta.name };
+      setStatus('running', 'replaying 0/' + replay.n);
+    } else {
+      spawn({ quiet: true, files: s.home });
+      if (!(opts && opts.replay)) note('; transcript only: this is a fresh interpreter, its definitions were not restored');
+      else if (s.inputs === null) note('; its inputs were not kept, so its definitions were not restored');
+      else if (s.inputs.length) note('; none of its inputs had finished when it was saved, so nothing was run again');
+      if (s.home.length) note('; restored ' + plural(s.home.length, 'file') + ' in the home directory');
+    }
+    origin = meta.id ? { id: meta.id, rev: meta.rev, name: meta.name } : null;
+    cleanGen = consoleGen;
+  }
+
+  // At every WAITING the next input goes: csi waits only once its input
+  // is used up, and the worker posts a slice's output before its state,
+  // so stdin answers, type-ahead and the rest of an incomplete form go in
+  // their order, prompt or not.  No timeout: (sleep 10) is fine, and
+  // Stop ends the replay.
+  function replayStep() {
+    const r = replay;
+    if (state === RUNNING || state === BUSY) return setStatus('running', 'replaying ' + r.i + '/' + r.n);
+    if (state === SLEEPING) return setStatus('sleeping', 'replaying ' + r.i + '/' + r.n);
+    if (state !== WAITING) return;
+    if (r.curErr) { r.errs++; r.curErr = false; }
+    if (r.i >= r.n) { finishReplay(); return; }
+    const e = r.list[r.i++];
+    if (e.eof) {
+      ilog.addEof();
+      worker.postMessage({ type: 'input', text: '', eof: true });
+      eofSent = true;
+    } else {
+      ilog.add(e.t, e.k === 'p');
+      worker.postMessage({ type: 'input', text: e.t + '\n', eof: false });
+    }
+    state = RUNNING;
+    setStatus('running', 'replaying ' + r.i + '/' + r.n);
+  }
+  function finishReplay() {
+    const r = replay;
+    replay = null;
+    note('; ran its ' + plural(r.n, 'input') + ' again' +
+         (r.errs ? '; ' + r.errs + ' of them wrote errors (their output is hidden)' : '') +
+         (r.skipped ? '; skipped ' + r.skipped + ' that had not finished or were stopped' : '') +
+         (r.startErr ? '; .csirc wrote errors' : ''));
+    const p = PROMPT_END.exec(tail);
+    if (p) emit('out', p[0], false);
+    else note('; csi is waiting for more input');
+    writeHome(r.home);
+    setInputEnabled(true);
+    updateStatus();
+    if (!touch && !document.querySelector('dialog[open]') && !$('panel-repl').hidden) line.focus();
+    cleanGen = consoleGen;              // (a replay is no change)
+  }
+  // the saved home files, after the replay: home ends as it was saved
+  async function writeHome(files) {
+    if (!files || !files.length || !(worker && ready)) return;
+    let ok = 0, failed = 0;
+    for (const f of files) {
+      try { await requestT({ type: 'writeFile', path: HOME + f.name, data: f.data }, 3000); ok++; }
+      catch (e) { failed++; }
+    }
+    note('; restored ' + plural(ok, 'file') + ' in the home directory' + (failed ? '; ' + failed + ' could not be written' : ''));
+  }
+
+  // uploads of an opened notebook: for the REPL and the kernel too
+  async function addUploads(list, fromName) {
+    let n = 0;
+    for (const f of list) {
+      uploads.set(f.name, f.data);
+      for (const hook of uploadHooks) { try { hook(f.name, f.data); } catch (e) { /* the hook's problem */ } }
+      n++;
+      try {
+        if (worker && ready) await requestT({ type: 'writeFile', path: HOME + f.name, data: f.data }, 3000);
+        else if (worker) worker.postMessage({ type: 'writeFile', id: ++reqId, path: HOME + f.name, data: f.data });
+      } catch (e) { note('; could not write ' + f.name + ': ' + e.message); }
+    }
+    if (n) note('; restored ' + plural(n, 'uploaded file') + ' from “' + fromName + '”');
+  }
+
   // ---- the page API for notebook.js
 
   function replModule() {               // of the build chosen
@@ -1026,6 +1321,33 @@
     onUpload(f) { uploadHooks.push(f); },
     uploadFiles,
     openSettings() { $('settings-btn').click(); },
+    // saved states (sessions.js): the console's and the notebook's providers
+    provideSaves(kind, provider) { saveProviders.set(kind, provider); },
+    savesProvider(kind) { return saveProviders.get(kind) || null; },
+    addUploads,                         // ([{name, data}], from what)
+    selectTab(id) { const t = $(id); if (t && t.getAttribute('aria-selected') !== 'true') t.click(); },
+  });
+
+  window.ChickenPage.provideSaves('console', {
+    kind: 'console', noun: 'console session', nounPlural: 'console sessions', current: 'the current console',
+    // why it cannot be saved or opened, or null
+    available: () => (unavailable ? 'This browser cannot run csi: ' + unavailable
+                      : SS ? null : 'The saved-sessions code (session-store.js) did not load'),
+    defaultName: () => (origin ? origin.name : 'Console ' + fmtDate(new Date())),
+    origin: () => origin && Object.assign({}, origin),
+    linked(meta) { origin = meta ? { id: meta.id, rev: meta.rev, name: meta.name } : null; cleanGen = consoleGen; },
+    renamed(id, name) { if (origin && origin.id === id) origin.name = name; },
+    isDirty, isBusy,
+    busyText: () => (replay ? 'csi is re-running a saved session; it will be stopped.' : 'csi is running; it will be stopped.'),
+    capture,
+    check: d => SS.checkConsole(d),
+    apply: applySession,
+    saved(meta, dropped, quiet, warnings) {
+      note('; saved “' + meta.name + '” in this browser' + (dropped ? ' without ' + dropped + ' (browser storage is nearly full)' : ''));
+      if (quiet && warnings) for (const w of warnings) note('; ' + w);   // (the dialog shows them otherwise)
+    },
+    fail(text) { note('; ' + text); },
+    focus() { if (!touch && !line.disabled) line.focus(); },
   });
 
   // ---- start
@@ -1039,6 +1361,7 @@
     $('restart').disabled = true;
     $('compile').disabled = true;
     $('upload-btn').disabled = true;
+    if ($('saves-btn')) $('saves-btn').disabled = true;
     unavailableDetail = unavailable.replace(/^; /gm, '');
     unavailable = unavailableDetail.split('\n')[0];
   } else {

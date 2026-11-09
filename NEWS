@@ -397,6 +397,18 @@
     else says what is missing; the REPL, the notebook kernel and the
     compiler all load the build chosen, which the header shows.
     `?arch=' in the URL or the Settings can ask for either.
+  - The web page keeps named saved states in the browser (IndexedDB):
+    "Saved" in the REPL tab and "Save in this browser..." / "Saved
+    notebooks..." in the notebook's More menu save, list, open, rename,
+    delete (with Undo), download and import them, and Ctrl+S updates
+    the one the console or notebook came from.  A console state holds
+    the transcript, the unsent line, the inputs with how each ended,
+    the uploads and the files at the top of csi's home directory, not
+    the heap: opening it starts a fresh csi and runs the inputs that
+    had finished again, with their output hidden (or shows only the
+    transcript).  Full storage, blocked storage, other tabs and
+    damaged or newer records are handled; the notebook autosave is
+    unchanged.
 
 6.0.0
 

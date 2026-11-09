@@ -1594,9 +1594,10 @@ async function runBrowser(name) {
   });
 
   await check(P + 'notebook: every button has an accessible name', async () => {
-    const nameless = await page.evaluate(() => [...document.querySelectorAll('#panel-notebook button, #nb-toolbar button, #nb-shortcuts button')]
+    const sel = '#panel-notebook button, #nb-toolbar button, #nb-shortcuts button, #toolbar button, #saves button, #nb-menu button';
+    const nameless = await page.evaluate(sel => [...document.querySelectorAll(sel)]
       .filter(b => !(b.getAttribute('aria-label') || b.textContent.trim() || b.title || b.getAttribute('aria-labelledby')))
-      .map(b => b.outerHTML.slice(0, 80)));
+      .map(b => b.outerHTML.slice(0, 80)), sel);
     assert(!nameless.length, nameless.join('\n'));
   });
 
@@ -1653,6 +1654,446 @@ async function runBrowser(name) {
       assert(!errs.length, mode + ': ' + errs.join('\n'));
       await f.close();
     }
+  });
+
+  // ---- saved states (sessions.js, session-store.js)
+
+  const savesIsOpen = (p = page) => p.$eval('#saves', d => d.open);
+  async function savesOpen(p = page) {
+    if (await p.$eval('#panel-repl', e => e.hidden)) await p.click('#tab-repl');
+    await p.click('#saves-btn');
+    await p.waitForSelector('#saves[open]');
+  }
+  async function savesClose(p = page) {
+    if (!await savesIsOpen(p)) return;
+    await p.click('#saves button[value="close"]');
+    await p.waitForFunction(() => !document.getElementById('saves').open);
+  }
+  const savesMsg = (re, p = page, timeout = 15000) =>
+    p.waitForFunction(([s, f]) => !document.getElementById('saves-msg').hidden &&
+                      new RegExp(s, f).test(document.getElementById('saves-msg-text').textContent),
+                      [re.source, re.flags], { timeout });
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const savesRow = (name, p = page) =>
+    p.locator('#saves-list li').filter({ has: p.locator('.saves-name', { hasText: new RegExp('^' + esc(name) + '$') }) });
+  const waitRow = (name, p = page, timeout = 10000) =>
+    p.waitForFunction(n => [...document.querySelectorAll('#saves-list .saves-name')].some(e => e.textContent === n),
+                      name, { timeout });
+  async function msgAct(label, p = page) {
+    await p.locator('#saves-msg button:visible', { hasText: new RegExp('^' + esc(label) + '$') }).click();
+  }
+  async function savesSave(name, p = page) {
+    await p.fill('#saves-name', name);
+    await p.click('#saves-save');
+  }
+  // Open on the row NAME; if asked first, ACTION answers
+  async function savesOpenRow(name, action = 'Open without saving', p = page) {
+    await waitRow(name, p);
+    await savesRow(name, p).locator('button[data-op="open"]').click();
+    await p.waitForFunction(() => !document.getElementById('saves').open || !document.getElementById('saves-msg').hidden,
+                            null, { timeout: 10000 });
+    if (await savesIsOpen(p)) await msgAct(action, p);
+    await p.waitForFunction(() => !document.getElementById('saves').open, null, { timeout: 10000 });
+  }
+  // every saved state goes (the page's own database)
+  const savesClear = (p = page) => p.evaluate(() => new Promise((resolve, reject) => {
+    const r = indexedDB.open('chicken-repl', 1);
+    r.onupgradeneeded = () => {
+      r.result.createObjectStore('states', { keyPath: 'id' }).createIndex('kindName', 'kindName', { unique: true });
+      r.result.createObjectStore('payloads', { keyPath: 'id' });
+    };
+    r.onsuccess = () => {
+      const db = r.result, tx = db.transaction(['states', 'payloads'], 'readwrite');
+      tx.objectStore('states').clear();
+      tx.objectStore('payloads').clear();
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => reject(String(tx.error));
+    };
+    r.onerror = () => reject(String(r.error));
+  }));
+  const newPageErrors = p => {
+    const errs = [];
+    p.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+    p.on('pageerror', e => errs.push('pageerror: ' + e.message));
+    return errs;
+  };
+
+  await check(P + 'saves: save the console, restart, open re-runs its inputs', async () => {
+    await page.click('#tab-repl');
+    await waitStatus('ready', 60000);
+    await savesClear();
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+    await evalTo('(define saved-x 41)', /#;\d+> $/);
+    await mark();
+    await page.setInputFiles('#upload', { name: 'up.scm', mimeType: 'text/plain', buffer: Buffer.from('(define from-up 7)\n') });
+    await waitSince(/uploaded up\.scm/);
+    await evalTo(',l up.scm', /#;\d+> $/);
+    await evalTo('(with-output-to-file "made.txt" (lambda () (display "hi")))', /#;\d+> $/);
+    await page.fill('#line', '(+ 1');
+    await savesOpen();
+    await savesSave('first');
+    await savesMsg(/Saved “first”/);
+    await waitRow('first');
+    assert(await savesRow('first').locator('.saves-badge').textContent() === 'current', 'current badge');
+    assert(/; saved “first” in this browser/.test(await term()), 'noted');
+    await savesClose();
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+    await evalTo('saved-x', /unbound/);
+    await savesOpen();
+    await waitRow('first');
+    await savesRow('first').locator('button[data-op="open"]').click();
+    await savesMsg(/not saved/);
+    await msgAct('Open without saving');
+    await waitTerm(/ran its 3 inputs again/, 30000);
+    await waitStatus('ready', 30000);
+    assert(await page.inputValue('#line') === '(+ 1', 'the unsent line: ' + await page.inputValue('#line'));
+    assert(/\(define saved-x 41\)/.test(await term()), 'the old transcript');
+    assert(/; opened “first”/.test(await term()), 'opened note');
+    await evalTo('saved-x', /\n41\n#;\d+> $/);
+    await evalTo('from-up', /\n7\n#;\d+> $/);
+    await evalTo('(call-with-input-file "made.txt" read)', /\nhi\n#;\d+> $/);
+  });
+
+  await check(P + 'saves: transcript only', async () => {
+    await savesOpen();
+    await page.uncheck('#saves-replay');
+    await savesOpenRow('first');
+    await waitTerm(/transcript only/);
+    await waitStatus('ready', 60000);
+    await evalTo('saved-x', /unbound/);
+    await evalTo('(call-with-input-file "made.txt" read)', /\nhi\n#;\d+> $/);
+    assert(await page.evaluate(() => localStorage.getItem('chicken-repl.saves.replay')) === '0', 'the choice is kept');
+    await savesOpen();
+    await page.check('#saves-replay');
+    await savesClose();
+  });
+
+  await check(P + 'saves: stopped and unfinished inputs are skipped', async () => {
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+    await evalTo('(define a 1)', /#;\d+> $/);
+    await enter('(let loop () (loop))');
+    await waitStatus('running');
+    await page.click('#stop');
+    await waitSince(/interrupt/);
+    await waitStatus('ready');
+    await evalTo('(define b 2)', /#;\d+> $/);
+    await enter('(sleep 30)');
+    await waitStatus('sleeping');
+    await savesOpen();
+    await savesSave('skip');
+    await savesMsg(/Saved “skip”.*unfinished input is skipped/);
+    await savesClose();
+    await savesOpen();
+    await savesOpenRow('skip', 'Open');
+    await waitTerm(/ran its 2 inputs again; skipped 2/, 30000);
+    await waitStatus('ready', 30000);
+    await evalTo('(+ a b)', /\n3\n#;\d+> $/);
+  });
+
+  await check(P + 'saves: Stop ends a replay', async () => {
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+    await evalTo('(define w 3)', /#;\d+> $/);
+    for (let i = 0; i < 3; i++) await evalTo('(sleep 3)', /#;\d+> $/);
+    await savesOpen();
+    await savesSave('slow');
+    await savesMsg(/Saved “slow”/);
+    await savesClose();
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+    await savesOpen();
+    await savesOpenRow('slow');
+    await page.waitForFunction(() => /replaying/.test(document.getElementById('status-text').textContent), null, { timeout: 30000 });
+    await page.waitForFunction(() => /replaying [2-4]\//.test(document.getElementById('status-text').textContent), null, { timeout: 30000 });
+    await page.keyboard.press('Escape');
+    await waitTerm(/replay stopped at input \d of 4/);
+    await waitStatus('ready', 20000);
+    assert(!await page.isDisabled('#line'), 'input enabled');
+    await evalTo('w', /\n3\n#;\d+> $/);
+  });
+
+  await check(P + 'saves: a module prompt counts as ready', async () => {
+    await evalTo('(module m (f) (import scheme) (define (f) 1))', /#;\d+> $/);
+    await enter(',m m');
+    await waitTerm(/#;m:\d+> $/);
+    await waitStatus('ready');
+    assert(/^ready$/.test(await page.textContent('#status-text')), 'status ' + await page.textContent('#status-text'));
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+  });
+
+  await check(P + 'saves: name collision, rename, delete and undo', async () => {
+    await savesOpen();
+    await savesSave('Second');
+    await savesMsg(/Saved “Second”/);
+    await savesSave('FIRST');
+    await savesMsg(/There is already a saved console session named “first”/);
+    await msgAct('Replace it');
+    await savesMsg(/Saved “FIRST”/);
+    await waitRow('FIRST');
+    const names = await page.$$eval('#saves-list .saves-name', l => l.map(e => e.textContent));
+    assert(names.filter(n => n.toLowerCase() === 'first').length === 1, 'one row: ' + names);
+    page.once('dialog', d => d.accept('renamed').catch(() => {}));
+    await savesRow('FIRST').locator('button[data-op="rename"]').click();
+    await savesMsg(/Renamed to “renamed”/);
+    await waitRow('renamed');
+    assert(await savesRow('renamed').locator('.saves-badge').count() === 1, 'the badge follows');
+    page.once('dialog', d => d.accept('Renamed').catch(() => {}));
+    await savesRow('Second').locator('button[data-op="rename"]').click();
+    await savesMsg(/There is already/);
+    await savesRow('renamed').locator('button[data-op="delete"]').click();
+    await savesMsg(/Deleted “renamed”/);
+    assert(!await savesRow('renamed').count(), 'gone');
+    await msgAct('Undo');
+    await savesMsg(/Restored “renamed”/);
+    await waitRow('renamed');
+    await savesOpenRow('renamed');
+    await waitTerm(/; opened “renamed”/);
+    await waitStatus('ready', 60000);
+    assert(/\(define saved-x 41\)/.test(await term()), 'its transcript');
+  });
+
+  await check(P + 'saves: Ctrl+S updates the linked session; a conflict with another tab', async () => {
+    await evalTo('(define q 1)', /#;\d+> $/);
+    await page.press('#line', 'Control+s');
+    await waitTerm(/; saved “renamed” in this browser\n/);
+    assert(!await savesIsOpen(), 'no dialog');
+    const b = await context.newPage();
+    const errs = newPageErrors(b);
+    await b.goto(base + 'index.html');
+    await b.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+    await savesOpen(b);
+    await savesOpenRow('renamed', 'Open', b);
+    await b.waitForFunction(() => /ran its/.test(document.getElementById('term').textContent), null, { timeout: 60000 });
+    await b.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+    await b.fill('#line', '(define r 2)');
+    await b.press('#line', 'Enter');
+    await b.waitForFunction(() => /\(define r 2\)\n#;\d+> $/.test(document.getElementById('term').textContent), null, { timeout: 20000 });
+    await b.press('#line', 'Control+s');
+    await b.waitForFunction(() => /; saved “renamed” in this browser\n/.test(document.getElementById('term').textContent), null, { timeout: 20000 });
+    await savesOpen(b);
+    await waitRow('renamed', b);
+    await evalTo('(define s 3)', /#;\d+> $/);
+    await page.press('#line', 'Control+s');
+    await page.waitForSelector('#saves[open]');
+    await savesMsg(/changed in another tab/);
+    await msgAct('Save as “renamed (2)”');
+    await savesMsg(/Saved “renamed \(2\)”/);
+    await waitRow('renamed (2)', b, 2000);
+    await b.close();
+    await savesClose();
+    assert(!errs.length, errs.join('\n'));
+  });
+
+  await check(P + 'saves: notebook save, new, open, reload', async () => {
+    await page.click('#tab-notebook');
+    await waitNbStatus(/^ready$/, 60000);
+    await nbEval('(define nbx 5) "nb out"');
+    await menu('Save in this browser…');
+    await page.waitForSelector('#saves[open]');
+    assert(await page.isChecked('#saves input[name="saves-kind"][value="notebook"]'), 'the notebook kind');
+    await savesSave('nb1');
+    await savesMsg(/Saved “nb1”/);
+    await page.waitForFunction(() => /Saved “nb1”/.test(document.getElementById('nb-toast-text').textContent));
+    await savesClose();
+    let asked = '';
+    page.once('dialog', d => { asked = d.message(); d.accept().catch(() => {}); });
+    await menu('New notebook');
+    await page.waitForFunction(() => document.querySelectorAll('#nb-cells > li').length === 1);
+    assert(/Save in this browser/.test(asked), 'the question: ' + asked);
+    await menu('Saved notebooks…');
+    await page.waitForSelector('#saves[open]');
+    await savesOpenRow('nb1');
+    await page.waitForFunction(() => /Opened “nb1”/.test(document.getElementById('nb-notice-text').textContent) &&
+                               !document.getElementById('nb-notice').hidden);
+    assert(await page.textContent('#nb-notice-action') === 'Run all', 'Run all offered');
+    const k = await page.$$eval('#nb-cells > li', l => l.findIndex(e => /nb out/.test(e.querySelector('.nb-src').value)));
+    assert(k >= 0 && await nbCell(k).getAttribute('data-stale') === 'true' && /nb out/.test(await nbOut(k)), 'stale output');
+    const ls = await page.evaluate(() => [localStorage.getItem('chicken-repl.notebook'), localStorage.getItem('chicken-repl.notebook.origin')]);
+    assert(/nb out/.test(ls[0]) && JSON.parse(ls[1]).name === 'nb1', 'the autosave and its origin: ' + ls[1]);
+    await page.reload();
+    await page.click('#tab-notebook');
+    await page.waitForFunction(() => /Restored/.test(document.getElementById('nb-notice-text').textContent));
+    await menu('Saved notebooks…');
+    await page.waitForSelector('#saves[open]');
+    await waitRow('nb1');
+    assert(await savesRow('nb1').locator('.saves-badge').count() === 1, 'current after a reload');
+    await savesRow('nb1').locator('button[data-op="open"]').click();
+    await page.waitForFunction(() => !document.getElementById('saves').open, null, { timeout: 5000 });   // clean: no question
+    await page.waitForFunction(() => /Opened “nb1”/.test(document.getElementById('nb-notice-text').textContent));
+    await nbSrc(k).fill('(edited)');
+    await menu('Saved notebooks…');
+    await page.waitForSelector('#saves[open]');
+    await waitRow('nb1');
+    await savesRow('nb1').locator('button[data-op="open"]').click();
+    await savesMsg(/not saved/);
+    assert(await page.$$eval('#saves-msg button:not([hidden])', l => l.length) === 3, 'three choices');
+    await msgAct('Cancel');
+    await savesClose();
+    assert(await nbSrc(k).inputValue() === '(edited)', 'the edit stays');
+    await waitNbStatus(/^ready$/, 60000);
+    await waitStatus('ready', 60000);
+  });
+
+  await check(P + 'saves: storage blocked', async () => {
+    for (const mode of ['blocked', 'error']) {
+      const f = await context.newPage();
+      const errs = newPageErrors(f);
+      if (mode === 'blocked') await f.addInitScript(() => {
+        Object.defineProperty(window, 'indexedDB', { get() { throw new DOMException('denied', 'SecurityError'); } });
+      });
+      else await f.addInitScript(() => {
+        const idb = { open() {
+          const r = { error: null };
+          setTimeout(() => { r.error = new DOMException('broken', 'UnknownError'); if (r.onerror) r.onerror(new Event('error')); }, 10);
+          return r;
+        } };
+        Object.defineProperty(window, 'indexedDB', { get() { return idb; } });
+      });
+      await f.goto(base + 'index.html');
+      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+      await f.fill('#line', '(+ 1 2)');
+      await f.press('#line', 'Enter');
+      await f.waitForFunction(() => /\n3\n#;\d+> $/.test(document.getElementById('term').textContent), null, { timeout: 20000 });
+      await savesOpen(f);
+      await f.waitForFunction(() => /cannot be kept/.test(document.getElementById('saves-empty').textContent));
+      assert(await f.getAttribute('#saves-save', 'aria-disabled') === 'true', mode + ': Save disabled');
+      if (mode === 'blocked') {
+        const [dl] = await Promise.all([f.waitForEvent('download'), f.click('#saves-download')]);
+        const file = await dl.path();
+        const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+        assert(json.format === 'chicken-repl-session', 'downloaded: ' + json.format);
+        await f.setInputFiles('#saves-file', { name: 'mine.chicken-session.json', mimeType: 'application/json',
+                                               buffer: fs.readFileSync(file) });
+        await savesMsg(/not saved/, f);
+        await msgAct('Open without saving', f);
+        await f.waitForFunction(() => /; opened “/.test(document.getElementById('term').textContent), null, { timeout: 10000 });
+        await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+      }
+      await savesClose(f);
+      await f.close();
+      assert(!errs.length, mode + ': ' + errs.join('\n'));
+    }
+  });
+
+  await check(P + 'saves: storage full', async () => {
+    for (const mode of ['transcript', 'all']) {
+      const f = await context.newPage();
+      const errs = newPageErrors(f);
+      await f.addInitScript(mode => {
+        const put = IDBObjectStore.prototype.put;
+        IDBObjectStore.prototype.put = function (v) {
+          if (v && 'data' in v && (mode === 'all' || JSON.stringify(v.data.transcript || []).length > 100000))
+            throw new DOMException('full', 'QuotaExceededError');
+          return put.apply(this, arguments);
+        };
+      }, mode);
+      await f.goto(base + 'index.html');
+      await f.waitForFunction(() => document.getElementById('status').dataset.state === 'ready', null, { timeout: 60000 });
+      await f.fill('#line', '(begin (display (make-string 300000 #\\a)) (newline))');
+      await f.press('#line', 'Enter');
+      await f.waitForFunction(() => /aaa\n#;\d+> $/.test(document.getElementById('term').textContent), null, { timeout: 20000 });
+      await savesOpen(f);
+      await savesSave('big ' + mode, f);
+      if (mode === 'transcript') {
+        await savesMsg(/Saved “big transcript”\. Without/, f);
+        await f.waitForFunction(() => /saved “big transcript” in this browser without/.test(document.getElementById('term').textContent));
+        // an update that only fits smaller asks first: it replaces a copy
+        await savesSave('big transcript', f);
+        await savesMsg(/can only be updated with less/, f);
+        await f.click('#saves-msg button:has-text("Update it with less")');
+        await savesMsg(/Saved “big transcript”\. Without/, f);
+        await savesRow('big transcript', f).locator('button[data-op="delete"]').click();
+        await savesMsg(/Deleted/, f);
+      } else {
+        await savesMsg(/browser storage is full/, f);
+        assert(await f.isVisible('#saves-msg button:has-text("Download instead")'), 'Download instead');
+      }
+      await savesClose(f);
+      await f.close();
+      assert(!errs.length, mode + ': ' + errs.join('\n'));
+    }
+  });
+
+  await check(P + 'saves: corrupt and newer records', async () => {
+    await page.click('#tab-repl');
+    await page.evaluate(() => new Promise((resolve, reject) => {
+      const r = indexedDB.open('chicken-repl', 1);
+      r.onsuccess = () => {
+        const db = r.result, tx = db.transaction(['states', 'payloads'], 'readwrite');
+        const s = tx.objectStore('states'), p = tx.objectStore('payloads');
+        const now = new Date().toISOString();
+        const meta = (id, name, v) => ({ v, id, kind: 'console', name, kindName: 'console\u0000' + name, created: now,
+                                         modified: now, rev: 1, size: 10, build: '', arch: '', summary: { inputs: 0, files: 0 } });
+        s.put({ v: 1, id: 'sbroken1', kind: 'console', name: 'bad', kindName: 'console\u0000bad', rev: 'x' });
+        s.put(meta('snewer1', 'newer', 2));
+        s.put(meta('scorrupt1', 'corrupt', 1));
+        p.put({ id: 'scorrupt1', v: 1, data: { format: 'nope' } });
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => reject(String(tx.error));
+      };
+      r.onerror = () => reject(String(r.error));
+    }));
+    await savesOpen();
+    await page.waitForFunction(() => [...document.querySelectorAll('#saves-list .saves-broken')].length === 2);
+    const broken = await page.$$eval('#saves-list .saves-broken', l => l.map(li => [li.querySelector('.saves-name').textContent,
+      li.querySelector('.saves-meta').textContent, [...li.querySelectorAll('button')].map(b => b.dataset.op)]));
+    assert(broken.every(([n, , ops]) => n === 'Unreadable saved state' && ops.join() === 'delete'), 'delete only: ' + JSON.stringify(broken));
+    assert(broken.some(([, m]) => /newer version/.test(m)), 'newer: ' + JSON.stringify(broken));
+    await savesRow('corrupt').locator('button[data-op="open"]').click();
+    await savesMsg(/“corrupt” cannot be read/);
+    await msgAct('Delete it');
+    await savesMsg(/Deleted “corrupt”/);
+    for (let i = 0; i < 2; i++) {
+      await page.locator('#saves-list .saves-broken button[data-op="delete"]').first().click();
+      await savesMsg(/Deleted the unreadable saved state/);
+    }
+    await page.waitForFunction(() => !document.querySelector('#saves-list .saves-broken'));
+    await savesClose();
+  });
+
+  await check(P + 'saves: the dialog fits at 320 px; names; keys do not leak', async () => {
+    await page.click('#tab-repl');
+    await waitStatus('ready', 60000);
+    await savesOpen();
+    for (let i = 0; i < 3; i++) {
+      await savesSave('A rather long name for a saved console session, number ' + i + ', ' + 'x'.repeat(40));
+      await savesMsg(/^Saved “A rather long/);
+    }
+    await page.setViewportSize({ width: 320, height: 640 });
+    await page.waitForTimeout(200);
+    const w = await page.evaluate(() => [document.documentElement.scrollWidth, document.getElementById('saves').scrollWidth,
+                                         document.getElementById('saves').clientWidth]);
+    const nameless = await page.evaluate(() => [...document.querySelectorAll('#toolbar button, #saves button, #nb-menu button')]
+      .filter(b => !(b.getAttribute('aria-label') || b.textContent.trim() || b.title || b.getAttribute('aria-labelledby')))
+      .map(b => b.outerHTML.slice(0, 80)));
+    await page.setViewportSize({ width: 1280, height: 800 });
+    assert(w[0] <= 320 && w[1] <= w[2], 'no horizontal scroll: ' + w);
+    assert(!nameless.length, nameless.join('\n'));
+    await savesClear();
+    await savesClose();
+    // the REPL's keys stay out of the dialog
+    await enter('(sleep 5)');
+    await waitStatus('sleeping');
+    await page.click('#saves-btn');
+    await page.waitForSelector('#saves[open]');
+    await page.keyboard.press('Escape');
+    await page.waitForFunction(() => !document.getElementById('saves').open);
+    assert(/^(sleeping|running)$/.test(await status()), 'not stopped: ' + await status());
+    assert(await page.evaluate(() => document.activeElement && document.activeElement.id) === 'saves-btn', 'the focus is back');
+    await page.click('#saves-btn');
+    await page.waitForSelector('#saves[open]');
+    await page.keyboard.press('Control+l');
+    assert((await term()).length > 0, 'not cleared');
+    await page.keyboard.press('Escape');
+    assert(!/interpreter restarted/.test(await since()), 'no restart');
+    await waitStatus('ready', 20000);
+    // back on the notebook, as the checks below expect
+    await page.click('#tab-notebook');
+    await waitNbStatus(/^ready$/, 60000);
   });
 
   // Import reads at most 5000 cells, from a .json or a .scm file; Export

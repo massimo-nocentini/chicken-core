@@ -41,7 +41,10 @@
  *   notebook-lib.js; no untrusted string ever reaches innerHTML.
  * - The notebook is saved to localStorage (debounced), outputs capped at
  *   64 KB per cell; it can be exported as .scm (percent format), .json
- *   (with outputs) or .html (a static page of what the notebook shows). */
+ *   (with outputs) or .html (a static page of what the notebook shows).
+ *   Named copies are kept in IndexedDB by sessions.js; this autosave
+ *   stays the current notebook (ORIGIN_KEY remembers which copy it came
+ *   from). */
 
 (function () {
   'use strict';
@@ -50,11 +53,15 @@
   const panel = $('panel-notebook');
   if (!panel) return;
   const P = window.ChickenPage, L = window.ChickenNotebookLib, K = window.ChickenNotebookKernel;
+  const SS = window.ChickenSessionStore || null;
 
   const STREAM_HEAD = 512 * 1024, STREAM_TAIL = 512 * 1024, OUT_HEAD = 500, OUT_TAIL = 500;
   const VALUE_MAX = 64 * 1024, VALUE_LINES = 30;
   const DISPLAY_MAX = 4 * 1024 * 1024;
   const SAVE_OUT_MAX = 64 * 1024, SAVE_MAX = 2 * 1024 * 1024, SAVE_KEY = 'chicken-repl.notebook';
+  // the named copy (sessions.js) the autosave came from: {id, rev, name, fp}
+  const ORIGIN_KEY = 'chicken-repl.notebook.origin';
+  const NB_OUT_MAX = 1024 * 1024;       // outputs per cell in a named copy
   const TRASH_MAX = 20, LOG_LINES = 500;
   const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -1306,6 +1313,8 @@
       e.preventDefault();
       saveNow();
       toast(saveFailed ? 'Could not save in this browser.' : 'Saved in this browser.');
+      // and the named copy it came from (quietly; its toast replaces this one)
+      if (origin && window.ChickenSaves) window.ChickenSaves.open({ kind: 'notebook', mode: 'quick' });
     }
   });
 
@@ -1379,15 +1388,21 @@
       scheduleSave();
       break;
     case 'new':
-      if (hasContent() && !confirm('Start a new, empty notebook? The current one is replaced; export it first to keep it.')) return;
+      if (hasContent() && !confirm('Start a new, empty notebook? The current one is replaced; save it (More → Save in this browser…) or export it first to keep it.')) return;
       load({ title: 'Untitled', cells: [{ type: 'code', source: '' }] });
+      linked(null);
       editCell(nb.cells[0]);
       break;
     case 'example':
-      if (hasContent() && !confirm('Replace the current notebook with the example? Export it first to keep it.')) return;
+      if (hasContent() && !confirm('Replace the current notebook with the example? Save it (More → Save in this browser…) or export it first to keep it.')) return;
       load(example());
+      linked(null);
       break;
     case 'import': $('nb-file').click(); break;
+    case 'saves-save': case 'saves-open':
+      if (window.ChickenSaves) window.ChickenSaves.open({ kind: 'notebook', mode: act === 'saves-save' ? 'save' : 'open' });
+      else showNotice('save', 'Saved notebooks are not available: sessions.js did not load. Reload the page.');
+      break;
     case 'export-scm': exportScm(); break;
     case 'export-json': exportJson(); break;
     case 'export-html': exportHtml(); break;
@@ -1521,8 +1536,9 @@
       return;
     }
     if (!res.cells.length) { showNotice('import', 'Could not import ' + f.name + ': it has no cells.'); return; }
-    if (hasContent() && !confirm('Replace the current notebook with ' + f.name + '? Export it first to keep it.')) return;
+    if (hasContent() && !confirm('Replace the current notebook with ' + f.name + '? Save it (More → Save in this browser…) or export it first to keep it.')) return;
     load({ title: res.title || f.name.replace(/\.[^.]*$/, ''), created: res.created, cells: res.cells }, true);
+    linked(null);
     if (res.warnings && res.warnings.length) showNotice('import', res.warnings.join(' '));
     announce('Imported ' + f.name + ': ' + res.cells.length + ' cells');
   });
@@ -1850,7 +1866,11 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
   }
 
   let saveTimer = 0, saveFailed = false, lastSaved = null;
+  // editGen counts the changes (every one schedules a save); cleanGen is
+  // its value when the notebook matched its named copy (origin)
+  let editGen = 0, cleanGen = -1, origin = null;
   function scheduleSave() {
+    editGen++;
     clearTimeout(saveTimer);
     saveTimer = setTimeout(saveNow, 600);
   }
@@ -1867,9 +1887,15 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     if (!ok) ok = write(L.toJson(snapshot(false)));
     if (!ok && !saveFailed) {
       showNotice('save', 'Autosave failed: browser storage is full or blocked. Export the notebook to keep your work.',
-                 ['Export .json', () => menuAction('export-json')]);
+                 ['Export .json', () => menuAction('export-json')],
+                 ['Save in this browser…', () => window.ChickenSaves && window.ChickenSaves.open({ kind: 'notebook', mode: 'save' })]);
     } else if (ok && saveFailed) hideNotice('save');
     saveFailed = !ok;
+    // the origin key describes the autosave text: written with it, or
+    // another tab's key (it saved last) would name another notebook's
+    // copy as this one's (its fp, from when it was linked, keeps a
+    // changed notebook dirty after a reload)
+    if (ok) writeOrigin();
   }
   addEventListener('pagehide', () => { if (saveTimer) saveNow(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && saveTimer) saveNow(); });
@@ -1891,7 +1917,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     // since (and the other tab may be gone), so it is saved again.
     const theirs = e.newValue;
     showNotice('storage', 'This notebook was changed in another tab.',
-               ['Load theirs', () => { if (restore(theirs, false)) write(theirs); }],
+               ['Load theirs', () => { if (restore(theirs, false)) { write(theirs); readOrigin(theirs); } }],
                ['Keep mine', () => saveNow()]);
   });
 
@@ -1953,12 +1979,114 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     saveTimer = 0;
     lastSaved = text;
     nb.modified = res.modified;
-    if (res.warnings.length) showNotice('restored', 'Restored from your last visit. ' + res.warnings.join(' '));
-    else if (nb.cells.some(c => c.stale))
-      showNotice('restored', 'Restored from your last visit. Outputs are from an earlier session.', ['Run all', runAll]);
-    else if (!first) hideNotice('storage');
+    if (!restoredNotice('Restored from your last visit. ', res.warnings) && !first) hideNotice('storage');
     return true;
   }
+  // after a notebook replaced the cells: its warnings, or that its
+  // outputs are stale; whether a notice is shown
+  function restoredNotice(prefix, warnings) {
+    if (warnings.length) showNotice('restored', prefix + warnings.join(' '));
+    else if (nb.cells.some(c => c.stale)) showNotice('restored', prefix + 'Outputs are from an earlier session.', ['Run all', runAll]);
+    else { hideNotice('restored'); return false; }
+    return true;
+  }
+
+  // ---- named copies (sessions.js keeps them in IndexedDB)
+
+  // a save's fingerprint, whenever it was saved
+  function fpOf(text) {
+    try {
+      const x = JSON.parse(text);
+      if (x.meta) x.meta.modified = null;
+      return SS ? SS.fingerprint(JSON.stringify(x)) : null;
+    } catch (e) { return null; }
+  }
+  function writeOrigin() {
+    try {
+      if (origin) localStorage.setItem(ORIGIN_KEY, JSON.stringify(origin));
+      else localStorage.removeItem(ORIGIN_KEY);
+    } catch (e) { /* no storage: forgotten on reload */ }
+  }
+  // the copy the saved notebook TEXT came from; unchanged since, it is clean
+  function readOrigin(text) {
+    origin = null;
+    let o = null;
+    try { o = JSON.parse(localStorage.getItem(ORIGIN_KEY)); } catch (e) { o = null; }
+    if (!o || typeof o !== 'object' || typeof o.id !== 'string' || !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(o.id) ||
+        !Number.isInteger(o.rev) || o.rev < 1 || typeof o.name !== 'string' || !o.name || Array.from(o.name).length > 120 ||
+        (o.fp != null && typeof o.fp !== 'string')) return;
+    origin = { id: o.id, rev: o.rev, name: o.name, fp: o.fp || null };
+    if (origin.fp && origin.fp === fpOf(text)) cleanGen = editGen;
+  }
+  // the notebook is now that copy (saved or opened), or none
+  function linked(meta) {
+    if (!meta) { origin = null; writeOrigin(); return; }
+    origin = { id: meta.id, rev: meta.rev, name: meta.name, fp: null };
+    saveNow();
+    origin.fp = saveFailed ? null : fpOf(lastSaved);
+    writeOrigin();
+    cleanGen = editGen;
+  }
+  // without a copy, the autosave is its only one: changed then
+  const isDirty = () => hasContent() && editGen !== cleanGen;
+  const isBusy = () => !!(kernel && (kernel.current || kernel.queueLength));
+
+  if (typeof P.provideSaves === 'function') P.provideSaves('notebook', {
+    kind: 'notebook', noun: 'notebook', nounPlural: 'notebooks', current: 'the current notebook',
+    // (opening only loads cells: it works where csi cannot run)
+    available: () => (SS ? null : 'The saved-sessions code (session-store.js) did not load'),
+    defaultName: () => (origin ? origin.name : (nb.title || 'Untitled')),
+    origin: () => origin && { id: origin.id, rev: origin.rev, name: origin.name },
+    linked,
+    renamed(id, name) { if (origin && origin.id === id) { origin.name = name; writeOrigin(); } },
+    isDirty, isBusy,
+    busyText: () => 'A cell is running; it will be stopped.',
+    // level 0: outputs up to 1 MB per cell and the uploads; 1: outputs up
+    // to 64 KB per cell; 2: no outputs
+    capture(level) {
+      nb.modified = new Date().toISOString();
+      if (!nb.created) nb.created = nb.modified;
+      let text, dropped = null;
+      if (level === 0) {
+        text = L.toJson(snapshot(true, NB_OUT_MAX));
+        if (text.length > SS.LIMITS.NOTEBOOK_MAX) { text = L.toJson(snapshot(true, SAVE_OUT_MAX)); dropped = 'outputs over 64 KB per cell'; }
+      } else if (level === 1) {
+        text = L.toJson(snapshot(true, SAVE_OUT_MAX));
+        dropped = 'outputs over 64 KB per cell and the uploaded files';
+      } else {
+        text = L.toJson(snapshot(false));
+        dropped = 'the outputs and the uploaded files';
+      }
+      const uploads = level === 0 ? [...P.uploads].map(([name, data]) => ({ name, data })) : [];
+      const data = { format: SS.NOTEBOOK_SAVE_FORMAT, version: 1, minReader: 1, notebook: text, uploads };
+      const summary = { cells: nb.cells.length, code: nb.cells.filter(c => c.type === 'code').length, files: uploads.length };
+      // (a running cell is saved as interrupted, as by the autosave)
+      return Promise.resolve({ data, summary, dropped, warnings: [] });
+    },
+    check(data) {
+      const { data: d, warnings } = SS.checkNotebookSave(data);
+      const res = L.fromJson(d.notebook, { limits: false });    // validates and sanitizes; throws
+      if (!res.cells.length) throw new Error('it has no cells');
+      return { data: { res, uploads: d.uploads }, warnings: warnings.concat(res.warnings) };
+    },
+    apply(meta, checked) {
+      const { res, uploads } = checked.data;
+      load({ title: res.title, created: res.created, cells: res.cells }, true);
+      nb.modified = res.modified;
+      if (meta.id) linked(meta);
+      else { linked(null); saveNow(); }
+      if (uploads.length) P.addUploads(uploads, meta.name);
+      restoredNotice('Opened “' + meta.name + '” from this browser. ', checked.warnings);
+      announce('Opened ' + meta.name);
+    },
+    saved(meta, dropped, quiet) {
+      toast((quiet ? 'Saved, also as “' + meta.name + '”' : 'Saved “' + meta.name + '” in this browser') +
+            (dropped ? ' without ' + dropped : '') + '.');
+    },
+    fail(text) { showNotice('saves', text.charAt(0).toUpperCase() + text.slice(1) + (/[.!?]$/.test(text) ? '' : '.')); },
+    toast,
+    focus: focusSelected,
+  });
 
   // ---- the example notebook (sleep takes whole seconds)
 
@@ -1972,7 +2100,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
          'as in one long REPL session.\n\n' +
          '- The notebook has its own interpreter: what you define here is not visible in the **REPL** tab, and the other way round.\n' +
          '- Press **Esc** for command mode, then **?** for every shortcut.\n' +
-         '- The notebook is saved in this browser as you type. **More → Export** keeps a copy as `.scm`, as `.json` (with outputs) or as a `.html` page to read or print.'),
+         '- The notebook is saved in this browser as you type; **More → Save in this browser…** keeps named copies, and **More → Export** keeps a file: `.scm`, `.json` (with outputs) or a `.html` page to read or print.'),
       code('(import notebook (chicken io) (chicken string))'),
       code('(define (fact n)\n  (if (= n 0) 1 (* n (fact (- n 1)))))\n\n(fact 30)'),
       code('(for-each (lambda (i) (print i " squared is " (* i i)))\n          \'(1 2 3 4 5))'),
@@ -2024,11 +2152,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
 
   let saved = null;
   try { saved = localStorage.getItem(SAVE_KEY); } catch (e) { saved = null; }
-  if (!(saved && restore(saved, true))) {
+  if (saved && restore(saved, true)) readOrigin(saved);
+  else {
     load(example());
     if (saved) showNotice('restored', 'The saved notebook could not be read, so the example was loaded.');
     clearTimeout(saveTimer);          // nothing to save until the first change
     saveTimer = 0;
+    origin = null;
+    writeOrigin();                    // (a key left from another notebook)
   }
 
   if (P.unavailable) {

@@ -44,11 +44,15 @@ Using it
                 export (.scm, .json, or .html: a static page with no scripts)
                 and import (.scm, .json) from More.
   Compile to C  translates Scheme to C with the CHICKEN compiler itself.
+  Saved         Ctrl+S or the Saved button (REPL), More → Save in this
+                browser… / Saved notebooks… (Notebook): named copies in
+                this browser; open, rename, delete, download, import.
   Settings      .csirc contents, extra csi options, theme, WebAssembly build.
 
 Files
   index.html, repl.js, repl-worker.js, repl-driver.js,
-  notebook.js, notebook-lib.js, nb-kernel.js       the page
+  notebook.js, notebook-lib.js, nb-kernel.js,
+  session-store.js, sessions.js                    the page
   chicken-repl.js / .wasm         csi (+ all core libraries and import files)
   chicken-compiler.js / .wasm     the chicken compiler (Compile to C tab)
   wasm32/                         the same two modules, built for wasm32
