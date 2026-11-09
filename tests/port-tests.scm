@@ -493,7 +493,50 @@ EOF
               '(193 65))
   (test-equal "four bytes, complete 2 byte sequence"
               (map char->integer (string->list (read-string 10 (open-input-bytevector #u8(#xC3 #x81 65 66)))))
-              '(193 65 66)))
+              '(193 65 66))
+  ;; as utf8_decode() makes them: a valid sequence is one character, any
+  ;; other byte one of its own
+  (define (codes bv)
+    (map char->integer (string->list (read-string 10 (open-input-bytevector bv)))))
+  (test-equal "one byte, incomplete 3 byte sequence"
+              (codes #u8(#xE2)) '(#xdce2))
+  (test-equal "two bytes, incomplete 3 byte sequence"
+              (codes #u8(#xE2 #x82)) '(#xdce2 #xdc82))
+  (test-equal "3 byte lead, then ASCII"
+              (codes #u8(#xE2 65 66)) '(#xdce2 65 66))
+  (test-equal "3 byte lead and tail, then ASCII"
+              (codes #u8(#xE2 #x82 65 66)) '(#xdce2 #xdc82 65 66))
+  (test-equal "three bytes, incomplete 4 byte sequence"
+              (codes #u8(#xF0 #x9F #x98)) '(#xdcf0 #xdc9f #xdc98))
+  (test-equal "4 byte lead, then a 2 byte sequence"
+              (codes #u8(#xF0 #xC3 #xA9)) '(#xdcf0 #xe9))
+  (test-equal "overlong 2 byte sequence"
+              (codes #u8(#xC0 #x80 65)) '(#xdcc0 #xdc80 65))
+  (test-equal "encoded surrogate"
+              (codes #u8(#xED #xA0 #x80 65)) '(#xdced #xdca0 #xdc80 65))
+  (test-equal "4 byte sequence"
+              (codes #u8(97 #xF0 #x9F #x90 #x94 98)) '(97 #x1F414 98))
+  (let ((p (open-input-bytevector (string->utf8 "\x1F414;\xe9;z"))))
+    (test-equal "sequences split across counts"
+                (list (read-string 1 p) (read-string 1 p) (read-string 1 p))
+                '("\x1F414;" "\xe9;" "z"))))
+
+(test-group "copy-port with a writer, sequences across buffers"
+  (for-each
+   (lambda (pad)
+     (let ((s (string-append (make-string pad #\a) "\x1F414;\xe9;\x20ac;"
+                             (make-string 700 #\x20ac) "z"))
+           (out (open-output-string)))
+       (copy-port (open-input-bytevector (string->utf8 s)) out
+                  read-char (lambda (c p) (write-char c p)))
+       (test-equal (conc "padding " pad) (get-output-string out) s)))
+   '(1018 1019 1020 1021 1022 1023 1024 1025))
+  (let ((out (open-output-string)))
+    (copy-port (open-input-bytevector #u8(97 #xF0 #x9F)) out
+               read-char (lambda (c p) (write-char c p)))
+    (test-equal "incomplete sequence at the end"
+                (map char->integer (string->list (get-output-string out)))
+                '(97 #xdcf0 #xdc9f))))
 
 (test-group "line endings"
   (let ((s "foo\nbar\rbaz\r\nqux")

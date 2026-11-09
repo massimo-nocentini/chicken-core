@@ -154,6 +154,12 @@
   - File port closing and flushing checks for and raises file-system errors.
   - Fixed a number of edge cases in string-resizing when inserting
     UTF sequences.
+  - "read-string", "read-string!" and "copy-port" with a writer of its
+    own count malformed UTF-8 as the decoder reads it, a valid sequence
+    as one character and any other byte as one of its own: they returned
+    too few characters, or characters from past the input, after an
+    invalid or truncated multi-byte sequence, and "copy-port" corrupted
+    a character split across its buffers.
   - Objects which are referred to only by finalizer procedures are now
     retained, so that they won't cause uninterned symbols to be resurrected.
     Note that this means finalizable objects are now uncollectable if they

@@ -8623,7 +8623,8 @@ static C_word C_curdir(C_word buf, C_word size) {
                   (else (fx+ n2 m))))))))
 
 (define (read-string!/port n dest port start)
-  (let ((buf (##sys#make-bytevector (fx* n 4)))
+  ;; room for the bytes read past the N characters to complete a sequence
+  (let ((buf (##sys#make-bytevector (fx+ (fx* n 4) 4)))
         (enc (##sys#slot port 15)))
     (##sys#encoding-hook
      enc
@@ -8636,31 +8637,45 @@ static C_word C_curdir(C_word buf, C_word size) {
                         (lambda (dbuf start len)
                           (##core#inline "C_copy_memory_with_offset" buf dbuf p start len)
                           len)))))
-       (define (finish un bytes left)
-         (##core#inline "C_utf_overwrite" dest start un buf bytes)
-         (fx+ un left))
-       (let loop ((p 0) (n n) (un 0) (bn 0))    ; pos, count, codepoints, total bytes
-         (let ((bytes (readb n buf port p)))
-           (cond ((eq? bytes 0) (finish un bn 0))
+       ;; The UN characters of DEST from START are replaced by BYTES of
+       ;; BUF, which are UN characters, except where a malformed sequence
+       ;; was completed with bytes read beyond the N asked for: then they
+       ;; are more, and DEST grows by those.
+       (define (finish un bytes)
+         (##core#inline "C_utf_overwrite" dest start (fxmin un n) buf bytes)
+         un)
+       (let loop ((p 0) (m n) (un 0) (bn 0))    ; pos, count, codepoints, total bytes
+         (let ((bytes (readb m buf port p)))
+           (cond ((eq? bytes 0) (finish un bn))
                  ((eq? enc 'utf-8)
-                  ;; read incomplete fragments
+                  ;; read the rest of a sequence that is incomplete at the end
                   ;; FIXME: hardcoded, should be encoding-specific!
                   (let recount ((bytes bytes))
                     (let* ((fc (##core#inline "C_utf_fragment_counts" buf p bytes))
                            (full (fxshr fc 4))
-                           (left (fxand fc 15))
+                           (part (fxand (fxshr fc 2) 3)) ; its bytes present
+                           (left (fxand fc 3))           ; and missing
                            (total (fx+ un full))
                            (tbytes (fx+ bn bytes))
-                           (remain (fx- n full)))
-                      (cond ((fx> left 0)
+                           (remain (fx- m full)))
+                      (cond ((and (fx> left 0) (fx> remain 0))
                              (let ((b2 (readb left buf port (fx+ p bytes))))
                                (if (fx< b2 left)
-                                   (finish total tbytes (fx+ left b2))
+                                   ;; end of input: what is left of the
+                                   ;; sequence is a character per byte
+                                   (let ((fc (##core#inline "C_utf_fragment_counts"
+                                                            buf p (fx+ bytes b2))))
+                                     (finish (fx+ un (fx+ (fxshr fc 4)
+                                                          (fxand (fxshr fc 2) 3)))
+                                             (fx+ tbytes b2)))
                                    (recount (fx+ bytes b2)))))
-                            ((eq? remain 0) (finish total tbytes 0))
+                            ;; enough characters, also when completing a
+                            ;; malformed sequence read the lead of another
+                            ;; one (which is then a character per byte)
+                            ((fx<= remain 0) (finish (fx+ total part) tbytes))
                             (else (loop (fx+ p bytes) remain total tbytes))))))
                  (else
-                  (loop (fx+ p bytes) (fx- n bytes)
+                  (loop (fx+ p bytes) (fx- m bytes)
                         (fx+ un bytes) (fx+ bn bytes))))))))))
 
 (define (read-string! n dest #!optional (port ##sys#standard-input) (start 0))

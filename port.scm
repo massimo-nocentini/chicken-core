@@ -200,26 +200,32 @@ char *ttyname(int fd) {
             (unless (eq? n 0)
               (chicken.io#write-bytevector buf dest 0 n)
               (loop))))))
+    ;; Passes on the characters of each buffer but for a sequence that is
+    ;; incomplete at its end, whose bytes are moved to the front of the
+    ;; buffer for the next read; at the end of input, they are a
+    ;; character each.
     (define (read-and-delegate src dest writer)
       (##sys#check-input-port src 'copy-port)
       (let ((buf (##sys#make-bytevector +buf-size+)))
-        (let loop ((p 0))
+        (let loop ((p 0))               ; bytes kept from the last read
           (let* ((n (chicken.io#read-bytevector!/port
                       (fx- +buf-size+ p)
                       buf src p))
-                 (fc (##core#inline "C_utf_fragment_counts" buf 0 n))
-                 (full (fxshr fc 4))
-                 (part (fxand fc 7))
-                 (str (##sys#buffer->string buf 0 (fx- n part))))
+                 (len (fx+ p n))
+                 (part (if (eq? n 0)
+                           0
+                           (fxand (fxshr (##core#inline "C_utf_fragment_counts"
+                                                        buf 0 len)
+                                         2)
+                                  3)))
+                 (str (##sys#buffer->string buf 0 (fx- len part)))
+                 (k (string-length str)))
+            (do ((i 0 (fx+ i 1)))
+                ((fx>= i k))
+              (writer (string-ref str i) dest))
             (unless (eq? n 0)
-              (do ((i 0 (fx+ i 1)))
-                      ((fx>= i full))
-                (writer (string-ref str i) dest))
-              ;; overlaps, buf source will be at end of buffer
               (##core#inline "C_copy_memory_with_offset"
-                buf buf
-                (fx- (fx- (##sys#size (##sys#slot str 0)) 1) part)
-                0 part)
+                buf buf 0 (fx- len part) part)
               (loop part))))))
     (define (delegate src reader dest writer)
       (let loop ()

@@ -731,30 +731,50 @@ C_regparm int C_utf_expect(int byte)
     return len + !len;
 }
 
-/* take bytevector section and compute full + incomplete codepoints */
+/* Count the characters in the LEN bytes of BV from POS, as utf8_decode()
+ * and C_utf_count() see them: a valid sequence is one character, and any
+ * other byte is a character of its own (the lead of an invalid sequence,
+ * and each stray tail byte).  A sequence at the end that is valid so far
+ * but incomplete is not counted: the result is
+ *
+ *     (FULL << 4) | (PRESENT << 2) | NEEDED
+ *
+ * where PRESENT is the number of its bytes at the end, NEEDED the number
+ * of bytes it still lacks (both 0 if the section ends with a whole
+ * character), and FULL the characters of the other LEN - PRESENT bytes.
+ * Should the input end there, the PRESENT bytes are PRESENT characters.
+ * Reads no byte past the section.  The validity conditions are those of
+ * C_utf_count(). */
 C_regparm C_word C_utf_fragment_counts(C_word bv, C_word pos, C_word len)
 {
-    int full = 0;
-    C_uchar *ptr = C_data_pointer(bv) + C_unfix(pos);
-    int count = C_unfix(len);
-    unsigned int byte;
+    C_uchar *s = C_data_pointer(bv) + C_unfix(pos);
+    int count = C_unfix(len), full = 0;
 
-    while(count) {
-next:
-        byte = *(ptr++);
-        int n = lengths[ byte >> 3 ];
-        int bn = n + !n;
-        if(count >= bn) {
-            for(int cont = bn - 1; cont > 0; --cont) {
-                if((*(ptr++) & 0x80) == 0) {
-                    full += bn - cont;
-                    count -= cont;
-                    goto next;
-                }
-            }
-            ++full;
-            count -= bn;
-        } else return C_fix((full << 4) | (bn - count));
+    while(count > 0) {
+        unsigned int b = s[ 0 ];
+        int n = lengths[ b >> 3 ], k = 1, ok;
+
+        if(n <= 1) {            /* ASCII, a stray tail byte or 0xf8..0xff */
+            ++s; --count; ++full;
+            continue;
+        }
+        ok = !(n == 2 && b < 0xc2) && !(n == 4 && b > 0xf4);
+        while(ok && k < n && k < count) {
+            unsigned int t = s[ k ];
+            if((t & 0xc0) != 0x80 ||
+               (k == 1 && ((b == 0xe0 && t < 0xa0) ||   /* non-canonical */
+                           (b == 0xed && t >= 0xa0) ||  /* surrogate */
+                           (b == 0xf0 && t < 0x90) ||   /* non-canonical */
+                           (b == 0xf4 && t >= 0x90))))  /* > 0x10FFFF */
+                ok = 0;
+            else ++k;
+        }
+        if(!ok) {               /* invalid: the lead is one character */
+            ++s; --count; ++full;
+        } else if(k == n) {
+            s += n; count -= n; ++full;
+        } else                  /* k == count: incomplete at the end */
+            return C_fix((full << 4) | (k << 2) | (n - k));
     }
     return C_fix(full << 4);
 }
