@@ -238,20 +238,23 @@
 - Compiler
   - Added missing option "-merge-reusable-closures" at optimization level
     2, making this actually match the documentation.
-  - Closure sharing no longer chooses a procedure as the container of a
-    shared closure, only a compiler-introduced continuation.  A procedure's
-    single closure is entered by every call, so a nested activation, or a
-    continuation captured in one activation and re-entered after another,
-    read the latest activation's variables: a single-call global under
-    -local (and so at -O3) could hang on nested recursion or return a
-    backtracking search's results more than once, and a single-call local
-    procedure with a free variable could do the same at -O2.  Generated code
-    is marginally smaller.  Not addressed: re-entering the same
-    continuation object in non-LIFO order through multi-shot call/cc (a
-    breadth-first search that parks and later resumes an earlier
-    continuation) still reads the wrong variables at -O2 and above, which
-    is inherent to closure sharing; -O1 does not share closures and avoids
-    it.
+  - Closure sharing is restricted on both sides.  Only internal
+    (compiler-introduced) procedures share the closure of another, as
+    threads re-invoking the same continuation stomped on each other's
+    closure variables (reported by Ivan Raikov).  And only a
+    compiler-introduced continuation, never a procedure, is the container
+    of a shared closure: a procedure's single closure is entered by every
+    call, so a nested activation, or a continuation captured in one
+    activation and re-entered after another, read the latest activation's
+    variables, and a single-call global under -local (and so at -O3) could
+    hang on nested recursion or return a backtracking search's results
+    more than once, as could a single-call local procedure with a free
+    variable at -O2.  Generated code is marginally smaller.  Not
+    addressed: re-entering the same continuation object in non-LIFO order
+    through multi-shot call/cc (a breadth-first search that parks and
+    later resumes an earlier continuation) still reads the wrong variables
+    at -O2 and above, which is inherent to closure sharing; -O1 does not
+    share closures and avoids it.
   - `shift' and `reset' are compiled directly by the CPS conversion pass,
     which already has the continuation they need in hand, so capturing a
     delimited continuation costs no run-time capture at all.  Uses the
@@ -284,8 +287,6 @@
     and `c128vector?' was listed as a nonexistent `f128vector?'), added
     rewrites for R7RS bytevector operations (thanks to Massimo Nocentini).
   - Refuse block compilation while emitting import libs (reported by "Juan").
-  - Restrict shared closures to "internal" procedures, to avoid state
-    corruption in the presence of threads (reported by Ivan Raikov).
 
 - Runtime system
   - Bignum multiplication and division now work a whole digit at a time
