@@ -183,4 +183,6 @@
   (test #o027 #o777 #o750)
   (test #o072 #o777 #o705)
   (test #o077 #o777 #o700)
-  (test #o777 #o777 #o000))
+  (test #o777 #o777 #o000)
+  ;; the last one is unreadable, which breaks copying the tests directory
+  (delete-file* "posix-tests.out"))

@@ -71,11 +71,13 @@ interpret="timeout 600 $WASM_DIR/csi -n -include-path $SRC_DIR"
 wchicken="timeout 600 $WASM_DIR/chicken"
 engine_errors='RangeError|RuntimeError|Aborted\('
 
-# Some tests look at "../tests" and copy "../csi", as in the source tree.
-rm -rf tests csi
+# Some tests look at "../tests" and copy "../csi" or "../library.o", as in
+# the source tree.
+rm -rf tests csi library.o
 mkdir tests
 cp -R "$TEST_DIR"/. tests/
 cp "$WASM_DIR/csi.wasm" csi
+cp "$WASM_DIR/../library-static.o" library.o   # any object file will do
 cd tests
 # as runtests.sh does before starting (rt:63), in case the source tree
 # holds artefacts of a host test run
