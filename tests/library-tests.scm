@@ -924,11 +924,14 @@ A
 
 ; ##sys#dynamic-winds was hidden, so unwinding in "continuation-graft" resulted
 ; in unbound variable access
-(define flag 0)
-(assert (= 123 (continuation-capture
-  (lambda (k)
-    (dynamic-wind
-      (lambda () (set! flag (+ flag 2)))
-      (lambda () (continuation-graft k (lambda () 123)))
-      (lambda () (set! flag (- flag 1))))))))
-(assert (= flag 1))
+
+(let ((flag 0))
+  (assert
+    (= 123
+       (continuation-capture
+         (lambda (k)
+           (dynamic-wind
+             (lambda () (set! flag (+ flag 2)))
+             (lambda () (continuation-graft k (lambda () 123)))
+             (lambda () (set! flag (- flag 1))))))))
+  (assert (= flag 1)))
