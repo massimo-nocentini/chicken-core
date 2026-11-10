@@ -51,12 +51,15 @@
 
 (define (continuation-graft k thunk)
   (##sys#check-structure k 'continuation 'continuation-graft)
-  (let ([winds (##sys#slot k 2)])
+  (let ((winds (##sys#slot k 2)))
     (unless (eq? ##sys#dynamic-winds winds)
       (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))))
     ((##core#primitive "C_continuation_graft") k thunk)))
 
 (define continuation-return
-  (lambda (k . vals)
-    (##sys#check-structure k 'continuation 'continuation-return)
-    ((##core#primitive "C_continuation_graft") k (lambda () (apply values vals))))))
+  (let ((continuation-graft continuation-graft))
+    (lambda (k . vals)
+      (##sys#check-structure k 'continuation 'continuation-return)
+      (continuation-graft k (lambda () (apply values vals))))))
+
+)
