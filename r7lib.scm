@@ -25,7 +25,8 @@
 
 (declare
   (unit r7lib)
-  (disable-interrupts))
+  (disable-interrupts)
+  (always-bound ##sys#dynamic-winds ##sys#dynamic-unwind))
 
 (include "common-declarations.scm")
 
@@ -258,14 +259,7 @@
         (else 0)))
 
 (define (exit #!optional (obj 0))
-  ;; ##sys#dynamic-unwind is hidden, have to unwind manually.
-  ; (##sys#dynamic-unwind '() (length ##sys#dynamic-winds))
-  (let unwind ()
-    (unless (null? ##sys#dynamic-winds)
-      (let ((after (cdar ##sys#dynamic-winds)))
-        (set! ##sys#dynamic-winds (cdr ##sys#dynamic-winds))
-        (after)
-        (unwind))))
+  (##sys#dynamic-unwind '() (length ##sys#dynamic-winds))
   ;; The built-in exit runs cleanup handlers for us.
   ((exit-handler) (->exit-status obj)))
 
