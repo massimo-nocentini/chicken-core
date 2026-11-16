@@ -2172,7 +2172,7 @@
 (chicken.process#process-exit-status (#(procedure #:clean #:enforce) chicken.process#process-exit-status ((struct process)) *))
 (chicken.process#process-input-port (#(procedure #:clean #:enforce) chicken.process#process-input-port ((struct process)) output-port))
 (chicken.process#process-output-port (#(procedure #:clean #:enforce) chicken.process#process-output-port ((struct process)) input-port))
-(chicken.process#process-error-port (#(procedure #:clean #:enforce) chicken.process#process-error-port ((struct process)) input-port))
+(chicken.process#process-error-port (#(procedure #:clean #:enforce) chicken.process#process-error-port ((struct process)) (or input-port false)))
 (chicken.process#process-id (#(procedure #:clean #:enforce) chicken.process#process-id ((struct process)) fixnum))
 (chicken.process#process-returned-normally? (#(procedure #:clean #:enforce) chicken.process#process-returned-normally? ((struct process)) boolean))
 (chicken.process#process? (#(procedure #:clean #:enforce) chicken.process#process? (*) boolean))
