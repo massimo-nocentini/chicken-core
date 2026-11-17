@@ -1775,6 +1775,9 @@ C_varextern void (*C_pre_gc_hook)(int mode);
 C_varextern void (*C_post_gc_hook)(int mode, C_long ms);
 C_varextern void (*C_panic_hook)(C_char *msg);
 C_varextern C_word (*C_debugger_hook)(C_DEBUG_INFO *cell, C_word c, C_word *av, char *cloc);
+#ifdef __EMSCRIPTEN__
+C_varextern int (*C_dlcheck_hook)(const char *path, char *msg, int len);
+#endif
 
 C_varextern int
   C_abort_on_thread_exceptions,

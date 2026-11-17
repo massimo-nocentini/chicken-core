@@ -425,10 +425,16 @@ WASM_LIBC_EXPORTS = $(SRCDIR)emscripten/libc-exports
 WASM_SJLJ_EXPORTS = $(if $(filter wasm wasm-legacy,$(WASM_SJLJ)),__wasm_setjmp __wasm_setjmp_test \
   __wasm_longjmp __c_longjmp)
 ifeq ($(WASM_DYLINK),1)
-WASM_MAIN_MODULE = -sMAIN_MODULE=2
+WASM_MAIN_MODULE = -sMAIN_MODULE=2 --js-library $(WASM_DYLINK_JS)
 WASM_MAIN_EXPORTS = $(WASM_RUNTIME_EXPORTS)
+WASM_MAIN_OBJECTS = dylink-main$(O)
 WASM_ABI = wasm-abi
 endif
+# dylink-main.c and dylink.js: the check the runtime makes of a side
+# module before it loads it (see dylink.js)
+WASM_DYLINK_JS = $(SRCDIR)emscripten/dylink.js
+dylink-main$(O): dylink-main.c chicken.h $(CHICKEN_CONFIG_H)
+	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
 
 $(WASM_RUNTIME_EXPORTS): $(LIBCHICKEN_A) $(WASM_LIBC_EXPORTS)
 	{ $(WASM_NM) --defined-only --extern-only $(LIBCHICKEN_A) | \
@@ -450,10 +456,12 @@ csi-node.exports chicken-repl.exports: %.exports: config.make $(WASM_MAIN_EXPORT
 	  $(if $(WASM_MAIN_EXPORTS),sed 's/^/_/' $(WASM_MAIN_EXPORTS);) } | LC_ALL=C sort -u >$@.tmp
 	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 
-node/csi.js: csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_NODE_PRE) csi-node.exports
+node/csi.js: csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_NODE_PRE) csi-node.exports \
+    $(WASM_MAIN_OBJECTS) $(if $(WASM_MAIN_OBJECTS),$(WASM_DYLINK_JS))
 	mkdir -p node
 	$(LINKER) $(WASM_NODE_LDFLAGS) $(WASM_MAIN_MODULE) -sEXPORTED_FUNCTIONS=@csi-node.exports \
-	  csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) $(WASM_EGG_LDOPTS) $(LIBRARIES)
+	  csi-node$(O) wasm-units$(O) $(WASM_MAIN_OBJECTS) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
+	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
 node/chicken.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
 	mkdir -p node
 	$(LINKER) $(WASM_NODE_LDFLAGS) $(COMPILER_STATIC_OBJECTS) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
@@ -517,13 +525,15 @@ WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-comp
 # webrepl_feed and webrepl_post take their pointer as a Number, as
 # _malloc and stringToNewUTF8 give it (no effect on wasm32).
 $(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) \
-    $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP) chicken-repl.exports
+    $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP) chicken-repl.exports \
+    $(WASM_MAIN_OBJECTS) $(if $(WASM_MAIN_OBJECTS),$(WASM_DYLINK_JS))
 	mkdir -p $(WEB_DIR)
 	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenRepl -sEXIT_RUNTIME=0 -Wl,--wrap=_exit \
 	  $(WASM_MAIN_MODULE) -sEXPORTED_FUNCTIONS=@chicken-repl.exports \
 	  -sSIGNATURE_CONVERSIONS=webrepl_feed:_p__,webrepl_post:_p_ \
 	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 \
-	  csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
+	  csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) $(WASM_MAIN_OBJECTS) $(WASM_EGG_LINK) \
+	  -o $@ $(LIBCHICKEN_A) \
 	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
 
 $(WEB_DIR)/chicken-compiler.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) $(WASM_REPO_STAMP)

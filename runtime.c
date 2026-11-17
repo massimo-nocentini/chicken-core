@@ -345,6 +345,11 @@ void (*C_panic_hook)(C_char *msg) = NULL;
 void (*C_pre_gc_hook)(int mode) = NULL;
 void (*C_post_gc_hook)(int mode, C_long ms) = NULL;
 C_word (*C_debugger_hook)(C_DEBUG_INFO *cell, C_word c, C_word *av, C_char *cloc) = NULL;
+#ifdef __EMSCRIPTEN__
+/* Whether a main module can load a side module (emscripten/dylink.c):
+ * 0 with the reason in msg, of len bytes, if not */
+int (*C_dlcheck_hook)(const char *path, char *msg, int len) = NULL;
+#endif
 
 int
   C_gui_mode = 0,
@@ -12683,6 +12688,7 @@ void C_ccall dload_2(C_word c, C_word *av0)
      * WebAssembly modules, which start with "\0asm" (emscripten's
      * dlopen would report any other as an error, and remember it) */
     static const char magic[ 4 ] = { 0, 'a', 's', 'm' };
+    static char msg[ 1024 ];
     char head[ 4 ];
     C_FILEPTR fp = C_fopen(mname, "rb");
 
@@ -12691,8 +12697,20 @@ void C_ccall dload_2(C_word c, C_word *av0)
 
       C_fclose(fp);
 
-      if(n != sizeof(head) || C_memcmp(head, magic, sizeof(head)) != 0)
+      if(n != sizeof(head) || C_memcmp(head, magic, sizeof(head)) != 0) {
+        /* (read only if load takes it for compiled code) */
+        C_dlerror = "not a WebAssembly module";
         C_kontinue(k, C_SCHEME_FALSE);
+      }
+    }
+
+    /* A module that imports what the program does not have must not
+     * reach dlopen: emscripten would fail at the first call of a
+     * missing function, or keep the unresolved entries of its global
+     * offset table, so that every later dlopen fails too. */
+    if(C_dlcheck_hook != NULL && !C_dlcheck_hook(mname, msg, sizeof(msg))) {
+      C_dlerror = msg;
+      C_kontinue(k, C_SCHEME_FALSE);
     }
   }
 # endif

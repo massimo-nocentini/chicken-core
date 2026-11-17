@@ -321,6 +321,8 @@ emscripten/webio.scm
 emscripten/webnb.scm
 emscripten/webrepl.h
 emscripten/webrepl-main.c
+emscripten/dylink-main.c
+emscripten/dylink.js
 emscripten/csc-wasm.in
 emscripten/libc-exports
 emscripten/node-pre.js
