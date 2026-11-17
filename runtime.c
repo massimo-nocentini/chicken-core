@@ -346,8 +346,8 @@ void (*C_pre_gc_hook)(int mode) = NULL;
 void (*C_post_gc_hook)(int mode, C_long ms) = NULL;
 C_word (*C_debugger_hook)(C_DEBUG_INFO *cell, C_word c, C_word *av, C_char *cloc) = NULL;
 #ifdef __EMSCRIPTEN__
-/* Whether a main module can load a side module (emscripten/dylink.c):
- * 0 with the reason in msg, of len bytes, if not */
+/* Whether a main module can load a side module (emscripten/dylink.js,
+ * set by dylink-main.c): 0 with the reason in msg, of len bytes, if not */
 int (*C_dlcheck_hook)(const char *path, char *msg, int len) = NULL;
 #endif
 
