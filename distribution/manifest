@@ -142,6 +142,7 @@ tests/runtests.sh
 tests/runtests-wasm.sh
 tests/wasm-smoke.sh
 tests/wasm-eggs.sh
+tests/wasm-packages.sh
 tests/wasm/in-worker.js
 tests/wasm/repl-harness.js
 tests/wasm/worker-harness.js

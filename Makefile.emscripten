@@ -713,8 +713,8 @@ wasm-package-build: wasm-sdk $(WEB_DIR)/chicken-repl.js $(WASM_ABI)
 
 # goals
 
-.PHONY: wasm-all wasm-lib wasm-node wasm-web wasm-sdk wasm-check wasm-check-eggs wasm-serve \
-  wasm-clean
+.PHONY: wasm-all wasm-lib wasm-node wasm-web wasm-sdk wasm-check wasm-check-eggs \
+  wasm-check-packages wasm-serve wasm-clean
 
 wasm-lib: $(LIBCHICKEN_A)
 wasm-node: $(addprefix node/,$(WASM_NODE_TOOLS))
@@ -768,6 +768,7 @@ wasm-check: wasm-node wasm-web wasm-sdk
 	$(foreach a,$(WASM_WEB_OTHER),$(call WASM_WEB_HARNESSES,--arch=$a))
 	$(if $(and $(JSC),$(WASM_JSC_MODULES)),$(WASM_JSC_LANE))
 	+$(MAKE) -f $(SRCDIR)GNUmakefile wasm-check-eggs
+	$(if $(filter 1,$(WASM_DYLINK)),+$(MAKE) -f $(SRCDIR)GNUmakefile wasm-check-packages)
 
 # The eggs lane builds csi (node and web) and the SDK in a build
 # directory of its own, with the eggs of tests/wasm/eggs, then runs
@@ -804,6 +805,32 @@ wasm-check-eggs: wasm-node wasm-web wasm-sdk
 	  node/csi $(WEB_DIR)/chicken-repl.js wasm-sdk
 	cd $(WASM_TESTS_RUN) && EGG_BUILD=eggs-build TEST_DIR=$(abspath $(SRCDIR))/tests \
 	  HOST_CSI="$(WASM_HOST_CSI)" NODE="$(NODE)" MAKE="$(MAKE)" sh $(SRCDIR)tests/wasm-eggs.sh
+
+# The packages lane (WASM_DYLINK): "make wasm-package" makes a package
+# of the test eggs wasm-egg-a and wasm-egg-b (in pkg-wasm-test-eggs
+# here and in arch-A, kept from one run to the next), then
+# tests/wasm-packages.sh tests it with node csi (and the planner's
+# shared mode and the checks of wasm-package.js), and the worker and
+# notebook harnesses with --package in the page's worker and notebook
+# kernel, of each architecture.
+WASM_PACKAGES_TEST_OUT = $(abspath $(WASM_TESTS_RUN))/packages
+WASM_PACKAGES_TEST = $(WASM_PACKAGES_TEST_OUT)/wasm-test-eggs
+WASM_PACKAGES_TEST_DIR = $(WASM_TESTS_RUN)/packages-test
+
+wasm-check-packages: wasm-node wasm-web wasm-sdk
+	+$(MAKE) -f $(SRCDIR)GNUmakefile wasm-package WASM_PACKAGE_NAME=wasm-test-eggs \
+	  WASM_PACKAGE_EGGS="$(WASM_TEST_EGGS)/wasm-egg-b $(WASM_TEST_EGGS)/wasm-egg-a" \
+	  WASM_PACKAGE_OUT=$(WASM_PACKAGES_TEST_OUT) WASM_PACKAGE_IMPORTS=so WASM_PACKAGE_VERSION=
+	rm -rf $(WASM_PACKAGES_TEST_DIR) && mkdir -p $(WASM_PACKAGES_TEST_DIR)
+	cd $(WASM_PACKAGES_TEST_DIR) && BUILD=$(CURDIR) PKG=$(WASM_PACKAGES_TEST) \
+	  TEST_DIR=$(abspath $(SRCDIR))/tests HOST_CSI="$(WASM_HOST_CSI)" NODE="$(NODE)" \
+	  sh $(SRCDIR)tests/wasm-packages.sh
+	$(NODE) $(SRCDIR)tests/wasm/worker-harness.js $(CURDIR)/$(WEB_DIR) --package=$(WASM_PACKAGES_TEST)
+	$(NODE) $(SRCDIR)tests/wasm/notebook-harness.js $(CURDIR)/$(WEB_DIR) --package=$(WASM_PACKAGES_TEST)
+	$(foreach a,$(WASM_WEB_OTHER),$(NODE) $(SRCDIR)tests/wasm/worker-harness.js $(CURDIR)/$(WEB_DIR) \
+	  --arch=$a --package=$(WASM_PACKAGES_TEST) && \
+	  $(NODE) $(SRCDIR)tests/wasm/notebook-harness.js $(CURDIR)/$(WEB_DIR) \
+	  --arch=$a --package=$(WASM_PACKAGES_TEST) &&) :
 
 wasm-serve: wasm-web
 	cd $(WEB_DIR) && python3 -m http.server $${PORT:-8080}

@@ -23,7 +23,7 @@
 // OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-// usage: node [v8 flags] notebook-harness.js WEB_DIR [--eggs] [--arch=A]
+// usage: node [v8 flags] notebook-harness.js WEB_DIR [--eggs] [--arch=A] [--package=DIR]
 //
 // WEB_DIR is a built web directory (build-wasm/web).  Part K drives the
 // kernel ("csi -n -e (##webnb#kernel)") through repl-driver.js: it posts
@@ -31,7 +31,11 @@
 // page's client, nb-kernel.js, against the real WEB_DIR/repl-worker.js
 // in worker_threads (behind the shim of worker-harness.js).  With
 // --eggs (tests/wasm-eggs.sh, on a build with the test eggs) only the
-// egg case runs.  Exits with status 1 if any case fails.  Run it once
+// egg case runs; with --package=DIR (the packages lane) only the
+// package cases: DIR is the package of the test eggs made by make
+// wasm-package, whose build for the ABI of the modules tested is
+// written under /packages, before the kernel starts or into a running
+// one.  Exits with status 1 if any case fails.  Run it once
 // in default node and once with "--liftoff --no-wasm-tier-up
 // --stack-size=900".
 //
@@ -60,8 +64,9 @@ function moduleArch(html) {
 }
 // the architecture of the modules (make wasm WASM_ARCH=...); the eggs
 // lane builds no index.html
-const { arch, sub } = eggsOnly ? { arch: undefined, sub: '' }
-  : moduleArch(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8'));
+const pageHtml = eggsOnly ? null : fs.readFileSync(path.join(webDir, 'index.html'), 'utf8');
+const { arch, sub } = eggsOnly ? { arch: undefined, sub: '' } : moduleArch(pageHtml);
+const packageDir = (process.argv.find(a => /^--package=/.test(a)) || '').slice(10);
 const createChickenRepl = require(path.join(webDir, sub, 'chicken-repl.js'));
 const srcWeb = path.join(__dirname, '..', '..', 'emscripten', 'web');
 const Driver = require(path.join(srcWeb, 'repl-driver.js'));
@@ -675,6 +680,55 @@ async function eggs() {
 }
 
 
+// the files of the package's build for the modules tested, under
+// /packages (see worker-harness.js)
+function packageFiles(dir) {
+  const entry = (pageMeta(pageHtml, 'chicken-wasm-builds') || '').split(/\s+/)
+    .map(w => w.split(':')).find(f => f[0] === arch);
+  if (!entry || !entry[2]) throw new Error('the page lists no ABI for ' + arch);
+  const { readPackage } = require(path.join(__dirname, '..', '..', 'emscripten', 'wasm-package.js'));
+  return readPackage(dir, { abi: entry[2] }).files.map(f => ({ path: '/packages/' + f.path, data: f.data }));
+}
+
+async function packages() {
+  const files = packageFiles(packageDir);
+  const report = ['(10 18 42 42 2 1)'];
+  await check('PK1 (package) the package in the kernel\'s files, imported in a cell', async () => {
+    const X = await kernel({ files });
+    await waitFor('hello', () => { X.alive(); return X.find(e => e.ev === 'hello'); }, 30000);
+    await ok(X, '(import wasm-egg-b) (egg-b-report)', report);
+    await ok(X, '(import wasm-egg-a (chicken gc)) (length (egg-a-walk (lambda (i v) (when (= i 500) (gc #t)) ' +
+                '(make-string 100 #\\x)) 100000))', ['100000']);
+    await ok(X, '(call-with-current-continuation (lambda (k) (egg-a-walk (lambda (i v) ' +
+                '(if (= i 500) (k (quote escaped)) i)) 1000)))', ['escaped']);
+    await ok(X, '(include "wasm-egg-a-shared.scm") egg-a-shared-value', ['7']);
+  });
+  await check('PC1 (package) nb-kernel.js: files() before start, then after a restart', async () => {
+    const C = client({ files: () => files });
+    try {
+      await C.k.start();
+      let d = await C.k.run('a', '(import wasm-egg-b) (egg-b-report)');
+      assert(d.status === 'ok', 'status ' + d.status + ' ' + J(d.error));
+      eq(d.values, report, 'values');
+      await C.k.restart();
+      d = await C.k.run('b', '(import wasm-egg-b) (egg-b-report)');
+      assert(d.status === 'ok', 'after restart: status ' + d.status + ' ' + J(d.error));
+      eq(d.values, report, 'values after restart');
+    } finally { C.k.dispose(); }
+  });
+  await check('PC2 (package) nb-kernel.js: writeFiles into a running kernel', async () => {
+    const C = client();
+    try {
+      await C.k.start();
+      C.k.writeFiles(files);
+      const d = await C.k.run('a', '(import wasm-egg-b) (egg-b-report)');
+      assert(d.status === 'ok', 'status ' + d.status + ' ' + J(d.error));
+      eq(d.values, report, 'values');
+    } finally { C.k.dispose(); }
+  });
+}
+
+
 // ---- Part C: nb-kernel.js against the real repl-worker.js
 
 const prelude = `
@@ -1050,6 +1104,7 @@ async function partC() {
 (async () => {
   const t0 = now();
   if (eggsOnly) await eggs();
+  else if (packageDir) await packages();
   else {
     await partK();
     await partC();

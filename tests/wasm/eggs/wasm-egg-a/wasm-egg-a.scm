@@ -23,7 +23,7 @@
 ; OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ; POSSIBILITY OF SUCH DAMAGE.
 
-(module wasm-egg-a (egg-a-add egg-a-times egg-a-scale egg-a-twice egg-a-swap!)
+(module wasm-egg-a (egg-a-add egg-a-times egg-a-scale egg-a-twice egg-a-swap! egg-a-walk)
 
 (import scheme (chicken base) (chicken foreign))
 
@@ -41,6 +41,17 @@
 
 (define (egg-a-twice x)
   (##core#inline "C_fixnum_times" x 2))
+
+;; (f i v) for i from 0 to n-1, v a fresh vector, in a non-tail loop
+;; of compiled code: the list of the results.  With an extension, its
+;; frames are those of a side module, which continuations and garbage
+;; collections go through.
+(define (egg-a-walk f n)
+  (let loop ((i 0))
+    (if (= i n)
+        '()
+        (let ((x (f i (make-vector 8 i))))
+          (cons x (loop (+ i 1)))))))
 
 (define-syntax egg-a-swap!
   (syntax-rules ()

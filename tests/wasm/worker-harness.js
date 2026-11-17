@@ -23,7 +23,7 @@
 // OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 // POSSIBILITY OF SUCH DAMAGE.
 //
-// usage: node [v8 flags] worker-harness.js WEB_DIR [--arch=A]
+// usage: node [v8 flags] worker-harness.js WEB_DIR [--arch=A] [--package=DIR]
 //
 // WEB_DIR is a built web directory (build-wasm/web).  Each session runs
 // WEB_DIR/repl-worker.js, unmodified, in a worker_threads Worker with a
@@ -37,6 +37,12 @@
 // a page with several (make wasm WASM_WEB_ARCHS="wasm64 wasm32"), in
 // WEB_DIR/A unless A is the page's own (its chicken-wasm-arch); then
 // repl-worker.js gets that directory in its dir= query, as on the page.
+//
+// With --package=DIR (the packages lane of make wasm-check) only the
+// package cases run: DIR is the package of the test eggs made by make
+// wasm-package (holding manifest.json), whose build for the ABI of the
+// modules tested (the page's chicken-wasm-builds) is written under
+// /packages, as the page does, in init's files or with writeFiles.
 
 'use strict';
 const { Worker } = require('worker_threads');
@@ -54,7 +60,9 @@ function moduleArch(html) {
   if (!has.includes(want)) throw new Error('the page in ' + webDir + ' has no ' + want + ' build (only ' + has.join(', ') + ')');
   return { arch: want, sub: want === own ? '' : want + '/' };
 }
-const { arch, sub } = moduleArch(fs.readFileSync(path.join(webDir, 'index.html'), 'utf8'));
+const pageHtml = fs.readFileSync(path.join(webDir, 'index.html'), 'utf8');
+const { arch, sub } = moduleArch(pageHtml);
+const packageDir = (process.argv.find(a => /^--package=/.test(a)) || '').slice(10);
 const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(webDir, sub, 'chicken-repl.wasm')));
 console.log('# ' + arch + ' modules in ' + path.join(webDir, sub));
 
@@ -163,7 +171,78 @@ async function check(name, f) {
 
 const val = v => new RegExp('(^|> )' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\n', 'm');
 
+// the files of the package's build for the modules tested, under
+// /packages: the build of their ABI (the third field of their entry in
+// chicken-wasm-builds)
+function packageFiles(dir) {
+  const entry = (pageMeta(pageHtml, 'chicken-wasm-builds') || '').split(/\s+/)
+    .map(w => w.split(':')).find(f => f[0] === arch);
+  if (!entry || !entry[2]) throw new Error('the page lists no ABI for ' + arch);
+  const { readPackage } = require(path.join(__dirname, '..', '..', 'emscripten', 'wasm-package.js'));
+  return readPackage(dir, { abi: entry[2] }).files.map(f => ({ path: '/packages/' + f.path, data: f.data }));
+}
+
+async function packageCases() {
+  const t0 = now();
+  const files = packageFiles(packageDir);
+  const report = '(10 18 42 42 2 1)';
+  let P;
+
+  await check('P1 package files in init: import an extension of the package', async () => {
+    P = session({ files });
+    await waitFor('ready', () => P.ready || P.crash || P.error, 30000);
+    assert(P.ready, 'ready: ' + (P.crash || P.error));
+    await P.prompt(30000);
+    P.send('(import wasm-egg-b) (egg-b-report)\n');
+    await P.expectOut(val(report), 30000);
+    await P.prompt();
+  });
+  if (!P || !P.ready) { console.log('cannot continue'); process.exit(1); }
+
+  await check('P2 GC and continuations through the frames of a side module', async () => {
+    P.send('(import wasm-egg-a (chicken gc)) (length (egg-a-walk (lambda (i v) (when (= i 500) (gc #t)) ' +
+           '(make-string 100 #\\x)) 100000))\n');
+    await P.expectOut(val('100000'), 30000);
+    await P.prompt();
+    P.send('(call-with-current-continuation (lambda (k) (egg-a-walk (lambda (i v) (if (= i 500) (k (quote escaped)) i)) 1000)))\n');
+    await P.expectOut(val('escaped'));
+    await P.prompt();
+    P.send('(let* ((r #f) (n 0) (res (egg-a-walk (lambda (i v) (if (= i 3) (call-with-current-continuation (lambda (k) ' +
+           '(set! r k) i)) i)) 5))) (set! n (+ n 1)) (if (< n 3) (r (* 10 n)) (list res n)))\n');
+    await P.expectOut(val('((0 1 2 20 4) 3)'));
+    await P.prompt();
+  });
+
+  await check('P3 an include file of the package, from /packages/share', async () => {
+    P.send('(include "wasm-egg-a-shared.scm") egg-a-shared-value\n');
+    await P.expectOut(val('7'));
+    await P.prompt();
+  });
+  await P.close();
+
+  await check('P4 writeFiles after ready: acked once, then the package imports', async () => {
+    const W = session({});
+    try {
+      await waitFor('ready', () => W.ready || W.crash, 30000);
+      await W.prompt(30000);
+      W.post({ type: 'writeFiles', id: 71, files });
+      const r = await W.reply('ack', 71);
+      assert(r.type === 'ack', 'acked, got ' + JSON.stringify(r));
+      await sleep(100);
+      assert(W.msgs.filter(m => m.id === 71).length === 1, 'one reply');
+      W.send('(import wasm-egg-b) (egg-b-report)\n');
+      await W.expectOut(val(report), 30000);
+      await W.prompt();
+    } finally { await W.close(); }
+  });
+
+  console.log('# ' + passes + ' passed, ' + failures + ' failed in ' +
+              ((now() - t0) / 1000).toFixed(1) + ' s');
+  process.exit(failures ? 1 : 0);
+}
+
 (async () => {
+  if (packageDir) return packageCases();
   const t0 = now();
   let S;
 
