@@ -42,7 +42,8 @@
  *
  * writeFile and writeFiles create the directories of the files they
  * write, and are acknowledged once (ack {id}) when all are written, or
- * answered with error {id, message} at the first that fails.  Packages
+ * answered with error {id, message}: writeFiles writes the others of
+ * its files then, and names those it could not write.  Packages
  * of compiled extensions go to /packages/repo (extensions, import
  * libraries, types and inline files) and /packages/share (include
  * files), which csi has on its repository and include paths from the
@@ -105,7 +106,7 @@ function writeFile(path, data) {
 function fsOp(m, f) {
   try { f(); }
   catch (e) {
-    postMessage({ type: 'error', id: m.id, message: String((e && (e.message || e.code)) || e) });
+    postMessage({ type: 'error', id: m.id, message: ChickenReplDriver.fsError(e) });
   }
 }
 
@@ -123,7 +124,12 @@ function handle(m) {
     break;
   case 'writeFiles':
     fsOp(m, () => {
-      for (const f of m.files || []) writeFile(f.path, f.data);
+      const bad = [];
+      for (const f of m.files || []) {
+        try { writeFile(f.path, f.data); } catch (e) { bad.push(f.path + ': ' + ChickenReplDriver.fsError(e)); }
+      }
+      if (bad.length) throw new Error('could not write ' + bad.slice(0, 3).join('; ') +
+                                      (bad.length > 3 ? '; and ' + (bad.length - 3) + ' more' : ''));
       postMessage({ type: 'ack', id: m.id });
     });
     break;

@@ -62,7 +62,13 @@
  * newline that ends the line, so input should be "\n"-terminated.
  * post(text) hands the notebook kernel (csi -e "(##webnb#kernel)") one
  * whole request, as webnb.scm describes; requests queue in order.
- * describe(e) gives an error's message and stack, as onCrash has them. */
+ * describe(e) gives an error's message and stack, as onCrash has them;
+ * fsError(e), the message of an error of the file system (emscripten's
+ * ErrnoError has no message, only an errno).
+ *
+ * A file of init's files that cannot be written (its directory is a
+ * file, say) does not keep csi from starting: it is skipped, and said on
+ * stderr once csi is ready. */
 
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -74,15 +80,25 @@
 
   // An error's message and stack: V8's stack begins with the message,
   // JavaScriptCore's and SpiderMonkey's have the frames only.
+  // (the errno values of WASI, which emscripten's file system uses)
+  const ERRNO = { 2: 'permission denied', 20: 'file exists', 28: 'invalid argument', 31: 'is a directory',
+                  44: 'no such file or directory', 48: 'out of memory', 51: 'no space left on device',
+                  54: 'not a directory', 55: 'directory not empty' };
+  function fsError(e) {
+    if (e && typeof e === 'object' && !e.message && typeof e.errno === 'number')
+      return (ERRNO[e.errno] || 'error') + ' (errno ' + e.errno + ')';
+    return String((e && (e.message || e.code)) || e);
+  }
   function describe(e) {
     if (!e || typeof e !== 'object') return String(e);
+    if (!e.message && typeof e.errno === 'number') return fsError(e);
     const head = String(e), stack = e.stack ? String(e.stack) : '';
     return !stack || stack.startsWith(head) ? stack || head : head + '\n' + stack;
   }
 
   async function start(createModule, o) {
     let M = null, dead = false, scheduled = false, ready = false;
-    const earlyErr = [];
+    const earlyErr = [], writeErr = [];
     const dec = { 1: new TextDecoder(), 2: new TextDecoder(), 3: new TextDecoder() };
 
     function finish(kind, v) {
@@ -136,9 +152,11 @@
         // (before main: the directories of the embedded repository do
         // not exist yet, and /packages is created by main itself)
         for (const f of o.files || []) {
-          const i = f.path.lastIndexOf('/');
-          if (i > 0) mod.FS.mkdirTree(f.path.slice(0, i));
-          mod.FS.writeFile(f.path, f.data);
+          try {
+            const i = f.path.lastIndexOf('/');
+            if (i > 0) mod.FS.mkdirTree(f.path.slice(0, i));
+            mod.FS.writeFile(f.path, f.data);
+          } catch (e) { writeErr.push('; could not write ' + f.path + ': ' + fsError(e)); }
         }
       }],
     };
@@ -162,6 +180,7 @@
     }
     ready = true;
     if (o.sliceMs) M._webrepl_set_slice_ms(o.sliceMs);
+    if (writeErr.length) o.onOutput(2, writeErr.join('\n') + '\n');
 
     const api = {
       feed(text, eof) {
@@ -195,5 +214,5 @@
     return api;
   }
 
-  return { start, describe, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE };
+  return { start, describe, fsError, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE };
 });
