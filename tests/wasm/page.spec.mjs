@@ -35,6 +35,12 @@
 //                      "playwright" from here
 //   SHOTS              if set, a directory for screenshots (light and dark,
 //                      desktop and 360 px wide)
+//   PACKAGE_DIR        the package of the test eggs for the packages checks
+//                      (holding manifest.json); default: the one "make
+//                      wasm-check" leaves in the build directory,
+//                      WEB_DIR/../tests-run/packages/wasm-test-eggs.
+//                      Without one those checks are skipped, saying so.
+//   PAGE_CHECKS        "packages" runs only the packages checks
 //
 // The usual Playwright variables apply (PLAYWRIGHT_BROWSERS_PATH, ...).
 // Exits with status 1 if any check fails or the page logs a console error
@@ -53,6 +59,8 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 
 const require = createRequire(import.meta.url);
 const pw = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
@@ -65,22 +73,100 @@ const shots = process.env.SHOTS ? path.resolve(process.env.SHOTS) : null;
 const html = fs.readFileSync(path.join(webDir, 'index.html'), 'utf8');
 const pageMeta = name => (new RegExp('<meta name="' + name + '" content="([^"]*)">').exec(html) || [])[1];
 const builds = (pageMeta('chicken-wasm-builds') || pageMeta('chicken-wasm-arch') + ':' + pageMeta('chicken-wasm-eh'))
-  .split(/\s+/).filter(Boolean).map(w => { const [a, e] = w.split(':'); return { arch: a, eh: e }; });
+  .split(/\s+/).filter(Boolean).map(w => { const [a, e, abi] = w.split(':'); return { arch: a, eh: e, abi }; });
 for (const b of builds) {
   if (b.arch !== 'wasm64' && b.arch !== 'wasm32') throw new Error('no wasm arch in ' + webDir + '/index.html');
   if (!['exnref', 'legacy', 'none'].includes(b.eh)) throw new Error('no wasm EH mode in ' + webDir + '/index.html');
 }
 const dual = builds.length > 1;
 // the build the page runs in a browser with every feature
-const { arch, eh } = builds.find(b => b.arch === 'wasm64') || builds[0];
+const { arch, eh, abi } = builds.find(b => b.arch === 'wasm64') || builds[0];
 const other = dual ? builds.find(b => b.arch !== arch) : null;
 const browsers = (process.env.BROWSERS || 'chromium').split(',').map(s => s.trim()).filter(Boolean);
 
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
                 '.wasm': 'application/wasm', '.png': 'image/png', '.css': 'text/css',
-                '.scm': 'text/plain; charset=utf-8' };
+                '.scm': 'text/plain; charset=utf-8', '.json': 'application/json', '.gz': 'application/gzip' };
+
+// ---- packages of compiled extensions (packages.js)
+//
+// The package of the test eggs that make wasm-check builds (its packages
+// lane) is served under /packages/wasm-test-eggs/, with broken copies
+// made from it: v2 (the same as version 0.4), bad-abi (no build for this page's ABI), bad-sha (a
+// file's SHA-256 wrong in the manifest) and unresolved (an import of
+// repo/wasm-egg-a.so renamed to a symbol nobody has, with its manifest
+// to match).  A second server, another origin allowing every origin
+// (Access-Control-Allow-Origin), serves the same; /index-origins.html
+// is the page as "make wasm WASM_WEB_PACKAGE_ORIGINS=<that origin>"
+// would make it.
+const packageDir = path.resolve(process.env.PACKAGE_DIR || path.join(webDir, '..', 'tests-run', 'packages', 'wasm-test-eggs'));
+const PC = require(path.join(path.dirname(new URL(import.meta.url).pathname), '..', '..', 'emscripten', 'web', 'package-check.js'));
+const testPackage = (() => {
+  const mf = path.join(packageDir, 'manifest.json');
+  if (!fs.existsSync(mf)) return null;
+  const sha = d => crypto.createHash('sha256').update(d).digest('hex');
+  const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
+  const files = new Map();               // "variant/name" -> Buffer
+  const json = x => Buffer.from(JSON.stringify(x, null, 1) + '\n');
+  for (const f of fs.readdirSync(packageDir)) files.set('wasm-test-eggs/' + f, fs.readFileSync(path.join(packageDir, f)));
+  const bundles = new Map(Object.values(m.builds).flatMap(b => [[b.bundle, files.get('wasm-test-eggs/' + b.bundle)],
+                                                                [b.rawBundle, files.get('wasm-test-eggs/' + b.rawBundle)]]));
+  // bad-abi: the builds under other ABIs
+  const badAbi = Object.assign({}, m, { builds: {} });
+  Object.values(m.builds).forEach((b, i) => { badAbi.builds['00000000000000' + String(i).padStart(2, '0')] = b; });
+  // bad-sha: the SHA-256 of repo/wasm-egg-a.so wrong
+  const badSha = JSON.parse(JSON.stringify(m));
+  for (const b of Object.values(badSha.builds))
+    for (const f of b.files) if (f.path === 'repo/wasm-egg-a.so') f.sha256 = f.sha256.replace(/^./, c => (c === '0' ? '1' : '0'));
+  // unresolved: env.C_... imported by repo/wasm-egg-a.so renamed Z_...
+  const unres = JSON.parse(JSON.stringify(m));
+  let renamed = null;
+  for (const b of Object.values(unres.builds)) {
+    const raw = Buffer.from(bundles.get(b.rawBundle));
+    const f = b.files.find(x => x.path === 'repo/wasm-egg-a.so');
+    const so = raw.subarray(f.offset, f.offset + f.size);
+    const imp = PC.parseModule(so).imports.find(i => i.module === 'env' && i.kind === 'func' && /^C_/.test(i.name));
+    const pat = Buffer.from([3, 0x65, 0x6e, 0x76, imp.name.length, ...Buffer.from(imp.name)]);
+    const at = so.indexOf(pat);
+    if (at < 0 || imp.name.length > 127) throw new Error('cannot rename ' + imp.name + ' in repo/wasm-egg-a.so');
+    so[at + 5] = 0x5a;                  // "Z"
+    renamed = 'Z' + imp.name.slice(1);
+    f.sha256 = sha(so);
+    const gz = zlib.gzipSync(raw, { level: 9 });
+    b.gzSize = gz.length;
+    files.set('unresolved/' + b.rawBundle, raw);
+    files.set('unresolved/' + b.bundle, gz);
+  }
+  for (const [n, d] of bundles) { files.set('bad-abi/' + n, d); files.set('bad-sha/' + n, d); files.set('v2/' + n, d); }
+  files.set('v2/manifest.json', json(Object.assign({}, m, { version: '0.4' })));
+  files.set('bad-abi/manifest.json', json(badAbi));
+  files.set('bad-sha/manifest.json', json(badSha));
+  files.set('unresolved/manifest.json', json(unres));
+  return { manifest: m, files, renamed };
+})();
+// the paths of the requests each server had, for "nothing was fetched"
+const requests = [], otherRequests = [];
+let otherBase = null;
+
+function servePackage(u, res, cors) {
+  const k = decodeURIComponent(u.pathname).replace(/^\/packages\//, '');
+  const d = testPackage && testPackage.files.get(k);
+  if (!d) { res.writeHead(404, cors ? { 'Access-Control-Allow-Origin': '*' } : {}); res.end('not found'); return; }
+  res.writeHead(200, Object.assign({ 'Content-Type': TYPES[path.extname(k)] || 'application/octet-stream' },
+                                   cors ? { 'Access-Control-Allow-Origin': '*' } : {}));
+  res.end(d);
+}
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, 'http://x');
+  requests.push(u.pathname + u.search);
+  if (u.pathname.startsWith('/packages/')) { servePackage(u, res, false); return; }
+  if (u.pathname === '/index-origins.html') {
+    const h = fs.readFileSync(path.join(webDir, 'index.html'), 'utf8')
+      .replace("connect-src 'self' ", "connect-src 'self' " + otherBase.replace(/\/$/, '') + ' ');
+    res.writeHead(200, { 'Content-Type': TYPES['.html'] });
+    res.end(h);
+    return;
+  }
   const p = path.join(webDir, path.normalize(decodeURIComponent(u.pathname)).replace(/^([/\\])+/, '') || 'index.html');
   const f = p.endsWith(path.sep) ? path.join(p, 'index.html') : p;
   if (!f.startsWith(webDir) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) {
@@ -91,6 +177,15 @@ const server = http.createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = 'http://127.0.0.1:' + server.address().port + '/';
+// another origin (another port): the packages only
+const otherServer = http.createServer((req, res) => {
+  const u = new URL(req.url, 'http://x');
+  otherRequests.push(u.pathname);
+  if (u.pathname.startsWith('/packages/')) servePackage(u, res, true);
+  else { res.writeHead(404); res.end('not found'); }
+});
+await new Promise(r => otherServer.listen(0, '127.0.0.1', r));
+otherBase = 'http://127.0.0.1:' + otherServer.address().port + '/';
 
 let failures = 0, passes = 0;
 async function check(name, f) {
@@ -2722,6 +2817,8 @@ async function runBrowser(name) {
     });
   }
 
+  await packageChecks(browser, name);
+
   await check(P + 'zero console errors', async () => {
     assert(!errors.length, errors.join('\n'));
   });
@@ -2738,10 +2835,404 @@ async function runBrowser(name) {
   await browser.close();
 }
 
+// ---- packages of compiled extensions (packages.js), in contexts of
+// their own (their storage, with the list of packages, is theirs)
+
+async function packageChecks(browser, name) {
+  const P = name + ': packages: ';
+  if (!testPackage) {
+    passes++;
+    console.log('ok - ' + P + 'skipped # SKIP no test package in ' + packageDir +
+                ' (make wasm-check builds it; or set PACKAGE_DIR)');
+    return;
+  }
+  const own = [];                       // the errors of these pages
+  const REPORT = '(10 18 42 42 2 1)';   // (import wasm-egg-b) (egg-b-report)
+  const pkgUrl = base + 'packages/wasm-test-eggs/manifest.json';
+  const contexts = [];
+  async function open(url, opts = {}) {
+    const ctx = opts.context || await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    if (!opts.context) contexts.push(ctx);
+    const f = await ctx.newPage();
+    const what = '[packages ' + url + '] ';
+    const onConsole = m => { if (m.type() === 'error') own.push(what + 'console: ' + m.text()); };
+    if (!opts.quiet) {
+      f.on('pageerror', e => own.push(what + 'pageerror: ' + e.message));
+      f.on('console', onConsole);
+      f.on('worker', w => { if (typeof w.on === 'function') w.on('console', onConsole); });
+    }
+    if (opts.dialog) f.on('dialog', opts.dialog);
+    await f.goto(base + url);
+    if (!opts.noWait) await fState(f, 'ready');
+    return f;
+  }
+  const fState = (f, st, timeout = 60000) =>
+    f.waitForFunction(s => document.getElementById('status').dataset.state === s, st, { timeout });
+  async function fEval(f, text, re) {
+    const at = (await f.textContent('#term')).length;
+    await f.fill('#line', text);
+    await f.press('#line', 'Enter');
+    await f.waitForFunction(([src, fl, n]) => new RegExp(src, fl).test(document.getElementById('term').textContent.slice(n)),
+                            [re.source, re.flags, at], { timeout: 30000 });
+    await fState(f, 'ready', 30000);
+    return (await f.textContent('#term')).slice(at);
+  }
+  const imports = async (f, what) => {
+    const out = await fEval(f, '(import wasm-egg-b) (egg-b-report)', /#;\d+> $/);
+    assert(out.includes(REPORT), what + ': ' + out);
+  };
+  const pkgList = f => f.evaluate(() => {
+    try { return JSON.parse(localStorage.getItem('chicken-repl.packages')); } catch (e) { return null; }
+  });
+  async function dialogOpen(f) {
+    if (!await f.evaluate(() => document.getElementById('packages').open)) await f.evaluate(() => ChickenPage.openPackages());
+    await f.waitForSelector('#packages[open]');
+  }
+  async function loadInDialog(f, url) {
+    await dialogOpen(f);
+    await f.fill('#packages-url', url);
+    await f.press('#packages-url', 'Enter');
+  }
+  // the row of the package NAME, once its status is no longer busy
+  async function settled(f, name, timeout = 60000) {
+    await f.waitForFunction(n => [...document.querySelectorAll('#packages-list li')].some(li =>
+      li.querySelector('.saves-name').textContent === n &&
+      !/^(busy)$/.test(li.querySelector('.pkg-status').dataset.state)), name, { timeout });
+    return f.evaluate(n => {
+      const li = [...document.querySelectorAll('#packages-list li')].find(l => l.querySelector('.saves-name').textContent === n);
+      return { state: li.querySelector('.pkg-status').dataset.state, status: li.querySelector('.pkg-status').textContent,
+               text: li.textContent };
+    }, name);
+  }
+  async function closeDialog(f) {
+    await f.keyboard.press('Escape');
+    await f.waitForFunction(() => !document.getElementById('packages').open);
+  }
+  // the files of /packages/repo as csi sees them
+  const repoFiles = async f => {
+    await fEval(f, '(import (chicken file))', /#;\d+> $/);
+    return fEval(f, '(directory "/packages/repo")', /\n.*\n#;\d+> $/);
+  };
+  // notebook: run src in a new cell at the end; its values
+  async function nbRun(f, src) {
+    await f.click('#nb-end-code');
+    const li = f.locator('#nb-cells > li').last();
+    await li.locator('.nb-src').fill(src);
+    await li.locator('.nb-src').press('Control+Enter');
+    await f.waitForFunction(() => {
+      const l = [...document.querySelectorAll('#nb-cells > li')].pop();
+      return /^(ok|error|interrupted|cancelled)$/.test(l.dataset.status);
+    }, null, { timeout: 30000 });
+    return li.locator('.nb-out').textContent();
+  }
+  const nbReady = f => f.waitForFunction(() => document.getElementById('nb-status').dataset.state === 'ready', null,
+                                          { timeout: 60000 });
+
+  let f = null;
+  await check(P + 'load the same-origin test package from Settings → Packages…; csi and the running notebook kernel import it', async () => {
+    f = await open('index.html');
+    // the kernel runs before the package comes
+    await f.click('#tab-notebook');
+    await nbReady(f);
+    await f.click('#tab-repl');
+    await fState(f, 'ready');
+    const before = (await f.textContent('#term')).length;
+    await f.click('#settings-btn');
+    await f.click('#set-packages');
+    await f.waitForSelector('#packages[open]');
+    assert(await f.evaluate(() => document.activeElement.id) === 'packages-url', 'the focus in the URL field');
+    assert((await f.textContent('#packages-build')).includes(arch + ' (' + eh + '), ABI ' + abi),
+           'the build: ' + await f.textContent('#packages-build'));
+    await f.keyboard.type('packages/wasm-test-eggs/');
+    await f.keyboard.press('Enter');
+    const r = await settled(f, 'wasm-test-eggs');
+    assert(r.state === 'loaded', 'loaded: ' + r.text);
+    assert(/0\.3/.test(r.text) && /2 eggs/.test(r.text) && r.text.includes(pkgUrl), 'row: ' + r.text);
+    assert(/^Loaded wasm-test-eggs 0\.3/.test(await f.textContent('#packages-status')), 'status: ' + await f.textContent('#packages-status'));
+    const kept = await pkgList(f);
+    assert(kept && kept.length === 1 && kept[0].url === pkgUrl && kept[0].enabled === true, 'kept: ' + JSON.stringify(kept));
+    await closeDialog(f);
+    await f.keyboard.press('Escape');     // the Settings, unsaved
+    await f.waitForFunction(() => !document.getElementById('settings').open);
+    await f.waitForFunction(n => /; package wasm-test-eggs 0\.3 loaded \(eggs: wasm-egg-a, wasm-egg-b\)/
+                            .test(document.getElementById('term').textContent.slice(n)), before);
+    await imports(f, 'REPL, no restart');
+    await f.click('#tab-notebook');
+    const out = await nbRun(f, '(import wasm-egg-b) (egg-b-report)');
+    assert(out.includes(REPORT), 'notebook, no restart: ' + out);
+    await f.click('#tab-repl');
+  });
+  if (!f) return;
+
+  await check(P + 'it survives Restart and a kernel restart', async () => {
+    await f.click('#restart');
+    await fState(f, 'ready');
+    await imports(f, 'after Restart');
+    await f.click('#tab-notebook');
+    await f.click('#nb-restart');
+    await nbReady(f);
+    const out = await nbRun(f, '(import wasm-egg-b) (egg-b-report)');
+    assert(out.includes(REPORT), 'after the kernel restart: ' + out);
+    await f.click('#tab-repl');
+  });
+
+  await check(P + 'a console save and the notebook record it', async () => {
+    const d = await f.evaluate(async () => (await ChickenPage.savesProvider('console').capture(2, {})).data.packages);
+    assert(JSON.stringify(d) === JSON.stringify([pkgUrl]), 'console: ' + JSON.stringify(d));
+    await f.waitForFunction(u => {
+      try { return JSON.parse(localStorage.getItem('chicken-repl.notebook')).meta.packages.includes(u); } catch (e) { return false; }
+    }, pkgUrl, { timeout: 5000 });
+  });
+
+  await check(P + 'kept across a reload, loaded before csi starts', async () => {
+    const n = requests.length;
+    await f.reload();
+    await fState(f, 'ready');
+    assert(/; package wasm-test-eggs 0\.3 loaded \(see Settings/.test(await f.textContent('#term')), 'note: ' + await f.textContent('#term'));
+    const got = requests.slice(n).filter(r => r.startsWith('/packages/'));
+    assert(got.length === 2 && got[1].includes(arch + '-' + eh + '-'), 'fetched: ' + got.join(' '));
+    await imports(f, 'after the reload');
+  });
+
+  await check(P + 'another version of it replaces it at the next Restart', async () => {
+    await loadInDialog(f, 'packages/v2/');
+    const one = st => f.waitForFunction(st => {
+      const l = document.querySelectorAll('#packages-list li');
+      return l.length === 1 && l[0].querySelector('.pkg-status').textContent === st;
+    }, st, { timeout: 30000 });
+    await one('loaded — restart to apply');
+    assert(/0\.4/.test(await f.textContent('#packages-list li .saves-badge')), 'version');
+    assert(/^Loaded wasm-test-eggs 0\.4; restart to use it instead of version 0\.3\./.test(await f.textContent('#packages-status')),
+           'status: ' + await f.textContent('#packages-status'));
+    const kept = await pkgList(f);
+    assert(kept.length === 1 && /\/packages\/v2\/manifest\.json$/.test(kept[0].url), 'kept: ' + JSON.stringify(kept));
+    await closeDialog(f);
+    await f.waitForFunction(() => /; package wasm-test-eggs 0\.4 loaded: Restart to use it instead of the one loaded/
+                            .test(document.getElementById('term').textContent));
+    await f.click('#restart');
+    await fState(f, 'ready');
+    await dialogOpen(f);
+    await one('loaded');
+    await closeDialog(f);
+    await imports(f, 'version 0.4');
+  });
+
+  await check(P + 'Remove: restart to apply; gone after Restart', async () => {
+    await dialogOpen(f);
+    await f.click('#packages-list li button:has-text("Remove")');
+    assert(/^Removed wasm-test-eggs; restart to unload it\./.test(await f.textContent('#packages-status')), 'status: ' +
+           await f.textContent('#packages-status'));
+    assert(await f.evaluate(() => document.activeElement.id) === 'packages-url', 'the focus in the URL field');
+    assert(JSON.stringify(await pkgList(f)) === '[]', 'kept: ' + JSON.stringify(await pkgList(f)));
+    await closeDialog(f);
+    await f.waitForFunction(() => /; package wasm-test-eggs removed: Restart to unload it/.test(document.getElementById('term').textContent));
+    await f.click('#restart');
+    await fState(f, 'ready');
+    const out = await fEval(f, '(import wasm-egg-b)', /#;\d+> $/);
+    assert(/Error/.test(out), 'import after Restart: ' + out);
+  });
+  await f.close();
+
+  // the refusals, in a page without packages: nothing reaches csi
+  const g = await open('index.html');
+  async function refused(dir, re, what) {
+    const n = requests.length;
+    await loadInDialog(g, 'packages/' + dir + '/');
+    const r = await settled(g, 'wasm-test-eggs');
+    assert(r.state === 'failed' && re.test(r.status), what + ': ' + r.status);
+    await closeDialog(g);
+    assert(await g.evaluate(() => ChickenPage.packages.files().length) === 0, what + ': files kept');
+    const out = await repoFiles(g);
+    assert(/\n\(\)\n/.test(out), what + ': /packages/repo: ' + out);
+    await dialogOpen(g);
+    await g.click('#packages-list li button:has-text("Remove")');
+    await closeDialog(g);
+    return requests.slice(n).filter(r => r.startsWith('/packages/'));
+  }
+  await check(P + 'a package without a build for this page’s ABI is refused, saying which it needs', async () => {
+    const got = await refused('bad-abi', new RegExp('^not built for this page \\(needs ' + arch + '/' + eh + '/' + abi + '\\); it has '),
+                              'bad-abi');
+    assert(got.length === 1 && /manifest\.json/.test(got[0]), 'only the manifest fetched: ' + got.join(' '));
+  });
+  await check(P + 'a file with a bad SHA-256 refuses the whole package', async () => {
+    await refused('bad-sha', /^failed: repo\/wasm-egg-a\.so: bad SHA-256/, 'bad-sha');
+  });
+  await check(P + 'a side module with an unresolved import is refused before any file is written', async () => {
+    await refused('unresolved', new RegExp('^failed: csi of this page cannot load its modules: repo/wasm-egg-a\\.so: unresolved: env\\.' +
+                                           testPackage.renamed + '$'), 'unresolved');
+  });
+
+  await check(P + 'another origin is refused by the page’s Content-Security-Policy, unless WASM_WEB_PACKAGE_ORIGINS allows it', async () => {
+    const url = otherBase + 'packages/wasm-test-eggs/';
+    const n = otherRequests.length;
+    await loadInDialog(g, url);
+    const r = await settled(g, 'wasm-test-eggs');
+    assert(r.state === 'failed' && r.status.includes('may fetch packages only from ' + base.replace(/\/$/, '') + ', not ' +
+                                                     otherBase.replace(/\/$/, '')) &&
+           r.status.includes('WASM_WEB_PACKAGE_ORIGINS="' + otherBase.replace(/\/$/, '') + '"'), 'status: ' + r.status);
+    await g.click('#packages-list li button:has-text("Remove")');
+    await closeDialog(g);
+    // the browser itself blocks it (in a page whose errors do not count:
+    // the browser reports the violation)
+    const q = await open('index.html', { quiet: true, noWait: true });
+    const res = await q.evaluate(u => fetch(u).then(() => 'fetched', () => 'blocked'), url + 'manifest.json');
+    assert(res === 'blocked', 'a fetch: ' + res);
+    await q.close();
+    assert(otherRequests.length === n, 'the other origin got ' + otherRequests.slice(n).join(' '));
+    // allowed
+    const h = await open('index-origins.html');
+    await loadInDialog(h, url);
+    const r2 = await settled(h, 'wasm-test-eggs');
+    assert(r2.state === 'loaded', 'allowed: ' + r2.status);
+    await closeDialog(h);
+    await imports(h, 'from the other origin');
+    await h.close();
+  });
+
+  await check(P + 'a kept package that fails at the start does not keep csi from starting; a note says why', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    contexts.push(ctx);
+    await ctx.addInitScript(u => {
+      if (!localStorage.getItem('chicken-repl.packages'))
+        localStorage.setItem('chicken-repl.packages', JSON.stringify([{ url: u, enabled: true }]));
+    }, base + 'packages/bad-sha/manifest.json');
+    const a = await open('index.html', { context: ctx });
+    await a.waitForFunction(() => /; package wasm-test-eggs not loaded: repo\/wasm-egg-a\.so: bad SHA-256/
+                            .test(document.getElementById('term').textContent));
+    assert(/^\(\)$/m.test(await repoFiles(a)), 'nothing in /packages/repo');
+    // kept (it may load another time), and listed as failed
+    await dialogOpen(a);
+    const r = await settled(a, 'wasm-test-eggs');
+    assert(r.state === 'failed', 'listed: ' + r.status);
+    await closeDialog(a);
+    await a.close();
+  });
+
+  await check(P + '?pkg= loads a package, after a confirm() for another site’s', async () => {
+    const n = requests.length;
+    let asked = 0;
+    const a = await open('index.html?pkg=packages/wasm-test-eggs/', { dialog: d => { asked++; d.dismiss(); } });
+    await imports(a, '?pkg= same origin');
+    assert(!asked, 'no confirm() for the page’s own origin');
+    assert((await pkgList(a))[0].url === pkgUrl, 'kept');
+    assert(requests.slice(n).some(r => r.startsWith('/packages/wasm-test-eggs/manifest.json')), 'fetched');
+    await a.close();
+    const url = otherBase + 'packages/wasm-test-eggs/';
+    const m = otherRequests.length;
+    const msgs = [];
+    const b = await open('index-origins.html?pkg=' + encodeURIComponent(url),
+                         { dialog: d => { msgs.push(d.type() + ' ' + d.message()); d.dismiss(); } });
+    assert(msgs.length === 1 && /^confirm Load the package at\n/.test(msgs[0]) && msgs[0].includes(url + 'manifest.json'), 'asked: ' + msgs);
+    assert(otherRequests.length === m, 'refused, nothing fetched: ' + otherRequests.slice(m));
+    assert(JSON.stringify(await pkgList(b)) === '[]' || (await pkgList(b)) === null, 'not kept: ' + JSON.stringify(await pkgList(b)));
+    b.removeAllListeners('dialog');
+    b.on('dialog', d => { msgs.push(d.type()); d.accept(); });
+    await b.reload();
+    await fState(b, 'ready');
+    assert(msgs.length === 2, 'asked again: ' + msgs);
+    await imports(b, '?pkg= another origin, accepted');
+    // kept: no question at the next start
+    await b.reload();
+    await fState(b, 'ready');
+    assert(msgs.length === 2, 'not asked a third time: ' + msgs);
+    await b.close();
+  });
+
+  if (dual) await check(P + `?arch=${other.arch}: the package's ${other.arch} build`, async () => {
+    const n = requests.length;
+    const a = await open('index.html?arch=' + other.arch + '&pkg=packages/wasm-test-eggs/');
+    await imports(a, other.arch);
+    const got = requests.slice(n).filter(r => /\.bundle/.test(r));
+    assert(got.length === 1 && got[0].includes('-' + other.arch + '-' + other.eh + '-'), 'bundle: ' + got);
+    await a.close();
+  });
+
+  await check(P + 'a saved session or notebook with a package not loaded here offers it, without fetching it', async () => {
+    // a console session saved where it was loaded, opened in g
+    const n = requests.length;
+    await g.evaluate(u => {
+      const pr = ChickenPage.savesProvider('console');
+      const data = { format: 'chicken-repl-session', version: 1, minReader: 1, transcript: [['out', '#;1> ']],
+                     inputs: [], entry: '', uploads: [], home: [], settings: { csirc: '', args: '' },
+                     saved: {}, packages: [u] };
+      pr.apply({ name: 'With a package', modified: new Date().toISOString() }, pr.check(data), { replay: false });
+    }, pkgUrl);
+    await g.waitForSelector('#packages[open]');
+    await g.waitForFunction(() => /; it used a package not loaded here: wasm-test-eggs \(Settings → Packages… loads it\)/
+                            .test(document.getElementById('term').textContent));
+    const r = await settled(g, 'wasm-test-eggs');
+    assert(r.state === 'offered' && r.status === 'not loaded (used by “With a package”)', 'row: ' + r.status);
+    assert(!requests.slice(n).some(x => x.startsWith('/packages/')), 'nothing fetched: ' + requests.slice(n));
+    await fState(g, 'ready');
+    // loaded on request
+    await g.click('#packages-list li button:has-text("Load")');
+    const r2 = await settled(g, 'wasm-test-eggs');
+    assert(r2.state === 'loaded', 'loaded: ' + r2.status);
+    await closeDialog(g);
+    await imports(g, 'loaded from the offer');
+    // a notebook imported elsewhere
+    const k = await open('index.html', { dialog: d => d.accept() });   // (Replace the notebook?)
+    const m = requests.length;
+    await k.click('#tab-notebook');
+    const nb = JSON.stringify({ format: 'chicken-notebook', version: 1, meta: { title: 'pkg', packages: [pkgUrl] },
+                                cells: [{ type: 'code', source: '(import wasm-egg-b)' }] });
+    await k.setInputFiles('#nb-file', { name: 'pkg.json', mimeType: 'application/json', buffer: Buffer.from(nb) });
+    await k.waitForFunction(() => /^pkg\.json uses a package not loaded here: wasm-test-eggs\.$/
+                            .test(document.getElementById('nb-notice-text').textContent), null, { timeout: 10000 });
+    assert(!requests.slice(m).some(x => x.startsWith('/packages/')), 'nothing fetched: ' + requests.slice(m));
+    await k.click('#nb-notice-action');
+    await k.waitForSelector('#packages[open]');
+    const r3 = await settled(k, 'wasm-test-eggs');
+    assert(r3.state === 'offered' && /used by pkg\.json/.test(r3.status), 'offered: ' + r3.status);
+    await closeDialog(k);
+    await k.close();
+  });
+
+  await check(P + 'the dialog fits at 320 px, from the notebook’s More menu; its buttons are named', async () => {
+    await g.setViewportSize({ width: 320, height: 640 });
+    await g.click('#tab-notebook');
+    await loadInDialog(g, 'packages/bad-abi/');
+    await settled(g, 'wasm-test-eggs');
+    await closeDialog(g);
+    await g.click('#nb-more');
+    await g.click('#nb-menu [role="menuitem"][data-act="packages"]');
+    await g.waitForSelector('#packages[open]');
+    const w = await g.evaluate(() => [document.documentElement.scrollWidth, document.getElementById('packages').scrollWidth,
+                                      document.getElementById('packages').clientWidth,
+                                      document.getElementById('packages').getBoundingClientRect().right]);
+    assert(w[0] <= 320 && w[1] <= w[2] && w[3] <= 320, 'no horizontal scroll: ' + w);
+    const nameless = await g.evaluate(() => [...document.querySelectorAll('#packages button, #settings button')]
+      .filter(b => !(b.getAttribute('aria-label') || b.textContent.trim() || b.title))
+      .map(b => b.outerHTML.slice(0, 80)));
+    assert(!nameless.length, nameless.join('\n'));
+    const labels = await g.$$eval('#packages-list button:not([hidden])', l => l.map(b => b.getAttribute('aria-label')));
+    assert(labels.length >= 2 && labels.every(t => /^(Remove|Retry|Load) wasm-test-eggs$/.test(t)), 'labels: ' + labels);
+    // keyboard: Tab from the field reaches Load; Escape closes, back to the menu button
+    assert(await g.evaluate(() => document.activeElement.id) === 'packages-url', 'focus');
+    await g.keyboard.press('Tab');
+    assert(await g.evaluate(() => document.activeElement.id) === 'packages-load', 'Tab to Load');
+    await closeDialog(g);
+    assert(await g.evaluate(() => document.activeElement.id) === 'nb-more', 'the focus back: ' +
+           await g.evaluate(() => document.activeElement.id));
+    await g.setViewportSize({ width: 1280, height: 800 });
+  });
+  await g.close();
+
+  for (const c of contexts) await c.close();
+  await check(P + 'no console errors on these pages', async () => {
+    assert(!own.length, own.join('\n'));
+  });
+}
+
 for (const b of browsers) {
-  try { await runBrowser(b); }
-  catch (e) { failures++; console.log('not ok - ' + b + ': ' + ((e && e.stack) || e)); }
+  try {
+    if (process.env.PAGE_CHECKS === 'packages') {
+      const browser = await pw[b].launch();
+      try { await packageChecks(browser, b); } finally { await browser.close(); }
+    } else await runBrowser(b);
+  } catch (e) { failures++; console.log('not ok - ' + b + ': ' + ((e && e.stack) || e)); }
 }
 server.close();
+otherServer.close();
 console.log('# ' + passes + ' passed, ' + failures + ' failed');
 process.exit(failures ? 1 : 0);
