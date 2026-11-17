@@ -255,13 +255,16 @@
 
 ;;; Time slicing and Ctrl-C.  Timer interrupts only happen in
 ;;; interruptible code (interpreted and user-compiled code); library
-;;; primitives never yield.
+;;; primitives never yield.  Nor does a callback (Scheme called from C
+;;; code, as by a foreign-safe-lambda): returning to the host would
+;;; unwind the C frames below it, and CHICKEN_continue cannot resume it.
 
 (set! ##sys#interrupt-hook
   (let ((old ##sys#interrupt-hook))	; already wrapped by the scheduler
     (lambda (reason state)
       (when (eq? reason C_TIMER_INTERRUPT_NUMBER)
-	(when (slice-over?) (yield! ST-BUSY))
+	(when (and (slice-over?) (null? ##sys#callback-continuation-stack))
+	  (yield! ST-BUSY))
 	(when (interrupted?) (##sys#user-interrupt-hook)))
       (old reason state))))
 
