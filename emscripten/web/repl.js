@@ -65,6 +65,8 @@
   const HISTORY_MAX = 500;
   const WATCHDOG_MS = 3000;
   const HOME = '/home/web_user/';
+  // how long an interpreter starting waits for the packages being loaded
+  const PACKAGE_WAIT_MS = 8000;
   const PROMPT_END = /#;(?:[^\s>]*:)?\d+> $/;    // "#;3> ", in a module "#;m:3> " (csi.scm)
 
   const meta = name => (document.querySelector('meta[name="' + name + '"]') || {}).content || '';
@@ -520,9 +522,11 @@
 
   // opts: {files: [{name, data}] written to the home directory after the
   // uploads (not kept as uploads: Restart drops them, as it drops the
-  // files csi writes), quiet: not a change of the console (an open)}.
+  // files csi writes), quiet: not a change of the console (an open),
+  // packages: wait for all the packages being loaded (a replay)}.
   // The files of the packages loaded go under /packages, after those
-  // being loaded are (see packages.js).
+  // being loaded are, for PACKAGE_WAIT_MS at most: a package loaded
+  // later goes into the running csi (see packages.js).
   async function spawn(opts) {
     opts = opts || {};
     if (unavailable) return;
@@ -549,7 +553,7 @@
     // the packages being loaded, if any (one that fails is noted at ready)
     if (pk && pk.busy()) {
       setStatus('loading', 'loading packages');
-      await pk.ready();
+      await pk.ready(opts.packages ? null : PACKAGE_WAIT_MS);
       if (g !== gen) return;
     }
     let w;
@@ -563,7 +567,7 @@
       fatal('; the interpreter worker failed: ' + ((e && e.message) || 'could not load repl-worker.js') + '\n; ' + HTTP_HINT);
     };
     w.onmessageerror = () => { if (g === gen) fatal('; a message from the interpreter could not be decoded'); };
-    if (pk) pk.applied();
+    if (pk) pk.applied('console');
     w.postMessage({
       type: 'init',
       args: csiArgs(),
@@ -598,8 +602,14 @@
         if (pk && pk.loaded().length)
           note('; ' + (pk.loaded().length === 1 ? 'package ' : 'packages ') +
                pk.loaded().map(p => p.name + (p.version ? ' ' + p.version : '')).join(', ') + ' loaded (see Settings → Packages…)');
+        // (a link may have added one without asking: same site)
+        const linked = pk ? pk.loaded().filter(p => p.link) : [];
+        if (linked.length)
+          note('; ' + someNames(linked.map(p => p.name)) + ' came with the link of this page, and ' +
+               (linked.length === 1 ? 'is' : 'are') + ' kept: Settings → Packages… removes ' + (linked.length === 1 ? 'it' : 'them'));
       }
       if (pk) for (const f of pk.failures('console')) note('; package ' + f.name + ' not loaded: ' + f.reason);
+      if (pk) for (const n of pk.pending()) note('; package ' + n + ' is still loading: csi gets it when it is ready');
       if (replay) {                     // no input until it is done; Stop ends it
         setInputEnabled(false);
         $('stop').disabled = false;
@@ -1246,10 +1256,24 @@
     draft = '';
     const plan = s.inputs ? SS.planReplay(s.inputs) : { send: [], skipped: 0 };
     if (opts && opts.replay && plan.send.length) {
-      spawn({ quiet: true });
-      replay = { gen, list: plan.send, i: 0, n: plan.send.length, errs: 0, curErr: false, startErr: false,
-                 skipped: plan.skipped, home: s.home, name: meta.name };
-      setStatus('running', 'replaying 0/' + replay.n);
+      const run = () => {
+        spawn({ quiet: true, packages: true });
+        replay = { gen, list: plan.send, i: 0, n: plan.send.length, errs: 0, curErr: false, startErr: false,
+                   skipped: plan.skipped, home: s.home, name: meta.name };
+        setStatus('running', 'replaying 0/' + replay.n);
+      };
+      if (!missing.length || !pk) run();
+      else {
+        // its inputs need the packages: run once the dialog offering
+        // them is closed (with those loaded there, or without)
+        kill();
+        setInputEnabled(false);
+        setStatus('loading', 'waiting for packages');
+        note('; its inputs run again once the Packages dialog is closed: load ' +
+             (missing.length === 1 ? 'the package' : 'the packages') + ' there first');
+        const g = gen;
+        pk.closed().then(() => { if (g === gen) run(); });
+      }
     } else {
       spawn({ quiet: true, files: s.home });
       if (!(opts && opts.replay)) note('; transcript only: this is a fresh interpreter, its definitions were not restored');
@@ -1329,19 +1353,27 @@
 
   // ---- packages of compiled extensions (packages.js has the dialog)
 
-  const pk = window.ChickenPackages && window.ChickenPackageCheck && !LOCKOUT && RUNS
-    ? window.ChickenPackages.create({
-      abi: RUNS.abi, arch: ARCH, eh: EH, store,
-      unavailable: () => unavailable,
-      replModule: () => replModule(),
-    }) : null;
+  // (a problem there leaves the page without packages, not without csi)
+  const pk = (() => {
+    if (!(window.ChickenPackages && window.ChickenPackageCheck && !LOCKOUT && RUNS)) return null;
+    try {
+      return window.ChickenPackages.create({
+        abi: RUNS.abi, arch: ARCH, eh: EH, builds: BUILDS, store,
+        unavailable: () => unavailable,
+        replModule: () => replModule(),
+      });
+    } catch (e) {
+      console.warn('packages:', e);
+      return null;
+    }
+  })();
   if (pk) {
-    // into the running csi (one starting gets them with init); a package
-    // that replaced one waits for Restart
+    // into the running csi (one starting gets them with init); one of
+    // which this csi has another version waits for Restart
     pk.on('load', (p, files, apply) => {
       const what = 'package ' + p.name + (p.version ? ' ' + p.version : '');
-      if (!worker || !apply) {
-        if (worker) note('; ' + what + ' loaded: Restart to use it instead of the one loaded');
+      if (!worker || !apply('console')) {
+        if (worker) note('; ' + what + ' loaded: Restart to use it instead of the one this csi has');
         return;
       }
       const eggs = p.eggs.map(e => e.name);
@@ -1381,6 +1413,7 @@
     savesProvider(kind) { return saveProviders.get(kind) || null; },
     addUploads,                         // ([{name, data}], from what)
     packages: pk,                       // packages.js's manager, or null
+    PACKAGE_WAIT_MS,
     openPackages() { if (pk) pk.open(); },
     selectTab(id) { const t = $(id); if (t && t.getAttribute('aria-selected') !== 'true') t.click(); },
   });

@@ -149,18 +149,20 @@
 
   // ---- the kernel
 
-  let kernel = null, kernelState = 'off', kernelUsed = false;
+  let kernel = null, kernelState = 'off', kernelUsed = false, pendingNoted = false;
 
   function ensureKernel() {
     if (kernel) return kernel;
     if (P.unavailable || !K) return null;
     kernel = K.create({
       createWorker: () => new Worker(P.workerUrl('repl-worker.js')),   // the REPL's build
-      getModule: () => Promise.all([P.replModule(), P.packages && P.packages.ready()]).then(([m]) => m),
+      // (waiting a while for the packages being loaded: a package loaded
+      // later goes into the running kernel)
+      getModule: () => Promise.all([P.replModule(), P.packages && P.packages.ready(P.PACKAGE_WAIT_MS)]).then(([m]) => m),
       args: () => P.settings.args,
       csirc: () => (P.settings.csirc.trim() ? P.settings.csirc : null),
       // the packages' files under /packages (once those loading are)
-      files: () => [...(P.packages ? (P.packages.applied(), P.packages.files()) : []),
+      files: () => [...(P.packages ? (P.packages.applied('notebook'), P.packages.files()) : []),
                     ...[...P.uploads].map(([n, d]) => ({ path: P.HOME + n, data: d }))],
       sliceMs: () => P.settings.sliceMs,
       watchdogMs: 3000,
@@ -200,8 +202,14 @@
     if (state === 'unavailable')
       showNotice('kernel', 'The notebook kernel is unavailable: ' + ((info && info.reason) || 'it could not be loaded') +
                  (P.HTTP_HINT && !/HTTP/.test((info && info.reason) || '') ? ' ' + P.HTTP_HINT : ''));
-    if (state === 'idle' && P.packages)
+    if (state === 'idle' && P.packages) {
       for (const f of P.packages.failures('notebook')) log('kernel', 'package ' + f.name + ' not loaded: ' + f.reason);
+      if (!pendingNoted) {
+        pendingNoted = true;
+        for (const n of P.packages.pending()) log('kernel', 'package ' + n + ' is still loading: the kernel gets it when it is ready');
+      }
+    }
+    if (state === 'starting') pendingNoted = false;
     if (state === 'idle' && kernel && kernel.info) {
       $('nb-info').textContent = 'CHICKEN ' + kernel.info.version + ' · ' + P.ARCH;
       nb.chicken = kernel.info.version;
@@ -1568,7 +1576,9 @@
   // or replaced needs a restart
   if (P.packages) {
     P.packages.on('load', (p, files, apply) => {
-      if (kernel && apply) kernel.writeFiles(files);
+      if (!kernel) return;
+      if (apply('notebook')) kernel.writeFiles(files);
+      else packagesChanged();
     });
     P.packages.on('change', (kind, p) => {
       // (a package removed is no longer the notebook's)
@@ -1587,7 +1597,9 @@
   // in a notice (the dialog lists them), never fetched without asking
   function offerPackages(list, from) {
     if (!P.packages || !list || !list.length) return false;
-    const missing = P.packages.offer(list, { from });
+    let missing;
+    try { missing = P.packages.offer(list, { from }); }
+    catch (e) { console.warn('packages:', e); return false; }
     if (!missing.length) return false;
     showNotice('packages', (from ? from + ' uses ' : 'This notebook uses ') +
                (missing.length === 1 ? 'a package' : 'packages') + ' not loaded here: ' +

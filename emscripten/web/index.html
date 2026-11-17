@@ -1287,7 +1287,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 <dialog id="packages" aria-labelledby="packages-title" aria-describedby="packages-intro">
   <form method="dialog" id="packages-form">
     <h2 id="packages-title">Packages</h2>
-    <p class="help" id="packages-intro">Compiled extensions (eggs) made with <code>make wasm-package</code>. Once loaded, csi and the notebook import their modules as usual, and they load again at every start. A package is compiled code: load only packages you trust.</p>
+    <p class="help" id="packages-intro">Eggs compiled for this page, loaded by the URL their publisher gives (packages are made with <code>make wasm-package</code>). Once loaded, csi and the notebook import their modules as usual, and they load again at every start. A package is compiled code: load only packages you trust.</p>
     <div>
       <label class="f" for="packages-url">Package URL
         <span class="help">Its <code>manifest.json</code>, or the directory holding it.</span>
