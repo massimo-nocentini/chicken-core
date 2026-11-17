@@ -527,9 +527,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       loads packages of compiled extensions (see "Packages of
       compiled extensions" below) into csi and the notebook kernel,
       by the URL of a package's manifest.json or of its directory.
-      The csi and the kernel running get the package at once, and
-      every later start (Restart, a kernel restart, a reload) gets
-      it before csi starts, so a .csirc can import it.
+      A running csi or kernel gets the package at once, and every
+      later start (Restart, a kernel restart, a reload) gets it
+      before csi starts, so a .csirc can import it.
 
     build-wasm/stage/chicken/
       An SDK for compiling your own programs to WebAssembly: the
@@ -789,13 +789,17 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     lists those loaded, with their version, eggs, size and status,
     and Remove.  The page takes the package's build for the ABI of
     the build it runs (the third field of chicken-wasm-builds), else
-    refuses it ("not built for this page", with the build it needs);
-    it fetches the bundle (gzipped where the browser has
-    DecompressionStream), checks each file's size and SHA-256 (with
-    crypto.subtle, so on https or localhost only), compiles every
-    side module and checks its imports as wasm-package.js does (the
+    refuses it ("not built for this page", with the build it needs,
+    and whether the page's other build can load it); it fetches the
+    bundle (gzipped where the browser has DecompressionStream; at
+    most 256 MB and 20000 files), checks each file's size and
+    SHA-256 (with crypto.subtle, so on https or localhost only) and
+    that no file is where another has its directory, compiles every
+    WebAssembly module (whatever its name: load takes one for an
+    extension) and checks its imports as wasm-package.js does (the
     two share emscripten/web/package-check.js), against the exports
-    and imports of the page's own csi module.  Any problem refuses
+    and imports of the page's own csi module, by name and kind, and
+    the address type of the linker's globals.  Any problem refuses
     the whole package before a single file reaches an interpreter:
     a module that fails to load would leave emscripten's dynamic
     linker with entries it cannot undo.  The files then go under
@@ -807,14 +811,24 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     continuation that leaves it skips the C frames below it, as
     natively (what the C code held is lost); the REPL and the
     notebook kernel drop those frames at their next prompt or
-    request.  The list of packages is kept in the browser
-    (localStorage, the key chicken-repl.packages) and loaded at
-    every start of the page;
-    one that fails there does not keep csi from starting (a note
-    says why).  Removing a package, or loading another version of a
-    loaded one, takes effect at the next Restart.  A link can load
-    packages: "?pkg=URL" (repeatable) adds each to the list, after
-    a confirm() for a package on another site than the page's.  A
+    request.  A package that loaded is kept in the browser
+    (localStorage, the key chicken-repl.packages, merged with what
+    other tabs keep) and loaded at every start of the page; one that
+    fails there does not keep csi from starting (a note says why),
+    nor does one that is slow: csi and the kernel wait for the
+    packages at most 8 s, then start without those still loading,
+    which they get once loaded.  A load that gets no data for 30 s
+    fails, and Remove stops one.  Every start fetches and checks its
+    packages again (for aux, about 0.4 s in Chromium and 0.9 s in
+    Firefox on a desktop): a check kept in the browser could be
+    forged by the code of a package, which runs with the page's
+    storage.  Removing a package, or loading another version of
+    one, takes effect at the next Restart of each interpreter that
+    has other files of its paths (csi and the kernel apart).  A link
+    can load packages: "?pkg=URL" (repeatable) adds each to the
+    list, after a confirm() for a package on another site than the
+    page's (one the page may not fetch from fails at once, without
+    asking), and the console says it came with the link.  A
     saved console session and a notebook (its meta.packages) record
     the URLs of the packages loaded; opening one whose packages are
     not loaded lists them in the dialog, to load by hand: they are
@@ -1055,9 +1069,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     directory (or the one PACKAGE_DIR names), served beside the
     page, and broken copies of it (another ABI, a wrong SHA-256, an
     unresolved import, a damaged .bundle.gz, one that unpacks to
-    more than the manifest says), from the page's origin and from
-    another;
-    without the package they are skipped, saying so.
+    more than the manifest says, a file where another has its
+    directory, one that never comes), from the page's origin and
+    from another; without the package they are skipped, saying so.
     PAGE_CHECKS=packages runs only those.
 
     Limitations:
