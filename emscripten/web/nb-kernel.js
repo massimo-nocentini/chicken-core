@@ -60,6 +60,10 @@
  * idle, busy, sleeping, input (the cell reads stdin), dead (exited,
  * crashed or killed; the next run() respawns it) or unavailable.
  *
+ * writeFile(path, data) and writeFiles([{path, data}]) write into the
+ * running kernel's file system (creating directories), if there is
+ * one: files() gives those of the next kernel.
+ *
  * onLog(kind, text): stdout and stderr outside any cell (.csirc, whose
  * text displays are logged as stdout, and others as display), csirc
  * (its result), kernel (restarts and exits) and protocol (anything the
@@ -476,6 +480,8 @@
       },
       // (the worker queues it until it is ready)
       writeFile(path, data) { post({ type: 'writeFile', id: 0, path, data }); },
+      // several at once, such as the files of a package under /packages
+      writeFiles(files) { post({ type: 'writeFiles', id: 0, files }); },
       dispose() {
         if (disposed) return;
         disposed = true;
