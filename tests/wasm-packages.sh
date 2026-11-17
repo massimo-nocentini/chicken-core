@@ -172,13 +172,23 @@ corrupt() {
 expect_error K11 'repo/wasm-egg-a.so: bad size or SHA-256' corrupt
 expect_error K12 'no build for the ABI 0123456789abcdef' "$NODE" "$TOOL" unpack "$PKG" --abi 0123456789abcdef x
 # a side module that the page's csi could not load is refused, with the
-# symbols it lacks (a function that neither libchicken nor the C
-# library exports)
+# symbols it lacks (a function and data that neither libchicken nor the
+# C library exports): by csc-wasm -shared, which leaves no output, and
+# by the package's check (of a module linked without csc-wasm's)
 cat >noexport.scm <<'EOF'
 (import scheme (chicken foreign))
-(foreign-declare "extern int wasm_no_such_function(int);")
+(foreign-declare "extern int wasm_no_such_function(int);\nextern int wasm_no_such_data;")
 (define f (foreign-lambda int "wasm_no_such_function" int))
+(define g (foreign-value "wasm_no_such_data" int))
 EOF
+EMCC=$(sed -n "s/^EMCC='\(.*\)'\$/\1/p" "$SDK/bin/csc-wasm")
+expect_error K13 'noexport.so: unresolved: GOT.mem.wasm_no_such_data env.wasm_no_such_function' \
+    "$SDK/bin/csc-wasm" -shared noexport.scm -o noexport.so
+expect K13b 'none' sh -c 'test -f noexport.so || echo none'
+# (as csc-wasm -shared links)
+"$SDK/bin/csc-wasm" -shared -c noexport.scm -o noexport.o
+$EMCC $(cat "$SDK/share/chicken/emsideflags") -sSIDE_MODULE=2 -sEXPORTED_FUNCTIONS=_C_toplevel \
+    -Wl,-Bsymbolic noexport.o -o noexport.so
 bundle_one() {
     rm -rf one && mkdir -p one/repo && cp "$1" one/repo/ && basename "$1" | sed 's|^|repo/|' >one/files.list &&
 	echo "one 1 local" >one/eggs.list &&
@@ -186,14 +196,75 @@ bundle_one() {
 	    --exports "$BUILD/runtime-exports" --main "$BUILD/web/chicken-repl.wasm" --arch "$ARCH" \
 	    --eh x --abi "$ABI" --chicken 0 --binary-version 0 --out one/out --info one/info.json
 }
-"$SDK/bin/csc-wasm" -shared noexport.scm -o noexport.so
-expect_error K13 'noexport.so: unresolved: env.wasm_no_such_function' bundle_one noexport.so
+expect_error K13c 'noexport.so: unresolved: GOT.mem.wasm_no_such_data env.wasm_no_such_function' \
+    bundle_one noexport.so
+# csi refuses to load it, saying why, and loads others after it (the
+# entries of the global offset table that it would leave undefined
+# would make every later load fail)
+expect K13d 'unable to load compiled module - symbols missing from this program: GOT.mem.wasm_no_such_data wasm_no_such_function
+(42 15 8)' csi -e '(import (chicken condition))
+  (handle-exceptions e (print ((condition-property-accessor (quote exn) (quote message)) e)) (load "noexport.so"))
+  (import wasm-egg-a) (print (list (egg-a-add 40 2) (egg-a-scale 5) (egg-a-twice 4)))'
+# what clang calls in place of what C code names (siprintf for sprintf
+# of %d, strcpy ...), setjmp and longjmp, long double and 128-bit
+# integer arithmetic: csi exports all of it
+cat >libc.scm <<'EOF'
+(module libc (fmt)
+(import scheme (chicken base) (chicken foreign))
+(foreign-declare #<<C
+#include <stdio.h>
+#include <string.h>
+#include <setjmp.h>
+static char buf[256];
+static jmp_buf jb;
+static int jump(int n) { if (setjmp(jb) == 0) { if (n) longjmp(jb, n); return 0; } return 100 + n; }
+static char *fmt(int n, double d, char *s)
+{
+  long double x = d;
+  __int128 i = (__int128)n * n * 1000000007LL;
+  char t[64];
+  strcpy(t, s);
+  x = x * 14 / 5;
+  sprintf(buf, "%d %.2f %s %d %d %d", n, d, t, jump(n), (int)x, (int)(i % 1000));
+  return buf;
+}
+C
+)
+(define fmt (foreign-lambda c-string "fmt" int double c-string)))
+EOF
+"$SDK/bin/csc-wasm" -shared -J libc.scm -o libc.so
+"$SDK/bin/csc-wasm" -shared -setup-mode libc.import.scm -o libc.import.so
+expect K18 '5 2.50 abc 105 7 175' csi -e '(import libc) (print (fmt 5 2.5 "abc"))'
+# a file that is not WebAssembly is not taken for compiled code (nor
+# read as source code)
+printf '\177ELF' >elf.so
+expect_error K19 'unable to load compiled module - not a WebAssembly module' csi -e '(load "elf.so")'
+
 # a side module of the other architecture of the page is refused
 other=$(sed -n 's/^WASM_WEB_ARCHS *= *//p' "$BUILD/config-web.make" | tr ' ' '\n' | grep -v "^$ARCH\$" | head -1)
 if test -n "$other"; then
     "$NODE" "$TOOL" unpack "$PKG" --arch "$other" unpacked-other >/dev/null
     expect_error K14 "wasm-egg-a.so: built for $other, not $ARCH" bundle_one unpacked-other/repo/wasm-egg-a.so
 fi
+# the builds of a package may list its eggs in another order (an egg
+# that one architecture only depends on), and the version of the
+# package is that of the first egg directory given
+info() {
+    printf '{"abi": "%s", "eggs": %s, "build": {"arch": "%s", "eh": "x", "bundle": "b%s", "rawBundle": "r%s", "files": []}}' \
+	"$1" "$2" "$3" "$1" "$1" >"$1.json"
+}
+manifest_two() {
+    mkdir -p mf &&
+	info 0000000000000001 '[{"name": "e1", "version": "1.0", "origin": "local"}, {"name": "e2", "version": "2.0", "origin": "local"}]' wasm64 &&
+	info 0000000000000002 '[{"name": "e2", "version": "2.0", "origin": "local"}, {"name": "e1", "version": "1.0", "origin": "local"}]' wasm32 &&
+	"$NODE" "$TOOL" manifest --out mf --name pk "$@" 0000000000000001.json 0000000000000002.json >/dev/null &&
+	"$NODE" -e 'const m = require("./mf/manifest.json");
+	  console.log(m.version, m.eggs.map(e => e.name).join(" "), Object.keys(m.builds).length)'
+}
+expect K20 '2.0 e1 e2 2' manifest_two --first e2
+expect K21 '1.0 e1 e2 2' manifest_two
+expect K22 'wasm-test-eggs 0.3' "$NODE" -e 'const m = require(process.argv[1]); console.log(m.name, m.version)' \
+    "$PKG/manifest.json"
 # the planner's shared mode: the conditions "dynamic" and "dload" hold,
 # not "static", and the target's version is the build's
 PLANNER=$TEST_DIR/../emscripten/wasm-eggs.scm
