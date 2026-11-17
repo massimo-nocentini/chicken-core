@@ -93,9 +93,10 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 // The package of the test eggs that make wasm-check builds (its packages
 // lane) is served under /packages/wasm-test-eggs/, with broken copies
 // made from it: v2 (the same as version 0.4), bad-abi (no build for this page's ABI), bad-sha (a
-// file's SHA-256 wrong in the manifest) and unresolved (an import of
+// file's SHA-256 wrong in the manifest), unresolved (an import of
 // repo/wasm-egg-a.so renamed to a symbol nobody has, with its manifest
-// to match).  A second server, another origin allowing every origin
+// to match), bad-gz (a byte of each .bundle.gz changed) and big-gz
+// (each .bundle.gz unpacking to 1 MB more than the manifest says).  A second server, another origin allowing every origin
 // (Access-Control-Allow-Origin), serves the same; /index-origins.html
 // is the page as "make wasm WASM_WEB_PACKAGE_ORIGINS=<that origin>"
 // would make it.
@@ -138,6 +139,15 @@ const testPackage = (() => {
     files.set('unresolved/' + b.bundle, gz);
   }
   for (const [n, d] of bundles) { files.set('bad-abi/' + n, d); files.set('bad-sha/' + n, d); files.set('v2/' + n, d); }
+  for (const b of Object.values(m.builds)) {
+    const gz = Buffer.from(bundles.get(b.bundle));
+    gz[gz.length >> 1] ^= 0xff;
+    files.set('bad-gz/' + b.bundle, gz);
+    files.set('big-gz/' + b.bundle, zlib.gzipSync(Buffer.concat([bundles.get(b.rawBundle), Buffer.alloc(1 << 20)])));
+    for (const v of ['bad-gz/', 'big-gz/']) files.set(v + b.rawBundle, bundles.get(b.rawBundle));
+  }
+  files.set('bad-gz/manifest.json', json(m));
+  files.set('big-gz/manifest.json', json(m));
   files.set('v2/manifest.json', json(Object.assign({}, m, { version: '0.4' })));
   files.set('bad-abi/manifest.json', json(badAbi));
   files.set('bad-sha/manifest.json', json(badSha));
@@ -3056,6 +3066,12 @@ async function packageChecks(browser, name) {
   });
   await check(P + 'a file with a bad SHA-256 refuses the whole package', async () => {
     await refused('bad-sha', /^failed: repo\/wasm-egg-a\.so: bad SHA-256/, 'bad-sha');
+  });
+  await check(P + 'a damaged .bundle.gz is refused, saying so', async () => {
+    await refused('bad-gz', /^failed: its bundle is not valid gzip: (?!Failed to fetch|The operation was aborted)\S/, 'bad-gz');
+  });
+  await check(P + 'a .bundle.gz that unpacks to more than its manifest says is refused', async () => {
+    await refused('big-gz', /^failed: its bundle unpacks to more than its manifest says$/, 'big-gz');
   });
   await check(P + 'a side module with an unresolved import is refused before any file is written', async () => {
     await refused('unresolved', new RegExp('^failed: csi of this page cannot load its modules: repo/wasm-egg-a\\.so: unresolved: env\\.' +

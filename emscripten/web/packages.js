@@ -148,20 +148,16 @@
     if (!r.ok) refuse('could not fetch ' + what + ' (HTTP ' + r.status + ')');
     return r;
   }
-  // the body, at most MAX bytes; progress(n) as it comes
-  async function readBody(r, max, progress) {
-    if (!r.body || typeof r.body.getReader !== 'function') {
-      const b = new Uint8Array(await r.arrayBuffer());
-      if (b.length > max) refuse('it is larger than its manifest says');
-      return b;
-    }
-    const rd = r.body.getReader(), parts = [];
+  // what READER gives, at most MAX bytes (else the refusal BIG);
+  // progress(n) as it comes
+  async function readAll(rd, max, big, progress) {
+    const parts = [];
     let n = 0;
     for (;;) {
       const { done, value } = await rd.read();
       if (done) break;
       n += value.length;
-      if (n > max) { rd.cancel().catch(() => {}); refuse('it is larger than its manifest says'); }
+      if (n > max) { rd.cancel().catch(() => {}); refuse(big); }
       parts.push(value);
       if (progress) progress(n);
     }
@@ -170,9 +166,21 @@
     for (const p of parts) { out.set(p, at); at += p.length; }
     return out;
   }
-  async function gunzip(bytes) {
-    const s = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return new Uint8Array(await new Response(s).arrayBuffer());
+  // the body, at most MAX bytes; progress(n) as it comes
+  async function readBody(r, max, progress) {
+    if (!r.body || typeof r.body.getReader !== 'function') {
+      const b = new Uint8Array(await r.arrayBuffer());
+      if (b.length > max) refuse('it is larger than its manifest says');
+      return b;
+    }
+    return readAll(r.body.getReader(), max, 'it is larger than its manifest says', progress);
+  }
+  // BYTES unpacked, at most MAX bytes.  (Read here: through a Response
+  // the error of damaged data would be a bare "Failed to fetch" or
+  // "The operation was aborted", and Firefox would log it.)
+  function gunzip(bytes, max) {
+    return readAll(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')).getReader(), max,
+                   'its bundle unpacks to more than its manifest says');
   }
   const hex = buf => Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, '0')).join('');
   const subtle = (() => { try { return (self.crypto && self.crypto.subtle) || null; } catch (e) { return null; } })();
@@ -288,8 +296,8 @@
       });
       // (a server may have unpacked it already: Content-Encoding)
       if (gz && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b) {
-        try { bytes = await gunzip(bytes); }
-        catch (x) { refuse('its bundle is not valid gzip: ' + why(x)); }
+        try { bytes = await gunzip(bytes, b.size); }
+        catch (x) { refuse(x instanceof Refusal ? x.message : 'its bundle is not valid gzip: ' + why(x)); }
       }
       if (bytes.length !== b.size) refuse('its bundle has ' + bytes.length + ' bytes, not ' + b.size + ' as its manifest says');
       // every file, checked; then every side module

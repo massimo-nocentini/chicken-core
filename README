@@ -1054,7 +1054,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     "make wasm-check" leaves in tests-run/packages of the build
     directory (or the one PACKAGE_DIR names), served beside the
     page, and broken copies of it (another ABI, a wrong SHA-256, an
-    unresolved import), from the page's origin and from another;
+    unresolved import, a damaged .bundle.gz, one that unpacks to
+    more than the manifest says), from the page's origin and from
+    another;
     without the package they are skipped, saying so.
     PAGE_CHECKS=packages runs only those.
 
