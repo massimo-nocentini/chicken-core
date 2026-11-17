@@ -311,6 +311,14 @@ expect K15 '1' grep -c -- ' -D dyn-ok ' plan.mk
 expect_error K16 'dyn: wrong conditions' plan "$PWD/dyn"
 echo '((components (extension st (linkage static))))' >dyn/dyn.egg
 expect_error K17 "component .st. has no dynamic linkage, which a package needs" shared_plan "$PWD/dyn"
+# a data component goes into a package (below share, on the include
+# path), and is left out of WebAssembly images with a warning
+rm -rf dat && mkdir -p dat/d && echo data >dat/d/x.txt && echo '(module dat ())' >dat/dat.scm
+echo '((components (extension dat) (data dat-files (files "d/x.txt"))))' >dat/dat.egg
+rm -f plan.mk; shared_plan "$PWD/dat" >/dev/null 2>&1 || :
+expect K26 '1' grep -c 'echo share/d/x.txt;' plan.mk
+static_data() { plan "$PWD/dat" 2>&1 >/dev/null | grep -c "data component .dat-files. is not installed in WebAssembly images"; }
+expect K27 '1' static_data
 rm -f pkg.out pkg.err
 echo
 if test $failures -ne 0; then

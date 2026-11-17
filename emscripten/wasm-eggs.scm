@@ -419,6 +419,36 @@
 	       (string-intersperse (map ->string (cdr prop)) " ")))
 	(else (warn "egg `~a': ignoring unknown ~a property ~s"
 		    name context (car prop)))))
+    (define (include-component prop)
+      ;; installed for the eggs built after this one, as chicken-install
+      ;; would (by default in PREFIX/include/chicken or
+      ;; PREFIX/share/chicken, on the C and Scheme include paths), but
+      ;; not into the images (into a package, in shared mode: see
+      ;; write-makefile); a data component too in shared mode
+      (let ((cname (check-name name "component" (cadr prop)))
+	    (files '())
+	    (dest #f))
+	(define (property p)
+	  (case (car p)
+	    ((files)
+	     (set! files (append files (map (lambda (f) (check-include-file name cname f))
+					    (cdr p)))))
+	    ((destination)
+	     (let ((d (normalize-pathname (->string (cadr p)))))
+	       (when (or (absolute-pathname? d) (irregex-search '(: bos "..") d))
+		 (fail "egg `~a': destination of `~a' must be relative to the prefix: ~s"
+		       name cname (cadr p)))
+	       (set! dest (check-path name d))))
+	    ((component-dependencies) #f)
+	    (else (common p property "component"))))
+	(for-each property (cddr prop))
+	(set! others (cons cname others))
+	(set! includes
+	  (cons (list (car prop) cname files
+		      (or dest (if (eq? 'c-include (car prop))
+				   "include/chicken"
+				   "share/chicken")))
+		includes))))
     (define (component prop)
       (case (car prop)
 	((extension c-object installed-c-object)
@@ -480,39 +510,17 @@
 			       source: (or src (string-append cname ".c"))
 			       options: copts dependencies: cdeps))
 		     components)))))
-	((c-include scheme-include)
-	 ;; installed for the eggs built after this one, as chicken-install
-	 ;; would (by default in PREFIX/include/chicken or
-	 ;; PREFIX/share/chicken, on the C and Scheme include paths), but
-	 ;; not into the images
-	 (let ((cname (check-name name "component" (cadr prop)))
-	       (files '())
-	       (dest #f))
-	   (define (property p)
-	     (case (car p)
-	       ((files)
-		(set! files (append files (map (lambda (f) (check-include-file name cname f))
-					       (cdr p)))))
-	       ((destination)
-		(let ((d (normalize-pathname (->string (cadr p)))))
-		  (when (or (absolute-pathname? d) (irregex-search '(: bos "..") d))
-		    (fail "egg `~a': destination of `~a' must be relative to the prefix: ~s"
-			  name cname (cadr p)))
-		  (set! dest (check-path name d))))
-	       ((component-dependencies) #f)
-	       (else (common p property "component"))))
-	   (for-each property (cddr prop))
-	   (set! others (cons cname others))
-	   (set! includes
-	     (cons (list (car prop) cname files
-			 (or dest (if (eq? 'c-include (car prop))
-				      "include/chicken"
-				      "share/chicken")))
-		   includes))))
 	((data)
-	 (set! others (cons (check-name name "component" (cadr prop)) others))
-	 (warn "egg `~a': data component `~a' is not installed in WebAssembly images"
-	       name (cadr prop)))
+	 (if shared-mode
+	     ;; (in a package, below /packages/share, on the include path
+	     ;; where srfi-29 looks for its bundles, say)
+	     (include-component prop)
+	     (begin
+	       (set! others (cons (check-name name "component" (cadr prop)) others))
+	       (warn "egg `~a': data component `~a' is not installed in WebAssembly images"
+		     name (cadr prop)))))
+	((c-include scheme-include)
+	 (include-component prop))
 	((program)
 	 (set! others (cons (check-name name "component" (cadr prop)) others))
 	 (warn "egg `~a': program `~a' is not built" name (cadr prop)))

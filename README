@@ -663,7 +663,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     (egg-wide or per component, as in "sendfile"), generated source
     files and extensions without static linkage.  Programs are not
     built, and "data" components are not installed (a warning says
-    so).  "c-include" and "scheme-include" files are installed where
+    so; a package has them, see below).  "c-include" and "scheme-include" files are installed where
     the eggs built after them include them from (build-wasm/eggs/
     prefix), and at the same place in the SDK (by default
     include/chicken, on emcc's include path, and share/chicken,
@@ -728,10 +728,13 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     libraries of the modules it defines; the .egg files are read for
     a target with the features "dload" and, in cond-expand, "dynamic"
     (and not "static"); components without "dynamic" linkage are
-    refused.  Eggs of the core system and eggs linked into the page
-    (WASM_EGGS) are not built: the package uses theirs, so that it
-    is only for pages with the same eggs (their names and versions
-    are part of the ABI).  As for
+    refused.  The Scheme include files and the "data" components of
+    the eggs go below share of the package, /packages/share in the
+    page, on the include path (where srfi-29, for one, finds the
+    locale bundles of srfi-19).  Eggs of the core system and eggs
+    linked into the page (WASM_EGGS) are not built: the package uses
+    theirs, so that it is only for pages with the same eggs (their
+    names and versions are part of the ABI).  As for
     WASM_EGGS, eggs running code of other eggs at compile time
     (import-for-syntax, as aux does with its own modules) need
     those installed in the host repository (WASM_HOST_REPOSITORY),
