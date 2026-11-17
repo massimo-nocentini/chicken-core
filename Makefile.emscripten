@@ -415,10 +415,15 @@ WASM_NODE_TOOLS = csi chicken chicken-profile chicken-status
 # leading underscore: every global symbol of libchicken and those of
 # emscripten/libc-exports.  The SDK has it (share/chicken/runtime-
 # exports), for checking side modules before they are loaded.  Each
-# main module's link exports these and its own (X.exports).
+# main module's link exports these and its own (X.exports).  With wasm
+# exception handling (WASM_SJLJ wasm and wasm-legacy), side modules
+# that call setjmp import its helpers and the tag of longjmp, which the
+# main module has (libchicken uses them) but exports only when told to.
 WASM_NM = $(EMBIN)emnm
 WASM_RUNTIME_EXPORTS = runtime-exports
 WASM_LIBC_EXPORTS = $(SRCDIR)emscripten/libc-exports
+WASM_SJLJ_EXPORTS = $(if $(filter wasm wasm-legacy,$(WASM_SJLJ)),__wasm_setjmp __wasm_setjmp_test \
+  __wasm_longjmp __c_longjmp)
 ifeq ($(WASM_DYLINK),1)
 WASM_MAIN_MODULE = -sMAIN_MODULE=2
 WASM_MAIN_EXPORTS = $(WASM_RUNTIME_EXPORTS)
@@ -428,7 +433,8 @@ endif
 $(WASM_RUNTIME_EXPORTS): $(LIBCHICKEN_A) $(WASM_LIBC_EXPORTS)
 	{ $(WASM_NM) --defined-only --extern-only $(LIBCHICKEN_A) | \
 	    awk '$$2 == "T" || $$2 == "D" || $$2 == "B" { print $$3 }' | grep -v '^__em_'; \
-	  sed -e '/^#/d' -e '/^$$/d' $(WASM_LIBC_EXPORTS); } | LC_ALL=C sort -u >$@.tmp
+	  sed -e '/^#/d' -e '/^$$/d' $(WASM_LIBC_EXPORTS); \
+	  $(foreach s,$(WASM_SJLJ_EXPORTS),echo $s;) } | LC_ALL=C sort -u >$@.tmp
 	test -s $@.tmp
 	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 

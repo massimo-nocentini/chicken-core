@@ -175,11 +175,11 @@ function parseModule(buf) {
 }
 
 // the names the dynamic linker (emscripten's libdylink.js) gives every
-// side module, besides the symbols of the main module
+// side module, besides the symbols of the main module (which exports
+// the tag of longjmp, __c_longjmp, as runtime-exports says)
 const LINKER_NAMES = new Set([
   'memory', '__indirect_function_table', '__stack_pointer', '__memory_base',
-  '__table_base', '__c_longjmp', '__cpp_exception', '__heap_base',
-  '__stack_high', '__stack_low', '__tls_base',
+  '__table_base', '__memory_base32', '__table_base32',
 ]);
 
 // checkModules(modules, {exports, mainImports, arch}) -> problems: each
