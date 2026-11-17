@@ -110,6 +110,16 @@ else
 $(error WASM_SJLJ must be wasm, wasm-legacy or emscripten, not "$(WASM_SJLJ)")
 endif
 WASM_EMFLAGS = $(WASM_ARCH_FLAG) $(WASM_SJLJ_FLAGS)
+# WASM_DYLINK=1 (the default): csi (node/csi.js and the web REPL) is
+# linked as an emscripten main module (-sMAIN_MODULE=2), which loads
+# compiled extensions (side modules, made with csc-wasm -shared) at run
+# time and has the feature "dload"; the other programs stay static (the
+# runtime finds out which it is in).  0: every program is static, and
+# the runtime is built without dynamic loading.
+WASM_DYLINK ?= 1
+ifneq ($(filter-out 0 1,$(WASM_DYLINK)),)
+$(error WASM_DYLINK must be 0 or 1, not "$(WASM_DYLINK)")
+endif
 
 # WASM_WEB_ARCHS (recorded in config-web.make by "make wasm", apart from
 # the other settings): the architectures the web page offers, WASM_ARCH
@@ -135,8 +145,6 @@ endif
 WASM_WEB_OTHER = $(sort $(filter-out $(WASM_ARCH),$(WASM_WEB_ARCHS)))
 WASM_DEFAULT_EH_wasm64 = exnref
 WASM_DEFAULT_EH_wasm32 = legacy
-# for the page: "ARCH:EH" each, WASM_ARCH's first
-WASM_WEB_BUILDS = $(WASM_ARCH):$(WASM_EH) $(foreach a,$(WASM_WEB_OTHER),$a:$(WASM_DEFAULT_EH_$a))
 
 # WASM_EGGS and the host tools that build them, recorded apart (see
 # "eggs" below)
@@ -148,10 +156,13 @@ WASM_HOST_CSI ?= env LD_LIBRARY_PATH=$(SRCDIR) CHICKEN_REPOSITORY_PATH=$(SRCDIR)
 
 # options
 
-# No -DHAVE_CHICKEN_CONFIG_H: see INCLUDES.  NO_DLOAD2 must be global:
-# runtime.c defines it only for itself, library.scm tests it separately.
-# It is defined empty, as runtime.c does, to avoid a redefinition warning.
-C_COMPILER_OPTIONS ?= -fno-strict-aliasing -fwrapv -DNO_DLOAD2= $(WASM_EMFLAGS) \
+# No -DHAVE_CHICKEN_CONFIG_H: see INCLUDES.  Without WASM_DYLINK,
+# NO_DLOAD2 must be global: runtime.c defines it only for itself (and
+# not on emscripten), library.scm tests it separately.  It is defined
+# empty, as runtime.c does, to avoid a redefinition warning.  The
+# objects need not be PIC for a main module: emscripten links it at
+# fixed addresses, and its exports are listed (see WASM_RUNTIME_EXPORTS).
+C_COMPILER_OPTIONS ?= -fno-strict-aliasing -fwrapv $(if $(filter 0,$(WASM_DYLINK)),-DNO_DLOAD2= )$(WASM_EMFLAGS) \
   -DC_WASM_FRAME_PAD=$(WASM_FRAME_PAD)
 ifdef WASM_SIMD
 # never -mrelaxed-simd: it reintroduces FP contraction (see srfi-4.scm)
@@ -396,16 +407,81 @@ WASM_NODE_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=node -sNODERAWFS=1 \
 LIBCHICKEN_A = $(PRIMARY_LIBCHICKEN)
 WASM_NODE_TOOLS = csi chicken chicken-profile chicken-status
 
-node/csi.js: csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
+# The main modules (WASM_DYLINK): side modules import what they use of
+# libchicken and of the C library from the main module, which exports
+# only what it is told to (-sMAIN_MODULE=2, unlike 1, which exports all
+# of the C library and costs 0.5 MB of wasm and as much of JS).
+# WASM_RUNTIME_EXPORTS lists it, one symbol per line, without the
+# leading underscore: every global symbol of libchicken and those of
+# emscripten/libc-exports.  The SDK has it (share/chicken/runtime-
+# exports), for checking side modules before they are loaded.  Each
+# main module's link exports these and its own (X.exports).
+WASM_NM = $(EMBIN)emnm
+WASM_RUNTIME_EXPORTS = runtime-exports
+WASM_LIBC_EXPORTS = $(SRCDIR)emscripten/libc-exports
+ifeq ($(WASM_DYLINK),1)
+WASM_MAIN_MODULE = -sMAIN_MODULE=2
+WASM_MAIN_EXPORTS = $(WASM_RUNTIME_EXPORTS)
+WASM_ABI = wasm-abi
+endif
+
+$(WASM_RUNTIME_EXPORTS): $(LIBCHICKEN_A) $(WASM_LIBC_EXPORTS)
+	{ $(WASM_NM) --defined-only --extern-only $(LIBCHICKEN_A) | \
+	    awk '$$2 == "T" || $$2 == "D" || $$2 == "B" { print $$3 }' | grep -v '^__em_'; \
+	  sed -e '/^#/d' -e '/^$$/d' $(WASM_LIBC_EXPORTS); } | LC_ALL=C sort -u >$@.tmp
+	test -s $@.tmp
+	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
+
+# X.exports: the exports of a program's link, its own (with the leading
+# underscore, as emcc wants them), and with WASM_DYLINK those of
+# WASM_RUNTIME_EXPORTS
+csi-node.exports: WASM_OWN_EXPORTS = _main
+chicken-repl.exports: WASM_OWN_EXPORTS = _main _webrepl_feed _webrepl_post _webrepl_resume \
+  _webrepl_interrupt _webrepl_state _webrepl_started _webrepl_exited _webrepl_exit_code \
+  _webrepl_wakeup_ms _webrepl_set_slice_ms _malloc _free
+csi-node.exports chicken-repl.exports: %.exports: config.make $(WASM_MAIN_EXPORTS)
+	{ for s in $(WASM_OWN_EXPORTS); do echo $$s; done; \
+	  $(if $(WASM_MAIN_EXPORTS),sed 's/^/_/' $(WASM_MAIN_EXPORTS);) } | LC_ALL=C sort -u >$@.tmp
+	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
+
+node/csi.js: csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_NODE_PRE) csi-node.exports
 	mkdir -p node
-	$(LINKER) $(WASM_NODE_LDFLAGS) csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
-	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
+	$(LINKER) $(WASM_NODE_LDFLAGS) $(WASM_MAIN_MODULE) -sEXPORTED_FUNCTIONS=@csi-node.exports \
+	  csi-node$(O) wasm-units$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) $(WASM_EGG_LDOPTS) $(LIBRARIES)
 node/chicken.js: $(COMPILER_STATIC_OBJECTS) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
 	mkdir -p node
 	$(LINKER) $(WASM_NODE_LDFLAGS) $(COMPILER_STATIC_OBJECTS) -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
 node/chicken-profile.js node/chicken-status.js: node/%.js: %$(O) $(LIBCHICKEN_A) $(WASM_NODE_PRE)
 	mkdir -p node
 	$(LINKER) $(WASM_NODE_LDFLAGS) $< -o $@ $(LIBCHICKEN_A) $(LIBRARIES)
+
+# The ABI of the main modules (WASM_DYLINK): side modules must have
+# been compiled for it, with the SDK of a build that has the same.  It
+# is the first 16 hex digits of the SHA-256 of wasm-abi.txt, which holds
+# the binary and CHICKEN versions, emcc's, the architecture, exception
+# handling and frame pad, the compiler options (but optimization and
+# debugging), chicken.h, the macros of chicken-config.h that describe
+# the platform (not the paths of the tools) and WASM_RUNTIME_EXPORTS:
+# no path, so two builds of the same sources with the same emscripten
+# and knobs have the same ABI wherever they are.  The page lists it for
+# each of its builds (see index.html), the SDK has it (share/chicken/abi).
+WASM_SHA256 = $(if $(shell command -v sha256sum),sha256sum,shasum -a 256)
+wasm-abi: $(WASM_RUNTIME_EXPORTS) chicken.h $(CHICKEN_CONFIG_H) buildversion wasm-cflags
+	{ echo "binary-version $(BINARYVERSION)"; \
+	  echo "chicken $$(cat buildversion)"; \
+	  echo "emcc $$($(C_COMPILER) -dumpversion)"; \
+	  echo "arch $(WASM_ARCH)"; \
+	  echo "eh $(WASM_EH)"; \
+	  echo "frame-pad $(WASM_FRAME_PAD)"; \
+	  echo "cflags $(strip $(filter-out -O% -g%,$(C_COMPILER_OPTIONS)))"; \
+	  echo "chicken.h $$($(WASM_SHA256) <$(filter %chicken.h,$^) | cut -d' ' -f1)"; \
+	  echo "chicken-config.h:"; \
+	  grep -E '^#define |^# define C_(BINARY_VERSION|STACK_GROWS_DOWNWARD) ' $(CHICKEN_CONFIG_H); \
+	  echo "runtime-exports:"; \
+	  cat $(WASM_RUNTIME_EXPORTS); } >$@.txt
+	$(WASM_SHA256) <$@.txt | cut -c1-16 >$@.tmp
+	grep -Eq '^[0-9a-f]{16}$$' $@.tmp
+	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
 
 # sh wrappers: node/csi etc. run like the native tools.  The staged
 # repository comes first, before any of CHICKEN_REPOSITORY_PATH (which
@@ -435,10 +511,10 @@ WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-comp
 # webrepl_feed and webrepl_post take their pointer as a Number, as
 # _malloc and stringToNewUTF8 give it (no effect on wasm32).
 $(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) \
-    $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP)
+    $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP) chicken-repl.exports
 	mkdir -p $(WEB_DIR)
 	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenRepl -sEXIT_RUNTIME=0 -Wl,--wrap=_exit \
-	  -sEXPORTED_FUNCTIONS=_main,_webrepl_feed,_webrepl_post,_webrepl_resume,_webrepl_interrupt,_webrepl_state,_webrepl_started,_webrepl_exited,_webrepl_exit_code,_webrepl_wakeup_ms,_webrepl_set_slice_ms,_malloc,_free \
+	  $(WASM_MAIN_MODULE) -sEXPORTED_FUNCTIONS=@chicken-repl.exports \
 	  -sSIGNATURE_CONVERSIONS=webrepl_feed:_p__,webrepl_post:_p_ \
 	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 \
 	  csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) $(WASM_EGG_LINK) -o $@ $(LIBCHICKEN_A) \
@@ -481,10 +557,13 @@ $(WASM_WEB_OTHER:%=arch-%.make): arch-%.make:
 	  if cmp -s arch-$*/$$f.tmp arch-$*/$$f; then rm arch-$*/$$f.tmp; \
 	  else mv arch-$*/$$f.tmp arch-$*/$$f; fi; \
 	done
-	+$(MAKE) -C arch-$* -f $(SRCDIR)GNUmakefile $(addprefix $(WEB_DIR)/,$(filter %.js,$(WEB_MODULES)))
+	+$(MAKE) -C arch-$* -f $(SRCDIR)GNUmakefile $(addprefix $(WEB_DIR)/,$(filter %.js,$(WEB_MODULES))) \
+	  wasm-sdk $(WASM_ABI)
 
+# (arch-A has an SDK of its own, in arch-A/stage, for building side
+# modules for its modules)
 define WASM_WEB_ARCH_RULES
-$(addprefix arch-$1/$(WEB_DIR)/,$(WEB_MODULES)): arch-$1.make ;
+$(addprefix arch-$1/$(WEB_DIR)/,$(WEB_MODULES)) $(if $(WASM_ABI),arch-$1/$(WASM_ABI)): arch-$1.make ;
 $(WEB_DIR)/$1/%: arch-$1/$(WEB_DIR)/%
 	mkdir -p $$(@D)
 	cp $$< $$@
@@ -492,22 +571,36 @@ endef
 $(foreach a,$(WASM_WEB_OTHER),$(eval $(call WASM_WEB_ARCH_RULES,$a)))
 endif
 
+# WASM_WEB_PACKAGE_ORIGINS (recorded in config-web.make by "make wasm"):
+# the origins, besides the page's own, it may fetch packages of
+# compiled extensions from (space separated, as in a CSP source list)
+WASM_COMMA := ,
+WASM_ORIGINS_BAD = ; $(WASM_COMMA) ' " | & \ @
+ifneq ($(strip $(foreach c,$(WASM_ORIGINS_BAD),$(findstring $c,$(WASM_WEB_PACKAGE_ORIGINS)))),)
+$(error WASM_WEB_PACKAGE_ORIGINS must be origins separated by spaces, not "$(WASM_WEB_PACKAGE_ORIGINS)")
+endif
+
 # @ARCH@ tells the page to check for memory64 (wasm64), @EH@ for exnref,
-# for its own modules; @BUILDS@ lists every architecture it has, with
-# its exception handling (WASM_WEB_BUILDS).  The directories of
+# for its own modules; @BUILDS@ lists every architecture it has,
+# WASM_ARCH's first, with its exception handling and, with WASM_DYLINK,
+# its ABI (wasm-abi): "ARCH:EH:ABI" each.  @CONNECT@ completes the page's
+# connect-src (WASM_WEB_PACKAGE_ORIGINS).  The directories of
 # architectures no longer listed go.  The page passes @BUILD@ as ?v= on
 # every URL it loads, so browsers never mix cached files of two builds:
 # the build id alone would not change between rebuilds of an uncommitted
 # tree, hence the checksum, over the modules of every architecture.
 $(WEB_DIR)/index.html: index.html buildid $(WASM_WEB_CONFIG) \
-    $(addprefix $(WEB_DIR)/,$(WEB_ASSETS) $(filter %.js,$(WEB_MODULES))) $(WEB_OTHER_MODULES)
+    $(addprefix $(WEB_DIR)/,$(WEB_ASSETS) $(filter %.js,$(WEB_MODULES))) $(WEB_OTHER_MODULES) \
+    $(if $(WASM_ABI),$(WASM_ABI) $(WASM_WEB_OTHER:%=arch-%/$(WASM_ABI)))
 	mkdir -p $(WEB_DIR)
 	for a in wasm64 wasm32; do \
 	  case " $(WASM_WEB_OTHER) " in *" $$a "*) ;; *) rm -rf $(WEB_DIR)/$$a ;; esac; \
 	done
 	v="$$(cat buildid)-$$(cat $(filter $(WEB_DIR)/%,$^) $(WEB_DIR)/*.wasm | cksum | cut -d' ' -f1)"; \
+	  b="$(WASM_ARCH):$(WASM_EH)$(if $(WASM_ABI),:$$(cat $(WASM_ABI)))"; \
+	  $(foreach a,$(WASM_WEB_OTHER),b="$$b $a:$(WASM_DEFAULT_EH_$a)$(if $(WASM_ABI),:$$(cat arch-$a/$(WASM_ABI)))";) \
 	  sed -e "s/@BUILD@/$$v/g" -e "s/@ARCH@/$(WASM_ARCH)/g" -e "s/@EH@/$(WASM_EH)/g" \
-	    -e "s/@BUILDS@/$(strip $(WASM_WEB_BUILDS))/g" $< >$@
+	    -e "s/@BUILDS@/$$b/g" -e "s|@CONNECT@|$(strip $(WASM_WEB_PACKAGE_ORIGINS))|g" $< >$@
 
 # SDK: compile user programs (translated by a host chicken) to wasm
 
@@ -525,8 +618,12 @@ wasm-host-repo.stamp: $(WASM_CSC) $(WASM_HOST_CONFIG)
 	touch $@
 # There is no shared library: libchicken.a, the name a link without
 # -static asks for (as "csc" of "make wasm-cross" does), is the static
-# one, so that such links work too.
-$(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE)
+# one, so that such links work too.  With WASM_DYLINK, csc-wasm -shared
+# makes side modules, which the main modules load: emsideflags has the
+# options of their link, runtime-exports what they may import, abi the
+# ABI they are made for (see wasm-abi).
+$(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE) \
+    $(WASM_MAIN_EXPORTS) $(WASM_ABI)
 	mkdir -p $(WASM_STAGE)$(LIBDIR) $(WASM_STAGE)$(CHICKENINCDIR) $(WASM_SDK_SHARE) $(WASM_STAGE)$(BINDIR)
 	cp $(LIBCHICKEN_A) $(WASM_STAGE)$(LIBDIR)/
 	ln -sf $(notdir $(LIBCHICKEN_A)) $(WASM_STAGE)$(LIBDIR)/libchicken$(A)
@@ -534,6 +631,12 @@ $(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm
 	echo '$(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS)' >$(WASM_SDK_SHARE)/emcflags
 	echo '$(WASM_COMMON_LDFLAGS)' >$(WASM_SDK_SHARE)/emldflags
 	echo '-feature emscripten -feature $(WASM_ARCH)' >$(WASM_SDK_SHARE)/features
+	rm -f $(WASM_SDK_SHARE)/emsideflags $(WASM_SDK_SHARE)/runtime-exports $(WASM_SDK_SHARE)/abi
+ifeq ($(WASM_DYLINK),1)
+	echo '$(WASM_EMFLAGS) $(WASM_LINK_OPT)' >$(WASM_SDK_SHARE)/emsideflags
+	cp $(WASM_RUNTIME_EXPORTS) $(WASM_SDK_SHARE)/runtime-exports
+	cp $(WASM_ABI) $(WASM_SDK_SHARE)/abi
+endif
 	cp $(WASM_NODE_PRE) $(WASM_SDK_SHARE)/
 	sed -e 's|@CHICKEN@|$(CHICKEN)|' -e 's|@EMCC@|$(C_COMPILER)|' \
 	  -e 's|@STAGE@|$(abspath $(WASM_STAGE))$(PREFIX)|' -e 's|@REPO@|$(abspath $(WASM_REPO))|' \
@@ -588,7 +691,8 @@ wasm-check: wasm-node wasm-web wasm-sdk
 	cd $(WASM_TESTS_RUN) && TEST_DIR=$(abspath $(SRCDIR))/tests WASM_DIR=$(CURDIR)/node \
 	  WASM_WEB_DIR=$(CURDIR)/$(WEB_DIR) WASM_WEB_OTHER="$(WASM_WEB_OTHER)" \
 	  WASM_SDK=$(abspath $(WASM_STAGE))$(PREFIX) \
-	  HOSTCHICKEN="$(CHICKEN)" WASM_ARCH=$(WASM_ARCH) NODE="$(NODE)" sh $(SRCDIR)tests/wasm-smoke.sh
+	  HOSTCHICKEN="$(CHICKEN)" WASM_ARCH=$(WASM_ARCH) WASM_DYLINK=$(WASM_DYLINK) NODE="$(NODE)" \
+	  sh $(SRCDIR)tests/wasm-smoke.sh
 	cd $(WASM_TESTS_RUN) && TEST_DIR=$(abspath $(SRCDIR))/tests WASM_DIR=$(CURDIR)/node \
 	  WASM_SDK=$(abspath $(WASM_STAGE))$(PREFIX) HOSTCHICKEN="$(CHICKEN)" \
 	  sh $(SRCDIR)tests/runtests-wasm.sh
@@ -642,4 +746,5 @@ wasm-clean:
 	  *.stamp *$(O) *$(A) \
 	  wasm-units.c webio.c webnb.c csi-node.c csi-web.c chicken-config.h chicken-defaults.h \
 	  wasm-cflags wasm-eggs.mk wasm-egg-units.scm wasm-egg-units.c \
+	  runtime-exports* wasm-abi wasm-abi.txt wasm-abi.tmp *.exports \
 	  $(DISTFILES) buildid buildbranch buildversion *.import.scm
