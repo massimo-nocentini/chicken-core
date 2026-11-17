@@ -86,7 +86,7 @@ const program = 'wasm-package';
 
 // the checks of side modules, shared with the page (packages.js): in
 // web/ of the source tree, beside this file in an SDK
-const { Failure, fail, parseModule, checkModules, checkPath, SAFE } = require(
+const { Failure, fail, parseModule, isModule, checkModules, checkPath, checkPaths, SAFE } = require(
   [path.join(__dirname, 'package-check.js'), path.join(__dirname, 'web', 'package-check.js')]
     .find(f => fs.existsSync(f)) || path.join(__dirname, 'package-check.js'));
 
@@ -135,21 +135,27 @@ function bundle(argv) {
     if (!SAFE.test(o[k])) fail('bad --' + k + ' ' + JSON.stringify(o[k]));
   const t0 = Date.now();
   const paths = lines(o.files);
-  const seen = new Set();
-  const files = paths.map(p => {
+  for (const p of paths) {
     const bad = checkPath(p);
     if (bad) fail(o.files + ': ' + bad);
-    if (seen.has(p)) fail(o.files + ': ' + p + ' is installed twice (by two extensions)');
-    seen.add(p);
-    return { path: p, data: fs.readFileSync(path.join(o.root, p)) };
-  });
+  }
+  const clash = checkPaths(paths);
+  if (clash) fail(o.files + ': ' + clash + ' (installed by two extensions?)');
+  const files = paths.map(p => ({ path: p, data: fs.readFileSync(path.join(o.root, p)) }));
   if (!files.length) fail('the package has no files (no extension for the target?)');
-  const exports = new Set(lines(o.exports));
-  const mainImports = new Set();
-  for (const m of o.main || [])
-    for (const i of parseModule(fs.readFileSync(m)).imports)
-      if (i.module === 'env' || i.module === 'wasi_snapshot_preview1') mainImports.add(i.name);
-  const modules = files.filter(f => f.path.endsWith('.so'))
+  // what the main module exports and imports, with their kinds, as the
+  // page has them; without it, the names of runtime-exports
+  let exports = new Set(lines(o.exports));
+  const mainImports = new Map();
+  if (o.main && o.main.length) exports = new Map();
+  for (const m of o.main || []) {
+    const info = parseModule(fs.readFileSync(m));
+    for (const e of info.exports) exports.set(e.name, e.kind);
+    for (const i of info.imports)
+      if (i.module === 'env' || i.module === 'wasi_snapshot_preview1') mainImports.set(i.name, i.kind);
+  }
+  // (every WebAssembly binary: load takes one for an extension, whatever its name)
+  const modules = files.filter(f => isModule(f.data))
     .map(f => ({ path: f.path, info: (() => {
       try { return parseModule(f.data); } catch (e) { fail(f.path + ': ' + e.message); }
     })() }));
@@ -265,6 +271,8 @@ function unpack(argv) {
   if (o._.length !== 2 || !(o.abi || o.arch)) fail('usage: unpack PACKAGE (--abi ABI | --arch A) DEST');
   const [where, dest] = o._;
   const p = readPackage(where, o);
+  const clash = checkPaths(p.files.map(f => f.path));
+  if (clash) fail(clash);
   for (const f of p.files) {
     const bad = checkPath(f.path);
     if (bad) fail(bad);

@@ -237,6 +237,35 @@ EOF
 expect K18 '5 2.50 abc 105 7 175' csi -e '(import libc) (print (fmt 5 2.5 "abc"))'
 # a file that is not WebAssembly is not taken for compiled code (nor
 # read as source code)
+# every WebAssembly module is checked, whatever its name (load takes
+# one for an extension)
+bundle_as() {
+    rm -rf one && mkdir -p one/repo && cp "$1" "one/repo/$2" && echo "repo/$2" >one/files.list &&
+	echo "one 1 local" >one/eggs.list &&
+	"$NODE" "$TOOL" bundle --name one --root one --files one/files.list --eggs one/eggs.list \
+	    --exports "$BUILD/runtime-exports" --main "$BUILD/web/chicken-repl.wasm" --arch "$ARCH" \
+	    --eh x --abi "$ABI" --chicken 0 --binary-version 0 --out one/out --info one/info.json
+}
+expect_error K23 'repo/noexport.import.scm: unresolved: GOT.mem.wasm_no_such_data env.wasm_no_such_function' \
+    bundle_as noexport.so noexport.import.scm
+# an import of the kind of no export of that name (malloc, a function,
+# imported as a global) is refused, as is a file where another has its
+# directory
+"$NODE" -e '
+  const str = s => [s.length, ...Buffer.from(s)];
+  const sec = (id, b) => [id, b.length, ...b];
+  const mem = process.argv[2] === "wasm64" ? [4, 0] : [0, 0];
+  const imp = [[...str("env"), ...str("memory"), 2, ...mem], [...str("env"), ...str("malloc"), 3, 0x7f, 1]];
+  require("fs").writeFileSync("kind.so", Buffer.from([0, 0x61, 0x73, 0x6d, 1, 0, 0, 0,
+    ...sec(0, str("dylink.0")), ...sec(2, [imp.length, ...imp.flat()])]));' x "$ARCH"
+expect_error K24 'repo/kind\.so: of the wrong kind or type: env\.malloc \(global\)' bundle_as kind.so kind.so
+clash() {
+    rm -rf one && mkdir -p one && printf 'share/x\nshare/x/y.scm\n' >one/files.list && echo "one 1 local" >one/eggs.list &&
+	"$NODE" "$TOOL" bundle --name one --root one --files one/files.list --eggs one/eggs.list \
+	    --exports "$BUILD/runtime-exports" --arch "$ARCH" \
+	    --eh x --abi "$ABI" --chicken 0 --binary-version 0 --out one/out --info one/info.json
+}
+expect_error K25 'share/x is a file, and the directory of share/x/y.scm' clash
 printf '\177ELF' >elf.so
 expect_error K19 'unable to load compiled module - not a WebAssembly module' csi -e '(load "elf.so")'
 

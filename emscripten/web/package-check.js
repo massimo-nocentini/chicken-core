@@ -29,20 +29,32 @@
  * the page, for packages.js.  So the page refuses exactly the side
  * modules that make wasm-package would.  No dependencies.
  *
- *   parseModule(bytes) -> {imports: [{module, name, kind, memory64?}],
+ *   parseModule(bytes) -> {imports: [{module, name, kind, memory64?, type?}],
  *                          exports: [{name, kind}], dylink: bool}
  *     the imports, exports and dylink section of a WebAssembly binary
- *     (a Uint8Array or Buffer); throws a Failure if it is not one
+ *     (a Uint8Array or Buffer); throws a Failure if it is not one.
+ *     KIND is func, table, memory, global or tag; TYPE, a global's
+ *     value type (0x7f i32, 0x7e i64)
+ *   isModule(bytes) -> whether they start as a WebAssembly binary does
+ *     (what CHICKEN's load takes for a compiled extension, whatever its
+ *     name)
  *   checkModules(modules, {exports, mainImports, arch}) -> [problem]
  *     whether csi of the architecture ARCH can load the side modules
  *     [{path, info: parseModule(...)}]: each import must be satisfied
- *     by what the main module exports (EXPORTS, a Set of names), the JS
- *     library functions it imports itself (MAIN-IMPORTS), the names the
- *     dynamic linker gives every side module (LINKER_NAMES) or, for a
- *     GOT entry, by another module of the package
+ *     by what the main module exports (EXPORTS), the JS library
+ *     functions it imports itself (MAIN-IMPORTS), the names the dynamic
+ *     linker gives every side module (LINKER_NAMES) or, for a GOT
+ *     entry, by another module of the package.  EXPORTS and MAIN-IMPORTS
+ *     are a Set of names, or a Map of names to kinds: then the kind of
+ *     an import must be the one of what satisfies it.  The linker's
+ *     globals and the GOT entries must have the address type of ARCH,
+ *     and every module must import the memory of ARCH
  *   checkPath(path) -> problem or null
  *     whether a file's path in a package is one the page writes: below
  *     repo/ or share/ of /packages, without "." or ".." components
+ *   checkPaths(paths) -> problem or null
+ *     whether the files of PATHS (all checkPath's) can be written
+ *     together: no path twice, and none that is another's directory
  *   LINKER_NAMES, SAFE (a package's name), ABI_RE, Failure, fail(msg) */
 
 (function (root, factory) {
@@ -133,7 +145,7 @@
           case 0: r.uleb(); break;
           case 1: valtype(r); limits(r); break;
           case 2: imp.memory64 = limits(r).i64; break;
-          case 3: valtype(r); r.byte(); break;
+          case 3: imp.type = valtype(r); r.byte(); break;
           case 4: r.byte(); r.uleb(); break;
           default: fail('unknown import kind ' + k);
           }
@@ -158,28 +170,53 @@
     'memory', '__indirect_function_table', '__stack_pointer', '__memory_base',
     '__table_base', '__memory_base32', '__table_base32',
   ]);
+  // their kinds, and those of the address type of the architecture
+  const LINKER_KINDS = { memory: 'memory', __indirect_function_table: 'table' };
+  const ADDRESS_GLOBALS = new Set(['__stack_pointer', '__memory_base', '__table_base']);
+
+  function isModule(b) {
+    return b.length >= 4 && b[0] === 0 && b[1] === 0x61 && b[2] === 0x73 && b[3] === 0x6d;
+  }
+
+  // whether the Set or Map C has NAME (of kind KIND, for a Map)
+  const kindOf = k => (k === 'function' ? 'func' : k);
+  const offers = (c, name, kind) => (c instanceof Map ? c.has(name) && kindOf(c.get(name)) === kind : c.has(name));
 
   function checkModules(modules, { exports, mainImports, arch }) {
     const problems = [];
     const siblings = new Set();
+    const addr = arch === 'wasm64' ? 0x7e : 0x7f;
     for (const m of modules) for (const e of m.info.exports) siblings.add(e.name);
     for (const m of modules) {
       if (!m.info.dylink) { problems.push(m.path + ': not a side module (no dylink section)'); continue; }
-      const missing = [];
+      const missing = [], wrong = [];
+      let memory = false, otherArch = false;
       for (const i of m.info.imports) {
         if (i.module === 'env' && i.kind === 'memory') {
-          if (i.memory64 !== (arch === 'wasm64'))
+          memory = true;
+          if (i.name !== 'memory') missing.push('env.' + i.name);
+          else if (i.memory64 !== (arch === 'wasm64') && (otherArch = true))
             problems.push(m.path + ': built for ' + (i.memory64 ? 'wasm64' : 'wasm32') + ', not ' + arch);
           continue;
         }
         if (i.module === 'env' || i.module === 'wasi_snapshot_preview1') {
-          if (LINKER_NAMES.has(i.name) || exports.has(i.name) || mainImports.has(i.name)) continue;
+          if (LINKER_NAMES.has(i.name)) {
+            const want = LINKER_KINDS[i.name] || 'global';
+            if (i.kind !== want || (i.kind === 'global' && i.type !== (ADDRESS_GLOBALS.has(i.name) ? addr : 0x7f)))
+              wrong.push(i.module + '.' + i.name + ' (' + i.kind + ')');
+            continue;
+          }
+          if (offers(exports, i.name, i.kind) || offers(mainImports, i.name, i.kind)) continue;
+          if (exports.has(i.name) || mainImports.has(i.name)) { wrong.push(i.module + '.' + i.name + ' (' + i.kind + ')'); continue; }
         } else if (i.module === 'GOT.mem' || i.module === 'GOT.func') {
+          if (i.kind !== 'global' || i.type !== addr) { wrong.push(i.module + '.' + i.name + ' (' + i.kind + ')'); continue; }
           if (exports.has(i.name) || siblings.has(i.name) ||
               (i.module === 'GOT.func' && mainImports.has(i.name))) continue;
         }
         missing.push(i.module + '.' + i.name);
       }
+      if (!memory) problems.push(m.path + ': imports no memory');
+      if (wrong.length && !otherArch) problems.push(m.path + ': of the wrong kind or type: ' + wrong.join(' '));
       if (missing.length) problems.push(m.path + ': unresolved: ' + missing.join(' '));
     }
     return problems;
@@ -194,8 +231,20 @@
     return null;
   }
 
+  function checkPaths(paths) {
+    const all = new Set();
+    for (const p of paths) {
+      if (all.has(p)) return p + ' is there twice';
+      all.add(p);
+    }
+    for (const p of paths)
+      for (let i = p.indexOf('/'); i > 0; i = p.indexOf('/', i + 1))
+        if (all.has(p.slice(0, i))) return p.slice(0, i) + ' is a file, and the directory of ' + p;
+    return null;
+  }
+
   const SAFE = /^[A-Za-z0-9._+-]+$/;
   const ABI_RE = /^[0-9a-f]{16}$/;
 
-  return { Failure, fail, parseModule, checkModules, checkPath, LINKER_NAMES, SAFE, ABI_RE };
+  return { Failure, fail, parseModule, isModule, checkModules, checkPath, checkPaths, LINKER_NAMES, SAFE, ABI_RE };
 });
