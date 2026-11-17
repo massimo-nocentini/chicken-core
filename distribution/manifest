@@ -315,6 +315,7 @@ Makefile.cross-linux-mingw
 Makefile.emscripten
 emscripten/wasm-units.scm
 emscripten/wasm-eggs.scm
+emscripten/wasm-package.js
 emscripten/webio.scm
 emscripten/webnb.scm
 emscripten/webrepl.h

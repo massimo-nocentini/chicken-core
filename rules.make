@@ -1117,15 +1117,16 @@ WASM_HOST_REPOSITORY ?= $(or $(CHICKEN_REPOSITORY_PATH),$(EGGDIR))
 WASM_EGG_CACHE ?= $(or $(CHICKEN_EGG_CACHE),$(or $(XDG_CACHE_HOME),$(HOME)/.cache)/chicken-install)
 # local egg directories (holding a .egg file) by absolute path
 WASM_EGGS_ABS = $(foreach e,$(WASM_EGGS),$(if $(or $(findstring /,$e),$(wildcard $e/*.egg)),$(abspath $e),$e))
+WASM_PACKAGE_EGGS_ABS = $(foreach e,$(WASM_PACKAGE_EGGS),$(if $(or $(findstring /,$e),$(wildcard $e/*.egg)),$(abspath $e),$e))
 WASM_KNOBS = WASM_ARCH WASM_SJLJ WASM_STACK_SIZE WASM_FRAME_PAD WASM_SIMD WASM_MAXIMUM_MEMORY \
   WASM_INITIAL_MEMORY WASM_LINK_OPT WASM_DYLINK
 WASM_MAKE = "$(MAKE)" -C $(WASM_BUILDDIR) -f $(abspath $(SRCDIR))/GNUmakefile PLATFORM=emscripten
 
-.PHONY: wasm wasm-check wasm-serve wasm-clean wasm-distclean wasm-cross FORCE
+.PHONY: wasm wasm-check wasm-serve wasm-clean wasm-distclean wasm-cross wasm-package FORCE
 
 # Host command-line variables (C_COMPILER=..., CHICKEN=...) must not
 # reach the wasm build through MAKEFLAGS.
-wasm wasm-check wasm-serve wasm-clean wasm-cross: MAKEOVERRIDES :=
+wasm wasm-check wasm-serve wasm-clean wasm-cross wasm-package: MAKEOVERRIDES :=
 
 wasm: $(TARGETS) $(WASM_BUILDDIR)/config.make $(WASM_BUILDDIR)/config-eggs.make \
     $(WASM_BUILDDIR)/config-host.make $(WASM_BUILDDIR)/config-web.make
@@ -1136,6 +1137,17 @@ wasm-serve: wasm
 	+$(WASM_MAKE) wasm-serve
 wasm-clean:
 	-+test -f $(WASM_BUILDDIR)/config.make && $(WASM_MAKE) wasm-clean
+# A package of compiled extensions for the page of an existing build
+# (made by "make wasm", with its recorded settings, which this does not
+# change): see Makefile.emscripten.
+wasm-package: $(TARGETS)
+	@test -f $(WASM_BUILDDIR)/config.make || \
+	  { echo 'wasm-package: no WebAssembly build in $(WASM_BUILDDIR): run "make wasm" first' >&2; exit 1; }
+	+$(WASM_MAKE) wasm-package WASM_PACKAGE_NAME='$(WASM_PACKAGE_NAME)' \
+	  WASM_PACKAGE_EGGS='$(WASM_PACKAGE_EGGS_ABS)' \
+	  WASM_PACKAGE_OUT='$(abspath $(or $(WASM_PACKAGE_OUT),$(WASM_BUILDDIR)/packages))' \
+	  $(if $(WASM_PACKAGE_VERSION),WASM_PACKAGE_VERSION='$(WASM_PACKAGE_VERSION)') \
+	  $(if $(WASM_PACKAGE_IMPORTS),WASM_PACKAGE_IMPORTS='$(WASM_PACKAGE_IMPORTS)')
 wasm-distclean:
 	-rm -rf $(WASM_BUILDDIR) $(WASM_CROSS_DIR)
 
