@@ -218,6 +218,26 @@ async function packageCases() {
     await P.expectOut(val('7'));
     await P.prompt();
   });
+  // An exit out of the callback leaves its C frames below and the
+  // runtime's restart point in them: the REPL must still yield (to wait
+  // for input) at its next prompt.  A sleep in a callback cannot yield.
+  await check('P5 an error in Scheme called back from C is reported, and the REPL takes input again', async () => {
+    P.send("(egg-a-call (lambda () (car '())))\n");
+    await P.expectOut(/Error: \(car\) bad argument type/, 30000);
+    await P.prompt(30000);
+    P.send('(egg-a-call (lambda () 42))\n');
+    await P.expectOut(val('42'), 30000);
+    await P.prompt();
+    P.send("(handle-exceptions e 'caught (egg-a-call (lambda () (car '()))))\n");
+    await P.expectOut(val('caught'), 30000);
+    await P.prompt();
+    P.send("(call-with-current-continuation (lambda (k) (egg-a-call (lambda () (k 'escaped)))))\n");
+    await P.expectOut(val('escaped'), 30000);
+    await P.prompt();
+    P.send("(egg-a-call (lambda () (sleep 1) 'slept)) (egg-a-call (lambda () (sleep 1) (egg-a-call (lambda () 'nested))))\n");
+    await P.expectOut(/slept\n(#;\d+> )?nested\n/, 30000);
+    await P.prompt();
+  });
   await P.close();
 
   await check('P4 writeFiles after ready: acked once, then the package imports', async () => {

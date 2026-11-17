@@ -55,4 +55,7 @@ int   webio_take_request(unsigned char *buf, int max);
 /* drop fed stdin text and a pending EOF (between notebook cells) */
 void  webio_drop_input(void);
 
+void  webio_keep_restart(void);
+int   webio_drop_callbacks(void);
+
 #endif

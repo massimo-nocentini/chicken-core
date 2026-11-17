@@ -45,8 +45,9 @@
   (hide take-input! has-input? take-eof set-state! set-wakeup! slice-over?
 	interrupted? js-write unbuffered make-web-output-port stdout+flush
 	stderr+flush web-stdout web-stderr flush-stdout flush-stderr flush-std
-	reopen-std! yield! in-bv pending eof-pending at-prompt stale-at-prompt
-	abandon-input! fill! read-ch peek-ch web-stdin drop-input!
+	reopen-std! keep-restart! drop-callbacks! yield! in-bv pending
+	eof-pending at-prompt stale-at-prompt abandon-input! fill! read-ch
+	peek-ch web-stdin drop-input!
 	value-of display min open-output-string
 	get-output-string string->utf8 bytevector-length
 	current-process-milliseconds return-to-host)
@@ -144,10 +145,38 @@
   (##sys#setislot web-stdout 8 2)
   (##sys#setislot web-stderr 8 2))
 
-(define (yield! state)
+(define keep-restart! (foreign-lambda void "webio_keep_restart"))
+(define drop-callbacks! (foreign-lambda bool "webio_drop_callbacks"))
+
+;; The host cannot run while a callback (Scheme called from C, as by a
+;; foreign-safe-lambda) is in the C frames below: the runtime's restart
+;; point (C_restart) is then the callback's, where a return to the host
+;; lands and runs on, leaving the runtime to return to the host later,
+;; at some collection in the code that called the C function, with its
+;; temporary stack in disorder ("invalid temporary stack level" at the
+;; next slice).  So a yield there returns at once (a sleep in a sort's
+;; comparator waits as it did before webio, input in one would never
+;; come).
+;;
+;; A non-local exit out of a callback (an error in a comparator, caught
+;; outside the sort) never returns to its C frames, which stay below
+;; with the restart point in them, so the REPL would never yield again.
+;; At a TOPLEVEL wait -- the REPL's prompt, the notebook kernel's wait
+;; for a request -- no callback can still be running, so the callbacks
+;; left are such abandoned ones: the restart point of this slice's
+;; CHICKEN_run, kept when the slice started, is put back, and the
+;; return to the host drops their frames (whatever their C code held is
+;; lost, as when a native program leaves a callback so).
+(define (yield! state #!optional toplevel)
   (flush-std)
-  (set-state! state)
-  (return-to-host))
+  (when (and toplevel (pair? ##sys#callback-continuation-stack) (drop-callbacks!))
+    (set! ##sys#callback-continuation-stack '()))
+  (when (null? ##sys#callback-continuation-stack)
+    (set-state! state)
+    (return-to-host)
+    (keep-restart!)))			; a new slice
+
+(keep-restart!)				; the first slice: main's CHICKEN_run
 
 
 ;;; Input: taken from webrepl-main.c in pieces of at most 64 KB, so no
@@ -181,7 +210,7 @@
 	     (loop)))
 	  ((take-eof) (set! eof-pending #t) #t)
 	  (else
-	   (yield! ST-WAITING)
+	   (yield! ST-WAITING at-prompt)
 	   (when (interrupted?) (abandon-input!))
 	   (loop)))))
 
@@ -257,7 +286,8 @@
 ;;; interruptible code (interpreted and user-compiled code); library
 ;;; primitives never yield.  Nor does a callback (Scheme called from C
 ;;; code, as by a foreign-safe-lambda): returning to the host would
-;;; unwind the C frames below it, and CHICKEN_continue cannot resume it.
+;;; unwind the C frames below it, and CHICKEN_continue cannot resume it
+;;; (see yield!).
 
 (set! ##sys#interrupt-hook
   (let ((old ##sys#interrupt-hook))	; already wrapped by the scheduler

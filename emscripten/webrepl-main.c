@@ -135,6 +135,35 @@ void webio_drop_input(void)
   in_eof = 0;
 }
 
+/* The restart point (C_restart) of the slice's CHICKEN_run, kept by
+ * webio when the slice starts, outside any callback.  A non-local exit
+ * out of a callback leaves the runtime's restart point in the
+ * callback's frame, which then never returns (see yield! in
+ * webio.scm): at a toplevel wait webio puts this one back, so that the
+ * return to the host drops the frames of such callbacks.  C_callback
+ * itself keeps and restores copies of C_restart so.  It is only good
+ * for the slice that kept it. */
+#ifdef HAVE_SIGSETJMP
+static sigjmp_buf host_restart;
+#else
+static jmp_buf host_restart;
+#endif
+static int host_restart_kept;
+
+void webio_keep_restart(void)
+{
+  C_memcpy(&host_restart, &C_restart, sizeof(C_restart));
+  host_restart_kept = 1;
+}
+
+int webio_drop_callbacks(void)
+{
+  if(!host_restart_kept) return 0;
+
+  C_memcpy(&C_restart, &host_restart, sizeof(C_restart));
+  return 1;
+}
+
 int webio_take_input(unsigned char *buf, int max)
 {
   size_t n = in_len - in_pos;
@@ -185,6 +214,7 @@ static int run_slice(void)
   state = WEBREPL_RUNNING;
   repl_k = CHICKEN_continue(repl_k);
   in_scheme = 0;
+  host_restart_kept = 0;	/* its CHICKEN_run has returned */
   /* a user's own (return-to-host) leaves the state unchanged */
   if(state == WEBREPL_RUNNING) state = WEBREPL_BUSY;
   return state;
@@ -228,6 +258,7 @@ int main(int argc, char **argv)
   slice_start = emscripten_get_now();
   repl_k = CHICKEN_run(NULL);	/* banner, imports, .csirc, first prompt */
   in_scheme = 0;
+  host_restart_kept = 0;
   started = 1;
   if(state == WEBREPL_RUNNING) state = WEBREPL_BUSY;
   return 0;			/* with EXIT_RUNTIME=0 the instance stays alive */

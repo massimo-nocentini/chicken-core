@@ -271,7 +271,7 @@
 (define (next-request)			; yields IDLE until there is one
   (let ((n (request-length)))
     (if (fx< n 0)
-	(begin (##webio#yield ST-IDLE) (next-request))
+	(begin (##webio#yield ST-IDLE #t) (next-request))
 	(let ((bv (make-bytevector n)))
 	  (take-request! bv n)
 	  (utf8->string bv)))))

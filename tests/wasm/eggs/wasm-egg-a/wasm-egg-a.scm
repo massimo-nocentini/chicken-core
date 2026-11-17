@@ -23,7 +23,7 @@
 ; OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 ; POSSIBILITY OF SUCH DAMAGE.
 
-(module wasm-egg-a (egg-a-add egg-a-times egg-a-scale egg-a-twice egg-a-swap! egg-a-walk)
+(module wasm-egg-a (egg-a-add egg-a-times egg-a-scale egg-a-twice egg-a-swap! egg-a-walk egg-a-call)
 
 (import scheme (chicken base) (chicken foreign))
 
@@ -52,6 +52,11 @@
         '()
         (let ((x (f i (make-vector 8 i))))
           (cons x (loop (+ i 1)))))))
+
+;; (f), called back from C: Scheme code with C frames below it, which
+;; an error or a continuation leaves without returning through them
+(define egg-a-call
+  (foreign-safe-lambda* scheme-object ((scheme-object f)) "C_return(C_callback(f, 0));"))
 
 (define-syntax egg-a-swap!
   (syntax-rules ()

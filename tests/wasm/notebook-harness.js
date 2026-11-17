@@ -702,6 +702,11 @@ async function packages() {
     await ok(X, '(call-with-current-continuation (lambda (k) (egg-a-walk (lambda (i v) ' +
                 '(if (= i 500) (k (quote escaped)) i)) 1000)))', ['escaped']);
     await ok(X, '(include "wasm-egg-a-shared.scm") egg-a-shared-value', ['7']);
+    // an exit out of Scheme called back from C: the kernel still waits
+    // for (yields until) its next request
+    const r = await X.run("(egg-a-call (lambda () (car '())))");
+    assert(r.done.status === 'error' && /bad argument type/.test(r.done.error.text), 'error: ' + J(r.done));
+    await ok(X, '(egg-a-call (lambda () 42))', ['42']);
   });
   await check('PC1 (package) nb-kernel.js: files() before start, then after a restart', async () => {
     const C = client({ files: () => files });

@@ -800,9 +800,16 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     a module that fails to load would leave emscripten's dynamic
     linker with entries it cannot undo.  The files then go under
     /packages of csi and of the notebook kernel, running or started
-    later; "(import ...)" loads the extensions as usual.  The list
-    of packages is kept in the browser (localStorage, the key
-    chicken-repl.packages) and loaded at every start of the page;
+    later; "(import ...)" loads the extensions as usual.  Scheme
+    that their C code calls back (by a foreign-safe-lambda, as aux's
+    timsort calls its comparator) runs without yielding to the page,
+    so Stop takes effect only after it returns to C.  An error or a
+    continuation that leaves it skips the C frames below it, as
+    natively (what the C code held is lost); the REPL and the
+    notebook kernel drop those frames at their next prompt or
+    request.  The list of packages is kept in the browser
+    (localStorage, the key chicken-repl.packages) and loaded at
+    every start of the page;
     one that fails there does not keep csi from starting (a note
     says why).  Removing a package, or loading another version of a
     loaded one, takes effect at the next Restart.  A link can load
