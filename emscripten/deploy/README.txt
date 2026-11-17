@@ -36,7 +36,9 @@ Using it
                 stops a running evaluation, Ctrl+D ends input, Up/Down
                 recall history.  ,? lists csi's toplevel commands.
   Upload        puts files in the REPL's home directory; load them with
-                ,l name.scm  (plain-Scheme eggs can be loaded this way).
+                ,l name.scm  (plain-Scheme eggs can be loaded this way, and
+                extensions compiled for this build with csc-wasm -shared:
+                ,l name.so, or import them).
   Notebook      code and Markdown cells, Scheme syntax-highlighted; Shift+Enter
                 runs a cell and moves on, Ctrl+Enter runs it in place, Run all /
                 Stop / Restart kernel.  (import notebook) gives rich output:
@@ -53,7 +55,8 @@ Files
   index.html, repl.js, repl-worker.js, repl-driver.js,
   notebook.js, notebook-lib.js, nb-kernel.js,
   session-store.js, sessions.js                    the page
-  chicken-repl.js / .wasm         csi (+ all core libraries and import files)
+  chicken-repl.js / .wasm         csi (+ all core libraries and import files);
+                                  it loads compiled extensions (.so)
   chicken-compiler.js / .wasm     the chicken compiler (Compile to C tab)
   wasm32/                         the same two modules, built for wasm32
   compiler-worker.js, chicken.png, serve.py

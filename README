@@ -383,7 +383,8 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     This produces:
 
     build-wasm/libchicken-static.a
-      The runtime library, static only (there is no dynamic loading).
+      The runtime library, static only (csi loads compiled
+      extensions all the same: see the SDK below).
 
     build-wasm/node/{csi,chicken,chicken-profile,chicken-status}
       The tools, as shell wrappers around node (".js" plus ".wasm"),
@@ -545,6 +546,35 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
           -I include/chicken -c foo.c -o foo.o
         emcc $(cat share/chicken/emldflags) foo.o \
           lib/libchicken-static.a -lm -o foo.js
+
+      Compiled extensions: with WASM_DYLINK=1 (the default), csi,
+      node/csi and the page's REPL, has the feature "dload" and
+      loads ".so" files as a native csi does (import, require,
+      load).  "csc-wasm -shared" (or -s, -dynamic) compiles one, an
+      emscripten side module, from Scheme files, C files and objects
+      compiled with "-shared -c" (position independent):
+
+        build-wasm/stage/chicken/bin/csc-wasm -shared -J foo.scm bar.c
+        CHICKEN_REPOSITORY_PATH=. build-wasm/node/csi -e '(import foo)'
+
+      Import libraries can be compiled too (csc-wasm -shared
+      foo.import.scm), and load much faster than their source in the
+      browser.  An extension takes what it uses of libchicken and of
+      the C library from csi, which exports only what the SDK's
+      share/chicken/runtime-exports lists: all of libchicken and the
+      C library functions of emscripten/libc-exports.  It runs only
+      in a csi of the build whose SDK compiled it, or of one with the
+      same ABI (share/chicken/abi: a hash of the runtime, the
+      architecture, the exception handling, emscripten's version and
+      those exports, also listed by the page; see "wasm-abi" in
+      Makefile.emscripten).  With WASM_WEB_ARCHS, the SDK of the
+      other architecture A is in build-wasm/arch-A/stage/chicken.
+      The page's REPL has /packages/repo on its repository path and
+      /packages/share on its include path, after the core's, for
+      files the page writes there.  The other programs (node/chicken,
+      the page's compiler, programs compiled with csc-wasm) are
+      linked statically and cannot load extensions: they do not have
+      "dload".
 
     "make wasm-cross" additionally builds CHICKEN's own cross
     toolchain (see the "Cross development" chapter of the manual)
@@ -708,6 +738,22 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       page's modules once more, and the page takes about twice the
       space (21 MB instead of 11).
 
+    WASM_WEB_PACKAGE_ORIGINS
+      Origins (space separated, such as "https://example.org") the
+      page may fetch packages of compiled extensions from, besides
+      its own: the page's Content-Security-Policy adds them to
+      connect-src.  Recorded with WASM_WEB_ARCHS: changing it
+      rebuilds only index.html.
+
+    WASM_DYLINK
+      1 (the default): csi (node/csi and the page's REPL) is linked
+      as an emscripten main module (-sMAIN_MODULE=2) that loads
+      compiled extensions (see the SDK above), and the page lists the
+      ABI of each of its builds (chicken-wasm-builds: "ARCH:EH:ABI").
+      This adds about 75 KB to chicken-repl.wasm and 90 to 105 KB to
+      chicken-repl.js (uncompressed).  0: every program is static,
+      and the runtime is built without dynamic loading.
+
     WASM_STACK_SIZE
       The link-time stack size, which also bounds the nursery
       (default 4194304 bytes).  A "-:s" nursery larger than fits
@@ -786,8 +832,11 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     "make wasm-check" runs tests/wasm-smoke.sh (which first checks
     that the tools, the page's modules and a program compiled with
     csc-wasm are all of WASM_ARCH, and the modules of the page's
-    other architecture of that one), the interpreted and
-    compiled test lanes of tests/runtests-wasm.sh, the headless
+    other architecture of that one; with WASM_DYLINK, that csi loads
+    an extension compiled with "csc-wasm -shared" and a program
+    compiled with csc-wasm does not), the interpreted and
+    compiled test lanes of tests/runtests-wasm.sh (with WASM_DYLINK,
+    also the tests that load extensions), the headless
     REPL tests tests/wasm/repl-harness.js (also under Liftoff with a
     small stack) and tests/wasm/worker-harness.js, the notebook
     kernel tests tests/wasm/notebook-harness.js (also under Liftoff),
@@ -818,9 +867,11 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
 
     Limitations:
 
-      - There is no dynamic loading: no ".so" files, and eggs with
-        compiled code must be linked statically (WASM_EGGS).  "csc"
-        and "chicken-install" do not run inside WebAssembly; use
+      - Only csi loads compiled code (".so" files compiled with
+        "csc-wasm -shared", with WASM_DYLINK=1); other programs are
+        linked statically, and "make wasm" links eggs with compiled
+        code into csi statically (WASM_EGGS).  "csc" and
+        "chicken-install" do not run inside WebAssembly; use
         "csc-wasm" or "make wasm-cross".
 
       - "fork", "exec", "process", pipes and signals raise errors,
