@@ -636,10 +636,11 @@ wasm-host-repo.stamp: $(WASM_CSC) $(WASM_HOST_CONFIG)
 # -static asks for (as "csc" of "make wasm-cross" does), is the static
 # one, so that such links work too.  With WASM_DYLINK, csc-wasm -shared
 # makes side modules, which the main modules load: emsideflags has the
-# options of their link, runtime-exports what they may import, abi the
-# ABI they are made for (see wasm-abi).
+# options of their link, runtime-exports what they may import (which
+# csc-wasm checks with wasm-package.js), abi the ABI they are made for
+# (see wasm-abi).
 $(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm.in $(WASM_NODE_PRE) \
-    $(WASM_MAIN_EXPORTS) $(WASM_ABI)
+    $(WASM_MAIN_EXPORTS) $(WASM_ABI) $(if $(WASM_ABI),$(SRCDIR)emscripten/wasm-package.js)
 	mkdir -p $(WASM_STAGE)$(LIBDIR) $(WASM_STAGE)$(CHICKENINCDIR) $(WASM_SDK_SHARE) $(WASM_STAGE)$(BINDIR)
 	cp $(LIBCHICKEN_A) $(WASM_STAGE)$(LIBDIR)/
 	ln -sf $(notdir $(LIBCHICKEN_A)) $(WASM_STAGE)$(LIBDIR)/libchicken$(A)
@@ -647,14 +648,16 @@ $(WASM_CSC): $(LIBCHICKEN_A) chicken-config.h chicken.h wasm-repo.stamp csc-wasm
 	echo '$(C_COMPILER_OPTIONS) $(C_COMPILER_OPTIMIZATION_OPTIONS)' >$(WASM_SDK_SHARE)/emcflags
 	echo '$(WASM_COMMON_LDFLAGS)' >$(WASM_SDK_SHARE)/emldflags
 	echo '-feature emscripten -feature $(WASM_ARCH)' >$(WASM_SDK_SHARE)/features
-	rm -f $(WASM_SDK_SHARE)/emsideflags $(WASM_SDK_SHARE)/runtime-exports $(WASM_SDK_SHARE)/abi
+	rm -f $(WASM_SDK_SHARE)/emsideflags $(WASM_SDK_SHARE)/runtime-exports $(WASM_SDK_SHARE)/abi \
+	  $(WASM_SDK_SHARE)/wasm-package.js
 ifeq ($(WASM_DYLINK),1)
 	echo '$(WASM_EMFLAGS) $(WASM_LINK_OPT)' >$(WASM_SDK_SHARE)/emsideflags
 	cp $(WASM_RUNTIME_EXPORTS) $(WASM_SDK_SHARE)/runtime-exports
 	cp $(WASM_ABI) $(WASM_SDK_SHARE)/abi
+	cp $(SRCDIR)emscripten/wasm-package.js $(WASM_SDK_SHARE)/
 endif
 	cp $(WASM_NODE_PRE) $(WASM_SDK_SHARE)/
-	sed -e 's|@CHICKEN@|$(CHICKEN)|' -e 's|@EMCC@|$(C_COMPILER)|' \
+	sed -e 's|@CHICKEN@|$(CHICKEN)|' -e 's|@EMCC@|$(C_COMPILER)|' -e 's|@NODE@|$(NODE)|' \
 	  -e 's|@STAGE@|$(abspath $(WASM_STAGE))$(PREFIX)|' -e 's|@REPO@|$(abspath $(WASM_REPO))|' \
 	  $(filter %csc-wasm.in,$^) >$@.tmp
 	chmod +x $@.tmp

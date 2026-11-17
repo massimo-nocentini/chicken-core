@@ -46,6 +46,10 @@
 //     version of the egg NAME, or of the first egg given as a
 //     directory), and removes the other bundles of NAME in OUT.
 //
+//   node wasm-package.js check --exports RUNTIME-EXPORTS --arch A FILE.so ...
+//     checks side modules as bundle does, but each on its own and
+//     against RUNTIME-EXPORTS alone (csc-wasm -shared, after linking).
+//
 //   node wasm-package.js unpack PACKAGE (--abi ABI | --arch A) DEST
 //     writes the files of a build of PACKAGE (a manifest.json or the
 //     directory holding it) below DEST, after checking their size and
@@ -332,6 +336,25 @@ function manifest(argv) {
               Object.entries(builds).map(([abi, b]) => b.arch + ':' + b.eh + ':' + abi).join(' '));
 }
 
+function check(argv) {
+  const o = options(argv, { exports: 'required', arch: 'required' });
+  if (!o._.length) fail('usage: check --exports RUNTIME-EXPORTS --arch A FILE.so ...');
+  const exports = new Set(lines(o.exports));
+  const problems = [];
+  for (const f of o._) {
+    let info;
+    try { info = parseModule(fs.readFileSync(f)); }
+    catch (e) { if (!(e instanceof Failure)) throw e; problems.push(f + ': ' + e.message); continue; }
+    // (only the module's own exports may satisfy its GOT entries)
+    problems.push(...checkModules([{ path: f, info }], { exports, mainImports: new Set(), arch: o.arch }));
+  }
+  // (one line each, for csc-wasm)
+  if (problems.length) {
+    for (const p of problems) console.error(p);
+    process.exit(1);
+  }
+}
+
 // readPackage(dirOrManifest, {abi, arch}) -> {manifest, abi, build,
 // files: [{path, data}]}, checking each file's size and SHA-256
 function readPackage(where, { abi, arch } = {}) {
@@ -384,7 +407,8 @@ if (require.main === module) {
     case 'bundle': bundle(argv); break;
     case 'manifest': manifest(argv); break;
     case 'unpack': unpack(argv); break;
-    default: fail('usage: node wasm-package.js bundle|manifest|unpack ...');
+    case 'check': check(argv); break;
+    default: fail('usage: node wasm-package.js bundle|manifest|unpack|check ...');
     }
   } catch (e) {
     if (!(e instanceof Failure)) throw e;

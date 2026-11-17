@@ -44,7 +44,8 @@
 #                       WASM_DYLINK=1 (the default); C files and -c
 #                       objects are compiled for it too (PIC).  Not
 #                       with -unit (csi looks for C_toplevel only),
-#                       -node or -e
+#                       -node or -e.  It fails if the extension needs
+#                       a symbol that csi does not export (see below)
 #   -o FILE             output file (default: first source file, .js)
 #   -c / -t             stop after compiling to FILE.o / translating to FILE.c
 #   -k                  keep the intermediate .c and .o files (in the cwd)
@@ -65,8 +66,8 @@
 # libchicken or named on the command line.  An extension (-shared) is
 # linked with none: what it uses of libchicken and of the C library
 # comes from the program that loads it, which exports what is listed in
-# the SDK's share/chicken/runtime-exports, and other extensions are
-# loaded at run time.  The host chicken reads import
+# the SDK's share/chicken/runtime-exports (checked after the link, with
+# node), and other extensions are loaded at run time.  The host chicken reads import
 # libraries and types.db from the SDK repository, and looks for included
 # files (after the -I directories) in the SDK's share/chicken, where
 # the eggs linked into the SDK install their Scheme include files (and
@@ -78,6 +79,7 @@ S='@STAGE@'
 REPO='@REPO@'
 CHICKEN='@CHICKEN@'
 EMCC='@EMCC@'
+NODEJS='@NODE@'
 
 CF=$(cat "$S/share/chicken/emcflags")
 LF=$(cat "$S/share/chicken/emldflags")
@@ -137,7 +139,9 @@ while test $# -gt 0; do
 	-P|-check-syntax) mode=analyze; copt -check-syntax ;;
 	-w|-no-warnings) cc_opts="$cc_opts -w"; copt -no-warnings ;;
 	-static) ;;
-	-dll|-library) die "$arg: use -shared" ;;
+	-dll|-library)
+	    if test -f "$S/share/chicken/emsideflags"; then die "$arg: use -shared"
+	    else die "$arg: this SDK was built without dynamic loading (WASM_DYLINK=0)"; fi ;;
 	-O|-O1) copt -optimize-level 1 ;;
 	-O[0-5]) copt -optimize-level "${arg#-O}" ;;
 	-d[0-3]) copt -debug-level "${arg#-d}" ;;
@@ -329,6 +333,21 @@ if test -n "$shared"; then
     # it restarts at after a GC) could otherwise be another module's.
     SLF=$(cat "$S/share/chicken/emsideflags")
     eval "run $EMCC $SLF -sSIDE_MODULE=2 -sEXPORTED_FUNCTIONS=_C_toplevel -Wl,-Bsymbolic $objects $c_objects $object_files $ld_opts -o \"\$out\""
+    # Its imports must be what csi exports (runtime-exports): csi would
+    # refuse to load it.  (The compiler calls functions of its own
+    # choosing too, such as siprintf for sprintf: emscripten/libc-exports
+    # in CHICKEN's sources has them.)
+    case $(cat "$S/share/chicken/features") in
+	*wasm32*) arch=wasm32 ;;
+	*) arch=wasm64 ;;
+    esac
+    set -- "$NODEJS" "$S/share/chicken/wasm-package.js" check \
+	--exports "$S/share/chicken/runtime-exports" --arch $arch "$out"
+    if test -n "$verbose"; then echo "$*" >&2; fi
+    if ! problems=$("$@" 2>&1); then
+	rm -f "$out"
+	die "$problems (csi does not export these: see $S/share/chicken/runtime-exports)"
+    fi
     exit 0
 fi
 if test -n "$node"; then ld_opts="$NODE_LF $ld_opts"; fi
