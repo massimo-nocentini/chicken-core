@@ -694,24 +694,36 @@ WASM_PACKAGE_CHECK = $(if $(filter 1,$(WASM_DYLINK)),,$(error \
   WASM_PACKAGE_EGGS must list the eggs of the package))$(if $(filter-out so scm,$(WASM_PACKAGE_IMPORTS)),$(error \
   WASM_PACKAGE_IMPORTS must be so or scm, not "$(WASM_PACKAGE_IMPORTS)"))
 
-.PHONY: wasm-package wasm-package-build $(WASM_WEB_OTHER:%=arch-%.package)
+# the egg of the first egg directory of WASM_PACKAGE_EGGS: the package
+# has its version, unless WASM_PACKAGE_VERSION or an egg of the
+# package's name says otherwise
+WASM_PACKAGE_FIRST = $(basename $(notdir $(firstword $(foreach e,$(WASM_PACKAGE_EGGS),$(wildcard $e/*.egg)))))
+
+.PHONY: wasm-package wasm-package-plan wasm-package-build $(WASM_WEB_OTHER:%=arch-%.package)
 wasm-package: wasm-package-build $(WASM_WEB_OTHER:%=arch-%.package)
 	$(WASM_PACKAGE_CHECK)
 	$(NODE) $(WASM_PACKAGE_JS) manifest --out $(WASM_PACKAGE_DIR) --name $(WASM_PACKAGE_NAME) \
-	  $(if $(WASM_PACKAGE_VERSION),--version '$(WASM_PACKAGE_VERSION)') $(WASM_PACKAGE_BUILD)/build.json \
+	  $(if $(WASM_PACKAGE_VERSION),--version '$(WASM_PACKAGE_VERSION)') \
+	  $(if $(WASM_PACKAGE_FIRST),--first '$(WASM_PACKAGE_FIRST)') $(WASM_PACKAGE_BUILD)/build.json \
 	  $(WASM_WEB_OTHER:%=arch-%/$(WASM_PACKAGE_BUILD)/build.json)
 
 # (the package settings reach arch-A's make as they came here, from
-# the command line, but the output directory, which may be relative)
-$(WASM_WEB_OTHER:%=arch-%.package): arch-%.package: arch-%.make
+# the command line, but the output directory, which may be relative.
+# Its planner runs after this one's, which may have put eggs in the egg
+# cache that both use: chicken-install must not fill it twice at once.)
+$(WASM_WEB_OTHER:%=arch-%.package): arch-%.package: arch-%.make wasm-package-plan
 	+$(MAKE) -C arch-$* -f $(SRCDIR)GNUmakefile wasm-package-build WASM_PACKAGE_OUT=$(abspath $(WASM_PACKAGE_OUT))
 
 # The planner runs every time (it rewrites the plan, not the outputs);
 # then the plan's own make builds what changed, against this SDK: a
 # new ABI, settings (config.make, WASM_PACKAGE_IMPORTS, recorded in
-# pkg-NAME/settings) or csc-wasm rebuild everything.
-wasm-package-build: wasm-sdk $(WEB_DIR)/chicken-repl.js $(WASM_ABI)
+# pkg-NAME/settings) or csc-wasm rebuild everything.  The package's
+# name is a file name (of its directory, its bundles), checked first.
+wasm-package-plan: wasm-sdk
 	$(WASM_PACKAGE_CHECK)
+	@case '$(WASM_PACKAGE_NAME)' in *[!A-Za-z0-9._+-]*|.|..) \
+	  echo "wasm-package: WASM_PACKAGE_NAME must be letters, digits and . _ + - only, not \"$(WASM_PACKAGE_NAME)\"" >&2; \
+	  exit 1;; esac
 	mkdir -p $(WASM_PACKAGE_BUILD) $(WASM_PACKAGE_DIR)
 	echo 'imports $(WASM_PACKAGE_IMPORTS)' >$(WASM_PACKAGE_BUILD)/settings.tmp
 	if cmp -s $(WASM_PACKAGE_BUILD)/settings.tmp $(WASM_PACKAGE_BUILD)/settings; \
@@ -725,6 +737,8 @@ wasm-package-build: wasm-sdk $(WEB_DIR)/chicken-repl.js $(WASM_ABI)
 	  WASM_EGGS_DEFAULTS="$(SRCDIR)setup.defaults" WASM_EGG_DIR="$(WASM_PACKAGE_BUILD)" \
 	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio webnb" \
 	  $(WASM_HOST_CSI) -s $(SRCDIR)emscripten/wasm-eggs.scm $(WASM_PACKAGE_BUILD)/plan.mk $(WASM_PACKAGE_EGGS)
+
+wasm-package-build: wasm-package-plan wasm-sdk $(WEB_DIR)/chicken-repl.js $(WASM_ABI)
 	+$(MAKE) -r -f $(WASM_PACKAGE_BUILD)/plan.mk WASM_EGG_DIR=$(WASM_PACKAGE_BUILD) WASM_CSC=$(WASM_CSC) \
 	  WASM_EGG_DEPS="$(WASM_ABI) config.make $(SRCDIR)emscripten/csc-wasm.in $(WASM_PACKAGE_BUILD)/settings" \
 	  WASM_EGG_REPOSITORY_PATH="$(CURDIR)/$(WASM_PACKAGE_BUILD)/repo$(if $(WASM_HOST_REPOSITORY),:$(WASM_HOST_REPOSITORY))" \

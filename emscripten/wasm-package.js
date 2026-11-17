@@ -41,10 +41,13 @@
 //     the package.  It fails, listing them, if some are not, and if a
 //     module is not a side module of A.
 //
-//   node wasm-package.js manifest --out OUT --name NAME [--version V] INFO.json ...
+//   node wasm-package.js manifest --out OUT --name NAME [--version V]
+//       [--first EGG] INFO.json ...
 //     writes OUT/manifest.json for those builds (V defaults to the
-//     version of the egg NAME, or of the first egg given as a
-//     directory), and removes the other bundles of NAME in OUT.
+//     version of the egg NAME, or of EGG, the first egg given as a
+//     directory), and removes the other bundles of NAME in OUT.  The
+//     builds must have the same eggs, in any order (in dependency
+//     order, which may differ between architectures).
 //
 //   node wasm-package.js check --exports RUNTIME-EXPORTS --arch A FILE.so ...
 //     checks side modules as bundle does, but each on its own and
@@ -308,15 +311,18 @@ function bundle(argv) {
 }
 
 function manifest(argv) {
-  const o = options(argv, { out: 'required', name: 'required', version: 'optional' });
+  const o = options(argv, { out: 'required', name: 'required', version: 'optional', first: 'optional' });
   if (!SAFE.test(o.name)) fail('bad --name ' + JSON.stringify(o.name));
   if (!o._.length) fail('no build records');
   const infos = o._.map(f => JSON.parse(fs.readFileSync(f, 'utf8')));
+  // (in dependency order, which may differ between the builds)
   const eggs = infos[0].eggs;
+  const key = es => JSON.stringify(es.map(e => [e.name, e.version, e.origin]).sort());
   for (const i of infos)
-    if (JSON.stringify(i.eggs) !== JSON.stringify(eggs))
+    if (key(i.eggs) !== key(eggs))
       fail('the builds have different eggs: ' + JSON.stringify(i.eggs) + ' and ' + JSON.stringify(eggs));
-  const own = eggs.find(e => e.name === o.name) || eggs.find(e => e.origin === 'local') || {};
+  const own = eggs.find(e => e.name === o.name) || eggs.find(e => e.name === o.first) ||
+    eggs.find(e => e.origin === 'local') || {};
   const version = o.version || own.version || '0';
   const builds = {};
   for (const i of infos) {

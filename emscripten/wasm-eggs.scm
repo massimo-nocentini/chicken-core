@@ -878,7 +878,7 @@
 	       { echo \"wasm-eggs: egg ~a: extension ~a defines no module $$m\" >&2; exit 1; }; done~%"
 	      build (words (map sh (component-get c modules:))) egg cname))
     (printf "\tcp ~a/~a.so ~a/repo/~a.so~%" dir cname package (sh out))
-    (printf "\tcd ~a && { echo repo/~a.so; for f in *.import.scm; do test -f \"$$f\" || continue; ~
+    (printf "\tcd ~a && LC_ALL=C && { echo repo/~a.so; for f in *.import.scm; do test -f \"$$f\" || continue; ~
 	     cp \"$$f\" ~a/ || exit 1; ~a done;~a } >../~a.installs~%~%"
 	    build (sh out) repo
 	    (if compiled-imports
