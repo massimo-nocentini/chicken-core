@@ -1141,6 +1141,21 @@
     (when shared-mode (write-egg-list eggs))
     (rename-file tmp out #t)))
 
+;; The version of an egg in the cache without one in its .egg file, as
+;; chicken-install records it: in CACHE/.cache-metadata/NAME/VERSION
+;; (or, by older ones, in CACHE/NAME/VERSION)
+(define (cached-egg-version name)
+  (let loop ((files (list (make-pathname (list cache-directory ".cache-metadata"
+					       (symbol->string name))
+					 "VERSION")
+			  (make-pathname (make-pathname cache-directory (symbol->string name))
+					 "VERSION"))))
+    (and (pair? files)
+	 (or (and (file-exists? (car files))
+		  (let ((v (handle-exceptions ex #f (with-input-from-file (car files) read))))
+		    (and (or (string? v) (symbol? v) (number? v)) (->string v))))
+	     (loop (cdr files))))))
+
 ;; EGG_DIR/eggs.list, for the package's manifest
 (define (write-egg-list eggs)
   (create-directory egg-directory #t)
@@ -1148,7 +1163,9 @@
     (lambda ()
       (for-each (lambda (e)
 		  (printf "~a ~a ~a~%" (egg-name e)
-			  (let ((v (egg-version e)))
+			  (let ((v (or (egg-version e)
+				       (and (not (memq (egg-name e) local-eggs))
+					    (cached-egg-version (egg-name e))))))
 			    (if (and v (safe-name? v)) v "-"))
 			  (if (memq (egg-name e) local-eggs) "local" "cache")))
 		eggs))))
