@@ -296,6 +296,12 @@ async function packageCases() {
     S.send('(+ up-loaded 1)\n');
     await S.expectOut(val('18'));
     await S.prompt();
+    // a relative path is relative to the working directory
+    S.post({ type: 'writeFiles', id: 54, files: [{ path: 'rel.txt', data }] });
+    assert((await S.reply('ack', 54)).type === 'ack', 'writeFiles of a relative path acked');
+    S.post({ type: 'readFile', id: 55, path: '/home/web_user/rel.txt' });
+    const r = await S.reply('file', 55);
+    assert(r.type === 'file' && Buffer.from(r.data).equals(Buffer.from(data)), 'rel.txt in the home directory');
   });
 
   await check('6 output is paused without acks and resumes with them', async () => {

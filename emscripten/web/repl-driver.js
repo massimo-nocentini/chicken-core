@@ -136,8 +136,8 @@
         // (before main: the directories of the embedded repository do
         // not exist yet, and /packages is created by main itself)
         for (const f of o.files || []) {
-          const d = f.path.replace(/\/[^/]*$/, '');
-          if (d) mod.FS.mkdirTree(d);
+          const i = f.path.lastIndexOf('/');
+          if (i > 0) mod.FS.mkdirTree(f.path.slice(0, i));
           mod.FS.writeFile(f.path, f.data);
         }
       }],

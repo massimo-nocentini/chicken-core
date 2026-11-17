@@ -97,8 +97,8 @@ function flushOut() {
 }
 
 function writeFile(path, data) {
-  const d = path.replace(/\/[^/]*$/, '');
-  if (d) drv.FS.mkdirTree(d);
+  const i = path.lastIndexOf('/');
+  if (i > 0) drv.FS.mkdirTree(path.slice(0, i));
   drv.FS.writeFile(path, data);
 }
 
