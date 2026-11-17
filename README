@@ -787,7 +787,7 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     the build directory, and bundles made from the same sources with
     the same build are identical.  Making both builds of the
     aux package took about 6 minutes (make -j32), a rebuild with
-    nothing changed 2 seconds.
+    nothing changed 2 to 6 seconds.
 
     Other targets: "make wasm-clean" removes the build outputs,
     "make wasm-distclean" the build directories.  "WASM_GOAL"
