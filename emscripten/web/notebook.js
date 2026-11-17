@@ -130,7 +130,9 @@
   //        stale, ranSource, editing, collapsed}; outputs are the saved
   //        kinds ({k:'stream'|'value'|'display'|'error'|'note', ...}),
   //        with their DOM nodes in the views map
-  const nb = { title: 'Untitled', created: null, modified: null, cells: [] };
+  // packages: the URLs of the packages of the notebook loaded (its
+  // meta.packages), kept in its saves with those loaded since
+  const nb = { title: 'Untitled', created: null, modified: null, cells: [], packages: [] };
   const views = new Map();              // cell id -> view
   let selectedId = null;
   const trash = [];
@@ -154,10 +156,12 @@
     if (P.unavailable || !K) return null;
     kernel = K.create({
       createWorker: () => new Worker(P.workerUrl('repl-worker.js')),   // the REPL's build
-      getModule: () => P.replModule(),
+      getModule: () => Promise.all([P.replModule(), P.packages && P.packages.ready()]).then(([m]) => m),
       args: () => P.settings.args,
       csirc: () => (P.settings.csirc.trim() ? P.settings.csirc : null),
-      files: () => [...P.uploads].map(([n, d]) => ({ path: P.HOME + n, data: d })),
+      // the packages' files under /packages (once those loading are)
+      files: () => [...(P.packages ? (P.packages.applied(), P.packages.files()) : []),
+                    ...[...P.uploads].map(([n, d]) => ({ path: P.HOME + n, data: d }))],
       sliceMs: () => P.settings.sliceMs,
       watchdogMs: 3000,
       stopOnError: true,
@@ -196,6 +200,8 @@
     if (state === 'unavailable')
       showNotice('kernel', 'The notebook kernel is unavailable: ' + ((info && info.reason) || 'it could not be loaded') +
                  (P.HTTP_HINT && !/HTTP/.test((info && info.reason) || '') ? ' ' + P.HTTP_HINT : ''));
+    if (state === 'idle' && P.packages)
+      for (const f of P.packages.failures('notebook')) log('kernel', 'package ' + f.name + ' not loaded: ' + f.reason);
     if (state === 'idle' && kernel && kernel.info) {
       $('nb-info').textContent = 'CHICKEN ' + kernel.info.version + ' · ' + P.ARCH;
       nb.chicken = kernel.info.version;
@@ -1407,6 +1413,7 @@
     case 'export-json': exportJson(); break;
     case 'export-html': exportHtml(); break;
     case 'upload': $('nb-upload').click(); break;
+    case 'packages': if (P.openPackages) P.openPackages(); break;
     case 'settings': P.openSettings(); break;
     case 'keys': openShortcuts(); break;
     }
@@ -1537,9 +1544,11 @@
     }
     if (!res.cells.length) { showNotice('import', 'Could not import ' + f.name + ': it has no cells.'); return; }
     if (hasContent() && !confirm('Replace the current notebook with ' + f.name + '? Save it (More → Save in this browser…) or export it first to keep it.')) return;
-    load({ title: res.title || f.name.replace(/\.[^.]*$/, ''), created: res.created, cells: res.cells }, true);
+    load({ title: res.title || f.name.replace(/\.[^.]*$/, ''), created: res.created, cells: res.cells,
+           packages: res.packages }, true);
     linked(null);
     if (res.warnings && res.warnings.length) showNotice('import', res.warnings.join(' '));
+    offerPackages(res.packages, f.name);
     announce('Imported ' + f.name + ': ' + res.cells.length + ' cells');
   });
 
@@ -1555,6 +1564,36 @@
     upload(files);
   });
   P.onUpload((name, data) => { if (kernel) kernel.writeFile(P.HOME + name, data); });
+  // a package loaded goes into the running kernel at once; one removed
+  // or replaced needs a restart
+  if (P.packages) {
+    P.packages.on('load', (p, files, apply) => {
+      if (kernel && apply) kernel.writeFiles(files);
+    });
+    P.packages.on('change', (kind, p) => {
+      // (a package removed is no longer the notebook's)
+      if (kind === 'removed' && nb.packages.includes(p.url)) {
+        nb.packages = nb.packages.filter(u => u !== p.url);
+        scheduleSave();
+      }
+      packagesChanged();
+    });
+  }
+  function packagesChanged() {
+    if (kernel && kernelState !== 'off' && kernelState !== 'unavailable')
+      showNotice('settings', 'Packages changed — restart the kernel to apply them.', ['Restart kernel', () => restartKernel(false)]);
+  }
+  // the packages of a notebook opened that are not loaded here: offered
+  // in a notice (the dialog lists them), never fetched without asking
+  function offerPackages(list, from) {
+    if (!P.packages || !list || !list.length) return false;
+    const missing = P.packages.offer(list, { from });
+    if (!missing.length) return false;
+    showNotice('packages', (from ? from + ' uses ' : 'This notebook uses ') +
+               (missing.length === 1 ? 'a package' : 'packages') + ' not loaded here: ' +
+               clip(missing.map(m => m.name).join(', '), 120) + '.', ['Packages…', () => P.openPackages()]);
+    return true;
+  }
   panel.addEventListener('dragover', e => {
     if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { e.preventDefault(); panel.classList.add('drop'); }
   });
@@ -1609,6 +1648,7 @@
   function snapshot(withOutputs, max) {
     return {
       title: nb.title, created: nb.created, modified: nb.modified, chicken: nb.chicken || null, arch: P.ARCH || null,
+      packages: [...new Set([...(P.packages ? P.packages.urls() : []), ...nb.packages])],
       cells: nb.cells.map(c => {
         if (c.type !== 'code') return { id: c.id, type: c.type, source: c.source, count: null, status: null, outputs: [] };
         const outputs = withOutputs ? capOutputs(c.outputs, max || SAVE_OUT_MAX) : [];
@@ -1937,6 +1977,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     dirty.clear();
     nb.title = doc.title || 'Untitled';
     nb.created = doc.created || null;
+    nb.packages = Array.isArray(doc.packages) ? doc.packages.slice() : [];
     nb.cells = [];
     const seen = new Set();
     for (const d of doc.cells) {
@@ -1973,13 +2014,14 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     let res;
     try { res = L.fromJson(text, { limits: false }); } catch (e) { return false; }
     if (!res.cells.length) return false;
-    load({ title: res.title, created: res.created, cells: res.cells }, true);
+    load({ title: res.title, created: res.created, cells: res.cells, packages: res.packages }, true);
     // it is what is saved: writing it again would tell the other tabs it changed
     clearTimeout(saveTimer);
     saveTimer = 0;
     lastSaved = text;
     nb.modified = res.modified;
     if (!restoredNotice('Restored from your last visit. ', res.warnings) && !first) hideNotice('storage');
+    offerPackages(res.packages, null);
     return true;
   }
   // after a notebook replaced the cells: its warnings, or that its
@@ -2071,12 +2113,13 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     },
     apply(meta, checked) {
       const { res, uploads } = checked.data;
-      load({ title: res.title, created: res.created, cells: res.cells }, true);
+      load({ title: res.title, created: res.created, cells: res.cells, packages: res.packages }, true);
       nb.modified = res.modified;
       if (meta.id) linked(meta);
       else { linked(null); saveNow(); }
       if (uploads.length) P.addUploads(uploads, meta.name);
       restoredNotice('Opened “' + meta.name + '” from this browser. ', checked.warnings);
+      offerPackages(res.packages, '“' + meta.name + '”');
       announce('Opened ' + meta.name);
     },
     saved(meta, dropped, quiet) {

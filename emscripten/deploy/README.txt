@@ -50,11 +50,21 @@ Using it
                 browser… / Saved notebooks… (Notebook): named copies in
                 this browser; open, rename, delete, download, import.
   Settings      .csirc contents, extra csi options, theme, WebAssembly build.
+  Packages      Settings → Packages… (or More → Packages… in the Notebook)
+                loads packages of compiled extensions (eggs) made with
+                "make wasm-package": type the URL of a package's
+                manifest.json or directory, then import its modules in
+                the REPL or a notebook.  Loaded packages are kept in the
+                browser and load at every start; ?pkg=URL in the page's
+                URL loads one too (asking first for another site's).
+                The page may fetch packages from its own origin only,
+                unless it was built with WASM_WEB_PACKAGE_ORIGINS.
 
 Files
   index.html, repl.js, repl-worker.js, repl-driver.js,
   notebook.js, notebook-lib.js, nb-kernel.js,
-  session-store.js, sessions.js                    the page
+  session-store.js, sessions.js,
+  packages.js, package-check.js                    the page
   chicken-repl.js / .wasm         csi (+ all core libraries and import files);
                                   it loads compiled extensions (.so)
   chicken-compiler.js / .wasm     the chicken compiler (Compile to C tab)

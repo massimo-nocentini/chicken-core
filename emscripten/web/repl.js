@@ -46,6 +46,10 @@
  * - window.ChickenPage gives the Notebook tab (notebook.js) the settings,
  *   the storage, the compiled .wasm and the uploads; the page sends it
  *   "chicken:tab" and "chicken:settings" events.
+ * - Packages of compiled extensions (packages.js) are loaded and checked
+ *   once in the page; every csi worker gets their files at its start
+ *   (after those being loaded are), and a running one those loaded
+ *   later.
  * - Named saves of the console (transcript, inputs, files) are kept in
  *   IndexedDB by sessions.js; opening one starts a fresh csi and runs its
  *   finished inputs again (see "saved sessions" below).  The heap of an
@@ -104,20 +108,22 @@
 
   // ---- the build
 
-  // The builds of the page (make wasm WASM_WEB_ARCHS=...), "ARCH:EH" each
-  // in the chicken-wasm-builds meta tag: the first one's modules are
-  // beside the page, another's in a directory named after its
+  // The builds of the page (make wasm WASM_WEB_ARCHS=...), "ARCH:EH:ABI"
+  // each in the chicken-wasm-builds meta tag: the first one's modules
+  // are beside the page, another's in a directory named after its
   // architecture.  EH is how setjmp/longjmp were built (WASM_SJLJ):
-  // exnref, legacy or none.  A page without the tag has the one build
-  // of the chicken-wasm-arch and chicken-wasm-eh tags.
+  // exnref, legacy or none.  ABI, only in a build with dynamic loading
+  // (WASM_DYLINK), picks a package's build for it (packages.js).  A page
+  // without the tag has the one build of the chicken-wasm-arch and
+  // chicken-wasm-eh tags.
   const BUILDS = (() => {
     const l = [], words = meta('chicken-wasm-builds').split(/\s+/).filter(w => w && w.indexOf('@') < 0);
     words.forEach((w, i) => {
-      const [arch, eh] = w.split(':');
+      const [arch, eh, abi] = w.split(':');
       if (/^wasm(32|64)$/.test(arch) && /^(exnref|legacy|none)$/.test(eh) && !l.some(b => b.arch === arch))
-        l.push({ arch, eh, dir: i ? arch + '/' : '' });
+        l.push({ arch, eh, dir: i ? arch + '/' : '', abi: /^[0-9a-f]{16}$/.test(abi || '') ? abi : null });
     });
-    return l.length ? l : [{ arch: meta('chicken-wasm-arch'), eh: meta('chicken-wasm-eh'), dir: '' }];
+    return l.length ? l : [{ arch: meta('chicken-wasm-arch'), eh: meta('chicken-wasm-eh'), dir: '', abi: null }];
   })();
   const PREFER = ['wasm64', 'wasm32'];     // the order of the automatic choice
 
@@ -514,7 +520,9 @@
 
   // opts: {files: [{name, data}] written to the home directory after the
   // uploads (not kept as uploads: Restart drops them, as it drops the
-  // files csi writes), quiet: not a change of the console (an open)}
+  // files csi writes), quiet: not a change of the console (an open)}.
+  // The files of the packages loaded go under /packages, after those
+  // being loaded are (see packages.js).
   async function spawn(opts) {
     opts = opts || {};
     if (unavailable) return;
@@ -538,6 +546,12 @@
       return;
     }
     if (g !== gen) return;
+    // the packages being loaded, if any (one that fails is noted at ready)
+    if (pk && pk.busy()) {
+      setStatus('loading', 'loading packages');
+      await pk.ready();
+      if (g !== gen) return;
+    }
     let w;
     try { w = new Worker(workerUrl('repl-worker.js')); }
     catch (e) { fatal('; could not start the worker: ' + ((e && e.message) || e) + '\n; ' + HTTP_HINT); return; }
@@ -549,11 +563,13 @@
       fatal('; the interpreter worker failed: ' + ((e && e.message) || 'could not load repl-worker.js') + '\n; ' + HTTP_HINT);
     };
     w.onmessageerror = () => { if (g === gen) fatal('; a message from the interpreter could not be decoded'); };
+    if (pk) pk.applied();
     w.postMessage({
       type: 'init',
       args: csiArgs(),
       csirc: settings.csirc.trim() ? settings.csirc : null,
-      files: [...[...uploads].map(([name, data]) => ({ path: HOME + name, data })),
+      files: [...(pk ? pk.files() : []),
+              ...[...uploads].map(([name, data]) => ({ path: HOME + name, data })),
               ...(opts.files || []).map(f => ({ path: HOME + f.name, data: f.data }))],
       sliceMs: settings.sliceMs,
       wasmModule: mod,
@@ -579,7 +595,11 @@
         choiceNoted = true;
         if (CHOICE.notes.length && term.querySelector('.loading')) term.querySelector('.loading').remove();
         for (const t of CHOICE.notes) note(t);
+        if (pk && pk.loaded().length)
+          note('; ' + (pk.loaded().length === 1 ? 'package ' : 'packages ') +
+               pk.loaded().map(p => p.name + (p.version ? ' ' + p.version : '')).join(', ') + ' loaded (see Settings → Packages…)');
       }
+      if (pk) for (const f of pk.failures('console')) note('; package ' + f.name + ' not loaded: ' + f.reason);
       if (replay) {                     // no input until it is done; Stop ends it
         setInputEnabled(false);
         $('stop').disabled = false;
@@ -888,6 +908,7 @@
     archSetting();
     dlg.showModal();
   });
+  $('set-packages').addEventListener('click', () => { if (pk) pk.open(); });
   dlg.addEventListener('close', () => {
     if (dlg.returnValue !== 'save') return;
     settings.csirc = $('set-csirc').value;
@@ -1177,6 +1198,7 @@
       uploads: up, home: home.files, homeNote: home.note,
       settings: { csirc: settings.csirc, args: settings.args },
       saved: { build: BUILD, arch: ARCH, eh: EH },
+      packages: pk ? pk.urls() : [],
     };
     const warnings = [];
     if (home.note) warnings.push(home.note);
@@ -1212,6 +1234,12 @@
     }
     if (s.settings.csirc !== settings.csirc || s.settings.args !== settings.args)
       note('; it was saved with another .csirc or other csi arguments (see Settings); this interpreter uses the current ones');
+    // its packages are offered, not fetched
+    const missing = pk ? pk.offer(s.packages, { from: '“' + meta.name + '”', open: true }) : s.packages;
+    if (missing.length)
+      note('; it used ' + (missing.length === 1 ? 'a package' : 'packages') + ' not loaded here: ' +
+           someNames(missing.map(m => (m.name || m) + '')) + ' (Settings → Packages… loads ' +
+           (missing.length === 1 ? 'it' : 'them') + ')');
     line.value = s.entry;
     autosize();
     histIdx = history.length;
@@ -1299,6 +1327,33 @@
     if (n) note('; restored ' + plural(n, 'uploaded file') + ' from “' + fromName + '”');
   }
 
+  // ---- packages of compiled extensions (packages.js has the dialog)
+
+  const pk = window.ChickenPackages && window.ChickenPackageCheck && !LOCKOUT && RUNS
+    ? window.ChickenPackages.create({
+      abi: RUNS.abi, arch: ARCH, eh: EH, store,
+      unavailable: () => unavailable,
+      replModule: () => replModule(),
+    }) : null;
+  if (pk) {
+    // into the running csi (one starting gets them with init); a package
+    // that replaced one waits for Restart
+    pk.on('load', (p, files, apply) => {
+      const what = 'package ' + p.name + (p.version ? ' ' + p.version : '');
+      if (!worker || !apply) {
+        if (worker) note('; ' + what + ' loaded: Restart to use it instead of the one loaded');
+        return;
+      }
+      const eggs = p.eggs.map(e => e.name);
+      const done = () => note('; ' + what + ' loaded' + (eggs.length ? ' (eggs: ' + someNames(eggs) + ')' : ''));
+      if (ready) request({ type: 'writeFiles', files }).then(done, e => note('; ' + what + ' could not be written: ' + e.message));
+      else { worker.postMessage({ type: 'writeFiles', id: ++reqId, files }); done(); }
+    });
+    pk.on('change', (kind, p) => {
+      if (kind === 'removed' && worker) note('; package ' + p.name + ' removed: Restart to unload it');
+    });
+  } else $('set-packages').disabled = true;
+
   // ---- the page API for notebook.js
 
   function replModule() {               // of the build chosen
@@ -1325,6 +1380,8 @@
     provideSaves(kind, provider) { saveProviders.set(kind, provider); },
     savesProvider(kind) { return saveProviders.get(kind) || null; },
     addUploads,                         // ([{name, data}], from what)
+    packages: pk,                       // packages.js's manager, or null
+    openPackages() { if (pk) pk.open(); },
     selectTab(id) { const t = $(id); if (t && t.getAttribute('aria-selected') !== 'true') t.click(); },
   });
 

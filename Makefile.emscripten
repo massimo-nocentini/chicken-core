@@ -523,7 +523,7 @@ WEB_DIR = web
 WASM_WEB_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=web,worker,node \
   -sMODULARIZE=1 -sFORCE_FILESYSTEM=1 --embed-file $(WASM_REPO)@$(EGGDIR) $(WASM_EGG_WEB_EMBED)
 WEB_ASSETS = repl.js repl-driver.js repl-worker.js compiler-worker.js nb-kernel.js \
-  notebook.js notebook-lib.js session-store.js sessions.js chicken.png
+  notebook.js notebook-lib.js session-store.js sessions.js package-check.js packages.js chicken.png
 WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-compiler.wasm
 
 # On wasm64 JS sees pointers as BigInt; SIGNATURE_CONVERSIONS makes

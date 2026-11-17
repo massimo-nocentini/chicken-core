@@ -48,7 +48,9 @@
  *              inputs: [{t, k, end} | {eof: true, k, end}] | null,
  *              entry (the unsent line), uploads: [{name, data}],
  *              home: [{name, data}], homeNote, settings: {csirc, args},
- *              saved: {build, arch, eh}}
+ *              saved: {build, arch, eh},
+ *              packages: [url] (the packages loaded, see packages.js;
+ *              absent before them)}
  *   notebook  {format: 'chicken-notebook-save', version: 1, minReader: 1,
  *              notebook (the chicken-notebook JSON text), uploads}
  *
@@ -394,6 +396,13 @@
     if (typeof e.t === 'string' && e.t.length <= INPUT_MAX && e.eof == null) return { t: e.t, k: e.k, end: e.end };
     return null;
   }
+  // the URLs of the packages of compiled extensions a save used (see
+  // packages.js): at most 50 http(s) URLs, the others dropped
+  function checkPackages(l) {
+    if (!Array.isArray(l)) return [];
+    return l.filter(u => typeof u === 'string' && u.length <= 2000 && /^https?:\/\/[^\s]+$/i.test(u))
+      .filter((u, i, a) => a.indexOf(u) === i).slice(0, 50);
+  }
   // a console session's payload -> {data, warnings}; throws Error(why)
   function checkConsole(obj) {
     const warnings = checkHeader(obj, CONSOLE_FORMAT, 'console session');
@@ -429,6 +438,7 @@
       homeNote: typeof obj.homeNote === 'string' && obj.homeNote.length <= 1000 ? obj.homeNote : null,
       settings: { csirc: shortString(settings.csirc, SETTING_MAX), args: shortString(settings.args, SETTING_MAX) },
       saved: { build: shortString(saved.build, 200), arch: shortString(saved.arch, 200), eh: shortString(saved.eh, 200) },
+      packages: checkPackages(obj.packages),
     };
     return { data, warnings };
   }
@@ -849,7 +859,7 @@
     CHANNEL, PING_KEY, PROMPT_END, PROMPT_SPLIT, ID_RE, LIMITS,
     cleanName, nameKey, kindName, uniqueName, newId, sizeOf, fmtSize, fmtDate, fingerprint,
     errorCode, StoreError, mergeChunks, trimTranscript, stripTrailingPrompt,
-    createInputLog, planReplay, b64encode, b64decode, checkFiles, checkConsole, checkNotebookSave,
+    createInputLog, planReplay, b64encode, b64decode, checkFiles, checkConsole, checkPackages, checkNotebookSave,
     consoleSummary, cleanMeta, toFile, fromFile, openStore, broadcast, TAB,
   };
 });

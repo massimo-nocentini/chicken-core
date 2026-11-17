@@ -32,7 +32,7 @@
  *   sanitizeMarkup(str, 'html'|'svg', idPrefix) -> DocumentFragment
  *   splitPercent(text) -> {title, cells}  toPercent(nb) -> string
  *   toJson(nb) -> string                  fromJson(text) -> {title, created,
- *                                           modified, cells, warnings}
+ *                                           modified, packages, cells, warnings}
  *   limitOutputs(outputs, max) -> outputs (as Import keeps them)
  *   balance(text) -> {depth, ok, stray, mismatch, open}
  *   splitForms(text) -> [string]          newId() -> string
@@ -1215,6 +1215,13 @@
     default: return null;
     }
   }
+  // meta.packages: the URLs of the packages of compiled extensions the
+  // notebook was saved with (the page offers to load those missing)
+  function cleanPackages(l) {
+    if (!Array.isArray(l)) return [];
+    return l.filter(u => typeof u === 'string' && u.length <= 2000 && /^https?:\/\/\S+$/i.test(u))
+      .filter((u, i, a) => a.indexOf(u) === i).slice(0, 50);
+  }
   function cleanDate(x) { return typeof x === 'string' && x.length < 40 && !isNaN(Date.parse(x)) ? x : null; }
 
   // a code cell's status is saved when it did not succeed
@@ -1224,8 +1231,9 @@
     return JSON.stringify({
       format: 'chicken-notebook',
       version: 1,
-      meta: { title: nb.title || 'Untitled', created: nb.created || null, modified: nb.modified || null,
-              chicken: nb.chicken || null, arch: nb.arch || null },
+      meta: Object.assign({ title: nb.title || 'Untitled', created: nb.created || null, modified: nb.modified || null,
+                            chicken: nb.chicken || null, arch: nb.arch || null },
+                          nb.packages && nb.packages.length ? { packages: nb.packages } : {}),
       cells: nb.cells.map(c => {
         const o = { id: c.id, type: c.type, source: c.source };
         if (c.type === 'code' && Number.isInteger(c.count)) o.count = c.count;
@@ -1286,6 +1294,7 @@
     return {
       title: typeof meta.title === 'string' ? meta.title.slice(0, 200) : '',
       created: cleanDate(meta.created), modified: cleanDate(meta.modified),
+      packages: cleanPackages(meta.packages),
       cells, warnings,
     };
   }
