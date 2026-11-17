@@ -547,8 +547,8 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
         emcc $(cat share/chicken/emldflags) foo.o \
           lib/libchicken-static.a -lm -o foo.js
 
-      Compiled extensions: with WASM_DYLINK=1 (the default), csi,
-      node/csi and the page's REPL, has the feature "dload" and
+      Compiled extensions: with WASM_DYLINK=1 (the default), csi
+      (node/csi and the page's REPL) has the feature "dload" and
       loads ".so" files as a native csi does (import, require,
       load).  "csc-wasm -shared" (or -s, -dynamic) compiles one, an
       emscripten side module, from Scheme files, C files and objects
@@ -562,13 +562,21 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       browser.  An extension takes what it uses of libchicken and of
       the C library from csi, which exports only what the SDK's
       share/chicken/runtime-exports lists: all of libchicken and the
-      C library functions of emscripten/libc-exports.  It runs only
-      in a csi of the build whose SDK compiled it, or of one with the
-      same ABI (share/chicken/abi: a hash of the runtime, the
-      architecture, the exception handling, emscripten's version and
-      those exports, also listed by the page; see "wasm-abi" in
-      Makefile.emscripten).  With WASM_WEB_ARCHS, the SDK of the
-      other architecture A is in build-wasm/arch-A/stage/chicken.
+      C library functions of emscripten/libc-exports (with those that
+      the compiler calls in place of others, such as siprintf for
+      sprintf, and setjmp's).  csc-wasm -shared checks that, with
+      node, and fails, naming the symbols an extension lacks; csi
+      checks it again before loading one, and refuses it with the
+      same error (emscripten would load it, then fail when a missing
+      function is first called, and fail every later load after a
+      missing variable).  An extension runs only in a csi of the
+      build whose SDK compiled it, or of one with the same ABI
+      (share/chicken/abi: a hash of the runtime, the architecture,
+      the exception handling, emscripten's version, those exports
+      and the eggs linked in, also listed by the page; see
+      "wasm-abi" in Makefile.emscripten).  With WASM_WEB_ARCHS, the
+      SDK of the other architecture A is in
+      build-wasm/arch-A/stage/chicken.
       The page's REPL has /packages/repo on its repository path and
       /packages/share on its include path, after the core's, for
       files the page writes there.  The other programs (node/chicken,
@@ -713,7 +721,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     a target with the features "dload" and, in cond-expand, "dynamic"
     (and not "static"); components without "dynamic" linkage are
     refused.  Eggs of the core system and eggs linked into the page
-    (WASM_EGGS) are not built: the package uses theirs.  As for
+    (WASM_EGGS) are not built: the package uses theirs, so that it
+    is only for pages with the same eggs (their names and versions
+    are part of the ABI).  As for
     WASM_EGGS, eggs running code of other eggs at compile time
     (import-for-syntax, as aux does with its own modules) need
     those installed in the host repository (WASM_HOST_REPOSITORY),
@@ -742,7 +752,9 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
          under the ABI of its modules (see WASM_DYLINK below): a
          page takes the build of the ABI it runs.  The version is
          WASM_PACKAGE_VERSION, by default that of the egg named
-         like the package, else of the first egg directory.
+         like the package, else of the first egg directory given.
+         Every build must have the same eggs, in any order (that
+         of the first is the manifest's).
       NAME-ARCH-EH-ABI.bundle and NAME-ARCH-EH-ABI.bundle.gz
         The files of a build, one after the other, in dependency
         order (path, offset and size in the manifest), and the same
@@ -849,8 +861,10 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       as an emscripten main module (-sMAIN_MODULE=2) that loads
       compiled extensions (see the SDK above), and the page lists the
       ABI of each of its builds (chicken-wasm-builds: "ARCH:EH:ABI").
-      This adds about 75 KB to chicken-repl.wasm and 90 to 105 KB to
-      chicken-repl.js (uncompressed).  0: every program is static,
+      This adds about 100 KB of code and exports to chicken-repl.wasm
+      (40 KB gzipped), 105 to 130 KB to chicken-repl.js (25 KB
+      gzipped), and 20 to 30 ms to the start of csi (measured under
+      node 25; computing is as fast).  0: every program is static,
       and the runtime is built without dynamic loading.
 
     WASM_STACK_SIZE
