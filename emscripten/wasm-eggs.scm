@@ -1,4 +1,4 @@
-;;;; wasm-eggs.scm - plan the static WebAssembly build of eggs (WASM_EGGS)
+;;;; wasm-eggs.scm - plan the WebAssembly build of eggs (WASM_EGGS, packages)
 ;
 ; Copyright (c) 2026, The CHICKEN Team
 ; All rights reserved.
@@ -60,11 +60,39 @@
 ;   WASM_EGGS_RESERVED         unit names taken by the core system
 ;   WASM_EGGS_DEFAULTS         chicken-install's setup.defaults, for
 ;                              its (map ...) entries
+;   WASM_EGGS_LINKED           eggs linked into the programs already
+;                              (WASM_EGGS, for a package): not built
+;   WASM_EGGS_VERSION          the CHICKEN version of the target (for
+;                              its features chicken-X and chicken-X.Y;
+;                              default: the host's)
+;   WASM_EGGS_MODE             "static" (the default) or "shared"
+;   WASM_EGGS_IMPORTS          in shared mode, how import libraries are
+;                              packaged: "so" (compiled, the default)
+;                              or "scm" (source)
 ;   WASM_EGG_DIR               where the eggs are built (the directory
 ;                              records where each egg's sources came
 ;                              from, in EGG/origin)
 ;   CHICKEN_EGG_CACHE          the chicken-install cache, as for
 ;                              chicken-install
+;
+; In shared mode (make wasm-package, see Makefile.emscripten) each
+; extension is compiled instead as a side module, EGG/C.so, with
+; csc-wasm -shared, as chicken-install's compile-dynamic-extension does
+; natively (the target has the feature "dload", and the condition
+; "dynamic" holds in .egg files, not "static"), with the c-objects it
+; lists (compiled position independent) linked into it.  The files of
+; a package of all of them are put together below EGG_DIR/package:
+; repo/ the extensions, the import libraries of the modules they define
+; (compiled too, by default, or as source) and the types files, share/
+; the Scheme include files on the include path.  Each EGG/C.installs
+; (and EGG/includes.pkg) lists the files it put there, relative to that
+; directory; WASM_EGG_PACKAGE_LISTS names the lists in dependency
+; order, and EGG_DIR/files.list (the goal) holds them all.
+; EGG_DIR/eggs.list has a line "NAME VERSION ORIGIN" for each egg
+; (origin "local" for an egg directory given, else "cache"; version "-"
+; if it has none).  The import libraries the host chicken reads while
+; compiling the eggs go to EGG_DIR/repo, as in static mode; the
+; compiled files never do (the host would try to load them).
 
 (import scheme
 	(chicken base)
@@ -106,6 +134,19 @@
        (string-split (or (get-environment-variable var) ""))))
 
 (define core-eggs (cons 'chicken (env-list "WASM_EGGS_CORE")))
+(define linked-eggs (env-list "WASM_EGGS_LINKED"))
+(define shared-mode
+  (let ((m (get-environment-variable "WASM_EGGS_MODE")))
+    (cond ((or (not m) (member m '("" "static"))) #f)
+	  ((string=? m "shared") #t)
+	  (else (fprintf (current-error-port) "~a: bad WASM_EGGS_MODE ~s~%" program m)
+		(exit 1)))))
+(define compiled-imports
+  (let ((m (get-environment-variable "WASM_EGGS_IMPORTS")))
+    (cond ((or (not m) (member m '("" "so"))) #t)
+	  ((string=? m "scm") #f)
+	  (else (fprintf (current-error-port) "~a: bad WASM_EGGS_IMPORTS ~s~%" program m)
+		(exit 1)))))
 (define reserved-units (env-list "WASM_EGGS_RESERVED"))
 (define chicken-install
   (let ((cmd (get-environment-variable "WASM_EGGS_CHICKEN_INSTALL")))
@@ -159,11 +200,26 @@
 	  (else (fprintf (current-error-port) "~a: bad WASM_EGGS_ARCH ~s~%" program a)
 		(exit 1)))))
 
+;; chicken-X and chicken-X.Y, for the version of the target
+(define version-features
+  (let* ((v (or (let ((v (get-environment-variable "WASM_EGGS_VERSION")))
+		  (and v (not (string=? "" v)) v))
+		(chicken-version)))
+	 (m (irregex-match '(: ($ (+ num)) "." ($ (+ num)) (* any)) v)))
+    (unless m
+      (fprintf (current-error-port) "~a: bad WASM_EGGS_VERSION ~s~%" program v)
+      (exit 1))
+    (list (string->symbol (string-append "chicken-" (irregex-match-substring m 1)))
+	  (string->symbol (string-append "chicken-" (irregex-match-substring m 1)
+					 "." (irregex-match-substring m 2))))))
+
 ;; The features of the target (a csi built by "make wasm" reports these
-;; in `features'), for `cond-expand' and `platform' in .egg files.
+;; in `features'), for `cond-expand' and `platform' in .egg files: csi
+;; has "dload", but statically linked eggs are built as for a program
+;; without it.
 (define target-features
-  `(chicken chicken-6 chicken-6.0 ,(if (eq? target-arch 'wasm64) '64bit '32bit)
-    ptables little-endian ,target-arch clang
+  `(chicken ,@version-features ,(if (eq? target-arch 'wasm64) '64bit '32bit)
+    ptables ,@(if shared-mode '(dload) '()) little-endian ,target-arch clang
     emscripten unix posix r7rs ieee-float ratios exact-complex
     full-numeric-tower full-unicode srfi-0 srfi-2 srfi-4 srfi-6 srfi-8 srfi-9
     srfi-10 srfi-11 srfi-12 srfi-15 srfi-16 srfi-17 srfi-23 srfi-26 srfi-28
@@ -295,8 +351,10 @@
 	     ((and) (every walk (cdr x)))
 	     ((or) (any walk (cdr x)))
 	     (else (fail "egg `~a': invalid condition ~s" egg x))))
-	  ((memq x '(static target)) #t)
-	  ((memq x '(dynamic host)) #f)
+	  ((eq? x 'target) #t)
+	  ((eq? x 'host) #f)
+	  ((eq? x 'static) (not shared-mode))
+	  ((eq? x 'dynamic) shared-mode)
 	  ((symbol? x) (and (memq x target-features) #t))
 	  (else (fail "egg `~a': invalid condition ~s" egg x)))))
 
@@ -339,8 +397,10 @@
 	(opts '())
 	(lopts '()))
     (define (unsupported what)
-      (fail "egg `~a': ~a cannot be used for WebAssembly (eggs are built statically with csc-wasm)"
-	    name what))
+      (fail "egg `~a': ~a cannot be used for WebAssembly (eggs are built ~a)"
+	    name what (if shared-mode
+			  "as side modules with csc-wasm -shared"
+			  "statically with csc-wasm")))
     ;; the walkers handle the clauses common to every context
     (define (common prop walk context)
       (case (car prop)
@@ -399,14 +459,16 @@
 		(unsupported (sprintf "component `~a' has a custom build script, which" cname)))
 	       (else (common p property "component"))))
 	   (for-each property (cddr prop))
-	   (when (and link (not (memq 'static link)))
-	     (fail "egg `~a': component `~a' has no static linkage, which WebAssembly needs"
-		   name cname))
+	   (when (and link (not (memq (if shared-mode 'dynamic 'static) link)))
+	     (fail "egg `~a': component `~a' has no ~a linkage, which ~a needs"
+		   name cname (if shared-mode "dynamic" "static")
+		   (if shared-mode "a package" "WebAssembly")))
 	   (let ((out (or iname cname)))
 	     (set! components
 	       (cons (if (eq? kind 'extension)
 			 (list 'extension cname
 			       unit: cname
+			       install-name: out
 			       source: (or src (string-append cname ".scm"))
 			       options: copts link-options: clopts
 			       objects: objs dependencies: cdeps
@@ -579,6 +641,9 @@
 
 ;;; resolving WASM_EGGS
 
+;; the names of the eggs given as directories
+(define local-eggs '())
+
 (define (resolve entries)
   (let ((eggs '()))                     ; ((name . egg) ...)
     (define (add! name dir file)
@@ -604,6 +669,7 @@
 						(pathname-file file)))))
 			(when (assq name eggs)
 			  (fail "egg `~a' given twice" name))
+			(set! local-eggs (cons name local-eggs))
 			(add! name dir file)
 			(list name))
 		      (if (or (substring-index "/" entry) (not (safe-name? entry)))
@@ -614,13 +680,15 @@
 			      (warn "egg `~a' is provided by the core system" name))
 			    names))))
 		entries)))
-      (let* ((core? (lambda (n) (memq n core-eggs)))
+      (let* ((core? (lambda (n) (or (memq n core-eggs) (memq n linked-eggs))))
 	     (roots (filter (lambda (n)
-			      (if (core? n)
-				  (begin
-				    (warn "egg `~a' is provided by the core system" n)
-				    #f)
-				  #t))
+			      (cond ((memq n core-eggs)
+				     (warn "egg `~a' is provided by the core system" n)
+				     #f)
+				    ((memq n linked-eggs)
+				     (warn "egg `~a' is linked into csi (WASM_EGGS)" n)
+				     #f)
+				    (else #t)))
 			    roots))
 	     (lookup (lambda (n #!optional (path '()))
 		       (fluid-let ((needed-by path))
@@ -758,6 +826,80 @@
 	   (loop (cddr opts) (append (reverse (string-split (cadr opts))) acc)))
 	  (else (loop (cdr opts) (cons (car opts) acc))))))
 
+;; extensions already planned in shared mode: ((name . egg) ...)
+(define shared-owners '())
+
+; The rule of extension C of egg EGG in shared mode (its first line, the
+; target and prerequisites, is written already): as chicken-install's
+; compile-dynamic-extension, with the C objects it lists linked in.
+; DIR is the egg's build directory, SRC its sources, CSC csc-wasm, REPO
+; and PREFIX the import libraries and include files of the eggs built
+; so far, PACKAGE the package's files.  The import libraries go to REPO
+; as source, for the host chicken compiling the eggs that follow, and
+; to the package compiled (as chicken-install does) or as source.
+; Returns C.installs, which lists the files put into the package.
+(define (write-shared-extension egg c dir src csc repo prefix package opts)
+  (let* ((cname (component-name c))
+	 (out (component-get c install-name:))
+	 (usym (string->symbol cname))
+	 (build (sprintf "~a/~a.build" dir cname))
+	 (installs (sprintf "~a/~a.installs" dir cname))
+	 (tfile (and (component-get c types-file:)
+		     (string-append (component-get c types-file:) ".types")))
+	 (ptypes (component-get c predefined-types:)))
+    (when (memq usym reserved-units)
+      (fail "egg `~a': extension `~a' has the name of a core unit" egg cname))
+    (cond ((assq usym shared-owners)
+	   => (lambda (o)
+		(fail "egg `~a': extension `~a' is also in egg `~a'" egg cname (cdr o)))))
+    (set! shared-owners (cons (cons usym egg) shared-owners))
+    (printf "\trm -rf ~a~%\tmkdir -p ~a $(WASM_EGG_DIR)/repo ~a/repo~%" build build package)
+    ;; (the Scheme files by relative paths, which the compiled code
+    ;; records: not those of the build directory)
+    (printf "\tcd ~a && CHICKEN_REPOSITORY_PATH=$(WASM_EGG_REPOSITORY_PATH) ~a ~
+	     -shared -setup-mode -regenerate-import-libraries -J -I ../src ~
+	     -I ../../prefix/share/chicken -D compiling-extension ~
+	     -C -I~a -C -I~a/include/chicken ~a~a ../src/~a~a~a -o ../~a.so~%"
+	    build csc src prefix opts
+	    (if (and tfile (not ptypes)) (sprintf " -emit-types-file ~a" (sh tfile)) "")
+	    (sh (component-get c source:))
+	    (apply string-append
+		   (map (lambda (o) (sprintf " ~a/~a.o" dir o))
+			(component-get c objects:)))
+	    (apply string-append
+		   (map (lambda (o) (string-append " " (sh o)))
+			(component-get c link-options:)))
+	    cname)
+    (when (and tfile ptypes)
+      (printf "\tcp ~a/~a ~a/~%" src (sh tfile) build))
+    ;; the modules the egg names must be there
+    (when (component-get c declared-modules:)
+      (printf "\tcd ~a && for m in ~a; do test -f \"$$m.import.scm\" || ~
+	       { echo \"wasm-eggs: egg ~a: extension ~a defines no module $$m\" >&2; exit 1; }; done~%"
+	      build (words (map sh (component-get c modules:))) egg cname))
+    (printf "\tcp ~a/~a.so ~a/repo/~a.so~%" dir cname package (sh out))
+    (printf "\tcd ~a && { echo repo/~a.so; for f in *.import.scm; do test -f \"$$f\" || continue; ~
+	     cp \"$$f\" ~a/ || exit 1; ~a done;~a } >../~a.installs~%~%"
+	    build (sh out) repo
+	    (if compiled-imports
+		(sprintf "m=\"$${f%.scm}\"; CHICKEN_REPOSITORY_PATH=$(WASM_EGG_REPOSITORY_PATH) ~
+			  ~a -shared -setup-mode -O2 -d0 \"$$f\" -o ~a/repo/\"$$m.so\" || exit 1; ~
+			  echo \"repo/$$m.so\";"
+			 csc package)
+		(sprintf "cp \"$$f\" ~a/repo/ || exit 1; echo \"repo/$$f\";" package))
+	    (if tfile
+		(sprintf " cp ~a ~a/ && cp ~a ~a/repo/ || exit 1; echo repo/~a;"
+			 (sh tfile) repo (sh tfile) package (sh tfile))
+		"")
+	    cname)
+    (sprintf "$(WASM_EGG_DIR)/~a/~a.installs" egg cname)))
+
+(define (filter-map f lst)
+  (let loop ((lst lst) (acc '()))
+    (cond ((null? lst) (reverse acc))
+	  ((f (car lst)) => (lambda (x) (loop (cdr lst) (cons x acc))))
+	  (else (loop (cdr lst) acc)))))
+
 ; Each egg E is built in $(WASM_EGG_DIR)/E.  src is a copy of its
 ; sources, made again when they change or come from another directory
 ; (E/origin names it: the planner rewrites it only when the directory
@@ -774,10 +916,15 @@
 ; own, C.build, for an extension, which so shows the import libraries
 ; of all the modules it defines.  These go to $(WASM_EGG_DIR)/repo,
 ; with its types file, and C.installs lists them.  done.stamp follows
-; the whole egg.
+; the whole egg.  In shared mode (see above), an extension is linked
+; into C.so instead, with its C objects, and installed in the package
+; with its import libraries and types file, which C.installs lists;
+; E/includes.pkg lists the egg's Scheme include files on the include
+; path, which it copies into the package.
 (define (write-makefile eggs)
   (let* ((units '()) (objects '()) (ldopts '()) (stamps '()) (install-lists '())
-	 (include-lists '()) (web-includes '())
+	 (include-lists '()) (web-includes '()) (package-lists '())
+	 (package "$(CURDIR)/$(WASM_EGG_DIR)/package")
 	 (owner '())                    ; ((unit . egg) ...)
 	 (dir (lambda (e) (sprintf "$(WASM_EGG_DIR)/~a" (egg-name e))))
 	 (abs (lambda (e) (sprintf "$(CURDIR)/$(WASM_EGG_DIR)/~a" (egg-name e))))
@@ -830,29 +977,65 @@
 		     (apply string-append
 			    (map (lambda (p) (string-append " echo " (sh p) ";"))
 				 (reverse installed))))
-	     (set! include-lists (cons (sprintf "~a/includes.list" (dir e)) include-lists))))
+	     (set! include-lists (cons (sprintf "~a/includes.list" (dir e)) include-lists))
+	     (when shared-mode
+		       (let ((shared (filter-map
+				      (lambda (p)
+					(let ((rel (include-path-relative (or (pathname-directory p) ""))))
+					  (and rel (if (string=? "" rel)
+						       (pathname-strip-directory p)
+						       (string-append rel "/" (pathname-strip-directory p))))))
+				      (reverse installed))))
+			 (printf "~a/includes.pkg: ~a/includes.list~%" (dir e) (dir e))
+			 (for-each
+			  (lambda (f)
+			    (let ((d (pathname-directory f)))
+			      (printf "\tmkdir -p ~a/share~a~%" package (if d (string-append "/" (sh d)) ""))
+			      (printf "\tcp -R ~a/share/chicken/~a ~a/share/~a~%"
+				      prefix (sh f) package (sh f))))
+			  shared)
+			 (printf "\t{ :;~a } >$@~%~%"
+				 (apply string-append
+					(map (lambda (f) (string-append " echo share/" (sh f) ";"))
+					     shared)))
+			 (set! package-lists (cons (sprintf "~a/includes.pkg" (dir e)) package-lists))))))
 	 ;; components wait for the eggs they depend on (the core
 	 ;; system's are not built), and for the one before them
 	 (let* ((ready (sprintf "~a/~a.stamp" (dir e) (if (null? includes) "src" "includes")))
 		(after (cons ready (map stamp (filter built? (egg-dependencies e)))))
-		(outs '()))
+		(outs (if (and shared-mode (pair? includes))
+			  (list (sprintf "~a/includes.pkg" (dir e)))
+			  '()))
+		;; a component's output: C.so for an extension in shared
+		;; mode, else C.o
+		(output (lambda (cname)
+			  (let ((c (find (lambda (c) (equal? cname (component-name c)))
+					 (egg-components e))))
+			    (sprintf "~a/~a.~a" (dir e) cname
+				     (if (and shared-mode c (eq? 'extension (component-kind c)))
+					 "so" "o"))))))
 	   (for-each
 	    (lambda (c)
 	      (let* ((cname (component-name c))
-		     (obj (sprintf "~a/~a.o" (dir e) cname))
+		     (obj (output cname))
 		     (deps (append after
 				   (if (null? outs) '() (list (car outs)))
-				   (map (lambda (d) (sprintf "~a/~a.o" (dir e) d))
-					(component-get c dependencies:))))
+				   (map output (component-get c dependencies:))))
 		     (opts (words (map sh (let ((o (component-get c options:)))
 					    (if (null? o) '("-O2" "-d1") o))))))
 		(printf "~a: ~a $(WASM_EGG_DEPS) | $(WASM_CSC)~%" obj (words (delete-duplicates deps)))
 		(case (component-kind c)
 		  ((c-object)
-		   (printf "\tcd ~a && ~a -c -C -I~a -C -I~a/include/chicken ~a ~a -o ../~a.o~%~%"
-			   (src e) csc (src e) prefix opts
+		   ;; (position independent, to link into side modules)
+		   (printf "\tcd ~a && ~a~a -c -C -I~a -C -I~a/include/chicken ~a ~a -o ../~a.o~%~%"
+			   (src e) csc (if shared-mode " -shared" "") (src e) prefix opts
 			   (sh (component-get c source:)) cname))
 		  ((extension)
+		   (if shared-mode
+		       (let ((installs (write-shared-extension name c (abs e) (src e) csc repo prefix
+							       package opts)))
+			 (set! install-lists (cons installs install-lists))
+			 (set! package-lists (cons installs package-lists)))
 		   (let* ((unit (component-get c unit:))
 			  (usym (string->symbol unit))
 			  (build (sprintf "~a/~a.build" (dir e) cname))
@@ -893,10 +1076,11 @@
 		       (append objects
 			       (list obj)
 			       (map (lambda (o) (sprintf "~a/~a.o" (dir e) o))
-				    (component-get c objects:)))))))
+				    (component-get c objects:))))))))
 		(set! outs (cons obj outs))))
 	    (egg-components e))
-	   (printf "~a: ~a~%\ttouch $@~%~%" (stamp name) (words (cons ready (reverse outs))))
+	   (printf "~a: ~a~%\ttouch $@~%~%" (stamp name)
+			   (words (delete-duplicates (cons ready (reverse outs)))))
 	   (set! stamps (cons (stamp name) stamps)))))
      eggs)
     (printf "WASM_EGG_NAMES = ~a~%" (words (map egg-name eggs)))
@@ -907,6 +1091,11 @@
     (printf "WASM_EGG_INCLUDE_LISTS = ~a~%" (words (reverse include-lists)))
     (printf "WASM_EGG_WEB_INCLUDES = ~a~%" (words (delete-duplicates (reverse web-includes))))
     (printf "WASM_EGG_STAMPS = ~a~%~%" (words (reverse stamps)))
+    (when shared-mode
+      (printf "WASM_EGG_PACKAGE_LISTS = ~a~%~%" (words (reverse package-lists)))
+      ;; the package's files, in dependency order
+      (printf "$(WASM_EGG_DIR)/files.list: $(WASM_EGG_STAMPS)~%")
+      (printf "\tcat $(WASM_EGG_PACKAGE_LISTS) /dev/null >$@.tmp~%\tmv $@.tmp $@~%~%"))
     ;; replan when an egg (or the set of files in its tree) changes
     (let ((inputs (append-map (lambda (e) (cons (egg-file e) (egg-directories (egg-dir e))))
 			      eggs)))
@@ -949,6 +1138,19 @@
 	      eggs)
     (with-output-to-file tmp (lambda () (write-makefile eggs)))
     (for-each record-origin eggs)
+    (when shared-mode (write-egg-list eggs))
     (rename-file tmp out #t)))
+
+;; EGG_DIR/eggs.list, for the package's manifest
+(define (write-egg-list eggs)
+  (create-directory egg-directory #t)
+  (with-output-to-file (make-pathname egg-directory "eggs.list")
+    (lambda ()
+      (for-each (lambda (e)
+		  (printf "~a ~a ~a~%" (egg-name e)
+			  (let ((v (egg-version e)))
+			    (if (and v (safe-name? v)) v "-"))
+			  (if (memq (egg-name e) local-eggs) "local" "cache")))
+		eggs))))
 
 (main (command-line-arguments))
