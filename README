@@ -523,6 +523,14 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       Without browser storage (blocked site data, some private
       windows) Download and Import still work, with files.
 
+      "Packages…" in the Settings and in the notebook's More menu
+      loads packages of compiled extensions (see "Packages of
+      compiled extensions" below) into csi and the notebook kernel,
+      by the URL of a package's manifest.json or of its directory.
+      The csi and the kernel running get the package at once, and
+      every later start (Restart, a kernel restart, a reload) gets
+      it before csi starts, so a .csirc can import it.
+
     build-wasm/stage/chicken/
       An SDK for compiling your own programs to WebAssembly: the
       library, the headers, the import libraries and "csc-wasm", a
@@ -775,6 +783,55 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     import library of another module of it names an extension of
     that module's name.
 
+    Loading a package in the page: "Packages…", in the Settings and
+    in the notebook's More menu, opens a dialog that loads a package
+    by its URL (its manifest.json, or the directory holding it) and
+    lists those loaded, with their version, eggs, size and status,
+    and Remove.  The page takes the package's build for the ABI of
+    the build it runs (the third field of chicken-wasm-builds), else
+    refuses it ("not built for this page", with the build it needs);
+    it fetches the bundle (gzipped where the browser has
+    DecompressionStream), checks each file's size and SHA-256 (with
+    crypto.subtle, so on https or localhost only), compiles every
+    side module and checks its imports as wasm-package.js does (the
+    two share emscripten/web/package-check.js), against the exports
+    and imports of the page's own csi module.  Any problem refuses
+    the whole package before a single file reaches an interpreter:
+    a module that fails to load would leave emscripten's dynamic
+    linker with entries it cannot undo.  The files then go under
+    /packages of csi and of the notebook kernel, running or started
+    later; "(import ...)" loads the extensions as usual.  The list
+    of packages is kept in the browser (localStorage, the key
+    chicken-repl.packages) and loaded at every start of the page;
+    one that fails there does not keep csi from starting (a note
+    says why).  Removing a package, or loading another version of a
+    loaded one, takes effect at the next Restart.  A link can load
+    packages: "?pkg=URL" (repeatable) adds each to the list, after
+    a confirm() for a package on another site than the page's.  A
+    saved console session and a notebook (its meta.packages) record
+    the URLs of the packages loaded; opening one whose packages are
+    not loaded lists them in the dialog, to load by hand: they are
+    never fetched without asking.  A package is compiled code that
+    runs in the page with access to what the page keeps in the
+    browser: load only packages you trust.
+
+    Publishing a package: copy WASM_PACKAGE_OUT/NAME (manifest.json
+    and the bundles beside it) to any static web server, as is.  On
+    the page's own origin nothing else is needed (on GitHub Pages
+    the sites of one user, such as user.github.io/chicken-core and
+    user.github.io/aux.scm, are the same origin).  Another origin
+    needs both a page built with that origin in
+    WASM_WEB_PACKAGE_ORIGINS (the page's Content-Security-Policy
+    refuses others, and the dialog says so) and a server that allows
+    cross-origin requests (Access-Control-Allow-Origin, as GitHub
+    Pages sends).  The page asks for revalidation of manifest.json
+    and the bundles (fetch with cache "no-cache"), so a new version
+    published at the same URL is seen at the next start.  "make
+    wasm-serve" serves only the page; to try a package locally, put
+    it beside the page (build-wasm/web/packages/NAME, say, with
+    WASM_PACKAGE_OUT=build-wasm/web/packages) and load
+    "packages/NAME/".
+
     The import libraries are compiled too (WASM_PACKAGE_IMPORTS=so,
     the default), as chicken-install does, rather than shipped as
     source (WASM_PACKAGE_IMPORTS=scm).  Measured on aux 0.2.0 (aux
@@ -986,6 +1043,13 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     any exception handling, ?arch= and the Settings choice; the
     legacy exception handling warnings of the wasm32 pages are only
     counted.  Run it on such a page and on one with a single build.
+    Its packages checks load the package of the test eggs that
+    "make wasm-check" leaves in tests-run/packages of the build
+    directory (or the one PACKAGE_DIR names), served beside the
+    page, and broken copies of it (another ABI, a wrong SHA-256, an
+    unresolved import), from the page's origin and from another;
+    without the package they are skipped, saying so.
+    PAGE_CHECKS=packages runs only those.
 
     Limitations:
 
