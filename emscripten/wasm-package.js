@@ -71,6 +71,10 @@
 // files; the gzipped bundle is the raw one compressed.
 //
 // As a module (tests): parseModule(bytes), readPackage(dir, {abi, arch}).
+//
+// The checks of side modules (and of a file's path) are those of
+// web/package-check.js, which the page (web/packages.js) makes too, before
+// it writes a package's files; an SDK has it beside this file.
 
 'use strict';
 const fs = require('fs');
@@ -80,143 +84,11 @@ const crypto = require('crypto');
 
 const program = 'wasm-package';
 
-class Failure extends Error {}
-function fail(msg) { throw new Failure(msg); }
-
-// ---- WebAssembly binaries: the imports, exports and dylink section
-
-function reader(buf) {
-  let pos = 0;
-  const r = {
-    get pos() { return pos; },
-    set pos(p) { pos = p; },
-    end: () => pos >= buf.length,
-    byte() {
-      if (pos >= buf.length) fail('truncated module');
-      return buf[pos++];
-    },
-    // unsigned LEB128, as a Number (64-bit limits never come near 2^53)
-    uleb() {
-      let result = 0, mul = 1;
-      for (;;) {
-        const b = r.byte();
-        result += (b & 0x7f) * mul;
-        if (!(b & 0x80)) return result;
-        mul *= 128;
-      }
-    },
-    sleb() {
-      let result = 0, mul = 1, b;
-      do { b = r.byte(); result += (b & 0x7f) * mul; mul *= 128; } while (b & 0x80);
-      if (b & 0x40) result -= mul;
-      return result;
-    },
-    bytes(n) {
-      if (pos + n > buf.length) fail('truncated module');
-      const s = buf.subarray(pos, pos + n);
-      pos += n;
-      return s;
-    },
-    name() { return Buffer.from(r.bytes(r.uleb())).toString('utf8'); },
-  };
-  return r;
-}
-
-function limits(r) {
-  const flags = r.byte();
-  const min = r.uleb();
-  const max = flags & 1 ? r.uleb() : undefined;
-  if (flags & 8) r.uleb();              // custom page size
-  return { flags, min, max, i64: !!(flags & 4) };
-}
-
-// a value or reference type
-function valtype(r) {
-  const t = r.byte();
-  if (t === 0x63 || t === 0x64) r.sleb(); // (ref null? heaptype)
-  return t;
-}
-
-// parseModule(bytes) -> {imports: [{module, name, kind, memory64?}],
-// exports: [{name, kind}], dylink: bool}; kind is func, table, memory,
-// global or tag.
-const KINDS = ['func', 'table', 'memory', 'global', 'tag'];
-function parseModule(buf) {
-  const r = reader(buf);
-  const magic = r.bytes(4);
-  if (magic[0] !== 0 || magic[1] !== 0x61 || magic[2] !== 0x73 || magic[3] !== 0x6d)
-    fail('not a WebAssembly module');
-  r.bytes(4);                           // version
-  const out = { imports: [], exports: [], dylink: false };
-  while (!r.end()) {
-    const id = r.byte();
-    const size = r.uleb();
-    const start = r.pos;
-    if (id === 0) {
-      const name = r.name();
-      if (name === 'dylink.0' || name === 'dylink') out.dylink = true;
-    } else if (id === 2) {
-      for (let n = r.uleb(); n > 0; n--) {
-        const module = r.name(), name = r.name(), k = r.byte();
-        const imp = { module, name, kind: KINDS[k] || 'kind ' + k };
-        switch (k) {
-        case 0: r.uleb(); break;
-        case 1: valtype(r); limits(r); break;
-        case 2: imp.memory64 = limits(r).i64; break;
-        case 3: valtype(r); r.byte(); break;
-        case 4: r.byte(); r.uleb(); break;
-        default: fail('unknown import kind ' + k);
-        }
-        out.imports.push(imp);
-      }
-    } else if (id === 7) {
-      for (let n = r.uleb(); n > 0; n--) {
-        const name = r.name(), k = r.byte();
-        r.uleb();
-        out.exports.push({ name, kind: KINDS[k] || 'kind ' + k });
-      }
-    }
-    r.pos = start + size;
-  }
-  return out;
-}
-
-// the names the dynamic linker (emscripten's libdylink.js) gives every
-// side module, besides the symbols of the main module (which exports
-// the tag of longjmp, __c_longjmp, as runtime-exports says)
-const LINKER_NAMES = new Set([
-  'memory', '__indirect_function_table', '__stack_pointer', '__memory_base',
-  '__table_base', '__memory_base32', '__table_base32',
-]);
-
-// checkModules(modules, {exports, mainImports, arch}) -> problems: each
-// module is {path, info: parseModule(...)}; GOT entries may also be
-// resolved by another module of the package.
-function checkModules(modules, { exports, mainImports, arch }) {
-  const problems = [];
-  const siblings = new Set();
-  for (const m of modules) for (const e of m.info.exports) siblings.add(e.name);
-  for (const m of modules) {
-    if (!m.info.dylink) { problems.push(m.path + ': not a side module (no dylink section)'); continue; }
-    const missing = [];
-    for (const i of m.info.imports) {
-      if (i.module === 'env' && i.kind === 'memory') {
-        if (i.memory64 !== (arch === 'wasm64'))
-          problems.push(m.path + ': built for ' + (i.memory64 ? 'wasm64' : 'wasm32') + ', not ' + arch);
-        continue;
-      }
-      if (i.module === 'env' || i.module === 'wasi_snapshot_preview1') {
-        if (LINKER_NAMES.has(i.name) || exports.has(i.name) || mainImports.has(i.name)) continue;
-      } else if (i.module === 'GOT.mem' || i.module === 'GOT.func') {
-        if (exports.has(i.name) || siblings.has(i.name) ||
-            (i.module === 'GOT.func' && mainImports.has(i.name))) continue;
-      }
-      missing.push(i.module + '.' + i.name);
-    }
-    if (missing.length) problems.push(m.path + ': unresolved: ' + missing.join(' '));
-  }
-  return problems;
-}
+// the checks of side modules, shared with the page (packages.js): in
+// web/ of the source tree, beside this file in an SDK
+const { Failure, fail, parseModule, checkModules, checkPath, SAFE } = require(
+  [path.join(__dirname, 'package-check.js'), path.join(__dirname, 'web', 'package-check.js')]
+    .find(f => fs.existsSync(f)) || path.join(__dirname, 'package-check.js'));
 
 // ---- command line
 
@@ -239,7 +111,6 @@ function options(argv, spec) {
 
 const lines = file => fs.readFileSync(file, 'utf8').split('\n').map(l => l.trim()).filter(Boolean);
 const sha256 = data => crypto.createHash('sha256').update(data).digest('hex');
-const SAFE = /^[A-Za-z0-9._+-]+$/;
 
 function readEggs(file) {
   return lines(file).map(l => {
@@ -266,8 +137,8 @@ function bundle(argv) {
   const paths = lines(o.files);
   const seen = new Set();
   const files = paths.map(p => {
-    if (path.isAbsolute(p) || p.split('/').includes('..') || !/^(repo|share)\//.test(p))
-      fail(o.files + ': bad path ' + p);
+    const bad = checkPath(p);
+    if (bad) fail(o.files + ': ' + bad);
     if (seen.has(p)) fail(o.files + ': ' + p + ' is installed twice (by two extensions)');
     seen.add(p);
     return { path: p, data: fs.readFileSync(path.join(o.root, p)) };
@@ -395,7 +266,8 @@ function unpack(argv) {
   const [where, dest] = o._;
   const p = readPackage(where, o);
   for (const f of p.files) {
-    if (path.isAbsolute(f.path) || f.path.split('/').includes('..')) fail('bad path ' + f.path);
+    const bad = checkPath(f.path);
+    if (bad) fail(bad);
     const to = path.join(dest, f.path);
     fs.mkdirSync(path.dirname(to), { recursive: true });
     fs.writeFileSync(to, f.data);
