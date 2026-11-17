@@ -1038,6 +1038,12 @@
         (string->number "-123456789abcdef123456789abcdef123456789abcdef" 16)
         16)
        "-123456789abcdef123456789abcdef123456789abcdef")
+ (test-equal "bignum exponent inexact"
+             +inf.0
+             (string->number "0.4e669999999999999999999999999999999999999999999999999999999999999999"))
+ (test-equal "bignum exponent exact"
+             #f
+             (string->number "#e0.4e669999999999999999999999999999999999999999999999999999999999999999"))
 
  (test-equal "fix" (string->number "123") 123)
  (test-equal "fix/base" (string->number "ff" 16) 255)
