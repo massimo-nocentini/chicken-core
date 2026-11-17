@@ -37,6 +37,11 @@
 #      differential test against the host chicken)
 #   D  compiled with the SDK's csc-wasm and run under node
 #
+# With dynamic loading (make wasm WASM_DYLINK=1, the default: the wasm
+# csi has the feature dload), lanes A and B also run the tests that load
+# extensions, compiled with csc-wasm -shared as runtests.sh compiles
+# them with csc -s ($compile_s).
+#
 # Environment:
 #   WASM_DIR     directory holding the node wrappers (build-wasm/node)
 #   TEST_DIR     the source tests directory (read only)
@@ -60,15 +65,24 @@ WASM_LANES=${WASM_LANES:-A B C D}
 DIFF_OPTS=-bu
 
 # The repository the node wrappers use by default: the staged import
-# libraries and types.db.
+# libraries and types.db (WRAPPER_REPO as they name it).
 unset CHICKEN_REPOSITORY_PATH
-WASM_REPO=$("$WASM_DIR/csi" -n -e '(import (chicken platform)) (display (car (repository-path)))')
-WASM_REPO=$(cd "$WASM_REPO" && pwd)
+WRAPPER_REPO=$("$WASM_DIR/csi" -n -e '(import (chicken platform)) (display (car (repository-path)))')
+WASM_REPO=$(cd "$WRAPPER_REPO" && pwd)
 CHICKEN_REPOSITORY_PATH=$WASM_REPO
 export CHICKEN_REPOSITORY_PATH
 
 interpret="timeout 600 $WASM_DIR/csi -n -include-path $SRC_DIR"
 wchicken="timeout 600 $WASM_DIR/chicken"
+
+# Extensions (runtests.sh's $compile_s), if the wasm csi can load them
+if test "$("$WASM_DIR/csi" -n -e '(import (chicken platform)) (display (feature? #:dload))')" != '#t'; then
+    compile_s= no_dload="no dynamic loading (WASM_DYLINK=0)"
+elif test -z "$WASM_SDK"; then
+    compile_s= no_dload="WASM_SDK is not set"
+else
+    compile_s="timeout 600 $WASM_SDK/bin/csc-wasm -shared -types $WASM_REPO/types.db -ignore-repository -include-path $SRC_DIR"
+fi
 engine_errors='RangeError|RuntimeError|Aborted\('
 
 # Some tests look at "../tests" and copy "../csi" or "../library.o", as in
@@ -180,6 +194,12 @@ want() {
     return 1
 }
 
+# dl_check NAME COMMAND ...: check, with extensions ($compile_s); else
+# skip
+dl_check() {
+    if test -n "$compile_s"; then check "$@"; else skip "$1" "$no_dload"; fi
+}
+
 # the import libraries lanes B and D need, made by the wasm chicken
 # (runtests.sh makes them with csc -s/-J, which also builds a .so)
 emit_import_libraries() {
@@ -200,7 +220,15 @@ repository_path_default() {
     (unset CHICKEN_REPOSITORY_PATH; $interpret -s repository-path-default.scm)
 }
 check repository-path-default repository_path_default
-skip repository-path "needs sample-module.so in a test repository (rt:76-79); no dynamic loading"
+# rt:76-79, with the wrapper's repository first
+repository_path() {
+    rm -rf test-repository && mkdir test-repository &&
+    $compile_s sample-module.scm -j sample-module &&
+    cp sample-module.so sample-module.import.scm test-repository/ &&
+    CHICKEN_INSTALL_REPOSITORY=$(pwd)/test-repository CHICKEN_REPOSITORY_PATH=$(pwd)/test-repository \
+	$interpret -s repository-path.scm "$WRAPPER_REPO" "$(pwd)/test-repository"
+}
+dl_check repository-path repository_path
 check types-db-consistency $interpret -s types-db-consistency.scm "$WASM_REPO/types.db"
 skip csc-tests "needs csc and a C compiler for the target (rt:99)"
 check apply-test $interpret -s apply-test.scm
@@ -232,7 +260,17 @@ check meta-syntax-test $interpret -bnq meta-syntax-test.scm -e '(import foo)' \
     -e '(assert (equal? (quote ((1))) (bar 1 2)))' -e '(assert (equal? (quote (list 1 2 3)) (listify)))' \
     -e '(import test-import-syntax-for-syntax)' -e '(assert (equal? (quote (1)) (test)))' \
     -e '(import test-begin-for-syntax)' -e '(assert (equal? (quote (1)) (test)))'
-skip "meta-syntax-test (foo.import.so)" "needs the compiled import library foo.import.so (rt:283-285); no dynamic loading"
+# rt:309-311
+meta_syntax_so() {
+    rm -f foo.import.* &&
+    $compile_s meta-syntax-test.scm -j foo && $compile_s foo.import.scm &&
+    $interpret -bnq meta-syntax-test.scm -e '(import foo)' \
+	-e '(assert (equal? (quote ((1))) (bar 1 2)))' -e '(assert (equal? (quote (list 1 2 3)) (listify)))' \
+	-e '(import test-import-syntax-for-syntax)' -e '(assert (equal? (quote (1)) (test)))' \
+	-e '(import test-begin-for-syntax)' -e '(assert (equal? (quote (1)) (test)))'
+    s=$?; rm -f foo.import.* meta-syntax-test.so; return $s
+}
+dl_check "meta-syntax-test (foo.import.so)" meta_syntax_so
 check reexport-tests $interpret -bnq reexport-tests.scm
 check simple-functors-test $interpret -bnq simple-functors-test.scm
 check functor-tests $interpret -bnq functor-tests.scm
@@ -267,9 +305,22 @@ check life $interpret -s life.scm
 check module-tests $interpret -include-path "$SRC_DIR" -s module-tests.scm
 check module-tests-2 $interpret -include-path "$SRC_DIR" -s module-tests-2.scm
 check test-chained-modules $interpret -bnq test-chained-modules.scm
-skip "test-chained-modules.so" "needs test-chained-modules.so and m3.import.so (rt:390-393); no dynamic loading"
+# rt:414-419
+chained_so() {
+    rm -f m*.import.* test-chained-modules.so &&
+    $compile_s test-chained-modules.scm -j m3 && $compile_s m3.import.scm &&
+    $interpret -bn test-chained-modules.so &&
+    $interpret -bn test-chained-modules.so -e '(import m3) (s3)'
+}
+dl_check "test-chained-modules.so" chained_so
 check ec $interpret -bqn ec.scm ec-tests.scm
-skip "ec.so" "needs ec.so and ec.import.so (rt:398-400); no dynamic loading"
+# rt:422-426
+ec_so() {
+    rm -f ec.so ec.import.* &&
+    $compile_s ec.scm -emit-import-library ec -o ec.so && $compile_s ec.import.scm -o ec.import.so &&
+    $interpret -bnq ec.so ec-tests.scm
+}
+dl_check "ec.so" ec_so
 skip port-tests "runs a subprocess and pipes (rt:411); process creation is not available"
 check read-lines-tests $interpret -s read-lines-tests.scm
 check random-tests $interpret -s random-tests.scm
@@ -311,9 +362,20 @@ rm -f reexport-m*.import* foo.import.* square-functor.import.* sf1.import.* sf2.
 check "emit import libraries" emit_import_libraries
 check reexport-m2 $interpret -s reexport-m2.scm
 check use-square-functor $interpret -bnq use-square-functor.scm
-skip "use-square-functor (require-library)" "loads use-square-functor.so (rt:320-321); no dynamic loading"
+# rt:341-348
+use_square_functor_so() {
+    $compile_s square-functor.scm -J && $compile_s square-functor.import.scm &&
+    $compile_s use-square-functor.scm -J &&
+    $interpret -nqe '(require-library use-square-functor)' -e '(import sf1)' -e '(import sf2)'
+    s=$?; rm -f sf1.import.* sf2.import.* lst.import.* mod.import.*; return $s
+}
+dl_check "use-square-functor (require-library)" use_square_functor_so
 check import-library-test2 $interpret -s import-library-test2.scm
-skip "import-library-test2 (foo.import.so)" "needs foo.import.so (rt:335-336); no dynamic loading"
+# rt:361-362
+import_library_so() {
+    $compile_s foo.import.scm -o foo.import.so && $interpret -s import-library-test2.scm
+}
+dl_check "import-library-test2 (foo.import.so)" import_library_so
 
 lane_end
 fi
@@ -482,7 +544,7 @@ cr reexport-tests reexport-tests.scm
 rm -f reexport-m*.import* foo.import.* square-functor.import.* sf1.import.* sf2.import.*
 check "emit import libraries" emit_import_libraries
 cr reexport-m2 reexport-m2.scm
-skip reexport-tests-2 "needs reexport-m3 ... m10 as .so extensions (rt:297-306); no dynamic loading"
+skip reexport-tests-2 "loads reexport-m3 ... m10 as .so extensions (rt:323-331); a program compiled with csc-wasm is linked statically and cannot load them"
 cr simple-functors-test simple-functors-test.scm
 cr functor-tests functor-tests.scm
 cr use-square-functor use-square-functor.scm

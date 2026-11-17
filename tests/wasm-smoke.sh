@@ -38,6 +38,9 @@
 #   WASM_WEB_OTHER  the other architectures of the web page (make wasm
 #              WASM_WEB_ARCHS=...), whose modules S0 checks in
 #              WASM_WEB_DIR/ARCH
+#   WASM_DYLINK  0 if csi was built without dynamic loading (make wasm
+#              WASM_DYLINK=0); default 1: csi has the feature dload, and
+#              S28 loads an extension compiled with WASM_SDK's csc-wasm
 #   WASM_SMOKE_ALLOW_UNSUPPORTED=1  tolerate "unsupported syscall"
 #              diagnostics (DEBUGBUILD lane only)
 #   WASM_SMOKE_LANE_W=0  skip lane W (worst-case engine stack)
@@ -204,9 +207,10 @@ stack_checks() {
 }
 
 C="csi_run -n"
+if test "${WASM_DYLINK:-1}" = 0; then dload='#f'; else dload='#t'; fi
 
 expect S1 3 $C -e '(print (+ 1 2))'
-expect S2 "$bits $WASM_ARCH $fixnum_max #t emscripten unix #f" $C -e \
+expect S2 "$bits $WASM_ARCH $fixnum_max #t emscripten unix $dload" $C -e \
     '(import (chicken platform) (chicken fixnum)) (print (feature? #:64bit) " " (feature? #:32bit) " " (machine-type) " " most-positive-fixnum " " (feature? #:emscripten) " " (software-version) " " (software-type) " " (feature? #:dload))'
 expect_status S3 3 $C -e '(exit 3)'
 expect_status S3b nonzero $C -e '(car 1)'
@@ -334,6 +338,37 @@ if test -n "$host_zone"; then
 fi
 expect S27b Asia/Tokyo env TZ=Asia/Tokyo "$WASM_DIR/csi" -n -e \
     '(import (chicken process-context)) (print (get-environment-variable "TZ"))'
+
+# S28: dynamic loading (WASM_DYLINK).  csi loads an extension compiled
+# with csc-wasm -shared, with C code of its own and a GC in it; loading a
+# source file still works (dload tries only WebAssembly modules); a
+# program compiled with csc-wasm, statically linked, has no dload and
+# reports that it cannot load the extension (not a read error).
+if test "$dload" = '#t' && test -n "$WASM_SDK"; then
+    rm -rf smoke-dl && mkdir smoke-dl
+    printf '%s\n' '(module smoke-dl (twice alloc) (import scheme (chicken base) (chicken foreign))' \
+	'(foreign-declare "int smoke_twice(int);")' \
+	'(define twice (foreign-lambda int "smoke_twice" int))' \
+	'(define (alloc n) (let loop ((i 0) (l (quote ()))) (if (= i n) (length l) (loop (+ i 1) (cons (make-vector 2 i) (if (> (length l) 100) (quote ()) l)))))))' \
+	>smoke-dl/smoke-dl.scm
+    echo 'int smoke_twice(int x) { return 2 * x; }' >smoke-dl/twice.c
+    echo '(define smoke-src 5)' >smoke-dl/src.scm
+    s28() {
+	(cd smoke-dl && "$WASM_SDK/bin/csc-wasm" -shared -J smoke-dl.scm twice.c) &&
+	CHICKEN_REPOSITORY_PATH=smoke-dl $C -e \
+	    '(import smoke-dl) (load "smoke-dl/src.scm") (print (twice 21) " " (alloc 100000) " " smoke-src)'
+    }
+    expect S28 '42 10 5' s28
+    printf '%s\n' '(import (chicken platform) (chicken condition))' \
+	'(print (feature? #:dload) " " (handle-exceptions e ((condition-property-accessor (quote exn) (quote message)) e) (load "smoke-dl/smoke-dl.so")))' \
+	>smoke-dl/static.scm
+    s28b() {
+	"$WASM_SDK/bin/csc-wasm" -node smoke-dl/static.scm -o smoke-dl/static.js &&
+	"$NODE" smoke-dl/static.js
+    }
+    expect S28b '#f unable to load compiled module - cannot load compiled code dynamically - this is a statically linked executable' s28b
+    rm -rf smoke-dl
+fi
 
 # Lane W: worst-case engine stack.  Liftoff frames are the largest; a
 # browser worker gets about 1 MB of native stack.
