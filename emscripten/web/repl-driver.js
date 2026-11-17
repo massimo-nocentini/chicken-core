@@ -38,7 +38,10 @@
  *   args         extra csi arguments; "-:" runtime options must come first
  *                (they follow the "-:c" added here)
  *   csirc        text for /home/web_user/.csirc, or null for none
- *   files        [{path, data}] written into MEMFS before main runs
+ *   files        [{path, data}] written into MEMFS before main runs (and
+ *                their directories created): packages of compiled
+ *                extensions go to /packages/repo and /packages/share,
+ *                which csi has on its repository and include paths
  *   sliceMs      time slice in ms (default 50)
  *   wasmModule   a precompiled WebAssembly.Module (optional)
  *   locateFile   emscripten's locateFile hook (optional)
@@ -130,7 +133,13 @@
       preRun: [mod => {
         mod.FS.chdir('/home/web_user');
         if (o.csirc != null) mod.FS.writeFile('/home/web_user/.csirc', o.csirc);
-        for (const f of o.files || []) mod.FS.writeFile(f.path, f.data);
+        // (before main: the directories of the embedded repository do
+        // not exist yet, and /packages is created by main itself)
+        for (const f of o.files || []) {
+          const d = f.path.replace(/\/[^/]*$/, '');
+          if (d) mod.FS.mkdirTree(d);
+          mod.FS.writeFile(f.path, f.data);
+        }
       }],
     };
     if (o.locateFile) opts.locateFile = o.locateFile;

@@ -29,8 +29,9 @@
  *   page -> worker   init {args, csirc, files, sliceMs, wasmModule},
  *                    input {text, eof}, interrupt, ack {bytes},
  *                    request {text} (to the notebook kernel),
- *                    writeFile {id, path, data}, readFile {id, path},
- *                    listDir {id, path}
+ *                    writeFile {id, path, data},
+ *                    writeFiles {id, files: [{path, data}]},
+ *                    readFile {id, path}, listDir {id, path}
  *   worker -> page   ready, output {fd, text}, state {state}, exit {code},
  *                    crash {message}, ack {id}, file {id, path, data},
  *                    dir {id, path, entries}, error {id, message}
@@ -38,6 +39,15 @@
  * output's fd is 1 or 2, or 3 for the notebook kernel's events (one
  * JSON object per line); state 5 (IDLE) means that the kernel waits for
  * a request.
+ *
+ * writeFile and writeFiles create the directories of the files they
+ * write, and are acknowledged once (ack {id}) when all are written, or
+ * answered with error {id, message} at the first that fails.  Packages
+ * of compiled extensions go to /packages/repo (extensions, import
+ * libraries, types and inline files) and /packages/share (include
+ * files), which csi has on its repository and include paths from the
+ * start (webrepl-main.c): written while csi runs, they are found by the
+ * next import.
  *
  * Messages that arrive before "ready" are queued and replayed after it;
  * "ready" always precedes the first "state".  Output is credit based:
@@ -86,6 +96,12 @@ function flushOut() {
   outLen = 0;
 }
 
+function writeFile(path, data) {
+  const d = path.replace(/\/[^/]*$/, '');
+  if (d) drv.FS.mkdirTree(d);
+  drv.FS.writeFile(path, data);
+}
+
 function fsOp(m, f) {
   try { f(); }
   catch (e) {
@@ -103,7 +119,13 @@ function handle(m) {
     if (unacked < HIGH / 2) drv.resumeOutput();
     break;
   case 'writeFile':
-    fsOp(m, () => { drv.FS.writeFile(m.path, m.data); postMessage({ type: 'ack', id: m.id }); });
+    fsOp(m, () => { writeFile(m.path, m.data); postMessage({ type: 'ack', id: m.id }); });
+    break;
+  case 'writeFiles':
+    fsOp(m, () => {
+      for (const f of m.files || []) writeFile(f.path, f.data);
+      postMessage({ type: 'ack', id: m.id });
+    });
     break;
   case 'readFile':
     fsOp(m, () => postMessage({ type: 'file', id: m.id, path: m.path, data: drv.FS.readFile(m.path) }));

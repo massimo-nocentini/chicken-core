@@ -47,6 +47,7 @@
 #include <emscripten.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 
 extern void C_ccall C_toplevel(C_word c, C_word *av) C_noret;
 
@@ -189,9 +190,34 @@ static int run_slice(void)
   return state;
 }
 
+/* Packages of compiled extensions are unpacked in /packages (in the
+ * worker's in-memory file system, by the page): repo is a repository
+ * (extensions, import libraries, types and inline files), share holds
+ * their include files.  The repository path and the include path name
+ * them after the core's own, which they thus cannot shadow, unless the
+ * page set CHICKEN_REPOSITORY_PATH or CHICKEN_INCLUDE_PATH itself.  The
+ * directories exist from the start, so that files written there later
+ * are found without changing either path. */
+#define PACKAGES "/packages"
+
+static void setup_packages(void)
+{
+  mkdir(PACKAGES, 0777);	/* (they may exist already) */
+  mkdir(PACKAGES "/repo", 0777);
+  mkdir(PACKAGES "/share", 0777);
+
+  if(getenv("CHICKEN_REPOSITORY_PATH") == NULL)
+    setenv("CHICKEN_REPOSITORY_PATH", C_INSTALL_EGG_HOME ":" PACKAGES "/repo", 1);
+
+  if(getenv("CHICKEN_INCLUDE_PATH") == NULL)
+    setenv("CHICKEN_INCLUDE_PATH", C_INSTALL_SHARE_HOME ":" PACKAGES "/share", 1);
+}
+
 int main(int argc, char **argv)
 {
   C_word h, s, n;
+
+  setup_packages();
 
   /* "-:" options must come first, as for any CHICKEN program */
   CHICKEN_parse_command_line(argc, argv, &h, &s, &n);
