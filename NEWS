@@ -1,3 +1,14 @@
+6.1.1
+
+- Core libraries
+  - Fixed a bug in "continuation-graft" (from the "chicken.continuation"
+    module), where winding/unwinding of dynamic-wind thunks caused an
+    internal error; also dropped a rewrite rule in the compiler that
+    would replace the operation with a nonwinding primitive.
+  - Fixed a bug in the types.db entry for "string-for-each", which caused
+    an incorrect warning if the result of the applied procedure did not
+    return a character.
+
 6.1.0
 
 - Core libraries

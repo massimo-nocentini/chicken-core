@@ -481,7 +481,6 @@
 (rewrite 'scheme#call-with-values 13 2 "C_call_with_values" #t)
 (rewrite '##sys#call-with-values 13 2 "C_u_call_with_values" #f)
 (rewrite '##sys#call-with-values 13 2 "C_call_with_values" #t)
-(rewrite 'chicken.continuation#continuation-graft 13 2 "C_continuation_graft" #t)
 
 (rewrite 'scheme#caar 2 1 "C_u_i_caar" #f)
 (rewrite 'scheme#cdar 2 1 "C_u_i_cdar" #f)

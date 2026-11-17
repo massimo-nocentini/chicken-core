@@ -1,7 +1,7 @@
 ;;;; library-tests.scm
 
 (import chicken.bytevector chicken.bitwise chicken.fixnum chicken.flonum
-	chicken.keyword chicken.port chicken.condition)
+	chicken.keyword chicken.port chicken.condition chicken.continuation)
 (import (only (scheme base) make-parameter call/cc get-output-string))
 
 (define-syntax assert-fail
@@ -958,3 +958,19 @@ A
      (assert (pair? ws))
      (assert (eq? ws rws))))
  (list signal scheme#raise-continuable))
+
+;; continuation API
+
+; ##sys#dynamic-winds was hidden, so unwinding in "continuation-graft" resulted
+; in unbound variable access
+
+(let ((flag 0))
+  (assert
+    (= 123
+       (continuation-capture
+         (lambda (k)
+           (dynamic-wind
+             (lambda () (set! flag (+ flag 2)))
+             (lambda () (continuation-graft k (lambda () 123)))
+             (lambda () (set! flag (- flag 1))))))))
+  (assert (= flag 1)))

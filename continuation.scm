@@ -26,6 +26,7 @@
 
 (declare
   (unit continuation)
+  (always-bound ##sys#dynamic-winds ##sys#dynamic-unwind)
   (disable-interrupts))
 
 (foreign-declare "#define C_direct_continuation(dummy) t1")
@@ -81,7 +82,7 @@
 
 (define (continuation-graft k thunk)
   (##sys#check-structure k 'continuation 'continuation-graft)
-  (let ([winds (##sys#slot k 2)])
+  (let ((winds (##sys#slot k 2)))
     (unless (eq? ##sys#dynamic-winds winds)
       (##sys#dynamic-unwind winds (fx- (length ##sys#dynamic-winds) (length winds))))
     ;; the metacontinuation stored in slot 3 is restored by
@@ -90,6 +91,9 @@
     ((##core#primitive "C_continuation_graft") k thunk)))
 
 (define continuation-return
-  (lambda (k . vals)
-    (##sys#check-structure k 'continuation 'continuation-return)
-    ((##core#primitive "C_continuation_graft") k (lambda () (apply values vals))))))
+  (let ((continuation-graft continuation-graft))
+    (lambda (k . vals)
+      (##sys#check-structure k 'continuation 'continuation-return)
+      (continuation-graft k (lambda () (apply values vals))))))
+
+)
