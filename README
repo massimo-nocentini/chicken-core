@@ -690,6 +690,105 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     regex, defstruct, vector-lib, uri-generic, uri-common, base64,
     check-errors, intarweb and memory-mapped-files.
 
+    Packages of compiled extensions
+
+    With WASM_DYLINK=1 (the default) eggs need not be linked into the
+    page: a package holds them compiled as extensions (side modules,
+    as by "csc-wasm -shared") that the page's csi loads at run time,
+    for each architecture of the page.  It is made from an existing
+    build, with its recorded settings (which this does not change):
+
+        make wasm-package WASM_PACKAGE_NAME=aux \
+          WASM_PACKAGE_EGGS="/path/to/aux.scm/src" \
+          WASM_PACKAGE_OUT=/path/to/site/wasm   # default build-wasm/packages
+
+    WASM_PACKAGE_EGGS lists egg names and egg directories, as
+    WASM_EGGS does, and they and their dependencies are found and
+    planned the same way (see "Using eggs" above), by
+    emscripten/wasm-eggs.scm in its shared mode: every extension is
+    compiled as chicken-install's dynamic build does natively, into
+    NAME.so, with the "c-object" components it lists compiled
+    position independent and linked into it, and the import
+    libraries of the modules it defines; the .egg files are read for
+    a target with the features "dload" and, in cond-expand, "dynamic"
+    (and not "static"); components without "dynamic" linkage are
+    refused.  Eggs of the core system and eggs linked into the page
+    (WASM_EGGS) are not built: the package uses theirs.  As for
+    WASM_EGGS, eggs running code of other eggs at compile time
+    (import-for-syntax, as aux does with its own modules) need
+    those installed in the host repository (WASM_HOST_REPOSITORY),
+    by the host chicken-install: install the egg itself natively
+    first (in its directory, "chicken-install").  The package is
+    built in build-wasm/pkg-NAME (and build-wasm/arch-A/pkg-NAME for
+    the page's other architecture A), again only what changed,
+    with "make -j" as usual.  emscripten/wasm-package.js (run with
+    node) then checks that the page's csi of the architecture can
+    load every side module, that is, that whatever it imports is
+    exported by csi (share/chicken/runtime-exports of the SDK), is
+    one of csi's own JavaScript library functions or, for a GOT
+    entry, is defined by another module of the package, and that it
+    is built for that architecture: the build stops, listing the
+    symbols missing for each module, if not (a module missing a
+    function would only fail when that is first called, killing the
+    page's worker).  It writes, in WASM_PACKAGE_OUT/NAME:
+
+      manifest.json
+        {"format": "chicken-wasm-package", "formatVersion": 1,
+         "name", "version", "eggs": [{"name", "version", "origin":
+         "local" or "cache"}, ...], "builds": {ABI: {"arch", "eh",
+         "chicken", "binaryVersion", "bundle", "rawBundle", "size",
+         "gzSize", "files": [{"path", "offset", "size", "sha256"},
+         ...]}, ...}}, a build for each architecture of the page,
+         under the ABI of its modules (see WASM_DYLINK below): a
+         page takes the build of the ABI it runs.  The version is
+         WASM_PACKAGE_VERSION, by default that of the egg named
+         like the package, else of the first egg directory.
+      NAME-ARCH-EH-ABI.bundle and NAME-ARCH-EH-ABI.bundle.gz
+        The files of a build, one after the other, in dependency
+        order (path, offset and size in the manifest), and the same
+        compressed with gzip.  Paths are relative to /packages in the
+        page's worker: repo/ holds the extensions, the import
+        libraries and types files (csi's repository path has
+        /packages/repo, after the core's), share/ the eggs' Scheme
+        include files on the include path (csi's include path has
+        /packages/share).
+
+    Bundles of other builds of the package there are removed.
+    "node emscripten/wasm-package.js unpack DIR --arch A DEST"
+    checks and writes the files of a build below DEST, as the page
+    does in /packages: node/csi loads them with
+    CHICKEN_REPOSITORY_PATH=DEST/repo (and CHICKEN_INCLUDE_PATH=
+    DEST/share).  As natively, an extension defining several modules
+    is loaded by importing its first module (named like it): the
+    import library of another module of it names an extension of
+    that module's name.
+
+    The import libraries are compiled too (WASM_PACKAGE_IMPORTS=so,
+    the default), as chicken-install does, rather than shipped as
+    source (WASM_PACKAGE_IMPORTS=scm).  Measured on aux 0.2.0 (aux
+    and its 16 dependencies from the egg cache: 150 extensions, 169
+    import libraries) with this build, wasm64 / wasm32:
+
+                          compiled (.import.so)   source (.import.scm)
+      bundle              18.4 / 17.6 MB          14.9 / 14.3 MB
+      bundle.gz           3.34 / 3.31 MB          2.72 / 2.71 MB
+      (import (aux base))   45 / 43 ms             960 / 1415 ms
+      four imports         415 / 455 ms           2860 / 4080 ms
+
+    (the times in the page's REPL module under node 25, from a fresh
+    csi: aux base; aux hakaru10; aux kanren micro, aux cml and aux
+    hansei; srfi-19 and aux sxml: 56 extensions in all, 36 of them
+    for the last import).
+    Compiled import libraries make the gzipped package 23% larger,
+    and imports 7 to 20 times faster: the source of an import
+    library is evaluated by the interpreter, which for a module
+    with much syntax takes a second in the browser.  The sources
+    are compiled by relative paths, so the extensions do not record
+    the build directory, and bundles made from the same sources with
+    the same build are identical.  Making both builds of the
+    aux package took about 6 minutes (make -j32), a rebuild with
+    nothing changed 2 seconds.
+
     Other targets: "make wasm-clean" removes the build outputs,
     "make wasm-distclean" the build directories.  "WASM_GOAL"
     selects what "make wasm" builds in the build directory
@@ -849,7 +948,16 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     the eggs' include files, a build-dependency installed in a host
     repository and built from an egg cache, replanning, refused eggs and
     tests/wasm/egg-harness.js and
-    notebook-harness.js for the REPL and the notebook).  With JSC
+    notebook-harness.js for the REPL and the notebook), and, with
+    WASM_DYLINK, a packages lane: it makes a package of the test eggs
+    wasm-egg-a and wasm-egg-b with "make wasm-package" (into
+    tests-run/packages), then runs tests/wasm-packages.sh (node csi
+    loading the unpacked package, garbage collections and
+    continuations through its frames, refused packages and modules,
+    the planner's shared mode) and worker-harness.js and
+    notebook-harness.js with --package (the package written into the
+    page's worker and notebook kernel before they start and while
+    they run), on each architecture of the page.  With JSC
     naming a JavaScriptCore shell (make wasm-check JSC=/path/to/jsc),
     it also runs tests/wasm/jsc-stack.js on the page's wasm32
     modules, with the 512 KB stack of an iOS worker and with 384 KB.
@@ -868,9 +976,10 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
     Limitations:
 
       - Only csi loads compiled code (".so" files compiled with
-        "csc-wasm -shared", with WASM_DYLINK=1); other programs are
-        linked statically, and "make wasm" links eggs with compiled
-        code into csi statically (WASM_EGGS).  "csc" and
+        "csc-wasm -shared", or packages made by "make wasm-package",
+        with WASM_DYLINK=1); other programs are linked statically,
+        and "make wasm" links eggs with compiled code into csi
+        statically (WASM_EGGS).  "csc" and
         "chicken-install" do not run inside WebAssembly; use
         "csc-wasm" or "make wasm-cross".
 
