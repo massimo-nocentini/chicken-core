@@ -48,7 +48,11 @@
 # include <android/log.h>
 #endif
 
-#if !defined(PIC)
+/* Under Emscripten the objects of libchicken are not PIC, but a program
+ * linked as a main module (-sMAIN_MODULE) can load side modules: whether
+ * this one can is decided at run time (see dload_available).  A build
+ * without dynamic loading defines NO_DLOAD2 itself. */
+#if !defined(PIC) && !defined(__EMSCRIPTEN__)
 # define NO_DLOAD2
 #endif
 
@@ -430,6 +434,9 @@ static C_word
   f32vector_symbol,
   f64vector_symbol,
   *forwarding_table;
+#if !defined(NO_DLOAD2) && defined(HAVE_DLFCN_H) && defined(__EMSCRIPTEN__)
+static int dload_available;
+#endif
 static int
   trace_buffer_full,
   forwarding_table_size,
@@ -832,6 +839,11 @@ int CHICKEN_initialize(int heap, int stack, int symbols, void *toplevel)
 
 #if !defined(NO_DLOAD2) && defined(HAVE_DLFCN_H)
   dlopen_flags = RTLD_LAZY | RTLD_GLOBAL;
+# ifdef __EMSCRIPTEN__
+  /* Only a program linked as a main module can load side modules: in
+   * any other, dlopen is a stub that always fails. */
+  dload_available = dlopen(NULL, RTLD_NOW) != NULL;
+# endif
 #else
   dlopen_flags = 0;
 #endif
@@ -12566,6 +12578,11 @@ void C_ccall C_dload(C_word c, C_word *av)
     entry = av[ 3 ];
 
 #if !defined(NO_DLOAD2) && (defined(HAVE_DLFCN_H) || defined(HAVE_DL_H) || (defined(HAVE_LOADLIBRARY) && defined(HAVE_GETPROCADDRESS)))
+# if defined(HAVE_DLFCN_H) && defined(__EMSCRIPTEN__)
+  /* not a main module: C_dlerror says that it is statically linked */
+  if(!dload_available) C_kontinue(k, C_SCHEME_FALSE);
+# endif
+
   /* Force minor GC: otherwise the lf may contain pointers to stack-data
      (stack allocated interned symbols, for example) */
   C_save_and_reclaim_args((void *)dload_2, 3, k, name, entry);
@@ -12573,6 +12590,19 @@ void C_ccall C_dload(C_word c, C_word *av)
 
   C_kontinue(k, C_SCHEME_FALSE);
 }
+
+
+#ifdef __EMSCRIPTEN__
+/* Whether this program can load compiled code (the "dload" feature) */
+int C_dload_available(void)
+{
+# if !defined(NO_DLOAD2) && defined(HAVE_DLFCN_H)
+  return dload_available;
+# else
+  return 0;
+# endif
+}
+#endif
 
 
 #ifdef DLOAD_2_DEFINED
@@ -12646,6 +12676,26 @@ void C_ccall dload_2(C_word c, C_word *av0)
   C_char *mname = (C_char *)C_c_string(name);
   C_char *tmp;
   int tmp_len = 0;
+
+# ifdef __EMSCRIPTEN__
+  {
+    /* load tries every file it loads, source code too: dlopen only
+     * WebAssembly modules, which start with "\0asm" (emscripten's
+     * dlopen would report any other as an error, and remember it) */
+    static const char magic[ 4 ] = { 0, 'a', 's', 'm' };
+    char head[ 4 ];
+    C_FILEPTR fp = C_fopen(mname, "rb");
+
+    if(fp != NULL) {
+      size_t n = C_fread(head, 1, sizeof(head), fp);
+
+      C_fclose(fp);
+
+      if(n != sizeof(head) || C_memcmp(head, magic, sizeof(head)) != 0)
+        C_kontinue(k, C_SCHEME_FALSE);
+    }
+  }
+# endif
 
   if((handle = C_dlopen(mname, dlopen_flags)) != NULL) {
     if((p = C_dlsym(handle, topname)) == NULL) {

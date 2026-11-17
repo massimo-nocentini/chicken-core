@@ -170,6 +170,9 @@ static C_word C_i_sleep_until_interrupt(C_word secs)
 
 #ifdef NO_DLOAD2
 # define HAVE_DLOAD 0
+#elif defined(__EMSCRIPTEN__)
+/* only a main module can load side modules (see runtime.c) */
+# define HAVE_DLOAD C_dload_available()
 #else
 # define HAVE_DLOAD 1
 #endif

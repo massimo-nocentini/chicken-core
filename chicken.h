@@ -2042,6 +2042,9 @@ C_fctexport C_cpsproc(C_build_platform) C_noret;
 C_fctexport C_cpsproc(C_register_finalizer) C_noret;
 C_fctexport C_cpsproc(C_set_dlopen_flags) C_noret;
 C_fctexport C_cpsproc(C_dload) C_noret;
+#ifdef __EMSCRIPTEN__
+C_fctexport int C_dload_available(void);
+#endif
 C_fctexport C_cpsproc(C_become) C_noret;
 C_fctexport C_cpsproc(C_call_with_cthulhu) C_noret;
 C_fctexport C_cpsproc(C_copy_closure) C_noret;

@@ -1099,7 +1099,9 @@
 		  (lambda () (set! cs (case-sensitive)))
 		  (lambda ()
 		    (let ((c1 (peek-char in)))
-		      (when (eq? c1 (integer->char 127))
+		      ;; ELF, or WebAssembly ("\x0;asm")
+		      (when (or (eq? c1 (integer->char 127))
+				(eq? c1 (integer->char 0)))
 			(##sys#error
 			 'load
 			 (##sys#string-append
