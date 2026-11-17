@@ -8,6 +8,10 @@
   - Fixed a bug in the types.db entry for "string-for-each", which caused
     an incorrect warning if the result of the applied procedure did not
     return a character.
+  - When reading numbers that have a very large exponent, string->number
+    and read no longer throw an error but return #f or [+-]inf.0.
+    This was a regression caused by the precision fix in 6.1.0.
+
 
 6.1.0
 
