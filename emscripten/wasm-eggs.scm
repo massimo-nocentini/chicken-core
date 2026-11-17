@@ -1084,6 +1084,9 @@
 	   (set! stamps (cons (stamp name) stamps)))))
      eggs)
     (printf "WASM_EGG_NAMES = ~a~%" (words (map egg-name eggs)))
+    ;; (the ABI of programs these eggs are linked into has them)
+    (printf "WASM_EGG_VERSIONS = ~a~%"
+	    (words (map (lambda (e) (sprintf "~a:~a" (egg-name e) (listed-egg-version e))) eggs)))
     (printf "WASM_EGG_UNITS = ~a~%" (words (reverse units)))
     (printf "WASM_EGG_OBJECTS = ~a~%" (words (delete-duplicates objects)))
     (printf "WASM_EGG_LDOPTS = ~a~%" (words (map sh ldopts)))
@@ -1156,17 +1159,20 @@
 		    (and (or (string? v) (symbol? v) (number? v)) (->string v))))
 	     (loop (cdr files))))))
 
+;; The version of an egg, as eggs.list has it: "-" if it has none
+(define (listed-egg-version e)
+  (let ((v (or (egg-version e)
+	       (and (not (memq (egg-name e) local-eggs))
+		    (cached-egg-version (egg-name e))))))
+    (if (and v (safe-name? v)) v "-")))
+
 ;; EGG_DIR/eggs.list, for the package's manifest
 (define (write-egg-list eggs)
   (create-directory egg-directory #t)
   (with-output-to-file (make-pathname egg-directory "eggs.list")
     (lambda ()
       (for-each (lambda (e)
-		  (printf "~a ~a ~a~%" (egg-name e)
-			  (let ((v (or (egg-version e)
-				       (and (not (memq (egg-name e) local-eggs))
-					    (cached-egg-version (egg-name e))))))
-			    (if (and v (safe-name? v)) v "-"))
+		  (printf "~a ~a ~a~%" (egg-name e) (listed-egg-version e)
 			  (if (memq (egg-name e) local-eggs) "local" "cache")))
 		eggs))))
 

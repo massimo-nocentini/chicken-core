@@ -475,12 +475,16 @@ node/chicken-profile.js node/chicken-status.js: node/%.js: %$(O) $(LIBCHICKEN_A)
 # the binary and CHICKEN versions, emcc's, the architecture, exception
 # handling and frame pad, the compiler options (but optimization and
 # debugging), chicken.h, the macros of chicken-config.h that describe
-# the platform (not the paths of the tools) and WASM_RUNTIME_EXPORTS:
-# no path, so two builds of the same sources with the same emscripten
-# and knobs have the same ABI wherever they are.  The page lists it for
-# each of its builds (see index.html), the SDK has it (share/chicken/abi).
+# the platform (not the paths of the tools), WASM_RUNTIME_EXPORTS and
+# the eggs linked in (WASM_EGGS), with their versions: a package built
+# for these leaves them out (see wasm-package), so a page without them
+# must refuse it.  No path, so two builds of the same sources with the
+# same emscripten, knobs and eggs have the same ABI wherever they are.
+# The page lists it for each of its builds (see index.html), the SDK
+# has it (share/chicken/abi).
 WASM_SHA256 = $(if $(shell command -v sha256sum),sha256sum,shasum -a 256)
-wasm-abi: $(WASM_RUNTIME_EXPORTS) chicken.h $(CHICKEN_CONFIG_H) buildversion wasm-cflags
+wasm-abi: $(WASM_RUNTIME_EXPORTS) chicken.h $(CHICKEN_CONFIG_H) buildversion wasm-cflags \
+    $(if $(strip $(WASM_EGGS)),wasm-eggs.mk)
 	{ echo "binary-version $(BINARYVERSION)"; \
 	  echo "chicken $$(cat buildversion)"; \
 	  echo "emcc $$($(C_COMPILER) -dumpversion)"; \
@@ -491,6 +495,7 @@ wasm-abi: $(WASM_RUNTIME_EXPORTS) chicken.h $(CHICKEN_CONFIG_H) buildversion was
 	  echo "chicken.h $$($(WASM_SHA256) <$(filter %chicken.h,$^) | cut -d' ' -f1)"; \
 	  echo "chicken-config.h:"; \
 	  grep -E '^#define |^# define C_(BINARY_VERSION|STACK_GROWS_DOWNWARD) ' $(CHICKEN_CONFIG_H); \
+	  $(if $(strip $(WASM_EGG_VERSIONS)),echo "linked-eggs $(sort $(WASM_EGG_VERSIONS))";) \
 	  echo "runtime-exports:"; \
 	  cat $(WASM_RUNTIME_EXPORTS); } >$@.txt
 	$(WASM_SHA256) <$@.txt | cut -c1-16 >$@.tmp
