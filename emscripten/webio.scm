@@ -48,9 +48,12 @@
 	reopen-std! keep-restart! drop-callbacks! yield! in-bv pending
 	eof-pending at-prompt stale-at-prompt abandon-input! fill! read-ch
 	peek-ch web-stdin drop-input!
+	set-lazy! take-lazy-command lazy-stepping lazy-printing force-1 lazy-poll!
+	print-hook console-print-hook print-element
 	value-of display min open-output-string
 	get-output-string string->utf8 bytevector-length
-	current-process-milliseconds return-to-host)
+	current-process-milliseconds return-to-host force call/cc
+	with-output-to-string)
   (foreign-declare "#include \"webrepl.h\""))
 
 (import (except scheme display min)
@@ -58,7 +61,8 @@
 	(except chicken.bytevector string->utf8 bytevector-length)
 	(except chicken.time current-process-milliseconds)
 	(except chicken.platform return-to-host)
-	chicken.foreign chicken.fixnum chicken.port)
+	(except chicken.port with-output-to-string)
+	chicken.foreign chicken.fixnum)
 
 ;; The library procedures called after startup, taken now: a toplevel
 ;; define assigns the global of the name it defines, scheme#display
@@ -74,10 +78,16 @@
 (define bytevector-length (value-of 'chicken.bytevector#bytevector-length))
 (define current-process-milliseconds (value-of 'chicken.time#current-process-milliseconds))
 (define return-to-host (value-of 'chicken.platform#return-to-host))
+(define force (value-of 'scheme#force))
+;; (not ##sys#call-with-current-continuation, whose continuations skip
+;; the after thunks of dynamic-wind)
+(define call/cc (value-of 'scheme#call-with-current-continuation))
+(define with-output-to-string (value-of 'chicken.port#with-output-to-string))
 
 (define-constant ST-WAITING 1)
 (define-constant ST-BUSY 2)
 (define-constant ST-SLEEPING 4)
+(define-constant ST-PAUSED 6)
 (define-constant C_TIMER_INTERRUPT_NUMBER 255)
 
 (define take-input!  (foreign-lambda int "webio_take_input" bytevector int))
@@ -242,6 +252,7 @@
     (lambda ()
       (set! at-prompt #t)
       (reopen-std!)
+      (console-print-hook!)
       (old))))
 
 
@@ -313,3 +324,144 @@
   (set! pending '())
   (set! eof-pending #f)
   (drop-input!))
+
+
+;;; Lazy streams.  The REPL prints a promise by forcing it, and the
+;;; notebook kernel (webnb.scm) shows one so.  A stream -- a promise
+;;; that forces to '() or to a pair whose cdr is a stream again, where
+;;; a promise that forces to a promise is forced again, as those of
+;;; (aux stream) are -- is printed element by element as each one
+;;; arrives, "(0 1 2 3" and on, until it ends or Stop ends it: Stop is
+;;; no error here, the elements printed so far stay, and
+;;; the stream is closed with " ...)".  An element that is a promise
+;;; is printed so in turn.  A promise that forces to anything else is
+;;; printed "#<promise V>", V being its value (the first one).  A
+;;; plain list in a stream is printed so too, element by element: the
+;;; printer cannot tell it from a stream that was forced already.
+;;;
+;;; The page can pause the printer, and then ask for the next element
+;;; or have it go on (webrepl_lazy): the printer takes the command
+;;; before it forces the next element, and waits in state PAUSED.
+;;; Inside a callback, which cannot yield (see yield!), it never waits.
+
+(define-constant LAZY-NEXT 1)
+(define-constant LAZY-GO 2)
+
+(define set-lazy! (foreign-lambda void "webio_set_lazy" bool))
+(define take-lazy-command (foreign-lambda int "webio_take_lazy_command"))
+
+(define lazy-stepping #f)		; paused: one element per NEXT
+(define lazy-printing #f)		; inside ##webio#print-lazy
+
+;; the value of promise X, forced again while it is a promise
+(define (force-1 x)
+  (if (##sys#structure? x 'promise)
+      (force-1 (##sys#call-with-values (lambda () (force x))
+		 (lambda vs (if (pair? vs) (car vs) (void)))))
+      x))
+
+;; between two elements: a yield when the slice is over, Stop, and the
+;; page's commands
+(define (lazy-poll!)
+  (when (null? ##sys#callback-continuation-stack)
+    (when (slice-over?) (yield! ST-BUSY))
+    (let ((c (take-lazy-command)))
+      (cond ((fx= c LAZY-GO) (set! lazy-stepping #f))
+	    ((fx> c 0) (set! lazy-stepping #t))))
+    (when (interrupted?) (##sys#user-interrupt-hook))
+    (when lazy-stepping
+      (let wait ()
+	(yield! ST-PAUSED)
+	(when (interrupted?) (##sys#user-interrupt-hook))
+	(let ((c (take-lazy-command)))
+	  (cond ((fx= c LAZY-NEXT))
+		((fx= c LAZY-GO) (set! lazy-stepping #f))
+		(else (wait))))))))
+
+;; Prints promise X with the procedures of a printer: (open) and
+;; (close stopped?) around the elements of a stream, (item x) for each
+;; one that is not a promise (an element that is one is printed in
+;; turn, between its own open and close), (dot x) for the end of an
+;; improper one, and (lone x) for a promise that is no stream, x being
+;; its value.  Stop closes every stream still open, with #t, and
+;; returns #f; else the result is #t.
+(define (##webio#print-lazy x open item dot lone close)
+  (let ((depth 0))
+    (define (walk x)
+      (let ((v (force-1 x)))
+	(cond ((or (null? v) (pair? v))
+	       (open)
+	       (set! depth (fx+ depth 1))
+	       (let loop ((v v))
+		 (when (pair? v)
+		   (let ((e (car v)))
+		     (if (##sys#structure? e 'promise) (walk e) (item e)))
+		   (lazy-poll!)
+		   (let ((d (force-1 (cdr v))))
+		     (if (or (null? d) (pair? d)) (loop d) (dot d)))))
+	       (set! depth (fx- depth 1))
+	       (close #f))
+	      (else (lone v)))))
+    (if (call/cc
+	 (lambda (k)
+	   (let ((outer #f) (was #f))
+	     (##sys#dynamic-wind
+		 (lambda ()
+		   (set! outer ##sys#user-interrupt-hook)
+		   (set! ##sys#user-interrupt-hook (lambda () (k #f)))
+		   (set! was lazy-printing)
+		   (unless was
+		     (set! lazy-stepping #f)
+		     (take-lazy-command))	; a stale one
+		   (set! lazy-printing #t)
+		   (set-lazy! #t))
+		 (lambda () (walk x) #t)
+		 (lambda ()
+		   (set! ##sys#user-interrupt-hook outer)
+		   (set! lazy-printing was)
+		   (set-lazy! was))))))
+	#t
+	(let loop ()
+	  (if (fx> depth 0)
+	      (begin
+		(set! depth (fx- depth 1))
+		(close #t)
+		(loop))
+	      #f)))))
+
+;; X as the REPL prints it, without the newline after it
+(define (print-element x)
+  (let* ((s (with-output-to-string (lambda () (print-hook x ##sys#standard-output))))
+	 (n (string-length s)))
+    (if (and (fx> n 0) (char=? (string-ref s (fx- n 1)) #\newline))
+	(##sys#substring s 0 (fx- n 1))
+	s)))
+
+;; The REPL prints a promise among its results (on the standard output:
+;; not the arguments of an error) with ##webio#print-lazy, and any
+;; other value with the print hook it had.  Set at every prompt, as
+;; csi's body sets its own after webio is loaded, and so that a print
+;; hook the user sets is kept too.
+(define print-hook ##sys#repl-print-hook)
+
+(define (console-print-hook x port)
+  (if (and (##sys#structure? x 'promise) (eq? port ##sys#standard-output))
+      (let ((first #t))
+	(define (put s) (##sys#print s #f port))
+	(define (sep)
+	  (if first (set! first #f) (put " ")))
+	(##webio#print-lazy
+	 x
+	 (lambda () (sep) (put "(") (set! first #t))
+	 (lambda (e) (sep) (put (print-element e)))
+	 (lambda (e) (put " . ") (put (print-element e)))
+	 (lambda (v) (sep) (put "#<promise ") (put (print-element v)) (put ">"))
+	 (lambda (stopped?) (put (if stopped? " ...)" ")")) (set! first #f)))
+	(##sys#write-char-0 #\newline port))
+      (print-hook x port)))
+
+(define (console-print-hook!)
+  (unless (eq? ##sys#repl-print-hook console-print-hook)
+    (set! print-hook ##sys#repl-print-hook)
+    (set! ##sys#repl-print-hook console-print-hook)))
+

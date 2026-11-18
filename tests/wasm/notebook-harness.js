@@ -71,7 +71,7 @@ const createChickenRepl = require(path.join(webDir, sub, 'chicken-repl.js'));
 const srcWeb = path.join(__dirname, '..', '..', 'emscripten', 'web');
 const Driver = require(path.join(srcWeb, 'repl-driver.js'));
 const Kernel = require(path.join(srcWeb, 'nb-kernel.js'));
-const { BUSY, WAITING, SLEEPING, IDLE } = Driver;
+const { BUSY, WAITING, SLEEPING, IDLE, PAUSED, LAZY_NEXT, LAZY_GO, LAZY_PAUSE } = Driver;
 const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(webDir, sub, 'chicken-repl.wasm')));
 if (!eggsOnly) console.log('# ' + arch + ' modules in ' + path.join(webDir, sub));
 
@@ -669,6 +669,51 @@ async function partK() {
                     '(text (make-string 4194304 #\\y))', null);
     eq(r.displays.map(d => [d.data.length, d.size]), [[0, 4194305], [5, undefined], [4194304, undefined]], 'displays');
   });
+
+  await check('K29 a lazy stream as its elements arrive: open, items, end; Pause, Next, Go on and Stop', async () => {
+    const lazy = r => r.items.filter(i => i.ev && /^lazy-/.test(i.ev.ev)).map(i => i.ev);
+    const brief = e => e.ev === 'lazy-open' ? ['open', e.sid, e.parent]
+      : e.ev === 'lazy-end' ? ['end', e.sid, e.how] : [e.mime, e.data, e.dot, e.sid];
+    await ok(K, '(define (nats n) (delay (cons n (nats (+ n 1)))))', null);
+    let r = await ok(K, '(import notebook) (delay (list 1 (delay (list 2 "a")) (delay 3) (html "<b>x</b>") (delay (quote ()))))', null);
+    let ls = lazy(r);
+    assert(ls.every(e => e.rid === r.done.rid), 'rids');
+    const s1 = ls[0].sid, s2 = ls[2].sid, s3 = ls[8].sid;
+    eq(ls.map(brief), [['open', s1, null], ['text/plain', '1', null, s1], ['open', s2, s1],
+                       ['text/plain', '2', null, s2], ['text/plain', '"a"', null, s2], ['end', s2, 'end'],
+                       ['text/plain', '#<promise 3>', null, s1], ['text/html', '<b>x</b>', null, s1],
+                       ['open', s3, s1], ['end', s3, 'end'], ['end', s1, 'end']], 'events');
+    // an improper stream among other values; a promise that is no stream
+    r = await ok(K, '(values (delay (cons 1 (delay 2))) 7)', ['7']);
+    eq(lazy(r).map(e => e.ev === 'lazy-item' ? [e.data, e.dot] : e.ev), ['lazy-open', ['1', null], ['2', true], 'lazy-end'], 'improper');
+    await ok(K, '(delay 42)', ['#<promise 42>']);
+    // an infinite one: paused, one more element, on again, then Stop
+    const items = () => K.events().filter(e => e.ev === 'lazy-item' && e.rid === rid).length;
+    const rid = K.post('(nats 0)');
+    await waitFor('elements', () => items() > 3);
+    K.drv.lazy(LAZY_PAUSE);
+    await waitFor('PAUSED', () => K.drv.state() === PAUSED);
+    const n0 = items();
+    await sleep(200);
+    eq(items(), n0, 'no element while paused');
+    K.drv.lazy(LAZY_NEXT);
+    await waitFor('the next element', () => items() === n0 + 1);
+    await sleep(100);
+    eq([items(), K.drv.state()], [n0 + 1, PAUSED], 'one element, paused again');
+    K.drv.lazy(LAZY_GO);
+    await waitFor('elements again', () => items() > n0 + 100);
+    K.drv.interrupt();
+    r = await K.result(rid);
+    eq([r.done.status, r.done.values], ['ok', null], 'Stop ends it as ok');
+    ls = lazy(r);
+    eq(brief(ls[ls.length - 1]).slice(0, 1).concat(ls[ls.length - 1].how), ['end', 'stopped'], 'stopped');
+    eq(ls.slice(1, -1).map(e => e.data), ls.slice(1, -1).map((e, i) => String(i)), 'the elements in order');
+    // an error while forcing one: the cell fails, the stream stays open
+    r = await K.run('(delay (cons 1 (delay (car (quote ())))))');
+    eq([r.done.status, r.done.error.form], ['error', 'print'], 'error');
+    eq(lazy(r).map(e => e.ev), ['lazy-open', 'lazy-item'], 'no lazy-end');
+    await ok(K, '(+ 1 2)', ['3']);
+  });
 }
 
 async function eggs() {
@@ -1101,6 +1146,32 @@ async function partC() {
     eq(S.k.state, 'idle', 'idle');
     S.k.dispose();
     current = C;
+  });
+
+  await check('C21 lazy events; lazy() pauses (state paused), steps and goes on; Stop', async () => {
+    const lz = id => (C.cells[id] || []).filter(e => e.type === 'lazy');
+    const d = await C.k.run('l1', '(delay (list 1 (delay (cons 2 3))))');
+    eq([d.status, d.values], ['ok', null], 'done');
+    eq(lz('l1').map(e => [e.op, e.op === 'item' ? e.data : e.op === 'open' ? e.parent === null : e.how, !!e.dot]),
+       [['open', true, false], ['item', '1', false], ['open', false, false], ['item', '2', false],
+        ['item', '3', true], ['end', 'end', false], ['end', 'end', false]], 'events');
+    assert(lz('l1').filter(e => e.op === 'item').every(e => e.mime === 'text/plain'), 'text items');
+    await C.k.run('l2', '(define (nats n) (delay (cons n (nats (+ n 1)))))');
+    const p = C.k.run('l3', '(nats 0)');
+    await waitFor('elements', () => lz('l3').length > 3);
+    C.k.lazy(Kernel.LAZY_PAUSE);
+    await waitFor('paused', () => C.k.state === 'paused');
+    assert(C.k.lazyShown, 'a lazy stream is shown');
+    const n0 = lz('l3').length;
+    C.k.lazy(Kernel.LAZY_NEXT);
+    await waitFor('the next element', () => lz('l3').length === n0 + 1 && C.k.state === 'paused');
+    C.k.lazy(Kernel.LAZY_GO);
+    await waitFor('busy', () => C.k.state === 'busy' && lz('l3').length > n0 + 10);
+    C.k.stop();
+    const e = await p;
+    eq([e.status, lz('l3').pop().how], ['ok', 'stopped'], 'stopped');
+    eq(C.k.lazyShown, false, 'none shown');
+    eq((await C.k.run('l4', '(* 6 7)')).values, ['42'], 'next cell');
   });
 
   C.k.dispose();

@@ -27,18 +27,20 @@
 /* The page (repl.js) owns one worker per csi session.  Messages:
  *
  *   page -> worker   init {args, csirc, files, sliceMs, wasmModule},
- *                    input {text, eof}, interrupt, ack {bytes},
+ *                    input {text, eof}, interrupt, lazy {cmd}, ack {bytes},
  *                    request {text} (to the notebook kernel),
  *                    writeFile {id, path, data},
  *                    writeFiles {id, files: [{path, data}]},
  *                    readFile {id, path}, listDir {id, path}
- *   worker -> page   ready, output {fd, text}, state {state}, exit {code},
+ *   worker -> page   ready, output {fd, text}, state {state, lazy}, exit {code},
  *                    crash {message}, ack {id}, file {id, path, data},
  *                    dir {id, path, entries}, error {id, message}
  *
  * output's fd is 1 or 2, or 3 for the notebook kernel's events (one
  * JSON object per line); state 5 (IDLE) means that the kernel waits for
- * a request.
+ * a request.  lazy {cmd} gives the printer of a lazy stream a command
+ * (repl-driver.js's LAZY_*), and state's lazy says whether one is being
+ * printed; state 6 (PAUSED) means that it waits for one.
  *
  * writeFile and writeFiles create the directories of the files they
  * write, and are acknowledged once (ack {id}) when all are written, or
@@ -114,6 +116,7 @@ function handle(m) {
   switch (m.type) {
   case 'input':     drv.feed(m.text, m.eof); break;
   case 'interrupt': drv.interrupt(); break;
+  case 'lazy':      drv.lazy(m.cmd); break;
   case 'request':   drv.post(m.text); break;
   case 'ack':
     unacked = Math.max(0, unacked - m.bytes);
@@ -155,7 +158,7 @@ onmessage = async ({ data: m }) => {
       schedule, later,
       canRun: () => unacked < HIGH,
       onOutput: addOut,
-      onState: st => { flushOut(); postMessage({ type: 'state', state: st }); },
+      onState: (st, lazy) => { flushOut(); postMessage({ type: 'state', state: st, lazy: !!lazy }); },
       onExit: code => { flushOut(); postMessage({ type: 'exit', code }); },
       onCrash: msg => { flushOut(); postMessage({ type: 'crash', message: msg }); },
       onDiag: t => console.warn(t),

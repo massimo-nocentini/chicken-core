@@ -38,8 +38,9 @@
 ;   run RID NAME\nSOURCE    evaluate SOURCE as cell RID, read as file NAME
 ;   ping RID                answered by {"ev":"pong","rid":RID}
 ;
-; Events ("ev"): csirc, hello, start, display, clear, done, pong and
-; bad-request; web/nb-kernel.js, the page's client, documents them.
+; Events ("ev"): csirc, hello, start, display, clear, lazy-open,
+; lazy-item, lazy-end, done, pong and bad-request; web/nb-kernel.js,
+; the page's client, documents them.
 ;
 ; A cell is read whole first: if it is incomplete (an unterminated
 ; list or string, a stray ")", a dotted tail at its end, a quote or
@@ -49,7 +50,8 @@
 ; changed the reader, and read only when its turn comes from the first
 ; datum whose reading runs user code (read syntax, "#,").  The module
 ; `notebook' (evaluated when the kernel starts, not imported) emits
-; rich output.
+; rich output.  A value that is a lazy stream is shown as its elements
+; arrive (see "Lazy streams" below).
 ;
 ; The unit is linked into the web csi but only defines procedures:
 ; nothing changes until ##webnb#kernel is called.  It is compiled with
@@ -73,7 +75,8 @@
 	incomplete-read-error? at-eof? quotes unquoted dangling? port-state restore-port-state! reader-state
 	same-reader-state? reader-changers changes-reader? user-code
 	no-user-code without-user-code precheck
-	print-to-string notice-unbound!
+	print-to-string notice-unbound! lazy-shown lazy-seq lazy-open show-lazy
+	lone-text lazy-item!
 	toplevel-command eval-cell ->string/null frame->json call-chain-of
 	string-trim-both error-text error-line error-object fallback-error
 	outcome->fields filter-list current-datum execute module-name
@@ -566,6 +569,7 @@
 ;; stopped, or as soon as a form changed the reader.  The values of the
 ;; last form, as strings (printed inside the handler's extent: an error
 ;; there is one of form "print") or display objects; #f if unspecified.
+; (or the token lazy-shown for a stream shown as it arrived)
 (define (eval-cell src name)
   (define (begin-form! x)
     (set! current-datum x)
@@ -591,7 +595,10 @@
 	(cond ((eof-object? x)
 	       (set! form "print")
 	       (and (not (and (pair? vals) (eq? (car vals) (##core#undefined))))
-		    (map (lambda (v) (if (##webnb#display? v) v (print-to-string v)))
+		    (map (lambda (v)
+			   (cond ((##webnb#display? v) v)
+				 ((##sys#structure? v 'promise) (show-lazy v))
+				 (else (print-to-string v))))
 			 vals)))
 	      ((and (pair? x) (eq? 'unquote (car x)))
 	       ;; a command reads its arguments from P
@@ -699,12 +706,14 @@
      (let* ((unspecified (not (cdr o)))
 	    (vals (or (cdr o) '()))
 	    (displays (filter-list ##webnb#display? vals))
-	    (shown (filter-list (lambda (v) (not (##webnb#display? v))) vals)))
+	    (shown (filter-list (lambda (v) (not (or (##webnb#display? v) (eq? v lazy-shown))))
+				vals)))
        (cons (list "ok"
 		   (cons "values"
 			 (cond (unspecified #f)
-			       ;; only display objects: nothing else to show
-			       ((and (null? shown) (pair? displays)) #f)
+			       ;; only display objects and streams shown:
+			       ;; nothing else to show
+			       ((and (null? shown) (pair? vals)) #f)
 			       (else shown))))
 	     displays)))
     ((reset) (list (list "reset")))
@@ -1012,6 +1021,71 @@
      (define sxml->xml ##webnb#sxml->xml)
      (define clear-output ##webnb#clear)
      (define display-object? ##webnb#display?)))
+
+
+;;; Lazy streams
+;
+; A value of a cell that is a promise is forced, and shown with
+; ##webio#print-lazy (see webio.scm) as it arrives: a stream (SID, a
+; number) begins with
+;
+;   {"ev":"lazy-open","rid":R,"sid":SID,"parent":P}
+;
+; where P is the SID of the stream it is an element of, or null for
+; the value itself; each element that is not a stream comes as
+;
+;   {"ev":"lazy-item","rid":R,"sid":SID,"mime":M,"data":D,"dot":B}
+;
+; as a display does: text/plain with what the REPL prints for a value,
+; or the MIME type and data of a display object (with "size" and no
+; data when it is too large); dot true is the end of an improper one;
+; and the stream ends with
+;
+;   {"ev":"lazy-end","rid":R,"sid":SID,"how":"end"|"stopped"}
+;
+; "stopped" when Stop ended it (the cell then ends "ok").  An error
+; while it is forced ends the cell without its lazy-end.  The page may
+; pause it, have the next element or go on (webrepl_lazy).  A promise
+; that is no stream is a value "#<promise V>", or such an item.
+
+(define lazy-shown (##sys#make-structure 'webnb-lazy-shown))
+(define lazy-seq 0)			; the SID of the last stream
+(define lazy-open '())			; the SIDs of those open, innermost first
+
+(define (lone-text v) (string-append "#<promise " (print-to-string v) ">"))
+
+(define (lazy-item! d dot?)
+  (let ((data (##sys#slot d 2)))
+    (if (fx> (string-length data) display-max)
+	(event! "lazy-item" "rid" active "sid" (car lazy-open) "mime" (##sys#slot d 1)
+		"data" "" "size" (string-length data) "dot" dot?)
+	(event! "lazy-item" "rid" active "sid" (car lazy-open) "mime" (##sys#slot d 1)
+		"data" data "dot" dot?))))
+
+;; X, a promise -> lazy-shown, or the text of a promise that is no stream
+(define (show-lazy x)
+  (let ((text #f))
+    (define (item e dot?)
+      (lazy-item! (if (##webnb#display? e) e (##webnb#text (print-to-string e))) dot?))
+    (set! lazy-open '())
+    (##webio#print-lazy
+     x
+     (lambda ()
+       (set! lazy-seq (fx+ lazy-seq 1))
+       (event! "lazy-open" "rid" active "sid" lazy-seq
+	       "parent" (and (pair? lazy-open) (car lazy-open)))
+       (set! lazy-open (cons lazy-seq lazy-open)))
+     (lambda (e) (item e #f))
+     (lambda (e) (item e #t))
+     (lambda (v)
+       (if (pair? lazy-open)
+	   (lazy-item! (##webnb#text (lone-text v)) #f)
+	   (set! text (lone-text v))))
+     (lambda (stopped?)
+       (event! "lazy-end" "rid" active "sid" (car lazy-open)
+	       "how" (if stopped? "stopped" "end"))
+       (set! lazy-open (cdr lazy-open))))
+    (or text lazy-shown)))
 
 
 ;;; The kernel

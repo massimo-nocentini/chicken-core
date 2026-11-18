@@ -54,7 +54,7 @@ const { arch, sub } = moduleArch(fs.readFileSync(path.join(webDir, 'index.html')
 const modDir = path.join(webDir, sub);
 const createChickenRepl = require(path.join(modDir, 'chicken-repl.js'));
 const Driver = require(path.join(__dirname, '..', '..', 'emscripten', 'web', 'repl-driver.js'));
-const { RUNNING, WAITING, BUSY, EXITED, SLEEPING } = Driver;
+const { RUNNING, WAITING, BUSY, EXITED, SLEEPING, PAUSED, LAZY_NEXT, LAZY_GO, LAZY_PAUSE } = Driver;
 const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(modDir, 'chicken-repl.wasm')));
 console.log('# ' + arch + ' modules in ' + modDir);
 
@@ -90,7 +90,7 @@ async function session(opts = {}) {
     later: (f, ms) => setTimeout(() => { s.pumps.push({ t: now(), later: ms }); f(); }, ms),
     canRun: () => s.unacked < s.high,
     onOutput: (fd, t) => { s.all += t; s.unacked += t.length; if (fd === 2) s.err += t; },
-    onState: st => s.states.push(st),
+    onState: (st, lazy) => { s.states.push(st); s.lazy = lazy; },
     onExit: code => { s.exit = { code, out: s.all }; },
     onCrash: msg => { s.crash = msg; },
     onDiag: t => { s.diag = (s.diag || '') + t; },
@@ -328,6 +328,81 @@ function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
     await S.expectOut(val('6'));
     await S.prompt();
     assert(/e$/.test(S.err.slice(e0)), 'stderr again: ' + JSON.stringify(S.err.slice(e0)));
+  });
+
+  await check('29 a lazy stream is printed element by element', async () => {
+    S.send('(define (nats n) (delay (cons n (nats (+ n 1)))))\n' +
+           '(define (take-s n s) (delay (let ((p (force s))) (if (or (zero? n) (null? p)) (quote ()) ' +
+           '(cons (car p) (take-s (- n 1) (cdr p)))))))\n');
+    await S.expectOut(/#;\d+> #;\d+> $/);
+    await S.prompt();
+    S.send('(take-s 5 (nats 0))\n');
+    await S.expectOut(val('(0 1 2 3 4)'));
+    await S.prompt();
+    assert(S.lazy === false, 'not printing a stream at the prompt');
+    // nested, improper, a promise that is no stream, an empty stream, and
+    // a promise of a promise (as aux's streams make them)
+    S.send('(delay (list (delay (list 1 "a")) (delay 3) (delay (quote ())) (delay (delay (cons 4 5)))))\n');
+    await S.expectOut(val('((1 "a") #<promise 3> () (4 . 5))'));
+    await S.prompt();
+    // only the results: an error's arguments are written as they are
+    const e0 = S.err.length;
+    S.send('(error "no" (delay 1))\n');
+    await S.prompt();
+    assert(/no: #<promise>/.test(S.err.slice(e0)), 'error argument: ' + S.err.slice(e0));
+  });
+
+  await check('30 Pause, Next and Go on a lazy stream; Stop ends it, not as an error', async () => {
+    const e0 = S.err.length;
+    S.send('(nats 0)\n');
+    await S.expectOut(/\(0 1 2/);
+    S.drv.lazy(LAZY_PAUSE);
+    await S.expectState(PAUSED);
+    assert(S.lazy === true, 'printing a stream while paused');
+    await sleep(100);
+    const n0 = S.all.length;
+    await sleep(200);
+    assert(S.all.length === n0, 'no output while paused');
+    S.mark();
+    S.drv.lazy(LAZY_NEXT);
+    await S.expectOut(/^ \d+$/);
+    await S.expectState(PAUSED);
+    await sleep(50);
+    assert(/^ \d+$/.test(S.since()), 'one element per Next: ' + JSON.stringify(S.since()));
+    S.mark();
+    S.drv.lazy(LAZY_GO);
+    await S.expectOut(/^( \d+){100}/);
+    S.interrupt();
+    await S.expectOut(/^\d* \.\.\.\)\n#;\d+> $/);
+    await S.prompt();
+    assert(S.lazy === false, 'the stream is over at the prompt');
+    assert(S.err.length === e0, 'Stop is no error: ' + S.err.slice(e0));
+    // Stop while paused, and a stop that comes between two streams
+    S.send('(nats 0)\n');
+    await S.expectOut(/\(0 1/);
+    S.drv.lazy(LAZY_PAUSE);
+    await S.expectState(PAUSED);
+    S.interrupt();
+    await S.expectOut(/ \.\.\.\)\n#;\d+> $/);
+    await S.prompt();
+    S.send('(take-s 3 (nats 7))\n');
+    await S.expectOut(val('(7 8 9)'));
+    await S.prompt();
+  });
+
+  await check('31 an error while forcing an element ends the stream as errors do', async () => {
+    const e0 = S.err.length;
+    S.send('(delay (cons 1 (delay (car (quote ())))))\n');
+    await S.prompt();
+    assert(/^\(1/.test(S.since()), 'the element before the error: ' + S.since());
+    assert(/Error: \(car\) bad argument type/.test(S.err.slice(e0)), 'the error');
+    assert(S.lazy === false, 'not printing a stream any more');
+    S.send('(nats 0)\n');                // and Stop works as before
+    await S.expectOut(/\(0 1 2/);
+    const e1 = S.err.length;
+    S.interrupt();
+    await S.prompt();
+    assert(S.err.length === e1, 'Stop is no error: ' + S.err.slice(e1));
   });
 
   await check('21 backpressure: canRun() false stops pumping, resumeOutput() restarts', async () => {

@@ -53,6 +53,7 @@ extern void C_ccall C_toplevel(C_word c, C_word *av) C_noret;
 
 static C_word repl_k;
 static int state = WEBREPL_RUNNING, exited, exit_code, in_eof, intr, in_scheme, started;
+static int lazy_on, lazy_cmd;	/* see webio_set_lazy */
 static char *in_buf;
 static size_t in_len, in_pos;
 static double slice_start, slice_ms = 50.0, wakeup_ms;
@@ -101,9 +102,16 @@ void webio_set_state(int s)
   /* A Stop that arrived while an evaluation ran and was never polled is
    * stale once the REPL waits for input again, or the notebook kernel
    * for its next request. */
-  if((s == WEBREPL_WAITING || s == WEBREPL_IDLE) && state != s) intr = 0;
+  if((s == WEBREPL_WAITING || s == WEBREPL_IDLE) && state != s) {
+    intr = 0;
+    /* (an element of a lazy stream may read: its command waits) */
+    if(!lazy_on) lazy_cmd = 0;
+  }
   state = s;
 }
+
+void webio_set_lazy(int on) { lazy_on = on; }
+int webio_take_lazy_command(void) { int c = lazy_cmd; lazy_cmd = 0; return c; }
 
 void webio_set_wakeup(double ms) { wakeup_ms = ms; }
 int webio_slice_expired(void) { return emscripten_get_now() - slice_start > slice_ms; }
@@ -311,7 +319,8 @@ EMSCRIPTEN_KEEPALIVE int webrepl_resume(void)
 
   if(state == WEBREPL_BUSY || state == WEBREPL_SLEEPING ||
      (state == WEBREPL_WAITING && (in_buf != NULL || in_eof || intr)) ||
-     (state == WEBREPL_IDLE && req_head != NULL))
+     (state == WEBREPL_IDLE && req_head != NULL) ||
+     (state == WEBREPL_PAUSED && (lazy_cmd || intr)))
     return run_slice();
 
   return state;
@@ -324,6 +333,17 @@ EMSCRIPTEN_KEEPALIVE void webrepl_interrupt(void)
 {
   if(state != WEBREPL_IDLE || req_head != NULL) intr = 1;
 }
+
+/* The printer of a lazy stream (webio.scm) takes CMD before it forces
+ * the next element: WEBREPL_LAZY_PAUSE (or NEXT) pauses it, in state
+ * PAUSED, where NEXT gets one more element and GO goes on.  A command
+ * that no printer takes is dropped at the next prompt or request. */
+EMSCRIPTEN_KEEPALIVE void webrepl_lazy(int cmd)
+{
+  if(cmd >= WEBREPL_LAZY_NEXT && cmd <= WEBREPL_LAZY_PAUSE) lazy_cmd = cmd;
+}
+/* whether a lazy stream is being printed (also while it is PAUSED) */
+EMSCRIPTEN_KEEPALIVE int webrepl_lazy_printing(void) { return lazy_on; }
 EMSCRIPTEN_KEEPALIVE int webrepl_state(void) { return state; }
 EMSCRIPTEN_KEEPALIVE int webrepl_started(void) { return started; }
 EMSCRIPTEN_KEEPALIVE int webrepl_exited(void) { return exited; }

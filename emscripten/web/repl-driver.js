@@ -52,8 +52,10 @@
  *   onOutput(fd, text)  Scheme output, fd 1 or 2, decoded UTF-8; fd 3
  *                carries the notebook kernel's events (webnb.scm), one
  *                JSON object per line
- *   onState(st)  after every slice; st is one of the state constants
- *                (IDLE: the notebook kernel waits for a request)
+ *   onState(st, lazy)  after every slice; st is one of the state
+ *                constants (IDLE: the notebook kernel waits for a
+ *                request; PAUSED: a lazy stream being printed waits for
+ *                lazy()), lazy whether one is being printed
  *   onExit(code), onCrash(message)  called once; the driver is then dead
  *   onDiag(text) C-level stderr before the REPL is ready (default
  *                console.warn)
@@ -62,6 +64,9 @@
  * newline that ends the line, so input should be "\n"-terminated.
  * post(text) hands the notebook kernel (csi -e "(##webnb#kernel)") one
  * whole request, as webnb.scm describes; requests queue in order.
+ * lazy(cmd) gives the printer of a lazy stream (webio.scm) a command,
+ * LAZY_PAUSE, LAZY_NEXT (one more element, when paused) or LAZY_GO,
+ * which it takes before it forces the next element.
  * describe(e) gives an error's message and stack, as onCrash has them;
  * fsError(e), the message of an error of the file system (emscripten's
  * ErrnoError has no message, only an errno).
@@ -76,7 +81,8 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, IDLE = 5;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, IDLE = 5, PAUSED = 6;
+  const LAZY_NEXT = 1, LAZY_GO = 2, LAZY_PAUSE = 3;
 
   // An error's message and stack: V8's stack begins with the message,
   // JavaScriptCore's and SpiderMonkey's have the frames only.
@@ -122,7 +128,7 @@
     }
     function report(st) {
       if (dead) return;
-      o.onState(st);
+      o.onState(st, st !== EXITED && !!M._webrepl_lazy_printing());
       if (st === BUSY) { if (!o.canRun || o.canRun()) kick(); }   // else resumeOutput()
       else if (st === SLEEPING) kick(Math.max(1, M._webrepl_wakeup_ms()));
     }
@@ -203,6 +209,11 @@
         M._webrepl_interrupt();
         kick();
       },
+      lazy(cmd) {
+        if (dead) return;
+        M._webrepl_lazy(cmd);
+        kick();
+      },
       resumeOutput() { if (!dead && M._webrepl_state() === BUSY) kick(); },
       state() { return dead ? EXITED : M._webrepl_state(); },
       get FS() { return M.FS; },
@@ -214,5 +225,6 @@
     return api;
   }
 
-  return { start, describe, fsError, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE };
+  return { start, describe, fsError, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE, PAUSED,
+           LAZY_NEXT, LAZY_GO, LAZY_PAUSE };
 });

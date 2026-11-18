@@ -29,9 +29,14 @@
 
 /* REPL states, as returned by webrepl_state() and webrepl_resume().
  * IDLE: the notebook kernel (webnb.scm) waits for a request
- * (webrepl_post); WAITING keeps meaning "Scheme reads stdin". */
+ * (webrepl_post); WAITING keeps meaning "Scheme reads stdin"; PAUSED:
+ * the printer of a lazy stream waits for a command (webrepl_lazy). */
 enum { WEBREPL_RUNNING = 0, WEBREPL_WAITING = 1, WEBREPL_BUSY = 2,
-       WEBREPL_EXITED = 3, WEBREPL_SLEEPING = 4, WEBREPL_IDLE = 5 };
+       WEBREPL_EXITED = 3, WEBREPL_SLEEPING = 4, WEBREPL_IDLE = 5,
+       WEBREPL_PAUSED = 6 };
+
+/* the commands of webrepl_lazy */
+enum { WEBREPL_LAZY_NEXT = 1, WEBREPL_LAZY_GO = 2, WEBREPL_LAZY_PAUSE = 3 };
 
 /* copies up to MAX bytes of fed input (never splitting a UTF-8
  * sequence) into BUF and returns their number, 0 when there is none */
@@ -54,6 +59,12 @@ int   webio_request_length(void);
 int   webio_take_request(unsigned char *buf, int max);
 /* drop fed stdin text and a pending EOF (between notebook cells) */
 void  webio_drop_input(void);
+
+/* lazy streams (webio.scm): whether one is being printed (as
+ * webrepl_lazy_printing reports it), and the command JS gave last,
+ * taken once (0 when there is none) */
+void  webio_set_lazy(int on);
+int   webio_take_lazy_command(void);
 
 void  webio_keep_restart(void);
 int   webio_drop_callbacks(void);

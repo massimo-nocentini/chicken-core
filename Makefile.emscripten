@@ -450,7 +450,7 @@ $(WASM_RUNTIME_EXPORTS): $(LIBCHICKEN_A) $(WASM_LIBC_EXPORTS)
 csi-node.exports: WASM_OWN_EXPORTS = _main
 chicken-repl.exports: WASM_OWN_EXPORTS = _main _webrepl_feed _webrepl_post _webrepl_resume \
   _webrepl_interrupt _webrepl_state _webrepl_started _webrepl_exited _webrepl_exit_code \
-  _webrepl_wakeup_ms _webrepl_set_slice_ms _malloc _free
+  _webrepl_wakeup_ms _webrepl_set_slice_ms _webrepl_lazy _webrepl_lazy_printing _malloc _free
 csi-node.exports chicken-repl.exports: %.exports: config.make $(WASM_MAIN_EXPORTS)
 	{ for s in $(WASM_OWN_EXPORTS); do echo $$s; done; \
 	  $(if $(WASM_MAIN_EXPORTS),sed 's/^/_/' $(WASM_MAIN_EXPORTS);) } | LC_ALL=C sort -u >$@.tmp

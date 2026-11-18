@@ -47,7 +47,8 @@
  *
  * Per run(), onCell gets, in this order,
  *   queued {position} -> start {count, name} ->
- *     (stream {name, text} | display {mime, data, id, size} | clear | input {waiting})*
+ *     (stream {name, text} | display {mime, data, id, size} | clear | input {waiting} |
+ *      lazy {op, sid, parent, mime, data, size, dot, how})*
  *     -> done {status, count, ms, wallMs, values, error, module, code, reason, message}
  * or queued -> cancelled {reason}; run() resolves with the done or
  * cancelled event and never rejects.  A display has a size when its
@@ -56,9 +57,21 @@
  * incomplete, interrupted or reset (from the kernel), or killed, exited
  * or crashed (the kernel went away).
  *
- * onState(state, {queued, current, version, reason}): off, starting,
- * idle, busy, sleeping, input (the cell reads stdin), dead (exited,
- * crashed or killed; the next run() respawns it) or unavailable.
+ * A value of the cell that is a lazy stream is shown as it arrives
+ * (webnb.scm): lazy events with op "open" (a stream begins, sid, an
+ * element of the stream parent, or the value itself when parent is
+ * null), "item" (an element of sid, as a display: mime, data, size;
+ * dot when it ends an improper one) and "end" (how: "end", or
+ * "stopped" by Stop, after which the cell ends "ok").  A stream still
+ * open when the cell is done was ended by an error.
+ *
+ * onState(state, {queued, current, version, reason, lazy}): off,
+ * starting, idle, busy, sleeping, input (the cell reads stdin), paused
+ * (a lazy stream waits for lazy()), dead (exited, crashed or killed;
+ * the next run() respawns it) or unavailable; lazy is whether a lazy
+ * stream is being shown (also lazyShown).  lazy(cmd) pauses it
+ * (LAZY_PAUSE), or, when paused, gets its next element (LAZY_NEXT) or
+ * lets it go on (LAZY_GO).
  *
  * writeFile(path, data) and writeFiles([{path, data}]) write into the
  * running kernel's file system (creating directories), if there is
@@ -76,7 +89,8 @@
   'use strict';
 
   // repl-driver.js's states
-  const RUNNING = 0, WAITING = 1, BUSY = 2, SLEEPING = 4, IDLE = 5;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, SLEEPING = 4, IDLE = 5, PAUSED = 6;
+  const LAZY_NEXT = 1, LAZY_GO = 2, LAZY_PAUSE = 3;
   // after input, how long the stdin box waits for the kernel to read again
   const INPUT_HIDE_MS = 250;
 
@@ -118,7 +132,7 @@
     const get = (f, dflt) => { if (!f) return dflt; const v = f(); return v === undefined ? dflt : v; };
 
     let w = null, gen = 0, ready = false, hello = false, info = null;
-    let state = 'off', reason = null, lastState = '';
+    let state = 'off', reason = null, lastState = '', lazy = false;
     let queue = [], current = null, execCount = 0;
     // start()'s promise: one per startup, kept across a respawn before hello
     let startP = null, startRes = null, startRej = null;
@@ -131,11 +145,11 @@
     let watchdog = null, disposed = false;
 
     function emitState() {
-      const key = state + '|' + queue.length + '|' + (current ? current.cellId : '') + '|' + reason;
+      const key = state + '|' + queue.length + '|' + (current ? current.cellId : '') + '|' + reason + '|' + lazy;
       if (key === lastState) return;
       lastState = key;
       call(o.onState, state, { queued: queue.length, current: current ? current.cellId : null,
-                               version: info ? info.version : null, reason });
+                               version: info ? info.version : null, reason, lazy });
     }
     function setState(s, why) { state = s; reason = why || null; emitState(); }
 
@@ -143,7 +157,7 @@
     function kill() {
       gen++;                            // later messages of this worker are ignored
       if (w) { try { w.terminate(); } catch (e) { /* gone */ } }
-      w = null; ready = false; hello = false; carry = ''; ackBytes = 0;
+      w = null; ready = false; hello = false; carry = ''; ackBytes = 0; lazy = false;
       disarm();
     }
 
@@ -250,7 +264,7 @@
         else if (current) onCell(current.cellId, { type: 'stream', name: m.fd === 2 ? 'stderr' : 'stdout', text: m.text });
         else log(m.fd === 2 ? 'stderr' : 'stdout', m.text);
         break;
-      case 'state': workerState(m.state); break;
+      case 'state': lazy = !!m.lazy && !!current; workerState(m.state); break;
       case 'exit': gone('exited', m.code); break;
       case 'crash': gone('crashed', m.message); break;
       }
@@ -280,7 +294,7 @@
       current.waiting = waiting;
       // just after input() the box stays up while the kernel may read again
       if (waiting || !current.hideTimer) showInput(current, waiting);
-      setState(waiting ? 'input' : st === SLEEPING ? 'sleeping' : 'busy');
+      setState(waiting ? 'input' : st === SLEEPING ? 'sleeping' : st === PAUSED ? 'paused' : 'busy');
     }
 
     // the cell's stdin box: CUR.shown is what onCell was last told
@@ -307,6 +321,20 @@
                   id: ev.id == null ? null : String(ev.id) };
       if (Number.isInteger(ev.size) && ev.size >= 0) d.size = ev.size;
       return d;
+    }
+
+    function lazyEvent(ev) {
+      const op = ev.ev.slice(5), l = { type: 'lazy', op, sid: ev.sid };
+      if (op === 'open') l.parent = ev.parent == null ? null : ev.parent;
+      else if (op === 'end') l.how = ev.how === 'stopped' ? 'stopped' : 'end';
+      else {
+        const d = display(ev);
+        l.mime = d.mime;
+        l.data = d.data;
+        if (d.size != null) l.size = d.size;
+        l.dot = ev.dot === true;
+      }
+      return l;
     }
 
     function checkRid(ev) {
@@ -347,8 +375,16 @@
           else log('display', d.mime + ' output not shown (' + (d.size != null ? d.size : d.data.length) + ' characters)');
         } else log('protocol', ev.ev + ' outside a cell' + (ev.mime ? ' (' + ev.mime + ')' : ''));
         break;
+      case 'lazy-open':
+      case 'lazy-item':
+      case 'lazy-end':
+        if (!current) { log('protocol', ev.ev + ' outside a cell'); break; }
+        if (ev.rid !== current.rid) checkRid(ev);
+        onCell(current.cellId, lazyEvent(ev));
+        break;
       case 'done':
         if (!current) { log('protocol', 'done for rid ' + ev.rid + ' without a current cell'); break; }
+        lazy = false;
         checkRidDone(ev);
         finish(ev, true);
         setState('idle');
@@ -469,6 +505,14 @@
           cur.hideTimer = setTimeout(() => { cur.hideTimer = null; if (current === cur && !cur.waiting) showInput(cur, false); },
                                      INPUT_HIDE_MS);
       },
+      // the lazy stream being shown, if any: LAZY_PAUSE, LAZY_NEXT, LAZY_GO
+      lazy(cmd) {
+        // (also before a state said that one is: a command no stream
+        // takes is dropped when the cell is done)
+        if (!current || !w || ![LAZY_NEXT, LAZY_GO, LAZY_PAUSE].includes(cmd)) return;
+        post({ type: 'lazy', cmd });
+        if (state === 'paused' && cmd !== LAZY_PAUSE) setState('busy');
+      },
       restart() {
         if (disposed) return Promise.reject({ reason: 'disposed' });
         const was = state;
@@ -496,9 +540,10 @@
       get queueLength() { return queue.length; },
       get execCount() { return execCount; },
       get info() { return info; },
+      get lazyShown() { return lazy; },
     };
     return api;
   }
 
-  return { create, kernelArgs };
+  return { create, kernelArgs, LAZY_NEXT, LAZY_GO, LAZY_PAUSE };
 });
