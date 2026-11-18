@@ -3384,7 +3384,7 @@ EOF
                                       (e (car ee))
                                       (val (if tail
                                                (let* ((num (or (car tail) 0))
-                                                      (te (fx- e (fx- (cdr tail) start)))
+                                                      (te (- e (fx- (cdr tail) start)))
                                                       (h (if decimal-head
                                                              (safe-exponent decimal-head (- e te) #f neg?)
                                                              0)))
