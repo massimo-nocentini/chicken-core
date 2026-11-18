@@ -2387,6 +2387,52 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
            '  (sleep 1))'),
       code(';; errors stop "Run all"; open the call history for details\n(vector-ref (vector 1 2 3) 5)'),
       code(';; a cell can read input\n(display "Your name? ")\n(print "Hello, " (read-line) "!")'),
+      md('## Lazy streams\n\n' +
+         'A stream is a promise that forces to `\'()` or to a pair whose cdr is a stream again (the streams of SICP). ' +
+         'A cell whose value is a stream shows its elements as they are forced, one by one. While it runs, ' +
+         '**Pause** stops before the next element, **Next** forces one more, **Go on** lets it run again, and ' +
+         '**Stop** ends it, keeping what was shown.'),
+      code(';; a stream of the integers from a to b - 1\n' +
+           '(define (range a b)\n' +
+           '  (delay (if (< a b) (cons a (range (+ a 1) b)) \'())))\n' +
+           '\n' +
+           '(range 0 10)'),
+      code(';; the elements appear as they arrive: one a second here\n' +
+           '(define (countdown n)\n' +
+           '  (delay (begin (sleep 1)\n' +
+           '                (if (= n 0)\n' +
+           '                    (list \'liftoff)\n' +
+           '                    (cons n (countdown (- n 1)))))))\n' +
+           '\n' +
+           '(countdown 5)'),
+      code(';; each element is shown as a cell value is: a nested stream,\n' +
+           ';; or a chart drawn in place\n' +
+           '(define (stream-map f s)\n' +
+           '  (delay (let ((p (force s)))\n' +
+           '           (if (null? p) \'() (cons (f (car p)) (stream-map f (cdr p)))))))\n' +
+           '\n' +
+           '(stream-map (lambda (n) (range 0 n)) (range 1 5))'),
+      code('(define (squares n)\n' +
+           '  (let loop ((i n) (l \'()))\n' +
+           '    (if (= i 0) l (loop (- i 1) (cons (* i i) l)))))\n' +
+           '\n' +
+           '(stream-map (lambda (n) (bar-chart (squares n))) (range 2 6))'),
+      code(';; an endless stream runs until Stop: try Pause, Next and Go on\n' +
+           '(define (integers-from n) (delay (cons n (integers-from (+ n 1)))))\n' +
+           '\n' +
+           '(define (stream-filter keep? s)\n' +
+           '  (delay (let loop ((p (force s)))\n' +
+           '           (cond ((null? p) \'())\n' +
+           '                 ((keep? (car p)) (cons (car p) (stream-filter keep? (cdr p))))\n' +
+           '                 (else (loop (force (cdr p))))))))\n' +
+           '\n' +
+           ';; the sieve of Eratosthenes\n' +
+           '(define (sieve s)\n' +
+           '  (delay (let* ((p (force s)) (q (car p)))\n' +
+           '           (cons q (sieve (stream-filter (lambda (n) (> (remainder n q) 0))\n' +
+           '                                         (cdr p)))))))\n' +
+           '\n' +
+           '(sieve (integers-from 2))'),
       md('## Tips\n\n' +
          '- csi\'s toplevel commands work in cells: `,d x` describes a value, `,x form` shows a macro expansion.\n' +
          '- **More → Upload files** (or dropping files here) copies them into the home directory; then `(load "file.scm")`.\n' +
