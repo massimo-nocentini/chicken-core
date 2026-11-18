@@ -468,7 +468,34 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       element past that loses its filter).  csi's toplevel commands
       (",d", ",x") work in cells, whose toplevel is the REPL's
       ("read-line" needs "(import (chicken io))", for example).
-      SRFI-18 threads only make progress while some cell runs.  The
+      SRFI-18 threads only make progress while some cell runs.
+
+      Lazy streams are printed as their elements arrive, in the REPL
+      and in the notebook.  A value that is a promise is forced: a
+      stream (a promise that forces to '() or to a pair whose cdr is
+      a stream again, a promise of a promise being forced again: the
+      streams of SICP, or of aux's "(aux stream)", not SRFI 41's
+      records) prints
+      "(0 1 2 3" and on, element by element, until it ends or Stop
+      ends it.  Stop is no error there: the elements printed stay,
+      the stream closes with " ...)", and the cell ends "ok".  An
+      element that is a promise is printed so in turn, and a promise
+      that forces to anything else prints "#<promise V>" (V its
+      value; csi elsewhere writes "#<promise>").  While a stream
+      prints, Pause stops it before its next element is forced, then
+      Next forces one more and Go on lets it run again (in the REPL,
+      buttons by Stop, and Enter on an empty line pauses or gets the
+      next element; in the notebook, buttons beside the stream).  In
+      the notebook each element is shown as a cell's value is: its
+      written text, or a display object (an "svg" or "html", say)
+      drawn in place.  A cell keeps the first and last 1000 elements
+      of each stream, and 20000 in all, with a note of how many were
+      left out.  Printing forces the promise, so its side effects
+      happen and its value is kept, as forcing it would.  Only the
+      values of a form are printed so, not promises inside other
+      data, nor the arguments of an error.
+
+      The
       notebook is saved in the browser (outputs up to 64 KB per
       cell) and can be exported
       and imported as a ".scm" file (cells start at ";; %%" lines,
