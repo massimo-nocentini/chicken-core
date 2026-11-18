@@ -440,6 +440,41 @@ async function runBrowser(name) {
     await waitStatus('ready');
   });
 
+  await check(P + 'a lazy stream prints as it arrives: Pause, Next (Enter), Go on, Stop', async () => {
+    const shown = () => page.evaluate(() => ['lazy-pause', 'lazy-next', 'lazy-go']
+      .filter(id => !document.getElementById(id).hidden).join(','));
+    await evalTo('(define (nats n) (delay (cons n (nats (+ n 1)))))', /#;\d+> $/);
+    await evalTo('(delay (list 1 (delay (cons 2 3)) (delay 4)))', /\n\(1 \(2 \. 3\) #<promise 4>\)\n#;\d+> $/);
+    assert(await shown() === '', 'no controls at the prompt');
+    await enter('(nats 0)');
+    await waitSince(/\(0 1 2 3/);
+    await page.waitForFunction(() => !document.getElementById('lazy-pause').hidden);
+    await page.click('#lazy-pause');
+    await waitStatus('waiting');
+    assert(await page.textContent('#status-text') === 'paused', 'status: ' + await page.textContent('#status-text'));
+    assert(await shown() === 'lazy-next,lazy-go', 'paused controls: ' + await shown());
+    const t0 = await term();
+    await page.waitForTimeout(300);
+    assert(await term() === t0, 'no output while paused');
+    await page.press('#line', 'Enter');   // on an empty line: Next
+    await page.waitForFunction(n => document.getElementById('term').textContent.length > n, t0.length);
+    await waitStatus('waiting');
+    const t1 = await term();
+    assert(/^ \d+$/.test(t1.slice(t0.length)), 'one element: ' + JSON.stringify(t1.slice(t0.length)));
+    await page.click('#lazy-next');
+    await page.waitForFunction(n => document.getElementById('term').textContent.length > n, t1.length);
+    await page.click('#lazy-go');
+    await page.waitForFunction(n => document.getElementById('term').textContent.length > n + 500, t1.length);
+    assert(await shown() === 'lazy-pause', 'going: ' + await shown());
+    await mark();
+    await page.click('#stop');
+    await waitSince(/ \.\.\.\)\n#;\d+> $/, 5000);
+    await waitStatus('ready');
+    assert(!/interrupt|Error/.test(await since()), 'Stop is no error: ' + await since());
+    assert(await shown() === '', 'no controls after it');
+    await evalTo('(+ 2 3)', /\n5\n/);
+  });
+
   // The worker answers a Stop at once, often within the same tick of a
   // coarse clock (1 ms in Firefox): that must not count as no answer.
   await check(P + 'Esc and Stop at an idle prompt keep the state', async () => {
@@ -932,6 +967,63 @@ async function runBrowser(name) {
     }, i, { timeout: 5000 });
     await nbWait(i, NB_DONE, 10000);
     assert(await nbStatus(i) === 'ok', 'ok');
+  });
+
+  await check(P + 'notebook: a lazy stream as it arrives; rich and nested elements; Pause, Next, Go on, Stop', async () => {
+    const box = i => nbCell(i).locator('.nb-lazybox');
+    const items = i => page.$$eval(`#nb-cells > li:nth-child(${i + 1}) .nb-lazybox > .nb-lazy > .nb-lazy-items > .nb-lazy-item`,
+                                   l => l.map(e => e.textContent));
+    const ctl = i => page.$$eval(`#nb-cells > li:nth-child(${i + 1}) .nb-lazy-ctl button`,
+                                 l => l.filter(b => !b.hidden).map(b => b.textContent).join(','));
+    let i = await nbEval('(import notebook) (delay (list 1 (delay (cons "a" 2)) (delay 3) ' +
+                         '(svg \'(svg (@ (viewBox "0 0 2 2") (width "20")) (circle (@ (cx 1) (cy 1) (r 1)))))))');
+    assert(await nbStatus(i) === 'ok', 'ok');
+    assert(await box(i).textContent() === '(1 ("a" . 2) #<promise 3> )', 'text: ' + JSON.stringify(await box(i).textContent()));
+    assert(await nbCell(i).locator('.nb-lazy-rich svg circle').count() === 1, 'the svg element is drawn');
+    assert(await nbCell(i).locator('.nb-lazy .nb-lazy').count() === 1, 'a nested stream');
+    assert(!(await nbValues(i)).length, 'no value besides the stream');
+    assert(await nbCell(i).locator('.nb-lazy-ctl').count() === 0, 'no controls once done');
+    await nbEval('(define (nats n) (delay (cons n (nats (+ n 1)))))');
+    i = await nbNew('(nats 0)');
+    await nbRun(i);
+    try {
+      await page.waitForFunction(n => document.querySelectorAll(`#nb-cells > li:nth-child(${n}) .nb-lazy-item`).length > 5, i + 1);
+      assert(await ctl(i) === 'Pause', 'running: ' + await ctl(i));
+      await nbCell(i).locator('.nb-lazy-ctl button:has-text("Pause")').click();
+      await waitNbStatus(/^waiting$/);
+      assert(await page.textContent('#nb-status-text') === 'paused', 'kernel paused');
+      await page.waitForFunction(n => {
+        const b = [...document.querySelectorAll(`#nb-cells > li:nth-child(${n}) .nb-lazy-ctl button`)];
+        return b.filter(x => !x.hidden).map(x => x.textContent).join(',') === 'Next,Go on';
+      }, i + 1);
+      const last = async () => (await items(i)).pop();
+      await page.waitForTimeout(100);
+      const l0 = await last();
+      await page.waitForTimeout(300);
+      assert(await last() === l0, 'nothing while paused');
+      await nbCell(i).locator('.nb-lazy-ctl button:has-text("Next")').click();
+      await page.waitForFunction(([n, k]) => [...document.querySelectorAll(
+        `#nb-cells > li:nth-child(${n}) .nb-lazybox > .nb-lazy > .nb-lazy-items > .nb-lazy-item`)].pop().textContent.trim() === k,
+        [i + 1, String(Number(l0) + 1)]);
+      await page.waitForTimeout(200);
+      assert(Number(await last()) === Number(l0) + 1, 'one element per Next: ' + await last());
+      // in order, but for the elements omitted between the first and the last ones
+      const l = (await items(i)).map(Number);
+      const jumps = l.filter((x, k) => k && x !== l[k - 1] + 1).length;
+      assert(l[0] === 0 && jumps <= 1, 'in order: ' + l.slice(0, 3) + ' … ' + l.slice(-3));
+      await nbCell(i).locator('.nb-lazy-ctl button:has-text("Go on")').click();
+      // past the first 1000 elements: the last ones are kept, a note says how many are not
+      await page.waitForFunction(n => /elements …/.test(document.querySelector(`#nb-cells > li:nth-child(${n}) .nb-lazy-gap`).textContent),
+                                 i + 1, { timeout: 30000 });
+    } finally {
+      await page.click('#nb-stop');      // (also when a check above failed)
+    }
+    await nbWait(i, NB_DONE, 5000);
+    assert(await nbStatus(i) === 'ok', 'Stop ends it as ok: ' + await nbStatus(i));
+    assert(/\d+ …\)$/.test(await box(i).textContent()), 'ends …): ' + (await box(i).textContent()).slice(-30));
+    assert(await nbCell(i).locator('.nb-lazy-ctl').count() === 0, 'no controls after Stop');
+    const kept = await page.$$eval(`#nb-cells > li:nth-child(${i + 1}) .nb-lazy-item`, l => l.length);
+    assert(kept <= 2000, 'at most 2000 elements kept: ' + kept);
   });
 
   await check(P + 'notebook: incomplete input evaluates nothing', async () => {
