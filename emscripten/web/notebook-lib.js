@@ -1212,8 +1212,38 @@
     case 'display':
       return MIMES.has(o.mime) && str(o.data) ? { k: 'display', mime: o.mime, data: o.data, id: typeof o.id === 'string' ? o.id.slice(0, 256) : null } : null;
     case 'error': { const e = cleanError(o.error); return e ? { k: 'error', error: e } : null; }
+    case 'lazy': { const n = cleanLazy(o.node, 0, { left: LAZY_MAX }); return n ? { k: 'lazy', node: n } : null; }
     default: return null;
     }
+  }
+  // a lazy stream's node (notebook.js): at most LAZY_MAX elements in all
+  // and LAZY_DEPTH streams deep; one saved while it ran is "stopped"
+  const LAZY_MAX = 50000, LAZY_DEPTH = 64, LAZY_ENDS = new Set(['end', 'stopped', 'error']);
+  function cleanLazy(n, depth, budget) {
+    if (!n || typeof n !== 'object' || depth > LAZY_DEPTH) return null;
+    let omitted = Number.isInteger(n.omitted) && n.omitted > 0 ? n.omitted : 0;
+    const list = a => {
+      const r = [];
+      for (const it of Array.isArray(a) ? a : []) {
+        if (budget.left <= 0) { omitted++; continue; }
+        budget.left--;
+        const c = cleanLazyItem(it, depth, budget);
+        if (c) r.push(c); else omitted++;
+      }
+      return r;
+    };
+    const items = list(n.items), tail = list(n.tail);
+    return { items, omitted, tail, end: LAZY_ENDS.has(n.end) ? n.end : 'stopped' };
+  }
+  function cleanLazyItem(it, depth, budget) {
+    if (!it || typeof it !== 'object') return null;
+    let c = null;
+    if (it.t === 'text' && str(it.text)) c = { t: 'text', text: it.text };
+    else if (it.t === 'note' && str(it.text, 4096)) c = { t: 'note', text: it.text };
+    else if (it.t === 'display' && MIMES.has(it.mime) && str(it.data)) c = { t: 'display', mime: it.mime, data: it.data };
+    else if (it.t === 'lazy') { const n = cleanLazy(it.node, depth + 1, budget); if (n) c = { t: 'lazy', node: n }; }
+    if (c && it.dot === true) c.dot = true;
+    return c;
   }
   // meta.packages: the URLs of the packages of compiled extensions the
   // notebook was saved with (the page offers to load those missing)

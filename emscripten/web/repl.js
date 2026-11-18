@@ -36,6 +36,9 @@
  * - Stop always posts "interrupt".  If the worker then stays silent for
  *   3 s while evaluating (a long primitive that never yields), it is
  *   terminated and a fresh one started.
+ * - csi prints a lazy stream as its elements arrive (webio.scm): while
+ *   it does, Pause, Next and Go on (and Enter on an empty line: Pause,
+ *   or Next when paused) post "lazy" commands to it.
  * - Settings, history and the theme live in localStorage when available;
  *   everything works without it (a build chosen in the Settings then
  *   goes in ?arch=).
@@ -59,7 +62,8 @@
 (function () {
   'use strict';
 
-  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, PAUSED = 6;
+  const LAZY_NEXT = 1, LAZY_GO = 2, LAZY_PAUSE = 3;     // (repl-driver.js)
   const TERM_LINES = 20000;             // terminal scrollback cap,
   const TERM_CHARS = 2000000;           // also for output without newlines
   const HISTORY_MAX = 500;
@@ -426,6 +430,7 @@
   // ---- status
 
   let worker = null, gen = 0, ready = false, alive = false, state = null;
+  let lazy = false;                     // csi prints a lazy stream
   let msgs = 0, watchdog = 0, eofSent = false;   // msgs: messages from the worker
   const reqs = new Map();
   let reqId = 0;
@@ -454,8 +459,20 @@
     case RUNNING:
     case BUSY:     return setStatus('running');
     case SLEEPING: return setStatus('sleeping');
+    case PAUSED:   return setStatus('waiting', 'paused');
     default:       return setStatus('loading');
     }
+  }
+  // the controls of a lazy stream being printed
+  function lazyControls() {
+    const on = lazy && alive && !replay, paused = on && state === PAUSED;
+    $('lazy-pause').hidden = !on || paused;
+    $('lazy-next').hidden = $('lazy-go').hidden = !paused;
+  }
+  function lazyCommand(cmd) {
+    if (!worker || !alive || !lazy || replay) return;
+    worker.postMessage({ type: 'lazy', cmd });
+    if (state === PAUSED && cmd !== LAZY_PAUSE) { state = BUSY; updateStatus(); lazyControls(); }
   }
   function setInputEnabled(on) {
     line.disabled = !on;
@@ -507,6 +524,8 @@
     worker = null;
     alive = ready = false;
     state = null;
+    lazy = false;
+    lazyControls();
     for (const r of reqs.values()) r.reject(new Error('the interpreter was restarted'));
     reqs.clear();
     ackChars = 0;
@@ -633,6 +652,8 @@
       break;
     case 'state':
       state = m.state;
+      lazy = !!m.lazy;
+      lazyControls();
       if (state === WAITING && atPrompt() && ilog) ilog.prompt();
       if (replay) { replayStep(); break; }
       updateStatus();
@@ -806,7 +827,10 @@
     const v = line.value, a = line.selectionStart, b = line.selectionEnd;
     if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.isComposing) {
       e.preventDefault();
-      submit();
+      // while a lazy stream is printed: Pause, or Next when paused
+      // (not when an element of it reads a line)
+      if (lazy && !v && !replay && state !== WAITING) lazyCommand(state === PAUSED ? LAZY_NEXT : LAZY_PAUSE);
+      else submit();
     } else if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && v) {
       e.preventDefault();                 // on an empty line Tab moves focus as usual
       line.setRangeText('  ', a, b, 'end');
@@ -852,6 +876,9 @@
 
   $('entry').addEventListener('submit', e => { e.preventDefault(); submit(); line.focus(); });
   $('stop').addEventListener('click', () => { stop(); if (!touch) line.focus(); });
+  $('lazy-pause').addEventListener('click', () => { lazyCommand(LAZY_PAUSE); if (!touch) line.focus(); });
+  $('lazy-next').addEventListener('click', () => { lazyCommand(LAZY_NEXT); if (!touch) line.focus(); });
+  $('lazy-go').addEventListener('click', () => { lazyCommand(LAZY_GO); if (!touch) line.focus(); });
   $('restart').addEventListener('click', restart);
   $('notice-restart').addEventListener('click', () => { restart(); });
   $('clear').addEventListener('click', () => { clearTerm(); consoleGen++; if (!touch && !line.disabled) line.focus(); });

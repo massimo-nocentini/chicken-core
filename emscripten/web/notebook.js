@@ -35,6 +35,10 @@
  * - Kernel output is queued per cell and rendered once per animation
  *   frame; while a cell runs, its outputs keep their first and last 512
  *   KB of streams and 500 outputs (a note says how much was left out).
+ * - A value that is a lazy stream is shown as its elements arrive, each
+ *   as a value is (text, a rich output, or a stream in turn), keeping
+ *   the first and last 1000 elements of each stream and 20000 in all;
+ *   while it runs, it can be paused, stepped and resumed.
  * - Code cells are colored by notebook-lib.js's highlighter, in an
  *   overlay behind each editor, painted as cells come into view.
  * - Rich outputs (HTML, SVG, Markdown) are rebuilt from an allowlist by
@@ -64,6 +68,7 @@
   const NB_OUT_MAX = 1024 * 1024;       // outputs per cell in a named copy
   const TRASH_MAX = 20, LOG_LINES = 500;
   const SVG_NS = 'http://www.w3.org/2000/svg';
+  const LAZY_HEAD = 1000, LAZY_TAIL = 1000, LAZY_CELL_MAX = 20000;
 
   const cellsEl = $('nb-cells');
   const statusEl = $('nb-status'), statusText = $('nb-status-text');
@@ -185,6 +190,7 @@
   const STATES = {
     off: ['off', 'kernel not started'], starting: ['loading', 'starting kernel'], idle: ['ready', 'idle'],
     busy: ['running', 'running'], sleeping: ['sleeping', 'sleeping'], input: ['waiting', 'waiting for input'],
+    paused: ['waiting', 'paused'],
     dead: ['exited', 'kernel stopped'], unavailable: ['error', 'unavailable'],
   };
   function setStatus(key, text) {
@@ -195,7 +201,7 @@
     kernelState = state;
     const [key, label] = STATES[state] || ['loading', state];
     let text = label;
-    if ((state === 'busy' || state === 'sleeping' || state === 'input') && info && info.queued)
+    if ((state === 'busy' || state === 'sleeping' || state === 'input' || state === 'paused') && info && info.queued)
       text += ' · ' + info.queued + ' queued';
     if (state === 'dead' && info && info.reason) text = clip(String(info.reason), 60);
     setStatus(key, text);
@@ -214,6 +220,7 @@
       $('nb-info').textContent = 'CHICKEN ' + kernel.info.version + ' · ' + P.ARCH;
       nb.chicken = kernel.info.version;
     }
+    lazyControls();
     updateToolbar();
   }
   function onLog(kind, text) {
@@ -249,6 +256,7 @@
                text.length < STREAM_TAIL) text += ops[++i].text;
         appendStream(cell, op.name, text);
       } else if (op.type === 'display') addDisplay(cell, op);
+      else if (op.type === 'lazy') applyLazy(cell, op);
       else if (op.type === 'clear') clearOutputs(cell);
     }
   }
@@ -281,7 +289,7 @@
       kernelUsed = true;
       chrome(cell);
       break;
-    case 'stream': case 'display': case 'clear':
+    case 'stream': case 'display': case 'clear': case 'lazy':
       queueOp(cell, ev);
       break;
     case 'input':
@@ -321,6 +329,7 @@
 
   function finish(cell, ev) {
     showStdin(cell, false);
+    endLazy(cell, ev.status);
     if (ev.count != null) cell.count = ev.count;
     else if (cell.runCount != null) cell.count = cell.runCount;
     const n = indexOf(cell) + 1;
@@ -374,6 +383,7 @@
   function clearOutputs(cell) {
     cell.outputs = [];
     cell.rt = null;
+    if (cell.lz) cell.lz.nodes.clear();
     const v = views.get(cell.id);
     if (v) v.out.textContent = '';
   }
@@ -414,6 +424,7 @@
     case 'note': return h('p', { class: 'nb-note' + (o.bad ? ' bad' : ''), text: o.text, hidden: o.text ? null : '' });
     case 'error': return renderError(cell, o.error);
     case 'display': return renderDisplay(cell, o);
+    case 'lazy': return renderLazy(cell, o);
     }
     return h('p', { class: 'nb-note', text: 'unsupported output' });
   }
@@ -622,6 +633,190 @@
     rt.tailN++;
     addOutput(cell, o);
     trimTail(cell, rt);
+  }
+
+  // ---- lazy streams
+  //
+  // A value that is a lazy stream (nb-kernel.js's lazy events) is the
+  // output {k: 'lazy', node}; node: {items, omitted, tail, end}, items
+  // the first elements and tail the last ones (omitted those between),
+  // end null while it runs, then 'end', 'stopped' or 'error'.  An
+  // element is {t: 'text', text}, {t: 'display', mime, data}, {t:
+  // 'note', text} (too large to show) or {t: 'lazy', node}, with dot
+  // true when it ends an improper stream.  While the cell runs, cell.lz
+  // has the nodes by the kernel's sid and the count of elements kept.
+
+  const lazyEls = new WeakMap();        // node -> {items, gap, tail, close}; element -> its element
+  const lazyCtl = new WeakMap();        // output -> its controls
+  const liveLazy = new Set();           // outputs of streams still running
+
+  const lazyNode = () => ({ items: [], omitted: 0, tail: [], end: null });
+  const omittedText = n => '… ' + fmtNum(n) + (n === 1 ? ' element' : ' elements') + ' …';
+  const CLOSE = { end: ')', stopped: ' …)', error: ' …' };
+
+  // (SEP: the element follows another one, or the note of those
+  // omitted: a space before it, which a copy of the output keeps)
+  function renderLazyItem(cell, it, sep) {
+    let c;
+    if (it.t === 'lazy') c = renderLazyNode(cell, it.node);
+    else if (it.t === 'display') c = h('span', { class: 'nb-lazy-rich' }, renderDisplay(cell, it));
+    else if (it.t === 'note') c = h('span', { class: 'nb-lazy-note', text: it.text });
+    else c = it.text;
+    const el = h('span', { class: 'nb-lazy-item' }, sep ? ' ' : null, it.dot ? h('span', { class: 'nb-lazy-dot', text: '. ' }) : null, c);
+    lazyEls.set(it, el);
+    return el;
+  }
+  function renderLazyNode(cell, node) {
+    const items = h('span', { class: 'nb-lazy-items' }), tail = h('span', { class: 'nb-lazy-items' });
+    node.items.forEach((it, i) => items.appendChild(renderLazyItem(cell, it, i > 0)));
+    for (const it of node.tail) tail.appendChild(renderLazyItem(cell, it, true));
+    const gap = h('span', { class: 'nb-lazy-gap' });
+    setGap(gap, node.omitted);
+    const close = h('span', { class: 'nb-lazy-close' });
+    const el = h('span', { class: 'nb-lazy' }, h('span', { class: 'nb-lazy-paren', text: '(' }), items, gap, tail, close);
+    lazyEls.set(node, { items, gap, tail, close });
+    setLazyEnd(node);
+    return el;
+  }
+  // (no text while there is none: a copy of the output has no space for it)
+  function setGap(gap, n) {
+    if (!n) gap.replaceChildren();
+    else if (gap.lastChild) gap.lastChild.textContent = omittedText(n);
+    else gap.replaceChildren(' ', h('span', { text: omittedText(n) }));
+  }
+  function setLazyEnd(node) {
+    const e = lazyEls.get(node);
+    if (!e) return;
+    e.close.textContent = node.end ? CLOSE[node.end] || ')' : ' …';
+    e.close.className = 'nb-lazy-close' + (node.end ? (node.end === 'end' ? '' : ' ' + node.end) : ' open');
+  }
+  function renderLazy(cell, o) {
+    const box = h('div', { class: 'nb-lazybox' }, renderLazyNode(cell, o.node));
+    if (!o.node.end && (cell.status === 'running' || cell.status === 'waiting')) {
+      const n = indexOf(cell) + 1;
+      const btn = (text, title, cmd) => {
+        const b = h('button', { class: 'btn ghost', type: 'button', text, title });
+        b.addEventListener('click', () => { if (kernel) kernel.lazy(cmd); });
+        return b;
+      };
+      const ctl = {
+        pause: btn('Pause', 'Stop forcing elements after the next one', K.LAZY_PAUSE),
+        next: btn('Next', 'Force one more element', K.LAZY_NEXT),
+        go: btn('Go on', 'Keep forcing elements until the stream ends or Stop', K.LAZY_GO),
+      };
+      ctl.box = h('span', { class: 'nb-lazy-ctl', role: 'group', 'aria-label': 'Stream of cell ' + n }, ctl.pause, ctl.next, ctl.go);
+      box.appendChild(ctl.box);
+      lazyCtl.set(o, ctl);
+      liveLazy.add(o);
+      lazyControls();
+    }
+    return box;
+  }
+  // the controls of the streams running follow the kernel's state
+  function lazyControls() {
+    const paused = kernelState === 'paused';
+    for (const o of liveLazy) {
+      const c = lazyCtl.get(o);
+      if (!c) continue;
+      c.pause.hidden = paused;
+      c.next.hidden = c.go.hidden = !paused;
+    }
+  }
+  // the elements kept of NODE (with those of the streams in it)
+  function lazyWeight(it) {
+    if (it.t !== 'lazy') return 1;
+    let n = 1;
+    for (const x of it.node.items) n += lazyWeight(x);
+    for (const x of it.node.tail) n += lazyWeight(x);
+    return n;
+  }
+  function lazyAdd(cell, node, it) {
+    const lz = cell.lz, e = lazyEls.get(node);
+    if (node.detached) return;
+    if (!node.omitted && !node.tail.length && node.items.length < LAZY_HEAD && lz.count < LAZY_CELL_MAX) {
+      node.items.push(it);
+      lz.count++;
+      if (e) e.items.appendChild(renderLazyItem(cell, it, node.items.length > 1));
+      return;
+    }
+    if (lz.count >= LAZY_CELL_MAX && !node.tail.length) {
+      node.omitted++;
+      if (it.t === 'lazy') it.node.detached = true;
+    } else {
+      node.tail.push(it);
+      lz.count++;
+      if (e) e.tail.appendChild(renderLazyItem(cell, it, true));
+      while (node.tail.length && (node.tail.length > LAZY_TAIL || lz.count > LAZY_CELL_MAX)) {
+        const old = node.tail.shift();
+        node.omitted++;
+        lz.count -= lazyWeight(old);
+        const el = lazyEls.get(old);
+        if (el) el.remove();
+      }
+    }
+    if (e) setGap(e.gap, node.omitted);
+  }
+  function applyLazy(cell, op) {
+    const lz = cell.lz || (cell.lz = { nodes: new Map(), count: 0 });
+    if (op.op === 'open') {
+      const node = lazyNode();
+      lz.nodes.set(op.sid, node);
+      const parent = op.parent == null ? null : lz.nodes.get(op.parent);
+      if (parent) lazyAdd(cell, parent, { t: 'lazy', node });
+      else if (op.parent == null) addOutput(cell, { k: 'lazy', node });
+      else node.detached = true;
+      return;
+    }
+    const node = lz.nodes.get(op.sid);
+    if (!node) return;                  // (outputs cleared meanwhile)
+    if (op.op === 'end') {
+      node.end = op.how === 'stopped' ? 'stopped' : 'end';
+      lz.nodes.delete(op.sid);
+      setLazyEnd(node);
+      if (!lz.nodes.size) endLazy(cell, null);
+      return;
+    }
+    const it = op.size != null ? { t: 'note', text: tooLarge(op.mime, op.size) }
+      : op.mime === 'text/plain' ? { t: 'text', text: op.data } : { t: 'display', mime: op.mime, data: op.data };
+    if (op.dot) it.dot = true;
+    lazyAdd(cell, node, it);
+  }
+  // the cell is done (STATUS, or null when its streams ended): those
+  // still open ended with it, and none can be paused any more
+  function endLazy(cell, status) {
+    if (cell.lz) {
+      for (const node of cell.lz.nodes.values()) {
+        if (node.end) continue;
+        node.end = status === 'error' || status === 'incomplete' ? 'error' : 'stopped';
+        setLazyEnd(node);
+      }
+      cell.lz.nodes.clear();
+    }
+    for (const o of cell.outputs) {
+      if (o.k !== 'lazy' || !liveLazy.has(o)) continue;
+      liveLazy.delete(o);
+      const c = lazyCtl.get(o);
+      if (c) c.box.remove();
+      lazyCtl.delete(o);
+      if (!o.node.end) { o.node.end = 'stopped'; setLazyEnd(o.node); }
+    }
+    if (status != null) cell.lz = null;
+  }
+  // NODE written as the REPL prints it, at most MAX characters
+  function lazyText(node, max) {
+    let s = '(';
+    const put = it => {
+      if (s.length > max) return;
+      if (s.length > 1) s += ' ';
+      if (it.dot) s += '. ';
+      s += it.t === 'lazy' ? lazyText(it.node, max - s.length)
+        : it.t === 'display' ? '#<' + it.mime + '>' : it.text;
+    };
+    node.items.forEach(put);
+    if (node.omitted) { if (s.length > 1) s += ' '; s += '...'; }
+    node.tail.forEach(put);
+    s += node.end === 'end' ? ')' : ' ...)';
+    return s.length > max ? s.slice(0, Math.max(0, max - 1)) + '…' : s;
   }
 
   // ---- stdin
@@ -1647,10 +1842,14 @@
     const r = [];
     for (const o of outs) {
       if (o.transient) continue;
-      const size = o.k === 'error' ? JSON.stringify(o.error).length : String(o.text != null ? o.text : o.data != null ? o.data : '').length;
+      const size = o.k === 'error' ? JSON.stringify(o.error).length : o.k === 'lazy' ? JSON.stringify(o.node).length
+        : String(o.text != null ? o.text : o.data != null ? o.data : '').length;
       if (size <= left) { r.push(stripOutput(o)); left -= size; continue; }
       if ((o.k === 'stream' || o.k === 'value') && left > 200 && o.text != null) {
         r.push(Object.assign(stripOutput(o), { text: o.text.slice(0, left) }));
+      } else if (o.k === 'lazy' && left > 200) {
+        // as text, the elements that fit
+        r.push({ k: 'value', text: lazyText(o.node, left) });
       }
       r.push({ k: 'note', text: '… more output was not saved' });
       break;
@@ -1735,8 +1934,8 @@
   // the page's rules kept: tokens, the cells, their counts and status
   // bars, markdown, outputs and colors; not those of the editor, the
   // controls or the selection
-  const CSS_KEEP = /^(?::root(?::not\(\[data-theme=.light.\]\))?|code|kbd|details > summary)$|\.(?:nb-(?:cell|gutter|body|md|out|rich|stream|value|note|error|trace|count)|md-|syn-)/;
-  const CSS_DROP = /nb-(?:editor|src|hl|bal|run|tools|stdin|more|hidden-out)|is-selected|is-editing|:hover|button|\.empty/;
+  const CSS_KEEP = /^(?::root(?::not\(\[data-theme=.light.\]\))?|code|kbd|details > summary)$|\.(?:nb-(?:cell|gutter|body|md|out|rich|stream|value|note|error|trace|count|lazy)|md-|syn-)/;
+  const CSS_DROP = /nb-(?:editor|src|hl|bal|run|tools|stdin|more|hidden-out|lazy-ctl)|is-selected|is-editing|:hover|button|\.empty/;
   // the exported code (.nb-code) has the frame of the editor and the text
   // of its textarea: these properties of their rules
   const CSS_CODE = { '.nb-editor': /^(?:border|border-[\w-]+|background)$/,

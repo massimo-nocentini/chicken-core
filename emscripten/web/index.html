@@ -723,6 +723,20 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 .nb-value.none::before { content: none; }
 .nb-value.clamped { max-height: calc(30 * 1.5em); overflow-y: hidden; -webkit-mask-image: linear-gradient(#000 80%, transparent); mask-image: linear-gradient(#000 80%, transparent); }
 .nb-more { margin: 2px 0 4px 1.4em; min-height: 28px; padding: 0 9px; font-size: 12.5px; }
+/* a lazy stream, as its elements arrive (notebook.js) */
+.nb-lazybox { position: relative; margin: 0; padding-left: 1.4em; }
+.nb-lazybox::before { content: "⇒"; position: absolute; left: 0; color: var(--muted); }
+.nb-lazy-items { display: contents; }
+.nb-lazy-item { white-space: pre-wrap; overflow-wrap: anywhere; }
+.nb-lazy-rich { display: inline-block; max-width: 100%; vertical-align: top; white-space: normal; }
+.nb-lazy-rich > .nb-rich { margin: 2px 0; }
+.nb-lazy-note, .nb-lazy-gap > span { color: var(--muted); font: italic 12.5px/1.5 var(--sans); }
+.nb-lazy-paren, .nb-lazy-close, .nb-lazy-dot { color: var(--muted); }
+.nb-lazy-close { white-space: pre; }
+.nb-lazy-close.open { animation: pulse 1s ease-in-out infinite; }
+.nb-lazy-close.error { color: var(--term-err); }
+.nb-lazy-ctl { display: inline-flex; gap: 4px; margin-left: 12px; vertical-align: baseline; font-family: var(--sans); }
+.nb-lazy-ctl .btn { min-height: 24px; padding: 0 8px; font-size: 12px; }
 .nb-error {
   margin: 4px 0;
   padding: 7px 12px 8px;
@@ -998,6 +1012,15 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
       <button class="btn ghost danger" id="stop" type="button" aria-label="Stop" title="Stop the running evaluation (Esc)">
         <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg><span class="label">Stop</span>
       </button>
+      <button class="btn ghost" id="lazy-pause" type="button" aria-label="Pause the stream" title="Pause the lazy stream being printed, after its next element (Enter on an empty line)" hidden>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg><span class="label">Pause</span>
+      </button>
+      <button class="btn ghost" id="lazy-next" type="button" aria-label="Next element" title="Force the next element of the stream (Enter on an empty line)" hidden>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5.5v13a1 1 0 0 0 1.53.85l9.4-6.5a1 1 0 0 0 0-1.7L7.53 4.65A1 1 0 0 0 6 5.5z"/><rect x="17" y="5" width="2.5" height="14" rx="1"/></svg><span class="label">Next</span>
+      </button>
+      <button class="btn ghost" id="lazy-go" type="button" aria-label="Go on" title="Keep printing the stream until it ends or Stop" hidden>
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a1 1 0 0 0 1.53.85l10.4-6.5a1 1 0 0 0 0-1.7L9.53 4.65A1 1 0 0 0 8 5.5z"/></svg><span class="label">Go on</span>
+      </button>
       <button class="btn ghost" id="restart" type="button" aria-label="Restart" title="Start a fresh interpreter">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg><span class="label">Restart</span>
       </button>
@@ -1072,7 +1095,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <button class="btn primary" id="send" type="submit" disabled>Run</button>
         </form>
       </div>
-      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops, <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves the session in this browser (Saved).</p>
+      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops (a lazy stream being printed too: <kbd>Enter</kbd> on an empty line pauses it, then gets its next element), <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves the session in this browser (Saved).</p>
     </section>
 
     <section class="panel" id="panel-notebook" role="tabpanel" aria-labelledby="tab-notebook" hidden>
