@@ -15,6 +15,11 @@ Run it locally
   Any static web server works, e.g.  python3 -m http.server 8080
   Opening index.html directly (file://) does NOT work: browsers do not
   run workers or load .wasm files from file:// URLs.
+  If the server sends a Content-Security-Policy header with
+  repl-worker.js, it must allow script-src 'unsafe-eval' there for
+  js-eval, JavaScript cells and ,js.  JavaScript run this way (and
+  imported notebooks) can fetch from any site the server's policy
+  allows.
 
 Browser requirements
   wasm64 runs where the browser has 64-bit WebAssembly (memory64) and
@@ -45,6 +50,9 @@ Using it
                 html, svg, markdown, table, image.  Saved in the browser;
                 export (.scm, .json, or .html: a static page with no scripts)
                 and import (.scm, .json) from More.
+  JavaScript    (import js) and JavaScript cells in the notebook (key l),
+                ,js in the REPL: they run the worker's JavaScript, which
+                can call Scheme back: see the README.
   Compile to C  translates Scheme to C with the CHICKEN compiler itself.
   Saved         Ctrl+S or the Saved button (REPL), More → Save in this
                 browser… / Saved notebooks… (Notebook): named copies in
@@ -61,7 +69,7 @@ Using it
                 unless it was built with WASM_WEB_PACKAGE_ORIGINS.
 
 Files
-  index.html, repl.js, repl-worker.js, repl-driver.js,
+  index.html, repl.js, repl-worker.js, repl-driver.js, js-lexer.js,
   notebook.js, notebook-lib.js, nb-kernel.js,
   session-store.js, sessions.js,
   packages.js, package-check.js                    the page

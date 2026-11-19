@@ -495,12 +495,147 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       values of a form are printed so, not promises inside other
       data, nor the arguments of an error.
 
+      "(import js)" (emscripten/webjs.scm) lets Scheme, in the REPL
+      and in notebook cells, call JavaScript, and JavaScript call
+      Scheme back.  JavaScript runs in the interpreter's worker, not
+      in the page: it has the worker's globals ((js-global
+      "Math.max"), fetch, timers) but no DOM.  The module provides
+      js-global (a path such as "Math.max", walked property by
+      property), js-ref, js-set!, js-has?, js-delete!, js-keys,
+      js-call, js-invoke (a method: (js-invoke (js-global
+      "performance") "now")), js-new, js-eval, js-await, js-obj,
+      js->list, js->vector, list->js, vector->js, js->alist,
+      alist->js, js->bytevector, js->number-vector, js-typeof,
+      js-instanceof?, js-same?, js->string, js-function, js-method,
+      js-async-function, js-release!, js-null, js-undefined and
+      their predicates, and js-nullish?.  undefined is the
+      unspecified value (nothing is printed), null is js-null (true
+      in Scheme); numbers that are integers within 2^53-1 become
+      exact, so a division may give a ratio (use exact->inexact),
+      and larger exact integers go to JavaScript as BigInts; symbols
+      and keywords become strings; vectors, bytevectors and SRFI-4
+      vectors are copied into Arrays and typed arrays (changing those
+      leaves the Scheme vector alone); procedures become functions;
+      lists and every other Scheme object cross as opaque values
+      that come back as themselves (list->js copies a list).
+      JavaScript objects come to Scheme as handles printed
+      "#<js-object Array(3)>", equal? when they name the same object
+      (js-same? compares as Object.is).  A Scheme procedure called by
+      JavaScript while Scheme waits on that call (in js-call, a map,
+      a sort's comparator, an event dispatched from Scheme) runs at
+      once and returns its value.  Called at any other time (a
+      timer, a promise's reaction, a later event) it is queued and
+      returns a promise: queued calls run while the REPL waits at its
+      prompt, while the notebook kernel is idle, or inside js-await,
+      never in the middle of other code, nor during "sleep" (each
+      with ports of its own: in the REPL its errors are written on
+      stderr, in the notebook it writes, errors included, in the
+      cell it came from); js-async-function always queues.
+      "(js-await p)" waits for a promise without blocking the page
+      (status "awaiting"; Stop interrupts it), and gives anything
+      else back as it is; inside a call from JavaScript it is an
+      error, as reading stdin there is.  A queued call that waits so
+      holds the prompt (or the idle kernel) until its promise
+      settles: typed input and new cells run after it, or after
+      Stop ends it.  In the REPL, ",js SOURCE" evaluates JavaScript
+      as a notebook's JavaScript cell does (below): top-level names
+      persist from one ",js" line to the next, the value is printed
+      (a promise is waited for), and ",?" lists the command.  SOURCE
+      is the rest of the line, with the lines entered with it
+      (Shift+Enter), and more lines while it is incomplete.  An
+      error shows the JavaScript stack ("js[N]:LINE").  Output that
+      a callback or a timer writes while the REPL waits at its
+      prompt goes on a line of its own, and the prompt follows it
+      again; while a Scheme callback runs there, the status says
+      "running callback", and Stop ends it.
+
+      A JavaScript exception is an (exn js) condition, "Name:
+      message", with the properties error, name and stack; a Scheme
+      error crossing JavaScript is a SchemeError there, raised again
+      as itself if nothing catches it.  Leaving a call from
+      JavaScript with a continuation (an early exit from a forEach)
+      works; re-entering one that has returned is an error, and deep
+      recursion between the two ends with "too many nested calls
+      between Scheme and JavaScript".  Stop cannot interrupt
+      JavaScript that does not return (a "while(true){}"), nor
+      Scheme it calls: the notebook restarts its kernel 3 s after
+      Stop, and the REPL its interpreter.  Each side's garbage
+      collector frees what the other holds, but not a cycle through
+      both; js-release! frees a handle at once.  js-function gives a
+      function that stays the same, for addEventListener and
+      removeEventListener (a procedure crossing on its own is a new
+      function each time).  console.log, info and debug write to
+      standard output, console.warn, error and trace to standard
+      error, and an uncaught JavaScript exception is reported there
+      ("Uncaught Error: ..."), while the session goes on.  The worker
+      has no IndexedDB, caches, storage buckets, file systems
+      (navigator.storage, webkitRequestFileSystem), nested workers or
+      BroadcastChannel, and cannot post to the page, but it can fetch
+      from any site the server allows: an imported notebook is code.
+      A listener of the worker's "message" event gets only what
+      JavaScript dispatches itself, not the page's messages.  js-eval
+      needs eval in the worker: a server that sends repl-worker.js
+      with a Content-Security-Policy lacking 'unsafe-eval' disables
+      js-eval, JavaScript cells and ",js" (the error says so), and the
+      rest still works.
+
+      A notebook's code cell can hold JavaScript instead of Scheme:
+      "l" in command mode, or the cell's language badge, switches
+      it ("JS" marks it).  Such a cell is evaluated in the kernel's
+      worker, where "(import js)" reaches, as a script whose
+      top-level "let", "const" and "class" declarations are
+      rewritten to "var" (its lines kept), so that its names
+      persist from cell to cell, as those of "var" and "function"
+      do: "const" is not enforced across cells, a cell starting
+      with 'use strict' keeps its declarations to itself (as
+      js-eval, which is not rewritten, keeps its top-level "let",
+      "const" and "class": only its "var" and "function" persist),
+      and the rewriting reads "if (x) /re/" as a division.  There
+      is no top-level "await": make the cell's value a promise,
+      "(async () => { ... return x })()", which the cell waits for
+      (status "awaiting"; Stop interrupts it).  The value of its
+      last statement is shown: undefined shows nothing, a Scheme
+      object is shown as Scheme shows it (a display object as a
+      display), anything else as JavaScript text ({a: 1, b: "s"}).
+      An error shows the JavaScript stack as its call history, in
+      which "In[N]:LINE" selects that line of the cell, and an
+      incomplete source (an unclosed bracket, string, template or
+      comment) evaluates nothing.  The global "scheme" reaches
+      back: scheme.eval(source), scheme.env.NAME (read or set),
+      scheme.call(name, args...), scheme.async(f or name),
+      scheme.list, scheme.toArray, and scheme.html, svg, markdown,
+      text, table, image, show and clearOutput (the last two in the
+      notebook only).  A Scheme procedure gives its value while
+      Scheme waits on the JavaScript that calls it (a cell, a
+      js-call), and a promise at any other time (a timer, a
+      promise's reaction, after an "await"), where scheme.env
+      cannot be read: use "await scheme.call(...)" or scheme.async
+      there.  What a cell leaves to run later writes in that cell,
+      after its outputs, also once it ran again (or in the newest
+      cell that ran, when it is gone): the Scheme procedures that
+      crossed to JavaScript while it ran, and the callbacks of the
+      setTimeout, setInterval, queueMicrotask and promise reactions
+      it registered; event listeners, and an "await" that resumes
+      after its cell ended, write in the kernel messages.  A
+      callback's error is shown in its cell (which keeps its
+      status).  While a callback runs and no cell does, the status
+      says "running callback", cells run meanwhile wait until the
+      call running then ends (so a cell can clear an interval that
+      keeps the kernel busy), and Stop ends it and cancels them (or
+      the kernel's restart 3 s later).  Stop cannot interrupt
+      JavaScript that does not return: an endless pure-JavaScript
+      timer keeps the worker busy until a cell is run and stopped,
+      or Restart.
+
       The
       notebook is saved in the browser (outputs up to 64 KB per
       cell) and can be exported
       and imported as a ".scm" file (cells start at ";; %%" lines,
-      text cells at ";; %% [markdown]"; "csi -s" runs it if it does
-      not use the notebook module), or as ".json", with outputs; a
+      text cells at ";; %% [markdown]", JavaScript cells at ";; %%
+      [javascript]", with their lines commented; "csi -s" runs it
+      if it uses neither the notebook module nor JavaScript), or as
+      ".json", with outputs (a notebook with JavaScript cells is
+      format version 2); a
       ".scm" file without such lines is split into cells at blank
       lines.  Import reads files of up to 5 MB and 5000 cells, and
       keeps up to 1000 outputs of a cell (the first ones and the
@@ -511,7 +646,8 @@ _/        _/    _/    _/    _/        _/  _/    _/        _/    _/_/
       the notebook as it is shown, outputs included, with no
       scripts and nothing loaded from elsewhere (Import does not
       read it).  In the notebook, Esc and then "?" lists the
-      keyboard shortcuts.  The kernel is csi running
+      keyboard shortcuts ("l" switches a code cell between Scheme
+      and JavaScript).  The kernel is csi running
       "-e (##webnb#kernel)" (emscripten/webnb.scm): the page posts
       requests to a mailbox in C and reads events as JSON lines on
       file descriptor 3 (emscripten/web/nb-kernel.js).  Of the
