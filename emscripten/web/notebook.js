@@ -2467,6 +2467,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
   function example() {
     const md = s => ({ type: 'markdown', source: s });
     const code = s => ({ type: 'code', source: s });
+    const js = s => ({ type: 'code', lang: 'js', source: s });
     return { title: 'A tour of the notebook', cells: [
       md('# CHICKEN Scheme notebook\n\n' +
          'Write Scheme in the code cells and run them with **Shift+Enter** (run and move on) or **Ctrl+Enter** ' +
@@ -2474,6 +2475,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
          'as in one long REPL session.\n\n' +
          '- The notebook has its own interpreter: what you define here is not visible in the **REPL** tab, and the other way round.\n' +
          '- Press **Esc** for command mode, then **?** for every shortcut.\n' +
+         '- Code cells can also hold JavaScript: see the end of this notebook.\n' +
          '- The notebook is saved in this browser as you type; **More → Save in this browser…** keeps named copies, and **More → Export** keeps a file: `.scm`, `.json` (with outputs) or a `.html` page to read or print.'),
       code('(import notebook (chicken io) (chicken string))'),
       code('(define (fact n)\n  (if (= n 0) 1 (* n (fact (- n 1)))))\n\n(fact 30)'),
@@ -2553,12 +2555,98 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
            '                                         (cdr p)))))))\n' +
            '\n' +
            '(sieve (integers-from 2))'),
+      md('## JavaScript from Scheme\n\n' +
+         '`(import js)` calls the JavaScript of the kernel\'s worker (not of the page: there is no DOM here), ' +
+         'and lets it call Scheme back. Numbers, strings, booleans and vectors cross as copies, JavaScript ' +
+         'objects as handles, and a Scheme procedure becomes a JavaScript function.'),
+      code('(import js (chicken condition))\n\n' +
+           ';; Math.max, called with three numbers\n' +
+           '(js-call (js-global "Math.max") 3 1 4)'),
+      code(';; an object made in Scheme: a property, and a method call\n' +
+           '(define point (js-obj "x" 3 "y" 4))\n\n' +
+           '(list (js-ref point "x")\n' +
+           '      (js-invoke (js-global "Math") "hypot" (js-ref point "x") (js-ref point "y")))'),
+      code(';; Scheme procedures as JavaScript functions: sort\'s comparator and map\n' +
+           '(define numbers (vector->js (vector 5 3 8 1)))\n' +
+           '(js-invoke numbers "sort" (lambda (a b) (- a b)))\n\n' +
+           '(list (js->list numbers)\n' +
+           '      (js->list (js-invoke numbers "map" (lambda (n) (* n n)))))'),
+      code(';; js-function gives a function that stays the same, so that\n' +
+           ';; removeEventListener finds the listener addEventListener got\n' +
+           ';; (a procedure on its own is a new function each time it crosses)\n' +
+           '(define target (js-new (js-global "EventTarget")))\n' +
+           '(define heard 0)\n' +
+           '(define listener (js-function (lambda (event) (set! heard (+ heard 1)))))\n' +
+           '(define (ping) (js-invoke target "dispatchEvent" (js-new (js-global "Event") "ping")))\n\n' +
+           '(js-invoke target "addEventListener" "ping" listener)\n' +
+           '(ping)\n' +
+           '(js-invoke target "removeEventListener" "ping" listener)\n' +
+           '(ping)\n' +
+           'heard'),
+      code(';; js-await waits for a promise without blocking the page\n' +
+           ';; (the status says "awaiting"; Stop interrupts it)\n' +
+           '(define later (js-eval "(ms, v) => new Promise(r => setTimeout(() => r(v), ms))"))\n\n' +
+           '(js-await (js-call later 500 "done"))'),
+      code(';; a JavaScript exception is an (exn js) condition, and a Scheme\n' +
+           ';; error thrown through JavaScript comes back as itself\n' +
+           '(list (handle-exceptions e (get-condition-property e \'exn \'message)\n' +
+           '        (js-eval "null.x"))\n' +
+           '      (handle-exceptions e (get-condition-property e \'exn \'message)\n' +
+           '        (js-call (js-eval "f => f()") (lambda () (error "from Scheme")))))'),
+      md('## JavaScript cells\n\n' +
+         'A code cell can hold JavaScript: press the **l** key in command mode, or click its language badge. ' +
+         'It runs in the same worker as `(import js)`. Its top-level `var`, `let`, `const`, `function` and `class` ' +
+         'are kept for the next cells, and the value of its last statement is shown; a promise is waited for. ' +
+         'The global `scheme` reaches back: `scheme.env.name` is a Scheme definition, `scheme.eval(...)` ' +
+         'evaluates Scheme, and `scheme.html`, `svg`, `markdown`, `table` and `show` give rich output. ' +
+         'A timer\'s output comes to the cell that set it, even after it finished.'),
+      js('// a function and a class, kept for the cells below (and for Scheme)\n' +
+         'function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2) }\n\n' +
+         'class Counter {\n' +
+         '  constructor() { this.n = 0 }\n' +
+         '  tick() { return ++this.n }\n' +
+         '}\n\n' +
+         'const counter = new Counter()\n' +
+         'fib(20)'),
+      code(';; Scheme sees them through js-global\n' +
+           '(list (js-call (js-global "fib") 25)\n' +
+           '      (js-invoke (js-global "counter") "tick")\n' +
+           '      (js-invoke (js-global "counter") "tick"))'),
+      code(';; a Scheme procedure for the JavaScript cell below\n' +
+           '(define (stars n) (make-string n #\\*))'),
+      js('// scheme.env reads Scheme\'s definitions while the cell runs;\n' +
+         '// a Scheme list from scheme.eval becomes an Array with scheme.toArray\n' +
+         '({\n' +
+         '  stars: [1, 3, 5].map(n => scheme.env.stars(n)),\n' +
+         '  squares: scheme.toArray(scheme.eval("(map (lambda (x) (* x x)) \'(1 2 3))")),\n' +
+         '})'),
+      js('// rich output from JavaScript\n' +
+         'scheme.show(scheme.html(\'<b>Fibonacci numbers</b>\'))\n' +
+         'scheme.table([1, 5, 10, 20].map(n => [n, fib(n)]), [\'n\', \'fib(n)\'])'),
+      js('// a promise as the value: the cell waits for it, as js-await does\n' +
+         'new Promise(resolve => setTimeout(() => resolve(fib(15)), 500))'),
+      js('// a timer\'s output comes to this cell, also after it finished;\n' +
+         '// in a timer, Scheme answers with a promise (then takes its value).\n' +
+         '// In a block, let and const are this run\'s own: run it twice, and\n' +
+         '// each run stops its own timer\n' +
+         '{\n' +
+         '  let ticks = 0\n' +
+         '  const timer = setInterval(() => {\n' +
+         '    console.log(\'tick\', ++ticks)\n' +
+         '    if (ticks === 3) {\n' +
+         '      clearInterval(timer)\n' +
+         '      scheme.html(\'<i>done</i>\').then(scheme.show)\n' +
+         '    }\n' +
+         '  }, 300)\n' +
+         '}\n' +
+         '\'started\''),
       md('## Tips\n\n' +
          '- csi\'s toplevel commands work in cells: `,d x` describes a value, `,x form` shows a macro expansion.\n' +
          '- **More → Upload files** (or dropping files here) copies them into the home directory; then `(load "file.scm")`.\n' +
-         '- **More → Export .scm** gives a plain Scheme file; without the `notebook` module it also runs with `csi -s`.\n' +
+         '- **More → Export .scm** gives a plain Scheme file; without the `notebook` module and JavaScript it also runs with `csi -s`.\n' +
          '- **More → Export .html** gives a page of the notebook as you see it, outputs included, that opens without this site.\n' +
-         '- SRFI-18 threads only make progress while some cell is running.'),
+         '- SRFI-18 threads only make progress while some cell is running.\n' +
+         '- `(import js)` and JavaScript cells reach the worker\'s JavaScript, not the page\'s DOM: `fetch` works, as far as the server allows.'),
     ] };
   }
 
