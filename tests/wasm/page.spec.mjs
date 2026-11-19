@@ -526,6 +526,128 @@ async function runBrowser(name) {
     await waitStatus('ready');
   });
 
+  // the JavaScript bridge (webjs.scm): JavaScript runs in the worker
+  await check(P + 'JavaScript: the worker keeps its own globals out of reach', async () => {
+    await evalTo('(import js)', /#;\d+> $/);
+    await evalTo('(js->list (js-eval "[typeof indexedDB, typeof caches, typeof Worker, typeof BroadcastChannel, ' +
+                 'typeof navigator.storage, typeof postMessage, typeof navigator.storageBuckets, ' +
+                 'typeof webkitRequestFileSystem, typeof webkitRequestFileSystemSync, ' +
+                 'typeof webkitResolveLocalFileSystemURL, typeof webkitResolveLocalFileSystemSyncURL]"))',
+                 /\n\(("undefined" ?){11}\)\n#;\d+> $/);
+    await evalTo('(js-eval "1 + 1")', /\n2\n#;\d+> $/);           // eval is allowed in the worker
+    // what user JavaScript dispatches is no message of the page's: a
+    // second csi would end the session with its exit
+    await evalTo('(js-eval "dispatchEvent(new MessageEvent(\'message\', {data: {type: \'init\', ' +
+                 'args: [\'-n\', \'-e\', \'(exit 7)\']}})); onmessage === null")', /\n#t\n#;\d+> $/);
+    await page.waitForTimeout(1000);
+    await evalTo('(+ 1 2)', /\n3\n#;\d+> $/);
+    assert(await status() === 'ready', 'status ' + await status());
+  });
+
+  await check(P + 'JavaScript: an uncaught exception is reported in the transcript; the REPL goes on', async () => {
+    const e0 = errors.length;
+    await enter('(js-eval "setTimeout(() => { throw new Error(\'x\') }, 0)")');
+    await waitSince(/Uncaught Error: x/, 5000);
+    await page.waitForTimeout(200);
+    assert(await status() === 'ready', 'status ' + await status());
+    assert(errors.length === e0, 'no new console error: ' + errors.slice(e0).join('\n'));
+    await evalTo('(+ 1 2)', /\n3\n#;\d+> $/);
+  });
+
+  await check(P + 'JavaScript: js-await shows awaiting, then the value', async () => {
+    await enter('(js-await (js-eval "new Promise(r => setTimeout(() => r(\'done\'), 1000))"))');
+    await waitStatus('sleeping', 3000);
+    assert(await page.textContent('#status-text') === 'awaiting', 'text ' + await page.textContent('#status-text'));
+    await waitSince(/\n"done"\n#;\d+> $/, 5000);
+    await waitStatus('ready');
+  });
+
+  // the REPL's ,js (webjs.scm), and output at the prompt (repl.js)
+  await check(P + 'REPL: ,js prints the value; names persist', async () => {
+    await evalTo(',js const r1 = 20', /#;\d+> $/);
+    await evalTo(',js r1 + 1', /\n21\n#;\d+> $/);
+    assert(await status() === 'ready', 'status ' + await status());
+  });
+
+  await check(P + 'REPL: callback output at the prompt: the prompt comes again; status ready; input after it is a prompt input', async () => {
+    await evalTo(",js setTimeout(() => console.log('late'), 300)", /\n#;\d+> $/);
+    await waitSince(/\n#;\d+> \nlate\n#;\d+> $/, 5000);
+    await waitStatus('ready');
+    await evalTo('(import js) (begin (js-call (js-eval "f => setTimeout(f, 300)") (lambda () (print "cb"))) (void))',
+                 /#;\d+> $/);
+    await waitSince(/\ncb\n#;\d+> $/, 5000);
+    await waitStatus('ready');
+    assert(await page.textContent('#status-text') === 'ready', 'text ' + await page.textContent('#status-text'));
+    // typed at the prompt printed again
+    await evalTo('(+ 1 2)', /\n3\n#;\d+> $/);
+    assert(/\ncb\n#;\d+> \(\+ 1 2\)\n3\n#;\d+> $/.test(await term()), 'after the prompt: ' + (await term()).slice(-80));
+  });
+
+  await check(P + "REPL: a looping callback shows 'running callback'; Stop ends it", async () => {
+    await page.evaluate(() => {
+      window.__replTexts = [];
+      const t = document.getElementById('status-text');
+      new MutationObserver(() => window.__replTexts.push(t.textContent))
+        .observe(t, { childList: true, characterData: true, subtree: true });
+    });
+    await evalTo('(js-call (js-eval "f => setTimeout(f, 100)") (lambda () (let loop () (loop))))', /\n#;\d+> $/);
+    await page.waitForFunction(() => window.__replTexts.includes('running callback'), null, { timeout: 5000 });
+    assert(await status() === 'running' && !await page.isDisabled('#stop'), 'running, Stop enabled');
+    await page.click('#stop');
+    await waitSince(/user interrupt[\s\S]*#;\d+> $/, 5000);
+    await waitStatus('ready');
+    await evalTo('(+ 2 2)', /\n4\n#;\d+> $/);
+  });
+
+  await check(P + 'REPL: a multi-line ,js with Shift+Enter', async () => {
+    await mark();
+    await page.fill('#line', ',js function g2(x) {\n  return x + 1\n}');
+    await page.press('#line', 'Enter');
+    await waitSince(/\n}\n#;\d+> $/);
+    await waitStatus('ready');
+    await evalTo(',js g2(1)', /\n2\n#;\d+> $/);
+  });
+
+  await check(P + "REPL: a timer's log and error come as one batch: one prompt after both", async () => {
+    await evalTo(",js setTimeout(() => { console.log('working'); throw new Error('boom') }, 300), undefined", /\n#;\d+> $/);
+    await waitSince(/\n#;\d+> \nworking\nUncaught Error: boom\n[\s\S]*\n#;\d+> $/, 5000);
+    await page.waitForTimeout(200);
+    const after = (await since()).slice((await since()).lastIndexOf('\nworking\n'));
+    assert((after.match(/#;\d+> /g) || []).length === 1, 'one prompt: ' + JSON.stringify(after));
+    await waitStatus('ready');
+  });
+
+  await check(P + 'REPL: a top-level "const self" leaves the timers working', async () => {
+    await evalTo(',js const self = {a: 1}', /#;\d+> $/);
+    await evalTo(",js setTimeout(() => console.log('tick self'), 50), queueMicrotask(() => console.log('micro self')), 'set'",
+                 /\n"set"\n/);
+    await waitSince(/tick self\n#;\d+> $/, 5000);
+    assert(/micro self/.test(await since()) && !/Illegal invocation/.test(await since()), 'timers: ' + JSON.stringify(await since()));
+    await evalTo(',js self = globalThis, 1', /\n1\n#;\d+> $/);
+  });
+
+  await check(P + 'REPL: the hints show ,js and (import js)', async () => {
+    const t = await page.$eval('#panel-repl .hints', e => e.textContent);
+    assert(t.includes(',js') && t.includes('(import js)'), 'hints: ' + t);
+  });
+
+  await check(P + 'REPL: straighten quotes leaves ,js alone', async () => {
+    const quotes = async on => {
+      await page.click('#settings-btn');
+      await page.waitForSelector('#settings[open]');
+      if (on) await page.check('#set-quotes'); else await page.uncheck('#set-quotes');
+      await page.click('#settings .actions .btn.primary');
+      await page.waitForFunction(() => !document.getElementById('settings').open);
+      await waitStatus('ready', 60000);
+      await waitTerm(/#;1> $/);
+    };
+    await quotes(true);
+    try {
+      await evalTo(",js 'don’t'.length", /\n5\n#;\d+> $/);
+      await evalTo('(string-length “ab”)', /\n2\n#;\d+> $/);
+    } finally { await quotes(false); }
+  });
+
   await check(P + 'upload a file and load it with ,l', async () => {
     await mark();
     await page.setInputFiles('#upload', { name: 'up.scm', mimeType: 'text/plain',
@@ -751,6 +873,24 @@ async function runBrowser(name) {
     await nbWait(i, NB_DONE, timeout);
     return i;
   }
+  async function jsNew(src) {           // a new JavaScript cell (Esc, then l), selected
+    const i = await nbNew(src);
+    await nbSrc(i).press('Escape');
+    await page.keyboard.press('l');
+    await page.waitForFunction(i => document.querySelectorAll('#nb-cells > li')[i].dataset.lang === 'js', i);
+    return i;
+  }
+  async function jsEval(src, timeout) {    // run it (Ctrl+Enter in command mode), wait for the end
+    const i = await jsNew(src);
+    await page.keyboard.press('Control+Enter');
+    await nbWait(i, NB_DONE, timeout);
+    return i;
+  }
+  const nbOutWait = (i, re, timeout = 3000) =>
+    page.waitForFunction(([i, s, f]) => {
+      const li = document.querySelectorAll('#nb-cells > li')[i];
+      return !!li && new RegExp(s, f).test(li.querySelector('.nb-out').textContent);
+    }, [i, re.source, re.flags], { timeout });
   const replWorkers = () => page.workers().filter(w => /repl-worker\.js/.test(w.url())).length;
   const scm = s => '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"';
   async function accepting(f) {         // run f, accepting confirm() dialogs
@@ -898,6 +1038,184 @@ async function runBrowser(name) {
     const parts = await page.$$eval(`#nb-cells > li:nth-child(${i + 1}) .nb-out > *`, l => l.map(e => e.className + ':' + e.textContent));
     assert(parts.join('|') === 'nb-stream stdout:one|nb-stream stderr:two|nb-stream stdout:three|nb-value none:; no values',
            'outputs ' + parts.join('|'));
+  });
+
+  await check(P + 'notebook: js-await shows awaiting, then the cell ends ok', async () => {
+    await page.evaluate(() => {
+      window.__nbAwaiting = false;
+      const t = document.getElementById('nb-status-text');
+      new MutationObserver(() => { if (t.textContent === 'awaiting') window.__nbAwaiting = true; })
+        .observe(t, { childList: true, characterData: true, subtree: true });
+    });
+    const i = await nbEval('(import js) (js-await (js-eval "new Promise(r => setTimeout(() => r(5), 300))"))');
+    assert(await nbStatus(i) === 'ok', 'status ' + await nbStatus(i));
+    assert((await nbValues(i)).join() === '5', 'values ' + await nbValues(i));
+    assert(await page.evaluate(() => window.__nbAwaiting), 'awaiting shown');
+  });
+
+  // JavaScript cells (webjs.scm's RUN_JS, nb-kernel.js's async events)
+  await check(P + 'notebook: a JavaScript cell; l toggles the language; badge and colours follow', async () => {
+    const i = await jsNew('const jsA = 6 * 7\njsA');
+    const li = nbCell(i), badge = li.locator('.nb-lang');
+    assert(await badge.textContent() === 'JS' && /JavaScript/.test(await badge.getAttribute('aria-label')),
+           'badge ' + await badge.textContent() + ' ' + await badge.getAttribute('aria-label'));
+    assert(/JavaScript/.test(await li.getAttribute('aria-label')) && /JavaScript/.test(await nbSrc(i).getAttribute('aria-label')),
+           'labels ' + await li.getAttribute('aria-label'));
+    assert((await li.locator('.nb-hl .syn-special').allTextContents()).includes('const'), 'const colored');
+    await page.keyboard.press('Control+Enter');
+    await nbWait(i);
+    assert(await nbStatus(i) === 'ok' && (await nbValues(i)).join() === '42', 'value ' + await nbOut(i));
+    const j = await nbEval('(import js) (js-global "jsA")');
+    assert((await nbValues(j)).join() === '42', 'from Scheme ' + await nbOut(j));
+    await li.focus();
+    await page.keyboard.press('l');
+    assert(await li.getAttribute('data-lang') === 'scheme' && await badge.textContent() === 'Scheme', 'l: Scheme again');
+    assert(await li.getAttribute('data-edited') === 'true' && (await nbValues(i)).join() === '42', 'edited since it ran, outputs kept');
+    assert(!(await li.locator('.nb-hl .syn-special').allTextContents()).includes('const'), 'colored as Scheme');
+    await badge.click();
+    assert(await li.getAttribute('data-lang') === 'js' && await li.getAttribute('data-edited') === null, 'the badge switches it back');
+  });
+
+  await check(P + 'notebook: the Scheme badge takes no room; a string that a line cut is unclosed', async () => {
+    const i = await nbNew('(+ 1 2)');
+    const h = await nbCell(i).evaluate(li => {
+      const b = li.querySelector('.nb-lang'), with_ = li.getBoundingClientRect().height;
+      b.style.display = 'none';
+      const without = li.getBoundingClientRect().height;
+      b.style.display = '';
+      return [with_, without];
+    });
+    assert(h[0] === h[1], 'height with the badge and without: ' + h);
+    const j = await jsNew("const s = 'abc\nfoo()");
+    await page.waitForFunction(j => /unclosed string/.test(document.querySelectorAll('#nb-cells > li')[j].querySelector('.nb-bal').textContent),
+                               j, { timeout: 3000 });
+    assert(await nbCell(j).locator('.nb-bal').isVisible(), 'shown');
+    for (const k of [j, i]) {
+      await nbCell(k).focus();
+      await page.keyboard.press('d');
+      await page.keyboard.press('d');
+    }
+  });
+
+  await check(P + "notebook: a JavaScript error's stack points at the cell's lines", async () => {
+    const i = await jsEval("function boom() {\n  throw new Error('x')\n}\nboom()");
+    assert(await nbStatus(i) === 'error', 'status ' + await nbStatus(i));
+    const r = await nbCell(i).evaluate(li => ({
+      msg: li.querySelector('.nb-error-msg').lastChild.textContent, count: li.querySelector('.nb-count').textContent,
+      wheres: [...li.querySelectorAll('.nb-trace button.where')].map(b => b.textContent),
+      mark: (li.querySelector('.nb-hl mark') || {}).textContent }));
+    const n = r.count.replace(/\D/g, '');
+    assert(r.msg === 'Error: x', 'message ' + JSON.stringify(r));
+    assert(r.wheres.includes('In[' + n + ']:2') && r.wheres.includes('In[' + n + ']:4'), 'frames ' + JSON.stringify(r));
+    assert(/throw/.test(r.mark), 'line 2 marked ' + JSON.stringify(r));
+    await nbCell(i).locator('.nb-trace summary').click();
+    await nbCell(i).locator('.nb-trace button.where', { hasText: 'In[' + n + ']:2' }).click();
+    const sel = await nbSrc(i).evaluate(t => t.value.slice(t.selectionStart, t.selectionEnd));
+    assert(sel === "  throw new Error('x')", 'line 2 selected: ' + JSON.stringify(sel));
+  });
+
+  await check(P + "notebook: a callback writes in its cell after it finished; a deleted cell's goes to the newest cell", async () => {
+    const a = await jsEval("setTimeout(() => console.log('afterwards'), 600); 'set'");
+    assert((await nbValues(a)).join() === '"set"', 'value ' + await nbOut(a));
+    const b = await jsEval('1 + 1');
+    assert((await nbValues(b)).join() === '2', 'value ' + await nbOut(b));
+    await nbOutWait(a, /afterwards/);
+    assert(!/afterwards/.test(await nbOut(b)), 'not in the cell run since: ' + await nbOut(b));
+    assert(/^"set"\s*afterwards\s*$/.test(await nbOut(a)), 'after the value ' + JSON.stringify(await nbOut(a)));
+    const a2 = await jsEval("setTimeout(() => console.log('orphan'), 1500); 1");
+    await nbCell(a2).focus();
+    await page.keyboard.press('d');
+    await page.keyboard.press('d');
+    const c = await jsEval('2 + 2');
+    assert((await nbValues(c)).join() === '4', 'value ' + await nbOut(c));
+    await nbOutWait(c, /orphan/, 4000);
+    assert(!/orphan/.test(await nbOut(b)), 'only in the newest cell');
+  });
+
+  await check(P + 'notebook: an uncaught error in a timer shows in its cell; no console error', async () => {
+    const e0 = errors.length;
+    const i = await jsEval("setTimeout(() => { throw new Error('late boom') }, 100); 1");
+    assert(await nbStatus(i) === 'ok', 'status ' + await nbStatus(i));
+    await page.waitForFunction(i => /late boom/.test((document.querySelectorAll('#nb-cells > li')[i].querySelector('.nb-error') || {}).textContent),
+                               i, { timeout: 3000 });
+    await page.waitForTimeout(200);
+    assert(await nbStatus(i) === 'ok', 'the cell still ok: ' + await nbStatus(i));
+    assert(errors.length === e0, 'no console error: ' + errors.slice(e0).join('\n'));
+    assert(!/late boom/.test(await page.textContent('#nb-log-text')), 'not in the kernel messages');
+  });
+
+  await check(P + 'notebook: a callback of a cell made text writes in the newest code cell', async () => {
+    const b = await nbEval('(+ 2 3)');
+    const a = await jsEval("setTimeout(() => { console.log('into text'); throw new Error('boom into text') }, 1200); 'set'");
+    await page.keyboard.press('m');
+    assert(await nbCell(a).getAttribute('data-type') === 'markdown', 'made text');
+    await nbOutWait(b, /into text[\s\S]*boom into text/, 5000);
+    assert(await nbOut(a) === '' && await nbCell(a).getAttribute('data-callback') === null, 'nothing in the text cell');
+    assert(await nbStatus(b) === 'ok', 'the code cell keeps its status: ' + await nbStatus(b));
+  });
+
+  await check(P + "notebook: a callback's indicator goes when it ends, also when its cell came back meanwhile", async () => {
+    await nbEval('(+ 1 1)');
+    const a = await jsEval("setTimeout(scheme.eval('(lambda () (sleep 1) (print \"cb-done\"))'), 300); 1");
+    await nbCell(a).focus();
+    await page.keyboard.press('d');
+    await page.keyboard.press('d');
+    await page.waitForFunction(() => document.getElementById('nb-status-text').textContent === 'callback sleeping', null,
+                               { timeout: 5000 });
+    await page.keyboard.press('z');
+    await waitNbStatus(/^ready$/, 10000);
+    await page.waitForTimeout(200);
+    const on = await page.$$eval('#nb-cells > li[data-callback]', l => l.length);
+    assert(!on, on + ' cells still show a callback');
+  });
+
+  await check(P + "notebook: a looping callback shows 'running callback'; Stop ends it", async () => {
+    const i = await nbEval('(import js) (begin (js-call (js-eval "f => setTimeout(f, 50)") (lambda () (let loop () (loop)))) (void))');
+    assert(await nbStatus(i) === 'ok', 'status ' + await nbStatus(i));
+    await page.waitForFunction(() => document.getElementById('nb-status-text').textContent === 'running callback', null, { timeout: 5000 });
+    assert(await page.getAttribute('#nb-stop', 'aria-disabled') === 'false', 'Stop enabled');
+    assert(await nbCell(i).getAttribute('data-callback') === 'true', 'the cell shows it');
+    const q = await nbNew('(+ 40 2)');
+    await nbRun(q);
+    await nbWait(q, /^queued$/, 5000);
+    await page.click('#nb-stop');
+    await nbOutWait(i, /Callback interrupted\./, 5000);
+    await waitNbStatus(/^ready$/, 5000);
+    assert(await nbCell(i).getAttribute('data-callback') === null && await nbStatus(i) === 'ok', 'the cell after it');
+    assert(await nbStatus(q) === 'cancelled', 'the cell queued meanwhile: ' + await nbStatus(q));
+    await nbRun(q);
+    await nbWait(q);
+    assert((await nbValues(q)).join() === '42', 'the next cell runs: ' + await nbOut(q));
+  });
+
+  await check(P + 'notebook: straighten quotes leaves JavaScript cells alone', async () => {
+    const quotes = async on => {
+      await menu('Settings');
+      await page.waitForSelector('#settings[open]');
+      if (on) await page.check('#set-quotes'); else await page.uncheck('#set-quotes');
+      await page.click('#settings .actions .btn.primary');
+      await page.waitForFunction(() => !document.getElementById('settings').open);
+    };
+    await quotes(true);
+    try {
+      const i = await jsEval("'don\u2019t'.length");
+      assert((await nbValues(i)).join() === '5' && await nbSrc(i).inputValue() === "'don\u2019t'.length", 'value ' + await nbOut(i));
+      const j = await nbEval('(string-length \u201cab\u201d)');
+      assert((await nbValues(j)).join() === '2', 'a Scheme cell is straightened: ' + await nbOut(j));
+    } finally { await quotes(false); }
+  });
+
+  await check(P + 'notebook: a ```js fence in a text cell is coloured', async () => {
+    await page.click('#nb-end-text');
+    const i = (await nbCells()) - 1;
+    await nbSrc(i).fill('```js\nconst fenced = `t${1}`\n```\n\n```scheme\n(define x 1)\n```');
+    await nbSrc(i).press('Control+Enter');
+    await page.waitForFunction(i => {
+      const li = document.querySelectorAll('#nb-cells > li')[i];
+      return [...li.querySelectorAll('.nb-md code .syn-special')].map(e => e.textContent).join() === 'const,define';
+    }, i, { timeout: 5000 });
+    const q = await nbCell(i).evaluate(li => [...li.querySelectorAll('.nb-md code .syn-quote')].map(e => e.textContent));
+    assert(q.join() === '${,}', 'template quotes ' + q);
   });
 
   await check(P + 'notebook: a separate interpreter; the REPL answers while a cell runs', async () => {
@@ -1537,17 +1855,21 @@ async function runBrowser(name) {
     assert(await nbSrc(a).inputValue() === '(+ 10 2)' && await focused() === a, 'Alt+Up moves the cell');
     await page.keyboard.press('Alt+ArrowDown');
     assert(await nbSrc(a + 1).inputValue() === '(+ 10 2)', 'Alt+Down moves it back');
+    await page.keyboard.press('l');
+    assert(await nbCell(a + 1).getAttribute('data-lang') === 'js', 'l: JavaScript');
+    await page.keyboard.press('l');
+    assert(await nbCell(a + 1).getAttribute('data-lang') === 'scheme', 'l again: Scheme');
     await page.keyboard.press('Shift+Enter');
     await nbWait(a + 1);
     assert((await nbValues(a + 1)).join() === '12', 'Shift+Enter in command mode runs');
     // Tab reaches the run button, the editor and the tools of a cell
     await nbCell(a).focus();
     const seen = [];
-    for (let k = 0; k < 8 && !/source/.test(seen[seen.length - 1]); k++) {   // Tab in an editor indents
+    for (let k = 0; k < 10 && !/source/.test(seen[seen.length - 1]); k++) {   // Tab in an editor indents
       await page.keyboard.press('Tab');
       seen.push(await page.evaluate(() => document.activeElement.getAttribute('aria-label') || document.activeElement.className));
     }
-    assert(seen.some(s => /^Run cell/.test(s)) && seen.some(s => /source/.test(s)) &&
+    assert(seen.some(s => /^Run cell/.test(s)) && seen.some(s => /source/.test(s)) && seen.some(s => /is Scheme: switch/.test(s)) &&
            seen.some(s => /^Move cell .* down/.test(s)) && seen.some(s => /^Delete cell/.test(s)), 'tab order ' + seen.join(', '));
   });
 
@@ -1638,6 +1960,22 @@ async function runBrowser(name) {
     const i = await nbEval('before-restart');
     assert(await nbCountText(i) === '[1]', 'count ' + await nbCountText(i));
     assert(/unbound variable/.test(await nbOut(i)), 'unbound: ' + await nbOut(i));
+  });
+
+  await check(P + "notebook: after a Restart, a deleted cell's callback writes in this kernel's newest cell, and clears nothing", async () => {
+    const old = await nbEval('(list "old" (* 6 7))');
+    await nbEval('(+ 1 2)');
+    await page.click('#nb-restart');
+    await waitNbStatus(/^ready$/, 60000);
+    const y = await nbEval('(+ 100 1)');
+    const a = await jsEval("setTimeout(() => { console.log('orphan after restart'); scheme.clearOutput() }, 1500); 1");
+    await nbCell(a).focus();
+    await page.keyboard.press('d');
+    await page.keyboard.press('d');
+    await nbOutWait(y, /orphan after restart/, 5000);
+    await page.waitForTimeout(300);
+    assert(/^101\s*orphan after restart\s*$/.test(await nbOut(y)), 'not cleared: ' + JSON.stringify(await nbOut(y)));
+    assert(!/orphan/.test(await nbOut(old)) && /"old" 42/.test(await nbOut(old)), 'the cell of the kernel before: ' + await nbOut(old));
   });
 
   await check(P + 'notebook: export and import .scm and .json', async () => {
@@ -1815,6 +2153,120 @@ async function runBrowser(name) {
     assert(saved === n, 'saved cells ' + saved);
   });
 
+  await check(P + 'notebook: lang survives reload, .json and .scm export and import, and undo', async () => {
+    const src = "'lang kept' // a JavaScript cell";
+    await jsNew(src);
+    const langOf = () => page.$$eval('#nb-cells > li', (l, src) => {
+      const e = l.find(e => e.querySelector('.nb-src').value === src);
+      return e ? e.dataset.lang : 'missing';
+    }, src);
+    await page.keyboard.press('Control+s');
+    await page.reload();
+    await page.click('#tab-notebook');
+    assert(await langOf() === 'js', 'after a reload: ' + await langOf());
+    await waitNbStatus(/^ready$/, 60000);
+    await waitStatus('ready', 60000);
+    const n = await nbCells();
+    for (const [label, ext] of [['Export .scm', '.scm'], ['Export .json', '.json']]) {
+      const [dl] = await Promise.all([page.waitForEvent('download'), menu(label)]);
+      const text = fs.readFileSync(await dl.path(), 'utf8');
+      if (ext === '.scm') assert(/^;; %% \[javascript\]\n;; 'lang kept' \/\/ a JavaScript cell$/m.test(text), 'the .scm block');
+      else assert(/"lang":"js"/.test(text) && JSON.parse(text).version === 2, 'the .json cell and version');
+      await page.click('#nb-end-code');            // changed, then replaced by the import
+      await accepting(() => page.setInputFiles('#nb-file', { name: 'lang' + ext, mimeType: 'text/plain', buffer: Buffer.from(text) }));
+      await page.waitForFunction(n => document.querySelectorAll('#nb-cells > li').length === n, n);
+      assert(await langOf() === 'js', ext + ' import: ' + await langOf());
+    }
+    const k = await page.$$eval('#nb-cells > li', (l, src) => l.findIndex(e => e.querySelector('.nb-src').value === src), src);
+    await nbCell(k).focus();
+    await page.keyboard.press('d');
+    await page.keyboard.press('d');
+    assert(await langOf() === 'missing', 'deleted');
+    await page.keyboard.press('z');
+    assert(await langOf() === 'js', 'undo: ' + await langOf());
+  });
+
+  await check(P + 'notebook: Export .html shows the JS badge and colours JavaScript', async () => {
+    const i = await jsNew('function f() {}');
+    const [dl] = await Promise.all([page.waitForEvent('download'), menu('Export .html')]);
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'nb-export-')), 'js.html');
+    await dl.saveAs(file);
+    const f = await context.newPage();
+    await f.goto('file://' + file);
+    const r = await f.evaluate(() => {
+      const cell = [...document.querySelectorAll('.nb-cell[data-lang="js"]')].find(e => e.querySelector('.nb-code').textContent === 'function f() {}');
+      const badge = cell && cell.querySelector('.nb-gutter .nb-lang');
+      const probe = document.body.appendChild(document.createElement('span'));
+      probe.style.color = 'var(--accent)';
+      const accent = getComputedStyle(probe).color;
+      probe.remove();
+      return cell && { badge: badge && badge.textContent, color: badge && getComputedStyle(badge).color, accent,
+                       special: [...cell.querySelectorAll('.nb-code .syn-special')].map(e => e.textContent),
+                       schemeBadges: document.querySelectorAll('.nb-cell:not([data-lang="js"]) .nb-lang').length };
+    });
+    await f.close();
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+    assert(r && r.badge === 'JS' && r.color === r.accent, 'badge ' + JSON.stringify(r));
+    assert(r.special.join() === 'function' && !r.schemeBadges, 'colors and Scheme cells ' + JSON.stringify(r));
+    await nbCell(i).locator('[data-act="del"]').click();
+  });
+
+  await check(P + "notebook: the example's JavaScript sections run without error", async () => {
+    await accepting(() => menu('Load example'));
+    const srcs = await page.$$eval('#nb-cells > li', l => l.map(e => e.querySelector('.nb-src').value));
+    const from = srcs.findIndex(s => /^## JavaScript from Scheme/.test(s)), to = srcs.findIndex(s => /^## Tips/.test(s));
+    assert(from > 0 && to > from, 'sections at ' + from + ', ' + to);
+    const want = ['4', '(3 5)', '((1 3 5 8) (1 9 25 64))', '1', '"done"', /^\("TypeError: .*" "from Scheme"\)$/, '6765',
+                  '(75025 1 2)', null, '{stars: ["*", "***", "*****"], squares: [1, 4, 9]}', 'table', '610', '"started"'];
+    const got = [];
+    for (let i = from + 1; i < to; i++) {
+      if (await nbCell(i).getAttribute('data-type') !== 'code') continue;
+      await nbSrc(i).press('Control+Enter');
+      await nbWait(i, NB_DONE, 30000);
+      const r = await nbCell(i).evaluate(li => ({ st: li.dataset.status, lang: li.dataset.lang,
+                                                  vals: [...li.querySelectorAll('.nb-value')].map(e => e.textContent),
+                                                  table: !!li.querySelector('.nb-rich table'),
+                                                  bad: li.querySelectorAll('.nb-error, .nb-stream.stderr, .nb-note.bad').length }));
+      got.push(r);
+      const w = want[got.length - 1];
+      assert(r.st === 'ok' && !r.bad, 'cell ' + i + ' ' + JSON.stringify(r));
+      if (w === null) assert(!r.vals.length, 'no value ' + JSON.stringify(r));
+      else if (w === 'table') assert(r.table && !r.vals.length, 'a table ' + JSON.stringify(r));
+      else if (w instanceof RegExp) assert(r.vals.length === 1 && w.test(r.vals[0]), 'value ' + JSON.stringify(r));
+      else assert(r.vals.join() === w, 'value of cell ' + i + ': ' + JSON.stringify(r) + ', not ' + w);
+    }
+    assert(got.length === want.length, got.length + ' code cells');
+    assert(got.filter(r => r.lang === 'js').length === 5, 'five JavaScript cells ' + JSON.stringify(got.map(r => r.lang)));
+    const last = to - 1;
+    await page.waitForFunction(i => {
+      const li = document.querySelectorAll('#nb-cells > li')[i];
+      return /tick 3/.test(li.querySelector('.nb-out').textContent) && !!li.querySelector('.nb-rich i');
+    }, last, { timeout: 3000 });
+    assert(/^"started"\s*tick 1\ntick 2\ntick 3\n\s*done$/.test(await nbOut(last)), 'the timer ' + JSON.stringify(await nbOut(last)));
+    // run twice quickly, each run stops its own timer
+    await nbSrc(last).press('Control+Enter');
+    await nbWait(last, NB_DONE, 10000);
+    await page.waitForTimeout(400);
+    await nbSrc(last).press('Control+Enter');
+    await page.waitForTimeout(3000);
+    const ticks = async () => ((await nbOut(last)).match(/tick/g) || []).length;
+    const t1 = await ticks();
+    await page.waitForTimeout(1000);
+    assert(await ticks() === t1, 'the timers stopped: ' + t1 + ' ticks, then ' + await ticks());
+    const bad = await page.$$eval('#nb-cells > li', (l, [a, b]) => l.slice(a, b).filter(e => e.querySelector('.nb-error, .nb-stream.stderr')).length,
+                                  [from, to]);
+    assert(!bad, bad + ' cells with errors');
+  });
+
+  await check(P + 'notebook: the shortcuts dialog lists l', async () => {
+    await nbCell(0).focus();
+    await page.keyboard.press('?');
+    await page.waitForSelector('#nb-shortcuts[open]');
+    const r = await page.$$eval('#nb-shortcuts dt', l => l.filter(e => e.textContent.trim() === 'l').map(e => e.nextElementSibling.textContent));
+    await page.keyboard.press('Escape');
+    assert(r.length === 1 && /^Switch between Scheme and Java\u00adScript$/.test(r[0]), 'l ' + r);
+  });
+
   await check(P + 'notebook: the shortcuts dialog fits at 320 px', async () => {
     await page.setViewportSize({ width: 320, height: 740 });
     await nbCell(0).focus();
@@ -1837,6 +2289,12 @@ async function runBrowser(name) {
 
   await check(P + 'notebook: persistence across reloads; storage failures', async () => {
     const i = await nbEval('(define persisted 1) "persist me"');
+    // a callback's error leaves its cell ok; a JavaScript cell made text keeps its language
+    const cb = await jsEval("setTimeout(() => { throw new Error('late boom kept') }, 50); 'kept ok'");
+    await nbOutWait(cb, /late boom kept/, 3000);
+    const md = await jsNew('1 + 2');
+    await page.keyboard.press('m');
+    assert(await nbCell(md).getAttribute('data-type') === 'markdown', 'made text');
     await page.keyboard.press('Control+s');
     await page.reload();
     await page.click('#tab-notebook');
@@ -1844,6 +2302,11 @@ async function runBrowser(name) {
     assert(k === i, 'source restored at ' + k);
     assert(await nbCell(k).getAttribute('data-stale') === 'true' && /persist me/.test(await nbOut(k)), 'stale output');
     assert(await page.isVisible('#nb-notice') && /Restored/.test(await page.textContent('#nb-notice-text')), 'restored notice');
+    assert(await nbStatus(cb) === 'ok' && /late boom kept/.test(await nbOut(cb)), 'the callback\'s cell: ' + await nbStatus(cb));
+    await nbCell(md).focus();
+    await page.keyboard.press('y');
+    assert(await nbCell(md).getAttribute('data-type') === 'code' && await nbCell(md).getAttribute('data-lang') === 'js',
+           'JavaScript again: ' + await nbCell(md).getAttribute('data-lang'));
     await waitNbStatus(/^ready$/, 60000);
     await waitStatus('ready', 60000);
     // a cell larger than 1 MB, which autosave keeps, is restored too
@@ -2055,6 +2518,23 @@ async function runBrowser(name) {
     await waitTerm(/#;m:\d+> $/);
     await waitStatus('ready');
     assert(/^ready$/.test(await page.textContent('#status-text')), 'status ' + await page.textContent('#status-text'));
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+  });
+
+  await check(P + 'saves: a session with ,js lines replays them', async () => {
+    await evalTo(',js var saved1 = 41', /#;\d+> $/);
+    await savesOpen();
+    await savesSave('with js');
+    await savesMsg(/Saved “with js”/);
+    await savesClose();
+    await page.click('#restart');
+    await waitStatus('ready', 60000);
+    await savesOpen();
+    await savesOpenRow('with js');
+    await waitTerm(/ran its 1 input again/, 30000);
+    await waitStatus('ready', 30000);
+    await evalTo(',js saved1 + 1', /\n42\n#;\d+> $/);
     await page.click('#restart');
     await waitStatus('ready', 60000);
   });

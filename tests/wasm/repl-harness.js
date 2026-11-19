@@ -26,8 +26,9 @@
 // usage: node [v8 flags] repl-harness.js WEB_DIR [--arch=A]
 //
 // WEB_DIR holds chicken-repl.js and chicken-repl.wasm (build-wasm/web).
-// Runs the REPL core cases of the plan (README, WebAssembly section) and
-// exits with status 1 if any fails.  Run it once in default node and once
+// Runs the REPL core cases of the plan (README, WebAssembly section), and
+// the J and R-JS cases of the JavaScript bridge (webjs.scm, the REPL's
+// ,js), and exits with status 1 if any fails.  Run it once in default node and once
 // with "--liftoff --no-wasm-tier-up --stack-size=900".
 //
 // With --arch=A, the modules tested are those of the architecture A of
@@ -37,6 +38,13 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+
+// gc(), for the cases of JavaScript's garbage collector (J17, J21), in
+// every lane: as --expose-gc gives it
+if (typeof gc !== 'function') {
+  require('v8').setFlagsFromString('--expose-gc');
+  globalThis.gc = require('vm').runInNewContext('gc');
+}
 
 const webDir = path.resolve(process.argv[2] || 'web');
 // the page's own architecture and those it has (chicken-wasm-builds,
@@ -54,7 +62,7 @@ const { arch, sub } = moduleArch(fs.readFileSync(path.join(webDir, 'index.html')
 const modDir = path.join(webDir, sub);
 const createChickenRepl = require(path.join(modDir, 'chicken-repl.js'));
 const Driver = require(path.join(__dirname, '..', '..', 'emscripten', 'web', 'repl-driver.js'));
-const { RUNNING, WAITING, BUSY, EXITED, SLEEPING, PAUSED, LAZY_NEXT, LAZY_GO, LAZY_PAUSE } = Driver;
+const { RUNNING, WAITING, BUSY, EXITED, SLEEPING, PAUSED, AWAITING, LAZY_NEXT, LAZY_GO, LAZY_PAUSE } = Driver;
 const wasmModule = new WebAssembly.Module(fs.readFileSync(path.join(modDir, 'chicken-repl.wasm')));
 console.log('# ' + arch + ' modules in ' + modDir);
 
@@ -133,6 +141,8 @@ async function check(name, f) {
 const val = v => new RegExp('(^|> )' + v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\n', 'm');
 
 function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
+const J = x => JSON.stringify(x);
+function eq(a, b, what) { assert(J(a) === J(b), what + ': expected ' + J(b) + ', got ' + J(a)); }
 
 (async () => {
   const t0 = now();
@@ -527,10 +537,670 @@ function assert(c, msg) { if (!c) throw new Error('assertion failed: ' + msg); }
     assert(h3 < (arch === 'wasm64' ? 320e6 : 160e6), 'memory ' + h3);
   });
 
+  // ---- J: the JavaScript bridge (webjs.scm), in sessions of its own
+  // (an error of the bridge may name an engine error, a RangeError)
+
+  let JS;
+  const bridged = [];                   // the J sessions, checked at the end
+  // evaluate SRC: its value is printed as V
+  const ev = async (src, v, ms) => { JS.send(src + '\n'); await JS.expectOut(val(v), ms); await JS.prompt(ms); };
+  // evaluate SRC: an error matching RE
+  const fails = async (src, re, ms) => {
+    const e0 = JS.err.length;
+    JS.send(src + '\n');
+    await JS.prompt(ms);
+    assert(re.test(JS.err.slice(e0)), src + ': ' + JSON.stringify(JS.err.slice(e0)));
+  };
+  const stats = () => JS.drv.module.webjs.stats();
+
+  await check('J1 wiring; js-call, js-ref and js-global', async () => {
+    JS = await session();
+    bridged.push(JS);
+    await waitFor('prompt', () => /#;1> $/.test(JS.all));
+    assert(typeof JS.drv.module._webjs_dispatch === 'function', '_webjs_dispatch exported');
+    assert(typeof JS.drv.module._webrepl_js_wake === 'function', '_webrepl_js_wake exported');
+    assert(typeof JS.drv.module.webjs.stats === 'function', 'the bridge of the module');
+    const e0 = JS.err.length;
+    JS.send('(import js (scheme base) (chicken base) (chicken condition) (chicken bytevector) (chicken number-vector))\n');
+    await JS.prompt();
+    assert(JS.err.length === e0, 'import: ' + JS.err.slice(e0));
+    await ev('(js-call (js-global "Math.max") 1 5 3)', '5');
+    await ev('(js-ref (js-global "Math") "PI")', '3.14159265358979');
+    JS.send('(js-global "Math.nope")\n');
+    await JS.prompt();
+    assert(/^#;\d+> $/.test(JS.since()), 'nothing printed: ' + JSON.stringify(JS.since()));
+  });
+  if (!JS || !JS.drv) { console.log('cannot continue'); process.exit(1); }
+
+  await check('J2 JavaScript values in Scheme', async () => {
+    JS.send('(js-eval "undefined")\n');
+    await JS.prompt();
+    assert(/^#;\d+> $/.test(JS.since()), 'undefined prints nothing: ' + JSON.stringify(JS.since()));
+    await ev('(js-undefined? (js-eval "undefined"))', '#t');
+    await ev('(js-eval "null")', '#<js-null>');
+    await ev('(js-eval "true")', '#t');
+    await ev('(list (js-eval "42") (exact? (js-eval "42")))', '(42 #t)');
+    await ev('(list (js-eval "-0") (js-eval "0.5"))', '(-0.0 0.5)');
+    // (wasm32 prints 2^53 as 9.00719925474099e+15)
+    await ev('(list (js-eval "2**53-1") (exact? (js-eval "2**53-1")) (inexact? (js-eval "2**53")) ' +
+             '(= (js-eval "2**53") (expt 2 53)))', '(9007199254740991 #t #t #t)');
+    await ev('(list (js-eval "NaN") (js-eval "-Infinity"))', '(+nan.0 -inf.0)');
+    await ev('(js-eval "12345678901234567890n")', '12345678901234567890');
+    await ev('(let ((s (js-eval "\'h\\\\u00e9\\\\ud800\'"))) (list (string-length s) (char->integer (string-ref s 2))))',
+             '(3 65533)');
+    await ev('(js-eval "[1,2]")', '#<js-object Array(2)>');
+    await ev('(js-eval "(function max(){})")', '#<js-object function max>');
+    await ev('(list (js-eval "new Map") (js-eval "Symbol(\'s\')"))', '(#<js-object Map> #<js-object Symbol(s)>)');
+    await ev('(list (js-eval "({})") (js-eval "Math"))', '(#<js-object Object> #<js-object Math>)');
+  });
+
+  await check('J3 Scheme values in JavaScript; round trips', async () => {
+    JS.send('(define probe (js-eval "x => typeof x + \':\' + (ArrayBuffer.isView(x) ? x.constructor.name + ' +
+            '\'[\' + Array.from(x).join() + \']\' : Array.isArray(x) ? JSON.stringify(x) : String(x))"))\n');
+    await JS.prompt();
+    const cases = [['1', 'number:1'], ['1.5', 'number:1.5'], ['(- (expt 2 53) 1)', 'number:9007199254740991'],
+                   ['(expt 2 60)', 'bigint:1152921504606846976'],
+                   ['(- (expt 2 70))', 'bigint:-1180591620717411303424'], ['1/2', 'number:0.5'],
+                   ['#t', 'boolean:true'], ['"s"', 'string:s'], ["'sym", 'string:sym'], ['#:kw', 'string:kw'],
+                   ['#\\a', 'string:a'], ['(void)', 'undefined:undefined'], ['js-null', 'object:null'],
+                   ['(vector 1 "a" (vector 2))', 'object:[1,\\"a\\",[2]]'],
+                   ['(bytevector 1 2)', 'object:Uint8Array[1,2]'], ['(f64vector 1.5)', 'object:Float64Array[1.5]'],
+                   ["'(1 2)", 'object:[object SchemeObject]'], ["'()", 'object:[object SchemeObject]']];
+    for (const [v, r] of cases) await ev('(js-call probe ' + v + ')', '"' + r + '"');
+    await ev('(substring (js-call probe car) 0 9)', '"function:"');
+    JS.send('(define id (js-eval "x => x"))\n');
+    await JS.prompt();
+    await ev('(let ((l (list 1 2))) (eq? (js-call id l) l))', '#t');
+    await ev("(eq? (js-call id '()) '())", '#t');
+    await ev('(let ((c (make-property-condition (quote c))) (r (make-parameter 1))) ' +
+             '(list (eq? (js-call id c) c) (eq? (js-call id r) r)))', '(#t #t)');
+    JS.send('(define-record-type point (make-point x y) point? (x point-x) (y point-y))\n');
+    await JS.prompt();
+    await ev('(let ((p (make-point 1 2))) (list (eq? (js-call id p) p) (js-call probe p)))',
+             '(#t "object:[object SchemeObject]")');
+    await ev('(js-call id (expt 2 60))', '1152921504606846976');
+    await ev('(list (js-call id 2.0) (exact? (js-call id 2.0)))', '(2 #t)');
+  });
+
+  await check('J4 objects, keys and conversions; argument errors', async () => {
+    JS.send('(define obj (js-obj "a" 1 \'b "x" #:c #t))\n');
+    await JS.prompt();
+    await ev('(js-keys obj)', '("a" "b" "c")');
+    await ev('(js->alist obj)', '(("a" . 1) ("b" . "x") ("c" . #t))');
+    await ev('(begin (js-set! obj "d" 2) (js-ref obj \'d))', '2');
+    await ev('(list (js-has? obj "d") (js-delete! obj "d") (js-has? obj "d"))', '(#t #t #f)');
+    await ev('(js-ref (alist->js \'((x . 1))) "x")', '1');
+    await ev('(js-invoke (js-new (js-global "Date") 0) "getTime")', '0');
+    await ev('(js->list (js-eval "new Set([1,2,3])"))', '(1 2 3)');
+    await ev('(js->vector (js-eval "\'ab\'"))', '#("a" "b")');
+    await ev('(js-ref (js-eval "[1]") (js-global "Symbol.iterator"))', '#<js-object function values>');
+    await ev('(js-ref (js-obj "length" 3) #:length)', '3');
+    await ev("(let ((l '(2 3))) (eq? (js-ref (list->js (list 1 l)) 1) l))", '#t');
+    await ev("(js-ref (list->js '(1 (2 3)) #t) 1)", '#<js-object Array(2)>');
+    await ev('(list (js-typeof 1) (js-typeof (expt 2 60)) (js-typeof js-null) (js-typeof (js-global "Math.max")) ' +
+             '(js-typeof car) (js-typeof (void)))',
+             '("number" "bigint" "object" "function" "function" "undefined")');
+    await ev('(list (js-object? js-null) (js-same? js-null js-null) (js-nullish? (void)))', '(#f #t #t)');
+    await ev('(list (equal? (js-global "Math") (js-global "Math")) (js-same? (js-global "Math") (js-global "Math")))',
+             '(#t #t)');
+    await ev('(js-instanceof? (js-eval "[]") (js-global "Array"))', '#t');
+    await ev('(js->string (js-eval "[1,2]"))', '"1,2"');
+    await ev('(js->bytevector (js-eval "new Uint16Array([258])"))', '#u8(2 1)');
+    await ev('(js->number-vector (js-eval "new Int16Array([-1])"))', '#s16(-1)');
+    // vectors cross as copies
+    JS.send('(define v (vector 3 1 2))\n');
+    await JS.prompt();
+    await ev('(begin (js-invoke (vector->js v) "sort") v)', '#(3 1 2)');
+    await fails('(js-invoke v "sort")', /Error: \(js-invoke\) bad argument type - not a JavaScript object: #\(3 1 2\)/);
+    await fails('(js-set! 1 "a" 2)', /Error: \(js-set!\) bad argument type - not a JavaScript object: 1/);
+    await fails('(js-ref obj (list 1))', /Error: \(js-ref\) bad argument type - not a property key/);
+    JS.send('(define cv (vector 1)) (vector-set! cv 0 cv)\n');
+    await JS.prompt();
+    await fails('(js-call id cv)', /Error: \(js-call\) circular structure/);
+    await fails("(js-call id (let loop ((i 0) (v '#())) (if (= i 600) v (loop (+ i 1) (vector v)))))",
+                /Error: \(js-call\) too deeply nested/);
+    await fails('(list->js (let ((l (list 1))) (set-cdr! l l) l))', /bad argument type - not a proper list/);
+    await fails("(alist->js (let ((l (list (cons 'a 1)))) (set-cdr! l l) l))",
+                /Error: \(alist->js\) bad argument type - not a proper list/, 5000);
+    await fails('(js-obj "a")', /Error: \(js-obj\) odd number of arguments/);
+  });
+
+  await check('J5 Scheme procedures called from JavaScript', async () => {
+    await ev('(js->list (js-invoke (js-eval "[1,2,3]") "map" (lambda (x) (* x x))))', '(1 4 9)');
+    await ev('(js->list (js-invoke (js-eval "[1,2,3]") "map" (lambda args (length args))))', '(3 3 3)');
+    await ev('(js->list (js-invoke (js-eval "[3,1,2]") "sort" (lambda (a b) (- a b))))', '(1 2 3)');
+    await ev('(js-call (js-eval "f => f(g => g(7))") (lambda (h) (+ 1 (js-call h (lambda (x) (* x 10))))))', '71');
+    await ev('(js-call (js-eval "f => typeof f()") (lambda () (values)))', '"undefined"');
+    await ev('(js-call (js-eval "f => f()") (lambda () (values 1 2)))', '1');
+    JS.send('(define o2 (js-obj "n" 5)) (js-set! o2 "get" (js-method (lambda (this) (js-ref this "n"))))\n');
+    await JS.prompt();
+    await ev('(js-invoke o2 "get")', '5');
+    // js-function: the same function each time, for removeEventListener
+    JS.send('(define hits 0) (define p (lambda (e) (set! hits (+ hits 1)))) (define f (js-function p)) ' +
+            '(define et (js-new (js-global "EventTarget")))\n');
+    await JS.prompt();
+    await ev('(begin (js-invoke et "addEventListener" "x" f) ' +
+             '(js-invoke et "dispatchEvent" (js-new (js-global "Event") "x")) hits)', '1');
+    await ev('(begin (js-invoke et "removeEventListener" "x" f) ' +
+             '(js-invoke et "dispatchEvent" (js-new (js-global "Event") "x")) hits)', '1');
+    await ev('(js-object? f)', '#t');
+    await ev('(begin (js-set! o2 "f" f) (eq? (js-ref o2 "f") p))', '#t');
+    const ids = stats().schemeIds;
+    JS.send('(js-release! f)\n');
+    await JS.prompt();
+    assert(stats().schemeIds === ids - 1, 'released: ' + JSON.stringify(stats()));
+    await fails('(js-invoke o2 "f" 1)', /Error: \(js-invoke\) Error: released Scheme procedure/);
+    await fails('(js-call f 1)', /Error: \(js-call\) released JavaScript object/);
+    await ev('f', '#<js-object released>');
+  });
+
+  await check('J6 JavaScript errors are (exn js) conditions', async () => {
+    await fails('(js-eval "null.x")', /Error: \(js-eval\) TypeError: /);
+    await ev('(handle-exceptions e (list ((condition-predicate \'js) e) (get-condition-property e \'js \'name) ' +
+             '(string? (get-condition-property e \'js \'stack))) (js-eval "throw new RangeError(\'r\')"))',
+             '(#t "RangeError" #t)');
+    await ev('(handle-exceptions e (list (get-condition-property e \'exn \'message) ' +
+             '(get-condition-property e \'js \'name) (get-condition-property e \'js \'error)) (js-eval "throw 42"))',
+             '("42" #f 42)');
+    await fails('(js-eval "(")', /Error: \(js-eval\) SyntaxError: /);
+    // what a Content-Security-Policy without 'unsafe-eval' makes eval throw
+    await fails('(js-eval "throw new EvalError(\'Refused to evaluate a string as JavaScript because unsafe-eval ' +
+                'is not an allowed source of script in the following Content Security Policy directive\')")',
+                /Error: \(js-eval\) EvalError: the server's Content-Security-Policy for repl-worker.js forbids eval: JavaScript cells, ,js and js-eval need script-src 'unsafe-eval' there/);
+    await ev('(+ 1 2)', '3');
+  });
+
+  await check('J7 Scheme errors cross JavaScript and are raised again as themselves', async () => {
+    await ev('(js->list (js-call (js-eval "f => { try { f() } catch (e) { return [e.name, e.schemeMessage, ' +
+             'e instanceof Error] } }") (lambda () (error "bad" 42))))', '("SchemeError" "bad: 42" #t)');
+    await ev("(call/cc (lambda (k) (with-exception-handler k (lambda () (js-call (js-eval \"f => f()\") " +
+             "(lambda () (raise 'boom)))))))", 'boom');
+    await ev("(let ((c (make-property-condition 'mine))) (eq? c (call/cc (lambda (k) (with-exception-handler k " +
+             "(lambda () (js-call (js-eval \"f => { try { f() } catch (e) { throw e } }\") (lambda () (abort c)))))))))",
+             '#t');
+    await ev("(guard (e (#t (list 'caught e))) (js-call (js-eval \"f => f()\") (lambda () (raise 'x))))", '(caught x)');
+    await fails('(js-call (js-eval "f => f()") (lambda () (car 5)))', /Error: \(car\) bad argument type: 5/);
+  });
+
+  await check('J8 continuations leaving a call from JavaScript', async () => {
+    await ev("(begin (define r (call/cc (lambda (k) (js-invoke (js-eval \"[1,2,3,4]\") \"forEach\" " +
+             "(lambda (x . _) (when (> x 2) (k x)))) 'none))) (list r (js-await (js-eval \"Promise.resolve(5)\"))))",
+             '(3 5)');
+    JS.send('(define count 0)\n');
+    await JS.prompt();
+    await ev("(begin (call/cc (lambda (k) (js-call (js-eval \"f => f()\") (lambda () (dynamic-wind void " +
+             "(lambda () (k 'x)) (lambda () (set! count (+ count 1)))))))) count)", '1');
+    await ev("(call/cc (lambda (k) (js-call (js-eval \"f => { try { f() } catch (e) { return 'swallowed' } }\") " +
+             "(lambda () (k 'escaped)))))", 'escaped');
+    JS.send('(define g-ran #f)\n');
+    await JS.prompt();
+    await ev("(call/cc (lambda (k) (js-call (js-eval \"(f, g) => { try { f() } finally { g() } }\") " +
+             "(lambda () (k 'out)) (lambda () (set! g-ran #t)))))", 'out');
+    await ev('g-ran', '#f');
+    await ev("(call/cc (lambda (k) (js-call (js-eval \"f => f()\") (lambda () (js-call (js-eval \"g => g()\") " +
+             "(lambda () (k 'two)))))))", 'two');
+    await ev('(+ 1 2)', '3');
+    JS.send('(define kk #f) (js-call (js-eval "f => f()") (lambda () (call/cc (lambda (k) (set! kk k))) 1))\n');
+    await JS.expectOut(val('1'));
+    await JS.prompt();
+    await fails('(kk 2)', /Error: re-entry into a call from JavaScript that has returned/);
+    JS.send('(import (chicken continuation))\n');
+    await JS.prompt();
+    await ev('(reset (+ 1 (js-call (js-eval "f => f()") (lambda () (shift k 10)))))', '10');
+    eq(stats().depth, 0, 'no op left');
+  });
+
+  await check('J9 exit inside a call from JavaScript', async () => {
+    for (const [src, code] of [
+      ['(js-call (js-eval "f => { try { f() } catch (e) { return \'swallowed\' } }") (lambda () (exit 3)))', 3],
+      ['(js-call (js-eval "f => [1].map(f)") (lambda (x) (exit 4)))', 4]]) {
+      const X = await session();
+      await waitFor('prompt', () => /#;1> $/.test(X.all));
+      X.send('(import js) ' + src + '\n');
+      await waitFor('exit', () => X.exit || X.crash);
+      assert(!X.crash, 'crash: ' + X.crash);
+      eq(X.exit.code, code, 'exit code');
+      assert(!/swallowed/.test(X.all), 'no swallowed: ' + X.all.slice(-200));
+    }
+    current = JS;
+  });
+
+  await check('J10 nesting: 50 levels, and unbounded recursion is an error', async () => {
+    JS.send('(define bounce (js-eval "(f, n) => f(n)")) (define (down2 n) (if (= n 50) n (js-call bounce down2 (+ n 1))))\n');
+    await JS.prompt();
+    await ev('(down2 0)', '50');
+    JS.send('(define (down n) (js-call bounce down (+ n 1)))\n');
+    await JS.prompt();
+    const t = now();
+    await fails('(down 0)', /RangeError: too many nested calls between Scheme and JavaScript/);
+    assert(now() - t < 20000, 'within 20 s');
+    await ev('(+ 1 2)', '3');
+    eq(stats().depth, 0, 'no op left');
+  });
+
+  await check('J11 js-await', async () => {
+    await ev('(js-await (js-eval "Promise.resolve(42)"))', '42');
+    await fails('(js-await (js-eval "Promise.reject(new TypeError(\'no\'))"))', /Error: \(js-await\) TypeError: no/);
+    JS.send('(js-await (js-eval "new Promise(r => setTimeout(() => r(\'late\'), 100))"))\n');
+    await waitFor('AWAITING', () => JS.statesSince().includes(AWAITING));
+    const t = now(), p0 = JS.pumps.length;
+    await JS.expectOut(val('"late"'));
+    assert(JS.pumps.length - p0 < 10, 'no busy pumping: ' + (JS.pumps.length - p0) + ' pumps in ' + (now() - t) + ' ms');
+    await JS.prompt();
+    await ev('(js-await 5)', '5');
+    await ev('(js-await (js-eval "({then(r){ r(9) }})"))', '9');
+    await ev('(js-await (js-obj "a" 1))', '#<js-object Object>');
+    // what is no thenable is itself, a handle too
+    await ev('(let ((o (js-obj "a" 1)) (f (js-function car))) (list (eq? o (js-await o)) (eq? f (js-await f))))',
+             '(#t #t)');
+    // a Scheme error crossing the promise is raised again as itself
+    await ev("(let ((c (make-property-condition 'mine))) (eq? c (call/cc (lambda (k) (with-exception-handler k " +
+             "(lambda () (js-await (js-call (js-async-function (lambda () (abort c)))))))))))", '#t');
+    eq(stats().awaits, 0, 'no slot left');
+  });
+
+  await check('J12 Stop during js-await', async () => {
+    JS.send('(js-await (js-eval "new Promise(() => {})"))\n');
+    await waitFor('AWAITING', () => JS.drv.state() === AWAITING);
+    JS.interrupt();
+    await JS.expectOut(/\*\*\* user interrupt \*\*\*/, 5000);
+    await JS.prompt();
+    eq(stats().awaits, 0, 'the slot given up');
+    await ev('(+ 1 2)', '3');
+  });
+
+  await check('J13 calls from JavaScript that wait: during js-await, at the prompt, not during sleep', async () => {
+    JS.send("(define log '())\n");
+    await JS.prompt();
+    await ev('(begin (js-call (js-eval "f => setTimeout(() => f(\'t\'), 10)") (lambda (x) (set! log (cons x log)))) ' +
+             '(js-await (js-eval "new Promise(r => setTimeout(r, 50))")) log)', '("t")');
+    // at the prompt, with no input
+    JS.send('(begin (js-call (js-eval "f => setTimeout(f, 20)") (lambda () (display "tick\\n"))) (void))\n');
+    await JS.prompt();
+    JS.mark();
+    await JS.expectOut(/^tick\n$/, 2000);
+    await JS.expectState(WAITING);
+    JS.send('(define l2 #f)\n');
+    await JS.prompt();
+    await ev('(begin (js-call (js-eval "f => setTimeout(f, 10)") (lambda () (set! l2 \'ran))) (sleep 1) l2)', '#f');
+    await ev('l2', 'ran');
+    await ev('(js-await (js-call (js-eval "f => new Promise(r => setTimeout(() => r(f(20)), 0))") (lambda (x) (+ x 1))))',
+             '21');
+    // an error in a timer callback at the prompt
+    const e0 = JS.err.length;
+    JS.send("(begin (js-call (js-eval \"f => setTimeout(f, 10)\") (lambda () (car '()))) (void))\n");
+    await JS.prompt();
+    await waitFor('the error', () => /Error in a call from JavaScript: \(car\) bad argument type: \(\)/.test(JS.err.slice(e0)));
+    await ev('(+ 1 2)', '3');
+    // Stop in a call run at the prompt ends that call only
+    JS.send('(begin (js-call (js-eval "f => setTimeout(f, 10)") (lambda () (let loop () (loop)))) (void))\n');
+    await JS.prompt();
+    await waitFor('BUSY', () => JS.statesSince().filter(s => s === BUSY).length >= 2);
+    JS.interrupt();
+    await JS.expectOut(/Error in a call from JavaScript: \*\*\* user interrupt \*\*\*\n/, 5000);
+    await JS.expectState(WAITING);
+    await ev('(+ 1 2)', '3');
+    // a context of its own: not the caller's ports
+    JS.send('(import (chicken port))\n');
+    await JS.prompt();
+    await ev('(with-output-to-string (lambda () (js-call (js-eval "f => setTimeout(f, 10)") (lambda () (display "out\\n"))) ' +
+             '(js-await (js-eval "new Promise(r => setTimeout(r, 50))"))))', '""');
+    assert(/^out\n/m.test(JS.since()), 'out on stdout: ' + JSON.stringify(JS.since()));
+    // Stop in a call run by js-await interrupts the evaluation
+    JS.send('(js-await (js-call (js-eval "f => new Promise(r => setTimeout(() => r(f()), 0))") (lambda () (let loop () (loop)))))\n');
+    await waitFor('BUSY', () => JS.statesSince().filter(s => s === BUSY).length >= 2);
+    JS.interrupt();
+    await JS.expectOut(/\*\*\* user interrupt \*\*\*/, 5000);
+    await JS.prompt();
+    assert(!/Error in a call from JavaScript/.test(JS.since()), 'reported once: ' + JSON.stringify(JS.since()));
+    eq([stats().queued, stats().running, stats().awaits], [0, 0, 0], 'nothing left');
+    await ev('(js-await (js-call (js-async-function (lambda (x) (* x 2))) 21))', '42');
+    await ev('(js-await (js-call (js-async-function (lambda () (js-await (js-eval "Promise.resolve(1)"))))))', '1');
+    // a call queued during an evaluation (js-async-function): at the next prompt
+    JS.send('(define l3 #f)\n');
+    await JS.prompt();
+    await ev('(begin (js-call (js-async-function (lambda () (set! l3 \'ran)))) l3)', '#f');
+    await waitFor('the queued call', () => stats().queued === 0 && stats().running === 0);
+    await ev('l3', 'ran');
+    // released: its queued calls are rejected
+    await ev('(let* ((f (js-async-function (lambda () 1))) (p (js-call f))) (js-release! f) ' +
+             '(handle-exceptions e (get-condition-property e \'exn \'message) (js-await p)))',
+             '"Error: released Scheme procedure"');
+  });
+
+  await check('J14 js-await inside a call from JavaScript', async () => {
+    await fails('(js-call (js-eval "f => f()") (lambda () (js-await (js-eval "Promise.resolve(1)"))))',
+                /Error: \(js-await\) cannot wait inside a call from JavaScript/);
+    await ev('(js-call (js-eval "f => f()") (lambda () (js-await 5)))', '5');
+  });
+
+  await check('J15 reading stdin inside a call from JavaScript is an error', async () => {
+    const t = now();
+    await fails('(js-call (js-eval "f => f()") (lambda () (read-line)))',
+                /cannot read standard input inside a call from JavaScript/, 2000);
+    assert(now() - t < 2000, 'no spinning');
+    await ev('(+ 1 2)', '3');
+  });
+
+  await check('J16 Stop inside a call from JavaScript interrupts the evaluation', async () => {
+    globalThis.__stop = () => JS.drv.module._webrepl_interrupt();
+    JS.send('(js-call (js-eval "f => { __stop(); let n = 0; for (let i = 0; i < 3; i++) { try { f() } catch (e) ' +
+            '{ n++ } } globalThis.__n = n; return \'done\' }") (lambda () (let loop ((i 0)) (if (< i 1000000) ' +
+            '(loop (+ i 1))))))\n');
+    await JS.prompt();
+    assert(/user interrupt/.test(JS.since()), 'interrupted: ' + JSON.stringify(JS.since()));
+    assert(!/"done"/.test(JS.since()), 'no "done"');
+    await ev('(js-eval "__n")', '3');
+  });
+
+  await check('J17 handles are released by the garbage collector and by js-release!', async () => {
+    JS.send('(import (chicken gc))\n,ch\n');
+    await JS.prompt();
+    await JS.prompt();
+    const b = stats().handles;
+    JS.send('(begin (do ((i 0 (+ i 1))) ((= i 1000)) (js-eval "({})")) (void))\n');
+    await JS.prompt();
+    JS.send('(begin (gc #t) (void))\n');
+    await JS.prompt();
+    assert(stats().handles <= b + 1, 'released: ' + b + ' -> ' + JSON.stringify(stats()));
+    JS.send('(define h (js-eval "({})"))\n');
+    await JS.prompt();
+    const h = stats().handles;
+    JS.send('(js-release! h)\n');
+    await JS.prompt();
+    eq(stats().handles, h - 1, 'released at once');
+    JS.send('(js-release! h)\n');
+    await JS.prompt();
+    eq(stats().handles, h - 1, 'a second release');
+    await ev('h', '#<js-object released>');
+    // the wrappers JavaScript's collector frees (FinalizationRegistry)
+    // free their entries at the next op
+    const ids = stats().schemeIds;
+    JS.send('(define k0 (js-eval "f => 0")) (begin (do ((i 0 (+ i 1))) ((= i 100000)) (js-call k0 car)) (void))\n');
+    await JS.prompt(60000);
+    for (let i = 0; i < 5; i++) { gc(); await new Promise(r => setImmediate(r)); }
+    JS.send('(begin (js-call k0 car) (gc #t) (void))\n');
+    await JS.prompt();
+    assert(stats().schemeIds < ids + 1000, 'wrappers freed: ' + JSON.stringify(stats()));
+  });
+
+  await check('J21 a Scheme object held only by a queued call or a settled promise is not freed', async () => {
+    JS.send('(define got #f) (define g (js-function (lambda (x) (set! got x)))) ' +
+            '(define mk (js-eval "v => new Promise(r => { globalThis.__r = () => r(v) })")) ' +
+            '(js-set! (js-global) "__gc" (js-function (lambda () (gc #t)))) ' +
+            '(js-set! (js-global) "__busy" (js-function (lambda () (let loop ((i 0)) (if (< i 3000000) (loop (+ i 1))))))) ' +
+            '(js-call (js-eval "(f, x) => { globalThis.__q = () => f(x) }") g (list 1 2 3))\n');
+    await JS.prompt();
+    const collect = async () => { for (let i = 0; i < 5; i++) { gc(); await sleep(20); } };
+    // queued while Scheme computes, its output held back (canRun): the
+    // argument is held by the queue only
+    JS.high = 0;
+    JS.send('(let loop ((i 0)) (if (< i 3000000) (loop (+ i 1))))\n');
+    await waitFor('held back', () => JS.drv.state() === BUSY);
+    globalThis.__q();
+    delete globalThis.__q;
+    await collect();
+    JS.high = Infinity;
+    JS.drv.resumeOutput();
+    await JS.prompt();
+    await waitFor('the queued call', () => stats().queued === 0 && stats().running === 0);
+    await ev('got', '(1 2 3)');
+    // the value js-await waits for, once the promise is gone: held by
+    // the slot only, while a call the wait runs computes, held back
+    JS.send('(js-await (js-call mk (list 4 5)))\n');
+    await waitFor('AWAITING', () => JS.drv.state() === AWAITING);
+    globalThis.__gc();
+    await sleep(100);
+    await waitFor('AWAITING', () => JS.drv.state() === AWAITING);
+    JS.high = 0;
+    globalThis.__busy();
+    await waitFor('held back', () => JS.drv.state() === BUSY);
+    const r = globalThis.__r;
+    delete globalThis.__r;
+    r();
+    await collect();
+    JS.high = Infinity;
+    JS.drv.resumeOutput();
+    await JS.expectOut(val('(4 5)'));
+    await JS.prompt();
+    eq(stats().awaits, 0, 'no slot left');
+  });
+
+  await check('J22 re-entering a wait that has ended is an error', async () => {
+    JS.send('(define kw #f)\n');
+    await JS.prompt();
+    await ev('(js-await (js-call (js-async-function (lambda () (call/cc (lambda (c) (set! kw c) 1))))))', '1');
+    await fails('(kw 5)', /Error: \(js-await\) re-entry into a wait that has ended/, 3000);
+    eq(stats().awaits, 0, 'no slot');
+    await ev('(+ 1 2)', '3');
+  });
+
+  await check('J23 queued calls settle in the order they ran; user code never runs in a settlement', async () => {
+    // g1 returns, then g2 raises: g1's promise settles first
+    globalThis.__order = [];
+    const e0 = JS.err.length;
+    JS.send('(js-call (js-eval "(g1, g2) => setTimeout(() => { g1().then(() => __order.push(\'g1\')); ' +
+            'g2().catch(() => __order.push(\'g2\')) }, 0)") (lambda () 1) (lambda () (raise \'no)))\n');
+    // (the calls run at the prompt: their output may come after it)
+    await waitFor('both settled', () => globalThis.__order.length === 2, 2000);
+    eq(globalThis.__order, ['g1', 'g2'], 'order');
+    await waitFor('the error', () => /Error in a call from JavaScript: uncaught exception: no/.test(JS.err.slice(e0)));
+    await JS.expectState(WAITING);
+    // a species getter of Promise and a setter on Error.prototype, the
+    // user's, set by the calls themselves: neither runs when a call is
+    // settled or a callback fails
+    const species = Object.getOwnPropertyDescriptor(Promise, Symbol.species);
+    globalThis.__break = () => {
+      Object.defineProperty(Promise, Symbol.species, { get() { throw new Error('species') }, configurable: true });
+      Object.defineProperty(Error.prototype, 'schemeMessage', { set(v) { throw new Error('setter') }, configurable: true });
+    };
+    const mend = () => {
+      Object.defineProperty(Promise, Symbol.species, species);
+      delete Error.prototype.schemeMessage;
+    };
+    try {
+      JS.send('(js-call (js-eval "f => setTimeout(async () => { globalThis.__got = await f(41) }, 0)") ' +
+              '(lambda (x) (js-call (js-global "__break")) (+ x 1)))\n');
+      await waitFor('resolved', () => globalThis.__got === 42, 2000);
+      mend();
+      await JS.prompt();
+      JS.send('(js-call (js-eval "f => setTimeout(async () => { try { await f() } catch (e) { globalThis.__msg = ' +
+              'e.schemeMessage } }, 0)") (lambda () (js-call (js-global "__break")) (error "no")))\n');
+      await waitFor('rejected', () => globalThis.__msg === 'no', 2000);
+      mend();
+      await JS.expectOut(/Error in a call from JavaScript: no\n/);
+      await JS.expectState(WAITING);
+      await ev('(js->list (js-call (js-eval "f => { try { f() } catch (e) { return [e.name, e.schemeMessage] } }") ' +
+               '(lambda () (js-call (js-global "__break")) (error "bad" 42))))', '("SchemeError" "bad: 42")');
+    } finally { mend(); }
+    assert(!JS.crash, 'no crash: ' + JS.crash);
+  });
+
+  await check('J24 an error that cannot cross JavaScript still leaves the call', async () => {
+    JS.send('(define f0 (js-function (lambda () (error "x")))) (define call0 (js-eval "f => f()"))\n');
+    await JS.prompt();
+    JS.send('(set! ##webjs#crossing-hook (lambda () (error "hook")))\n');
+    await JS.prompt();
+    await fails('(js-call call0 f0)', /Error: \(js-call\) Error: x/, 3000);
+    JS.send('(set! ##webjs#crossing-hook (lambda () #f))\n');
+    await JS.prompt();
+    await ev('(js-call call0 (lambda () (+ 1 2)))', '3');
+    eq(stats().depth, 0, 'no op left');
+  });
+
+  await check('J18 two modules in one realm keep their bridges apart', async () => {
+    const A = JS, B = await session();
+    bridged.push(B);
+    await waitFor('prompt', () => /#;1> $/.test(B.all));
+    assert(A.drv.module.webjs !== B.drv.module.webjs, 'a bridge each');
+    A.send('(js-set! (js-global) "__fa" (lambda () (display "A\\n")))\n');
+    await A.prompt();
+    B.send('(import js) (js-set! (js-global) "__fb" (lambda () (display "B\\n")))\n');
+    await B.prompt();
+    A.send('(begin (js-eval "setTimeout(() => { __fa(); __fb(); }, 10)") (void))\n');
+    await A.prompt();
+    A.mark();
+    B.mark();
+    await A.expectOut(/^A\n$/, 2000);
+    await B.expectOut(/^B\n$/, 2000);
+    await sleep(50);
+    assert(!/B/.test(A.since()) && !/A/.test(B.since()), 'each in its own: ' + J([A.since(), B.since()]));
+    // B's op runs A's function, which A does not wait on: queued in A
+    B.send('(js-eval "__fa()")\n');
+    await B.expectOut(val('#<js-object Promise>'));
+    await A.expectOut(/^A\nA\n$/, 2000);
+    current = A;
+  });
+
+  await check('J20 the console writes to the standard ports, in order', async () => {
+    globalThis.__wjs = JS.drv.module.webjs;
+    JS.send('(begin (display "a") (js-eval "__wjs.console(1, [\'b\', 2, [1, \\"x\\"], {k: null}, 3n, undefined])") ' +
+            '(display "c\\n") (void))\n');
+    await JS.expectOut(/^ab 2 \[1,"x"\] \{"k":null\} 3n undefined\nc\n/);
+    await JS.prompt();
+    const e0 = JS.err.length;
+    JS.send('(begin (js-eval "__wjs.console(2, [new Error(\'x\')])") (void))\n');
+    await JS.prompt();
+    assert(/^Error: x\n    at /.test(JS.err.slice(e0)), 'an error with its stack: ' + JSON.stringify(JS.err.slice(e0)));
+    // between inputs: straight to the output
+    JS.mark();
+    JS.drv.module.webjs.console(1, ['idle']);
+    assert(/^idle\n$/.test(JS.since()), 'idle: ' + JSON.stringify(JS.since()));
+    // inside with-output-to-string, captured
+    JS.send('(import (chicken port))\n');
+    await JS.prompt();
+    await ev('(with-output-to-string (lambda () (js-eval "__wjs.console(1, [\'in\'])")))', '"in\\n"');
+  });
+
+  await check('J19 redefining the exports and library procedures does not break the bridge', async () => {
+    const X = await session();
+    JS = X;
+    bridged.push(X);
+    await waitFor('prompt', () => /#;1> $/.test(X.all));
+    X.send('(import js)\n');
+    await X.prompt();
+    X.send("(define (js-call . x) 'clobbered)\n");
+    await X.prompt();
+    await ev('(js-invoke (js-eval "[1,2]") "join" "-")', '"1-2"');
+    // (before: csi's own named let needs reverse)
+    X.send("(define (procs n) (let loop ((i 0) (l '())) (if (= i n) l (loop (+ i 1) (cons (lambda () i) l)))))\n");
+    await X.prompt();
+    X.send("(define (apply . x) 'x) (define (list? x) #f) (define (reverse x) x) (define (make-vector . x) 0)\n");
+    await X.prompt();
+    await ev("(js->list (list->js '(1 2)))", '(1 2)');
+    await ev('(js->list (js-invoke (js-eval "[1,2,3]") "map" (lambda (x) (* x x))))', '(1 4 9)');
+    // 200 procedures crossing: the table of Scheme objects grows
+    await ev('(length (js->list (list->js (procs 200))))', '200');
+  });
+
+  // ---- R-JS: the REPL's ,js (webjs.scm), in a session of its own
+
+  await check('R-JS1 ,js prints the value as JavaScript text', async () => {
+    const X = await session();
+    JS = X;
+    bridged.push(X);
+    await waitFor('prompt', () => /#;1> $/.test(X.all));
+    await ev(',js 1 + 2', '3');
+    await ev(",js 'a' + 'b'", '"ab"');
+    X.send(',js undefined\n');
+    await X.prompt();
+    assert(/^#;\d+> $/.test(X.since()), 'undefined prints nothing: ' + JSON.stringify(X.since()));
+    await ev(",js [1, 'x', {a: 1}]", '[1, "x", {a: 1}]');
+  });
+
+  await check('R-JS2 names persist across ,js lines and reach (import js)', async () => {
+    for (const src of [',js const k = 5', ',js let s = k * 2', ',js class P {}']) {
+      JS.send(src + '\n');
+      await JS.prompt();
+      assert(/^#;\d+> $/.test(JS.since()), src + ': nothing printed: ' + JSON.stringify(JS.since()));
+    }
+    await ev(',js [k, s, typeof P]', '[5, 10, "function"]');
+    JS.send('(import js)\n');
+    await JS.prompt();
+    await ev('(js-global "k")', '5');
+  });
+
+  await check('R-JS3 a promise is waited for (AWAITING); Stop ends the wait', async () => {
+    await ev(',js new Promise(r => setTimeout(() => r(7), 50))', '7');
+    assert(JS.statesSince().includes(AWAITING), 'AWAITING: ' + JS.statesSince());
+    JS.send(',js new Promise(() => {})\n');
+    await waitFor('AWAITING', () => JS.drv.state() === AWAITING);
+    JS.interrupt();
+    await JS.expectOut(/\*\*\* user interrupt \*\*\*/, 5000);
+    await JS.prompt();
+    eq(stats().awaits, 0, 'the slot given up');
+  });
+
+  await check('R-JS4 a JavaScript error is reported with its stack; the REPL goes on', async () => {
+    JS.send(",js function bad() { throw new Error('boom') }\n");
+    await JS.prompt();
+    await fails(',js bad()', /Error: Error: boom\n[\s\S]*JavaScript stack:[\s\S]*js\[\d+\]:1\t {2}bad\t<--\n/);
+    assert(/#;\d+> $/.test(JS.since()), 'a prompt after it');
+    await ev('(+ 1 2)', '3');
+    await fails(',js null.x', /Error: TypeError/);
+    // ,exn describes it
+    JS.send(',exn\n');
+    await JS.expectOut(/TypeError/);
+    await JS.prompt();
+  });
+
+  await check('R-JS5 multi-line ,js: the lines entered with it, more while incomplete', async () => {
+    JS.send(',js function f(x) {\n  return x * 2\n}\n');
+    await JS.prompt();
+    await ev(',js f(21)', '42');
+    await ev(',js const a1 = 1\nconst b1 = a1 + 1\nb1', '2');
+    JS.send(',js [1,\n');
+    await JS.expectState(WAITING);
+    await sleep(100);
+    assert(!/#;\d+> /.test(JS.since()), 'no prompt while incomplete: ' + JSON.stringify(JS.since()));
+    JS.send('2]\n');
+    await JS.expectOut(val('[1, 2]'));
+    await JS.prompt();
+    // ",js" alone takes the next line, also with blanks after it
+    for (const cmd of [',js\n', ',js \n', ',js\t \n']) {
+      JS.send(cmd);
+      await JS.expectState(WAITING);
+      await sleep(50);
+      assert(!/#;\d+> /.test(JS.since()), J(cmd) + ': no prompt before the next line: ' + J(JS.since()));
+      JS.send('6 * 7\n');
+      await JS.expectOut(val('42'));
+      await JS.prompt();
+    }
+  });
+
+  await check('R-JS9 ,js takes no line typed after it while csi was busy', async () => {
+    JS.send('(let loop ((i 0)) (if (< i 3000000) (loop (+ i 1)) (quote busy-done)))\n');
+    await waitFor('busy', () => JS.drv.state() === BUSY);
+    // two submissions: two feeds
+    JS.drv.feed(',js 1 + 1\n');
+    JS.drv.feed('(+ 40 2)\n');
+    await JS.expectOut(/busy-done\n[\s\S]*42\n#;\d+> $/, 20000);
+    assert(val('2').test(JS.since()) && !/Error/.test(JS.since()), 'each its own: ' + J(JS.since()));
+    await JS.prompt();
+    // and one submission of two lines is one ,js source
+    await ev(',js const t9 = 4\nt9 * 10', '40');
+  });
+
+  await check('R-JS6 ,? lists ,js', async () => {
+    JS.send(',?\n');
+    await JS.prompt();
+    assert(/\n ,js SOURCE {8}evaluate /.test(JS.since()), 'listed: ' + JSON.stringify(JS.since().slice(-400)));
+  });
+
+  await check('R-JS8 top-level await is a helpful SyntaxError', async () => {
+    await fails(',js await 1', /SyntaxError: await is not allowed at the top level of a JavaScript cell or a ,js line/);
+    await ev(',js (async () => { const x = await Promise.resolve(3); return x })()', '3');
+  });
+
   if (S.crash) { failures++; console.log('not ok - crash: ' + S.crash); }
   if (/RangeError|RuntimeError|Aborted/.test(S.all)) {
     failures++;
     console.log('not ok - engine error in output');
+  }
+  // (J10's RangeError is the bridge's own)
+  for (const X of bridged) {
+    if (X.crash) { failures++; console.log('not ok - crash of a J session: ' + X.crash); }
+    if (/RuntimeError|Aborted/.test(X.all)) { failures++; console.log('not ok - engine error in a J session'); }
   }
   console.log(`# ${passes} passed, ${failures} failed in ${((now() - t0) / 1000).toFixed(1)} s`);
   // Emscripten's node quit_ leaves process.exitCode set by (exit 7).

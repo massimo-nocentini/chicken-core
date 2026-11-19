@@ -81,6 +81,29 @@ const prelude = `
   globalThis.importScripts = (...files) => files.forEach(p =>
     vm.runInThisContext(fs.readFileSync(path.join(dir, p.split('?')[0]), 'utf8'), { filename: p }));
   globalThis.postMessage = m => parentPort.postMessage(m);
+  // the worker's message, error and unhandledrejection events, which
+  // repl-worker.js listens to (the page's messages, and what user
+  // JavaScript leaves uncaught), and dispatchEvent, whose events are
+  // not isTrusted (Node's Event); every exception left uncaught is also
+  // told to the harness ('__uncaught'), which only the cases that
+  // expect one allow
+  const listeners = {};
+  globalThis.addEventListener = (t, f) => { (listeners[t] = listeners[t] || []).push(f); };
+  const fire = (t, ev) => {
+    const l = listeners[t] || [];
+    for (const f of l) { f(ev); if (ev.stopped) break; }
+    return l.length > 0;
+  };
+  globalThis.dispatchEvent = ev => { fire(ev.type, ev); return true; };
+  const uncaught = (what, x) => parentPort.postMessage({ type: '__uncaught', message: what + String((x && x.stack) || x) });
+  process.on('uncaughtException', e => {
+    uncaught('', e);
+    if (!fire('error', { error: e, message: String((e && e.message) || e), preventDefault() {} })) throw e;
+  });
+  process.on('unhandledRejection', r => {
+    uncaught('(in promise) ', r);
+    fire('unhandledrejection', { reason: r, preventDefault() {} });
+  });
   // Node's MessagePort drains up to 1000 queued messages per wakeup, and
   // the worker's pump re-posts one per slice: a busy csi would starve the
   // parentPort (no Stop for ~50 s).  Browsers queue both as ordinary
@@ -93,7 +116,8 @@ const prelude = `
       this.port2 = { postMessage: d => setImmediate(() => port1.onmessage && port1.onmessage({ data: d })) };
     }
   };
-  parentPort.on('message', d => onmessage({ data: d }));
+  // (a listener that stops its propagation is the last to get it)
+  parentPort.on('message', d => fire('message', { data: d, stopImmediatePropagation() { this.stopped = true; } }));
   importScripts('repl-worker.js');
 `;
 
@@ -113,6 +137,8 @@ async function waitFor(what, pred, ms = 20000) {
 }
 
 let current = null;
+// what the workers left uncaught ('__uncaught', see the prelude)
+const uncaught = [];
 
 // One worker.  `autoAck' acks every output message, as the page does
 // after rendering it.
@@ -123,6 +149,7 @@ function session(init, { autoAck = true } = {}) {
                               resourceLimits: { stackSizeMb: 1 } });
   s.w.on('error', e => { s.error = e; });
   s.w.on('message', m => {
+    if (m.type === '__uncaught') { uncaught.push(m.message); return; }
     s.msgs.push(m);
     switch (m.type) {
     case 'ready':  assert(!s.states.length, 'ready precedes the first state'); s.ready = true; break;
@@ -156,9 +183,14 @@ function session(init, { autoAck = true } = {}) {
   return s;
 }
 
-async function check(name, f) {
+// UNCAUGHT: the case leaves exceptions uncaught in the worker (else
+// any is a failure: a bug of repl-worker.js would be one)
+async function check(name, f, { uncaught: allowed = false } = {}) {
+  const u0 = uncaught.length;
   try {
     await f();
+    if (!allowed && uncaught.length > u0)
+      throw new Error('left uncaught in the worker: ' + uncaught.slice(u0).join('\n'));
     passes++;
     console.log('ok - ' + name);
   } catch (e) {
@@ -406,6 +438,180 @@ async function packageCases() {
       assert(JSON.stringify(d2.values) === '["3"]', 'next cell ' + JSON.stringify(d2));
     } finally { await N.close(); }
   });
+
+  // ---- W-J: the JavaScript bridge (webjs.scm) in the worker, where
+  // user JavaScript shares the global scope with repl-worker.js
+  let JW;
+  const jsEv = async (src, v, ms) => { JW.send(src + '\n'); await JW.expectOut(val(v), ms); await JW.prompt(ms); };
+
+  await check('W-J1 the worker\'s own state and postMessage are out of reach', async () => {
+    JW = session({});
+    await waitFor('ready', () => JW.ready || JW.crash || JW.error, 30000);
+    await JW.prompt(30000);
+    JW.send('(import js)\n');
+    await JW.prompt();
+    await jsEv('(js->list (js-eval "[typeof drv, typeof handle, typeof queue, typeof writeFile, typeof postMessage, ' +
+               'typeof ChickenReplDriver, onmessage === null]"))',
+               '("undefined" "undefined" "undefined" "undefined" "undefined" "undefined" #t)');
+    await jsEv('(+ 1 2)', '3');
+  });
+  if (!JW || !JW.ready) { console.log('cannot continue'); process.exit(1); }
+
+  await check('W-J2 an exception thrown in a timer is reported; the worker goes on', async () => {
+    // (the report may come before the prompt or after it)
+    JW.send('(js-eval "setTimeout(() => { throw new Error(\'boom\') }, 0)")\n');
+    await JW.expectOut(/Uncaught Error: boom/, 1000);
+    assert(!JW.error && !JW.crash, 'no worker error: ' + (JW.error || JW.crash));
+    JW.send('(js-eval "Promise.reject(new Error(\'nope\')), 1")\n');
+    await JW.expectOut(/Uncaught \(in promise\) Error: nope/, 1000);
+    await waitFor('WAITING', () => JW.states[JW.states.length - 1] === 1);
+    assert(!JW.error && !JW.crash, 'no worker error: ' + (JW.error || JW.crash));
+    await jsEv('(+ 1 2)', '3');
+  }, { uncaught: true });
+
+  await check('W-J3 a Scheme error in a timer callback is printed; the worker goes on', async () => {
+    JW.send("(js-call (js-eval \"f => setTimeout(f, 10)\") (lambda () (car '())))\n");
+    await JW.expectOut(/Error in a call from JavaScript: \(car\) bad argument type: \(\)/, 2000);
+    await sleep(100);
+    assert(!JW.error && !JW.crash && JW.exit === null, 'alive: ' + (JW.error || JW.crash || JW.exit));
+    assert(!/Uncaught/.test(JW.since()), 'no unhandled rejection: ' + JW.since());
+    await jsEv('(+ 1 2)', '3');
+  });
+
+  await check('W-J4 the console writes to the standard ports, in order, also between inputs', async () => {
+    JW.send('(begin (display "a") (js-eval "console.log(\'b\')") (display "c\\n") ' +
+            '(js-eval "console.error(\'e\', 1, [1, \\"x\\"], {k: null})"))\n');
+    await JW.expectOut(/^ab\nc\ne 1 \[1,"x"\] \{"k":null\}\n/);
+    await JW.prompt();
+    JW.send('(js-eval "setTimeout(() => console.log(\'idle\'), 20)")\n');
+    await JW.prompt();
+    JW.mark();
+    await JW.expectOut(/^idle\n/, 500);
+  });
+
+  await check('W-J5 js-await reports state 7; an interrupt ends a wait that never settles', async () => {
+    JW.send('(js-await (js-eval "new Promise(r => setTimeout(() => r(5), 200))"))\n');
+    await JW.expectOut(val('5'));
+    await JW.prompt();
+    assert(JW.states.slice(JW.stateAt).includes(7), 'AWAITING: ' + JW.states.slice(JW.stateAt));
+    JW.send('(js-await (js-eval "new Promise(() => {})"))\n');
+    await waitFor('AWAITING', () => JW.states[JW.states.length - 1] === 7);
+    JW.mark();
+    JW.post({ type: 'interrupt' });
+    await JW.expectOut(/user interrupt/, 5000);
+    await JW.prompt();
+    await jsEv('(+ 2 2)', '4');
+  });
+
+  await check('W-J6 replacing postMessage and onmessage does not cut the worker off', async () => {
+    JW.send('(js-eval "self.postMessage = () => {}; try { onmessage = () => {} } catch (e) {} 1")\n');
+    await JW.expectOut(val('1'));
+    await JW.prompt();
+    await jsEv('(* 6 7)', '42');
+  });
+
+  await check('W-J7 an ack that is no number is ignored', async () => {
+    JW.post({ type: 'ack', bytes: NaN });
+    JW.post({ type: 'ack', bytes: -Infinity });
+    JW.send('(let loop ((i 0)) (when (< i 300000) (print "0123456") (loop (+ i 1)))) (print "end")\n');
+    await JW.expectOut(/end\n#;\d+> $/, 60000);
+    await JW.prompt();
+  });
+
+  await check('W-J9 user JavaScript cannot post as the page: its events and a second init are ignored', async () => {
+    const m0 = JW.msgs.length;
+    await jsEv('(js-eval "dispatchEvent(new MessageEvent(\'message\', {data: {type: \'listDir\', id: 777, path: \'/\'}})); ' +
+               'dispatchEvent(new MessageEvent(\'message\', {data: {type: \'init\', args: [\'-n\', \'-e\', \'(exit 7)\']}})); 1")',
+               '1');
+    // (the page's own, but not the first)
+    JW.post({ type: 'init', args: ['-n', '-e', '(exit 8)'], csirc: null, files: [], sliceMs: 50, wasmModule });
+    await sleep(300);
+    const forged = JW.msgs.slice(m0).filter(m => m.id === 777 || m.type === 'exit' || m.type === 'crash' || m.type === 'ready');
+    assert(!forged.length, 'nothing for them: ' + JSON.stringify(forged));
+    await jsEv('(+ 1 2)', '3');
+    assert(JW.exit === null, 'the session goes on');
+  });
+
+  await check('W-NJ1 the global scheme is read-only; the lexer is out of reach', async () => {
+    await jsEv('(js->list (js-eval "[typeof scheme, Object.getOwnPropertyDescriptor(self, \'scheme\').writable, ' +
+               'typeof ChickenJsLexer]"))', '("object" #f "undefined")');
+  });
+
+  await check('W-NJ2 the timers and promise reactions of the REPL are what they were', async () => {
+    JW.send('(js-eval "setTimeout((a, b) => console.log(a + b), 0, 1, 2)")\n');
+    await JW.expectOut(val('3'), 2000);
+    await waitFor('WAITING', () => JW.states[JW.states.length - 1] === 1);
+    JW.send('(js-eval "clearTimeout(setTimeout(() => console.log(\'no\'), 10)), 1")\n');
+    await JW.expectOut(val('1'));
+    await JW.prompt();
+    await sleep(100);
+    assert(!/no\n/.test(JW.since()), 'cleared: ' + JW.since());
+    JW.send('(js-eval "(async () => { await null; return 7 })().then(x => console.log(x)), 1")\n');
+    await JW.expectOut(val('7'), 2000);
+    await jsEv('(+ 1 2)', '3');
+  });
+
+  await check('W-RJS1 what JavaScript writes between slices comes as output {idle: true}', async () => {
+    JW.send(",js setTimeout(() => console.log('t'), 20), 1\n");
+    await JW.expectOut(val('1'));
+    await JW.prompt();
+    const m0 = JW.msgs.length;
+    JW.mark();
+    await JW.expectOut(/^t\n$/, 2000);
+    const outs = JW.msgs.slice(m0).filter(m => m.type === 'output');
+    assert(outs.length === 1 && outs[0].text === 't\n' && outs[0].idle === true, 'idle: ' + JSON.stringify(outs));
+    // a slice's output is not
+    JW.send('(display "s\\n")\n');
+    await JW.prompt();
+    assert(JW.msgs.slice(m0).every(m => m.type !== 'output' || m.text === 't\n' || m.idle === undefined),
+           'not idle: ' + JSON.stringify(JW.msgs.slice(m0)));
+    // one batch on both fds: only its last message ends it
+    JW.send(",js setTimeout(() => { console.log('a'); console.warn('b'); console.log('c') }, 200), 1\n");
+    await JW.expectOut(val('1'));
+    await JW.prompt();
+    const m1 = JW.msgs.length;
+    JW.mark();
+    await JW.expectOut(/^a\nb\nc\n$/, 2000);
+    const batch = JW.msgs.slice(m1).filter(m => m.type === 'output');
+    assert(JSON.stringify(batch.map(m => [m.fd, m.text, m.idle === true])) ===
+           JSON.stringify([[1, 'a\n', false], [2, 'b\n', false], [1, 'c\n', true]]), 'the batch: ' + JSON.stringify(batch));
+  });
+
+  await check('W-RJS3 a listener of user JavaScript gets no message of the page', async () => {
+    await jsEv(",js globalThis.heard3 = []; addEventListener('message', e => heard3.push(e.data)); 1", '1');
+    await jsEv('(+ 1 2)', '3');
+    await jsEv(',js heard3.length', '0');
+    await jsEv(",js dispatchEvent(new MessageEvent('message', {data: 'own'})), heard3", '["own"]');
+  });
+
+  await check('W-RJS2 ,js reaches Scheme through the global scheme; Scheme errors pass through', async () => {
+    await jsEv(",js scheme.eval('(+ 1 2)')", '3');
+    await jsEv(",js scheme.list(1, 'a')", '(1 "a")');
+    JW.send(",js scheme.call('car', 1)\n");
+    await JW.prompt();
+    assert(/Error: \(car\) bad argument type/.test(JW.since()), 'the REPL\'s error: ' + JSON.stringify(JW.since()));
+    await jsEv('(+ 1 2)', '3');
+  });
+
+  await check('W-J8 exits through frames that catch: dispatchEvent, a promise executor', async () => {
+    for (const [src, code] of [
+      ['(let ((et (js-new (js-global "EventTarget")))) (js-invoke et "addEventListener" "x" (lambda (e) (exit 5))) ' +
+       '(js-invoke et "dispatchEvent" (js-new (js-global "Event") "x")))', 5],
+      ['(js-new (js-global "Promise") (lambda (res rej) (exit 6)))', 6]]) {
+      const X = session({});
+      try {
+        await waitFor('ready', () => X.ready || X.crash, 30000);
+        await X.prompt(30000);
+        X.send('(import js) ' + src + '\n');
+        await waitFor('exit', () => X.exit !== null || X.crash || X.error, 10000);
+        assert(X.exit === code, 'exit ' + code + ', got ' + (X.exit !== null ? X.exit : X.crash || X.error));
+        await sleep(100);
+        assert(!/Uncaught/.test(X.out), 'nothing reported: ' + X.out.slice(-300));
+      } finally { await X.close(); }
+    }
+    current = JW;
+  }, { uncaught: true });              // (the exits, which the worker does not report)
+  await JW.close();
 
   await S.close();
   console.log('# ' + passes + ' passed, ' + failures + ' failed in ' +
