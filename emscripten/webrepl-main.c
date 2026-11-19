@@ -40,7 +40,14 @@
  * takes its requests from a mailbox that webrepl_post fills: whole
  * messages, copied in between slices.  While it has none it yields in
  * state IDLE, which only a posted request ends (the REPL never enters
- * IDLE). */
+ * IDLE).
+ *
+ * The JavaScript bridge (webjs.scm, webjs-main.c) never keeps one of
+ * its operations, or a call from JavaScript, across slices: every
+ * slice starts with none (webjs_slice_start).  js-await yields in state
+ * AWAITING until the promise it waits for settles, and the REPL's
+ * prompt and the idle kernel run the calls from JavaScript queued
+ * meanwhile: either wakes the waiting Scheme (webrepl_js_wake). */
 
 #include "chicken.h"
 #include "webrepl.h"
@@ -54,8 +61,13 @@ extern void C_ccall C_toplevel(C_word c, C_word *av) C_noret;
 static C_word repl_k;
 static int state = WEBREPL_RUNNING, exited, exit_code, in_eof, intr, in_scheme, started;
 static int lazy_on, lazy_cmd;	/* see webio_set_lazy */
+static int js_wake;		/* see webrepl_js_wake */
 static char *in_buf;
 static size_t in_len, in_pos;
+/* where each feed not all taken yet ends in in_buf, in order (the last
+ * at in_len): a take never reads past the end of its feed */
+static size_t *in_ends, in_nends;
+static int in_rest;		/* the last take left some of its feed */
 static double slice_start, slice_ms = 50.0, wakeup_ms;
 
 struct req { struct req *next; int len; char data[]; };
@@ -139,7 +151,8 @@ void webio_drop_input(void)
 {
   free(in_buf);
   in_buf = NULL;
-  in_len = in_pos = 0;
+  in_len = in_pos = in_nends = 0;
+  in_rest = 0;
   in_eof = 0;
 }
 
@@ -174,9 +187,11 @@ int webio_drop_callbacks(void)
 
 int webio_take_input(unsigned char *buf, int max)
 {
-  size_t n = in_len - in_pos;
+  size_t n;
 
   if(in_buf == NULL) return 0;
+
+  n = in_ends[ 0 ] - in_pos;	/* what is left of the first feed */
 
   if(n > (size_t)max) {
     size_t cut = max;
@@ -190,15 +205,20 @@ int webio_take_input(unsigned char *buf, int max)
 
   memcpy(buf, in_buf + in_pos, n);
   in_pos += n;
+  in_rest = in_pos < in_ends[ 0 ];
+
+  if(!in_rest) memmove(in_ends, in_ends + 1, --in_nends * sizeof *in_ends);
 
   if(in_pos == in_len) {
     free(in_buf);
     in_buf = NULL;
-    in_len = in_pos = 0;
+    in_len = in_pos = in_nends = 0;
   }
 
   return (int)n;
 }
+
+int webio_feed_rest(void) { return in_rest; }
 
 
 /* All exits end here (see above) */
@@ -220,6 +240,8 @@ static int run_slice(void)
   in_scheme = 1;
   slice_start = emscripten_get_now();
   state = WEBREPL_RUNNING;
+  js_wake = 0;
+  webjs_slice_start();
   repl_k = CHICKEN_continue(repl_k);
   in_scheme = 0;
   host_restart_kept = 0;	/* its CHICKEN_run has returned */
@@ -276,23 +298,32 @@ int main(int argc, char **argv)
 /* The API for JS (see web/repl-driver.js) */
 
 /* TEXT is LEN bytes of UTF-8, and may contain NUL characters.  On wasm64
- * the link's -sSIGNATURE_CONVERSIONS lets JS pass TEXT as a Number. */
+ * the link's -sSIGNATURE_CONVERSIONS lets JS pass TEXT as a Number.
+ * Each feed is one input (what the page submitted together), which a
+ * take never joins to the next: see webio_feed_rest. */
 EMSCRIPTEN_KEEPALIVE void webrepl_feed(const char *text, int len, int eof)
 {
   if(len > 0) {
     char *p;
+    size_t *e, i;
 
     if(in_pos > 0) {		/* drop what was already taken */
       memmove(in_buf, in_buf + in_pos, in_len - in_pos);
       in_len -= in_pos;
+      for(i = 0; i < in_nends; ++i) in_ends[ i ] -= in_pos;
       in_pos = 0;
     }
+
+    if((e = realloc(in_ends, (in_nends + 1) * sizeof *e)) == NULL) return;
+
+    in_ends = e;
 
     if((p = realloc(in_buf, in_len + len)) == NULL) return;
 
     memcpy(p + in_len, text, len);
     in_buf = p;
     in_len += len;
+    in_ends[ in_nends++ ] = in_len;
   }
 
   in_eof |= eof;
@@ -318,13 +349,20 @@ EMSCRIPTEN_KEEPALIVE int webrepl_resume(void)
   if(in_scheme || !started || state == WEBREPL_EXITED) return state;
 
   if(state == WEBREPL_BUSY || state == WEBREPL_SLEEPING ||
-     (state == WEBREPL_WAITING && (in_buf != NULL || in_eof || intr)) ||
-     (state == WEBREPL_IDLE && req_head != NULL) ||
-     (state == WEBREPL_PAUSED && (lazy_cmd || intr)))
+     (state == WEBREPL_WAITING && (in_buf != NULL || in_eof || intr || js_wake)) ||
+     (state == WEBREPL_IDLE && (req_head != NULL || js_wake)) ||
+     (state == WEBREPL_PAUSED && (lazy_cmd || intr)) ||
+     (state == WEBREPL_AWAITING && (js_wake || intr)))
     return run_slice();
 
   return state;
 }
+
+/* A promise js-await waits for settled, or a call from JavaScript was
+ * queued (webjs-pre.js): Scheme waiting at a toplevel wait has work.
+ * Every wait looks again before it yields, so a wake that comes during
+ * a slice only causes one more. */
+EMSCRIPTEN_KEEPALIVE void webrepl_js_wake(void) { js_wake = 1; }
 
 /* An idle notebook kernel has nothing to stop, unless a request is
  * about to run (Run, then Stop before the worker pumped): the new

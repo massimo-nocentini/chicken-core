@@ -276,21 +276,29 @@ webnb.c: webnb.scm webrepl.h chicken.base.import.scm chicken.condition.import.sc
     chicken.bytevector.import.scm chicken.load.import.scm chicken.platform.import.scm \
     config.make $(WASM_CHICKEN_BIN)
 	$(CHICKEN) $< $(CHICKEN_LIBRARY_OPTIONS) -output-file $@
+# the JavaScript bridge, linked into the web csi (module js)
+webjs.c: webjs.scm webrepl.h chicken.base.import.scm chicken.condition.import.scm \
+    chicken.fixnum.import.scm chicken.foreign.import.scm chicken.bytevector.import.scm \
+    chicken.keyword.import.scm chicken.gc.import.scm config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_LIBRARY_OPTIONS) -output-file $@
 csi-node.c: csi.scm banner.scm mini-srfi-1.scm $(CSI_IMPORTS) config.make $(WASM_CHICKEN_BIN)
 	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -uses wasm-units -output-file $@
-# webnb.scm: csi-web initialises the units it names with -uses (so a
-# build directory older than the notebook kernel retranslates it)
-csi-web.c: csi.scm banner.scm mini-srfi-1.scm $(CSI_IMPORTS) webnb.scm config.make $(WASM_CHICKEN_BIN)
-	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -uses webio -uses webnb -output-file $@
+# webnb.scm, webjs.scm: csi-web initialises the units it names with
+# -uses (so a build directory older than the notebook kernel or the
+# bridge retranslates it)
+csi-web.c: csi.scm banner.scm mini-srfi-1.scm $(CSI_IMPORTS) webnb.scm webjs.scm config.make $(WASM_CHICKEN_BIN)
+	$(CHICKEN) $< $(CHICKEN_PROGRAM_OPTIONS) -uses webio -uses webnb -uses webjs -output-file $@
 
 WASM_CC = $(C_COMPILER) $(C_COMPILER_OPTIONS) $(C_COMPILER_COMPILE_OPTION) \
   $(C_COMPILER_OPTIMIZATION_OPTIONS)
 
-wasm-units$(O) wasm-egg-units$(O) webio$(O) webnb$(O) csi-node$(O): %$(O): %.c chicken.h $(CHICKEN_CONFIG_H)
+wasm-units$(O) wasm-egg-units$(O) webio$(O) webnb$(O) webjs$(O) csi-node$(O): %$(O): %.c chicken.h $(CHICKEN_CONFIG_H)
 	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
 csi-web$(O): csi-web.c chicken.h $(CHICKEN_CONFIG_H)
 	$(WASM_CC) -DC_EMBEDDED $< $(C_COMPILER_OUTPUT) $(INCLUDES)
 webrepl-main$(O): webrepl-main.c webrepl.h chicken.h $(CHICKEN_CONFIG_H)
+	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
+webjs-main$(O): webjs-main.c webrepl.h chicken.h $(CHICKEN_CONFIG_H)
 	$(WASM_CC) $< $(C_COMPILER_OUTPUT) $(INCLUDES)
 
 # repository image: all import libraries and types.db at $(EGGDIR)
@@ -347,7 +355,7 @@ wasm-eggs.mk: wasm-eggs.scm config.make $(WASM_EGG_CONFIG) $(WASM_HOST_CONFIG) $
 	  WASM_EGGS_CHICKEN_INSTALL="$(WASM_HOST_CHICKEN_INSTALL)" WASM_EGGS_ARCH=$(WASM_ARCH) \
 	  WASM_EGGS_HOST_REPOSITORY="$(WASM_HOST_REPOSITORY)" WASM_EGGS_CORE="$(IMPORT_LIBRARIES)" \
 	  WASM_EGGS_DEFAULTS="$(SRCDIR)setup.defaults" WASM_EGG_DIR="$(WASM_EGG_DIR)" \
-	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio webnb" \
+	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio webnb webjs" \
 	  $(WASM_HOST_CSI) -s $< $@ $(WASM_EGGS)
 
 # The egg units are initialised when first required (by "import"), as
@@ -450,8 +458,10 @@ $(WASM_RUNTIME_EXPORTS): $(LIBCHICKEN_A) $(WASM_LIBC_EXPORTS)
 csi-node.exports: WASM_OWN_EXPORTS = _main
 chicken-repl.exports: WASM_OWN_EXPORTS = _main _webrepl_feed _webrepl_post _webrepl_resume \
   _webrepl_interrupt _webrepl_state _webrepl_started _webrepl_exited _webrepl_exit_code \
-  _webrepl_wakeup_ms _webrepl_set_slice_ms _webrepl_lazy _webrepl_lazy_printing _malloc _free
-csi-node.exports chicken-repl.exports: %.exports: config.make $(WASM_MAIN_EXPORTS)
+  _webrepl_wakeup_ms _webrepl_set_slice_ms _webrepl_lazy _webrepl_lazy_printing _webjs_dispatch \
+  _webrepl_js_wake _malloc _free
+# (and on this file: a build directory older than an export gets it)
+csi-node.exports chicken-repl.exports: %.exports: config.make $(SRCDIR)Makefile.emscripten $(WASM_MAIN_EXPORTS)
 	{ for s in $(WASM_OWN_EXPORTS); do echo $$s; done; \
 	  $(if $(WASM_MAIN_EXPORTS),sed 's/^/_/' $(WASM_MAIN_EXPORTS);) } | LC_ALL=C sort -u >$@.tmp
 	if cmp -s $@.tmp $@; then rm $@.tmp; else mv $@.tmp $@; fi
@@ -522,22 +532,26 @@ $(addprefix node/,$(WASM_NODE_TOOLS)): node/%: node/%.js $(WASM_REPO_STAMP)
 WEB_DIR = web
 WASM_WEB_LDFLAGS = $(WASM_COMMON_LDFLAGS) -sENVIRONMENT=web,worker,node \
   -sMODULARIZE=1 -sFORCE_FILESYSTEM=1 --embed-file $(WASM_REPO)@$(EGGDIR) $(WASM_EGG_WEB_EMBED)
-WEB_ASSETS = repl.js repl-driver.js repl-worker.js compiler-worker.js nb-kernel.js \
+WEB_ASSETS = repl.js repl-driver.js repl-worker.js js-lexer.js compiler-worker.js nb-kernel.js \
   notebook.js notebook-lib.js session-store.js sessions.js package-check.js packages.js chicken.png
 WEB_MODULES = chicken-repl.js chicken-repl.wasm chicken-compiler.js chicken-compiler.wasm
 
 # On wasm64 JS sees pointers as BigInt; SIGNATURE_CONVERSIONS makes
 # webrepl_feed and webrepl_post take their pointer as a Number, as
-# _malloc and stringToNewUTF8 give it (no effect on wasm32).
-$(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) \
-    $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP) chicken-repl.exports \
+# _malloc and stringToNewUTF8 give it (no effect on wasm32).  The
+# pre-js is the JavaScript half of the bridge (webjs.scm), which
+# emscripten puts inside the module's factory: one per instance.
+WASM_WEBJS_PRE = $(SRCDIR)emscripten/webjs-pre.js
+$(WEB_DIR)/chicken-repl.js: csi-web$(O) webio$(O) webnb$(O) webjs$(O) wasm-units$(O) webrepl-main$(O) \
+    webjs-main$(O) $(WASM_WEBJS_PRE) $(WASM_EGG_LINK) $(LIBCHICKEN_A) $(WASM_REPO_STAMP) chicken-repl.exports \
     $(WASM_MAIN_OBJECTS) $(if $(WASM_MAIN_OBJECTS),$(WASM_DYLINK_JS))
 	mkdir -p $(WEB_DIR)
 	$(LINKER) $(WASM_WEB_LDFLAGS) -sEXPORT_NAME=createChickenRepl -sEXIT_RUNTIME=0 -Wl,--wrap=_exit \
 	  $(WASM_MAIN_MODULE) -sEXPORTED_FUNCTIONS=@chicken-repl.exports \
 	  -sSIGNATURE_CONVERSIONS=webrepl_feed:_p__,webrepl_post:_p_ \
-	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 \
-	  csi-web$(O) webio$(O) webnb$(O) wasm-units$(O) webrepl-main$(O) $(WASM_MAIN_OBJECTS) $(WASM_EGG_LINK) \
+	  -sEXPORTED_RUNTIME_METHODS=FS,ENV,stringToNewUTF8,lengthBytesUTF8,HEAPU8 --pre-js $(WASM_WEBJS_PRE) \
+	  csi-web$(O) webio$(O) webnb$(O) webjs$(O) wasm-units$(O) webrepl-main$(O) webjs-main$(O) \
+	  $(WASM_MAIN_OBJECTS) $(WASM_EGG_LINK) \
 	  -o $@ $(LIBCHICKEN_A) \
 	  $(WASM_EGG_LDOPTS) $(LIBRARIES)
 
@@ -737,7 +751,7 @@ wasm-package-plan: wasm-sdk
 	  WASM_EGGS_LINKED="$(WASM_EGG_NAMES)" WASM_EGGS_VERSION="$$(cat buildversion)" \
 	  WASM_EGGS_MODE=shared WASM_EGGS_IMPORTS=$(WASM_PACKAGE_IMPORTS) \
 	  WASM_EGGS_DEFAULTS="$(SRCDIR)setup.defaults" WASM_EGG_DIR="$(WASM_PACKAGE_BUILD)" \
-	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio webnb" \
+	  WASM_EGGS_RESERVED="$(LIBCHICKEN_SCHEME_OBJECTS_1) posix eval-modules wasm-units wasm-egg-units webio webnb webjs" \
 	  $(WASM_HOST_CSI) -s $(SRCDIR)emscripten/wasm-eggs.scm $(WASM_PACKAGE_BUILD)/plan.mk $(WASM_PACKAGE_EGGS)
 
 wasm-package-build: wasm-package-plan wasm-sdk $(WEB_DIR)/chicken-repl.js $(WASM_ABI)
@@ -879,7 +893,7 @@ wasm-clean:
 	-rm -rf node $(WEB_DIR) arch-wasm64 arch-wasm32 $(WASM_STAGE) $(WASM_TESTS_RUN) $(WASM_EGG_DIR) \
 	  *.stamp *$(O) *$(A) \
 	  pkg-* packages \
-	  wasm-units.c webio.c webnb.c csi-node.c csi-web.c chicken-config.h chicken-defaults.h \
+	  wasm-units.c webio.c webnb.c webjs.c csi-node.c csi-web.c chicken-config.h chicken-defaults.h \
 	  wasm-cflags wasm-eggs.mk wasm-egg-units.scm wasm-egg-units.c \
 	  runtime-exports* wasm-abi wasm-abi.txt wasm-abi.tmp *.exports \
 	  $(DISTFILES) buildid buildbranch buildversion *.import.scm

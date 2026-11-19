@@ -330,6 +330,7 @@ emscripten/web/index.html
 emscripten/web/repl.js
 emscripten/web/repl-driver.js
 emscripten/web/repl-worker.js
+emscripten/web/js-lexer.js
 emscripten/web/compiler-worker.js
 emscripten/web/nb-kernel.js
 emscripten/web/notebook.js

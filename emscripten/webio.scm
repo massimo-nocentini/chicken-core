@@ -33,6 +33,17 @@
 ; Must be initialised before csi's body (csi-web.c is translated with
 ; "-uses webio"), so that the REPL captures these ports and the
 ; scheduler's sleep and interrupt hooks already exist when we wrap them.
+;
+; The JavaScript bridge (webjs.scm) runs Scheme called from JavaScript
+; as callbacks, which never yield (see yield!): reading stdin there
+; with no input pending is an error, the scheduler does not switch
+; threads there, and a toplevel wait never drops a call from
+; JavaScript that is still running.  The calls from JavaScript that
+; come while Scheme waits on none are queued, and run at the console's
+; prompt (webjs.scm sets ##webio#pending-hook), one at a time, after
+; typed input.  webjs.scm also registers the console's ",js" at csi's
+; first prompt (##webio#first-prompt-hook), and reads the lines
+; entered with it (##webio#chunk-pending?).
 
 
 (declare
@@ -42,14 +53,15 @@
   ;; every toplevel name but the ##webio# ones, so that the REPL's (or
   ;; a notebook cell's) definitions cannot clobber them (not "block":
   ;; it would take the ##sys# globals assigned here for this unit's own)
-  (hide take-input! has-input? take-eof set-state! set-wakeup! slice-over?
-	interrupted? js-write unbuffered make-web-output-port stdout+flush
+  (hide take-input! has-input? feed-rest? take-eof set-state! set-wakeup!
+	slice-over? interrupted? js-write unbuffered make-web-output-port stdout+flush
 	stderr+flush web-stdout web-stderr flush-stdout flush-stderr flush-std
 	reopen-std! keep-restart! drop-callbacks! yield! in-bv pending
 	eof-pending at-prompt stale-at-prompt abandon-input! fill! read-ch
 	peek-ch web-stdin drop-input!
 	set-lazy! take-lazy-command lazy-stepping lazy-printing force-1 lazy-poll!
-	print-hook console-print-hook print-element
+	print-hook console-print-hook print-element js-calls drop-abandoned!
+	run-pending! slice-yield!
 	value-of display min open-output-string
 	get-output-string string->utf8 bytevector-length
 	current-process-milliseconds return-to-host force call/cc
@@ -92,12 +104,14 @@
 
 (define take-input!  (foreign-lambda int "webio_take_input" bytevector int))
 (define has-input?   (foreign-lambda bool "webio_has_input"))
+(define feed-rest?   (foreign-lambda bool "webio_feed_rest"))
 (define take-eof     (foreign-lambda bool "webio_take_eof"))
 (define set-state!   (foreign-lambda void "webio_set_state" int))
 (define set-wakeup!  (foreign-lambda void "webio_set_wakeup" double))
 (define slice-over?  (foreign-lambda bool "webio_slice_expired"))
 (define interrupted? (foreign-lambda bool "webio_take_interrupt"))
 (define js-write     (foreign-lambda void "webio_write" int bytevector int))
+(define js-calls     (foreign-lambda int "webjs_live_calls"))
 
 
 ;;; Output: both ports are buffered (flushed when full, on every yield,
@@ -176,22 +190,48 @@
 ;; left are such abandoned ones: the restart point of this slice's
 ;; CHICKEN_run, kept when the slice started, is put back, and the
 ;; return to the host drops their frames (whatever their C code held is
-;; lost, as when a native program leaves a callback so).
+;; lost, as when a native program leaves a callback so).  A wait that
+;; only looks toplevel -- a prompt reached inside a call from
+;; JavaScript (webjs.scm), a (repl) in a callback -- may still have live
+;; callbacks below it: while such a call runs, none is dropped (nor,
+;; then, the frames that an unsupported escape left in one: see
+;; webjs.scm).
+(define (drop-abandoned!)
+  (when (and (pair? ##sys#callback-continuation-stack)
+	     (fx= (js-calls) 0)		; no call from JavaScript is running
+	     (drop-callbacks!))
+    (set! ##sys#callback-continuation-stack '())))
+
+;; -> whether it returned to the host
 (define (yield! state #!optional toplevel)
   (flush-std)
-  (when (and toplevel (pair? ##sys#callback-continuation-stack) (drop-callbacks!))
-    (set! ##sys#callback-continuation-stack '()))
-  (when (null? ##sys#callback-continuation-stack)
-    (set-state! state)
-    (return-to-host)
-    (keep-restart!)))			; a new slice
+  (when toplevel (drop-abandoned!))
+  (and (null? ##sys#callback-continuation-stack)
+       (begin
+	 (set-state! state)
+	 (return-to-host)
+	 (keep-restart!)			; a new slice
+	 #t)))
 
 (keep-restart!)				; the first slice: main's CHICKEN_run
+
+;; A call from JavaScript waiting to run (webjs.scm sets the hook to
+;; run one and say whether one ran): only at a toplevel wait, once the
+;; abandoned callbacks are dropped.  Between two, the slice may end.
+(define ##webio#pending-hook (lambda () #f))
+
+(define (run-pending!)
+  (drop-abandoned!)
+  (and (null? ##sys#callback-continuation-stack) (##webio#pending-hook)))
+
+(define (slice-yield!)
+  (when (and (slice-over?) (null? ##sys#callback-continuation-stack))
+    (yield! ST-BUSY)))
 
 
 ;;; Input: taken from webrepl-main.c in pieces of at most 64 KB, so no
 ;;; paste, however large, needs a block over the size limit or a huge
-;;; character list.
+;;; character list, and of one feed (one submission) each.
 
 (define in-bv (make-bytevector 65536))
 (define pending '())			; characters fed but not yet read
@@ -219,8 +259,15 @@
 	     (set! pending (string->list (##sys#buffer->string in-bv 0 n)))
 	     (loop)))
 	  ((take-eof) (set! eof-pending #t) #t)
-	  (else
-	   (yield! ST-WAITING at-prompt)
+	  ((and at-prompt stale-at-prompt (run-pending!))
+	   (loop))			; the console's prompt: one ran
+	  ((yield! ST-WAITING at-prompt)
+	   (when (interrupted?) (abandon-input!))
+	   (loop))
+	  ;; input can never come there (see yield!)
+	  ((fx> (js-calls) 0)
+	   (##sys#error 'read "cannot read standard input inside a call from JavaScript"))
+	  (else				; another callback: it waits so
 	   (when (interrupted?) (abandon-input!))
 	   (loop)))))
 
@@ -247,12 +294,20 @@
 (set! ##sys#standard-output web-stdout)
 (set! ##sys#standard-error web-stderr)
 
+;; Run once, at the first prompt: webjs.scm sets it to register ",js",
+;; a command of the console's csi, whose body has run by then (the
+;; notebook kernel never prompts but in a cell)
+(define ##webio#first-prompt-hook void)
+
 (set! ##sys#read-prompt-hook
   (let ((old ##sys#read-prompt-hook))
     (lambda ()
       (set! at-prompt #t)
       (reopen-std!)
       (console-print-hook!)
+      (let ((h ##webio#first-prompt-hook))	; once csi's body has run
+	(set! ##webio#first-prompt-hook void)
+	(h))
       (old))))
 
 
@@ -298,7 +353,10 @@
 ;;; primitives never yield.  Nor does a callback (Scheme called from C
 ;;; code, as by a foreign-safe-lambda): returning to the host would
 ;;; unwind the C frames below it, and CHICKEN_continue cannot resume it
-;;; (see yield!).
+;;; (see yield!).  Inside a call from JavaScript, SRFI-18 threads do not
+;;; switch either: another thread's callback could return before it,
+;;; out of order ("unbalanced callback continuation stack"); the rest
+;;; is what the library's own hook does.
 
 (set! ##sys#interrupt-hook
   (let ((old ##sys#interrupt-hook))	; already wrapped by the scheduler
@@ -307,15 +365,25 @@
 	(when (and (slice-over?) (null? ##sys#callback-continuation-stack))
 	  (yield! ST-BUSY))
 	(when (interrupted?) (##sys#user-interrupt-hook)))
-      (old reason state))))
+      (if (and (eq? reason C_TIMER_INTERRUPT_NUMBER) (fx> (js-calls) 0))
+	  (cond ((fx> (##sys#slot ##sys#pending-finalizers 0) 0)
+		 (##sys#run-pending-finalizers state))
+		((procedure? state) (state))
+		(else (##sys#context-switch state)))
+	  (old reason state)))))
 
 
-;;; Hooks for the notebook kernel (webnb.scm).
+;;; Hooks for the notebook kernel (webnb.scm) and the JavaScript bridge
+;;; (webjs.scm).
 
 (define drop-input! (foreign-lambda void "webio_drop_input"))
 (define ##webio#flush flush-std)
 (define ##webio#yield yield!)
 (define ##webio#reopen-std! reopen-std!)
+(define ##webio#run-pending! run-pending!)
+(define ##webio#slice-yield! slice-yield!)
+(define ##webio#web-stdout web-stdout)
+(define ##webio#web-stderr web-stderr)
 
 (define (##webio#prompts-are-cells!)	; Stop at a prompt interrupts
   (set! stale-at-prompt #f))
@@ -324,6 +392,12 @@
   (set! pending '())
   (set! eof-pending #f)
   (drop-input!))
+
+;; whether the input the last characters read came with (what was
+;; submitted with them: a take never goes past the end of one feed) is
+;; not all read
+(define (##webio#chunk-pending?)
+  (and (eq? ##sys#standard-input web-stdin) (or (pair? pending) (feed-rest?))))
 
 
 ;;; Lazy streams.  The REPL prints a promise by forcing it, and the

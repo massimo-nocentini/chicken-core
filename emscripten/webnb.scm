@@ -36,11 +36,36 @@
 ; and "done" events.  Requests (UTF-8):
 ;
 ;   run RID NAME\nSOURCE    evaluate SOURCE as cell RID, read as file NAME
+;   js RID NAME\nSOURCE     evaluate SOURCE as a JavaScript cell RID
+;                           (webjs.scm), read as file NAME
 ;   ping RID                answered by {"ev":"pong","rid":RID}
 ;
+; A JavaScript cell runs in the worker's JavaScript (webjs.scm's
+; run-js), its top-level declarations made to outlive it; its value
+; is shown as JavaScript shows it (a promise waited for), or as a
+; Scheme cell's value when it is a Scheme object, and its error has the
+; frames of its JavaScript stack after the call history.
+;
+; While idle, the kernel runs the calls from JavaScript that wait
+; (webjs.scm), one at a time, after it finds no request.  Each is
+; attributed to a cell: the one JavaScript queued it for (the cell, or
+; the attributed call, that ran when it was made: webjs-pre.js keeps
+; that context, which the kernel sets), else the one that ran when its
+; procedure crossed to JavaScript.  A call of another cell than the
+; running one (or of a cell while none runs) is framed by the events
+; async-start and async-done: its output and displays are that cell's,
+; and async-done reports how it ended (an error with its error
+; object).  Any other call runs as it is, inside the running cell or,
+; with no cell, outside any (nb-kernel.js logs its output and its
+; error).  JavaScript frames the functions a cell registered with
+; setTimeout and the like the same way (repl-worker.js).  One that
+; waits for a promise (js-await) holds the kernel until it settles: a
+; request posted meanwhile waits for it, or for a Stop, which ends that
+; call.
+;
 ; Events ("ev"): csirc, hello, start, display, clear, lazy-open,
-; lazy-item, lazy-end, done, pong and bad-request; web/nb-kernel.js,
-; the page's client, documents them.
+; lazy-item, lazy-end, done, async-start, async-done, pong and
+; bad-request; web/nb-kernel.js, the page's client, documents them.
 ;
 ; A cell is read whole first: if it is incomplete (an unterminated
 ; list or string, a stray ")", a dotted tail at its end, a quote or
@@ -70,7 +95,9 @@
   ;; take the ##sys# globals assigned here for this unit's own)
   (hide request-length take-request! js-write clear-trace! running said-hello active
 	started form reading json-string json event! next-request prefix?
-	parse-rid valid-name? string-index bad-request! dispatch
+	parse-rid valid-name? string-index bad-request! parse-cell dispatch
+	js-context! set-active! js-cell own-chain js-frames js-line chain->json
+	formatted async-fields interrupt-condition?
 	make-incomplete incomplete? incomplete-condition string-contains?
 	incomplete-read-error? at-eof? quotes unquoted dangling? port-state restore-port-state! reader-state
 	same-reader-state? reader-changers changes-reader? user-code
@@ -176,6 +203,7 @@
 (define request-length (foreign-lambda int "webio_request_length"))
 (define take-request!  (foreign-lambda int "webio_take_request" bytevector int))
 (define js-write       (foreign-lambda void "webio_write" int bytevector int))
+(define js-context!    (foreign-lambda void "webjs_set_context" int))
 (define (clear-trace!) (foreign-code "C_clear_trace_buffer();"))
 
 (define running #f)			; refuses nesting
@@ -185,6 +213,7 @@
 ;; The rid of the running cell, or #f.  Reports read this global, never
 ;; a rid closed over: a continuation of an earlier cell re-entered by
 ;; the running one finishes that cell's forms and reports to this one.
+;; JavaScript knows it too (its context, see webjs-pre.js).
 (define active #f)
 (define started 0)			; when the running cell started (ms)
 (define form #f)			; form index being evaluated, or "print"
@@ -273,11 +302,12 @@
 
 (define (next-request)			; yields IDLE until there is one
   (let ((n (request-length)))
-    (if (fx< n 0)
-	(begin (##webio#yield ST-IDLE #t) (next-request))
-	(let ((bv (make-bytevector n)))
-	  (take-request! bv n)
-	  (utf8->string bv)))))
+    (cond ((fx>= n 0)
+	   (let ((bv (make-bytevector n)))
+	     (take-request! bv n)
+	     (utf8->string bv)))
+	  ((##webio#run-pending!) (next-request)) ; a call from JavaScript ran
+	  (else (##webio#yield ST-IDLE #t) (next-request)))))
 
 (define (prefix? p s)
   (let ((n (string-length p)))
@@ -316,20 +346,28 @@
   (event! "bad-request"
 	  "text" (if (fx> (string-length req) 200) (substring req 0 200) req)))
 
+;; "RID NAME\nSOURCE" from index I of REQ -> (rid name . source), or #f
+(define (parse-cell req i)
+  (let* ((nl (string-index req #\newline i))
+	 (head (substring req i (or nl (string-length req))))
+	 (sp (string-index head #\space 0))
+	 (rid (and nl sp (parse-rid (substring head 0 sp))))
+	 (name (and rid (substring head (fx+ sp 1) (string-length head)))))
+    (and rid (valid-name? name)
+	 (cons rid (cons name (substring req (fx+ nl 1) (string-length req)))))))
+
 (define (dispatch req restore-ports)
-  (cond ((prefix? "run " req)
-	 (let* ((nl (string-index req #\newline 4))
-		(head (substring req 4 (or nl (string-length req))))
-		(sp (string-index head #\space 0))
-		(rid (and nl sp (parse-rid (substring head 0 sp))))
-		(name (and rid (substring head (fx+ sp 1) (string-length head)))))
-	   (if (and rid (valid-name? name))
-	       (run-cell rid name (substring req (fx+ nl 1) (string-length req))
-			 restore-ports)
-	       (bad-request! req))))
-	((and (prefix? "ping " req) (parse-rid (substring req 5 (string-length req)))) =>
-	 (lambda (rid) (event! "pong" "rid" rid)))
-	(else (bad-request! req))))
+  (let ((lang (cond ((prefix? "run " req) 'scheme)
+		    ((prefix? "js " req) 'js)
+		    (else #f))))
+    (cond (lang
+	   (let ((c (parse-cell req (if (eq? lang 'js) 3 4))))
+	     (if c
+		 (run-cell (car c) (cadr c) (cddr c) restore-ports lang)
+		 (bad-request! req))))
+	  ((and (prefix? "ping " req) (parse-rid (substring req 5 (string-length req)))) =>
+	   (lambda (rid) (event! "pong" "rid" rid)))
+	  (else (bad-request! req)))))
 
 
 ;;; Evaluating a cell
@@ -686,21 +724,53 @@
 		      (string->number (substring ln (fx+ i 1) (string-length ln))))
 		     (else (loop (fx- i 1)))))))))
 
-(define (error-object c chain fm x read?)
-  (list (cons "text" (error-text c))
-	(cons "kind" (if (condition? c) (map symbol->string (##sys#slot c 1)) '()))
-	(cons "location" (and (condition? c)
-			      (->string/null (get-condition-property c 'exn 'location #f))))
-	(cons "form" fm)
-	(cons "line" (error-line c x read?))
-	(cons "chain" (map frame->json chain))))
+;; The frames of the JavaScript stack of C, an error JavaScript threw
+;; (webjs.scm): (where proc) lists, the innermost last
+(define (js-frames c)
+  (let ((fs (and (condition? c) (get-condition-property c 'js 'frames #f))))
+    (if (list? fs) fs '())))
+
+;; the line of the innermost of FRAMES in the cell NAME, "NAME:LINE"
+(define (js-line frames name)
+  (let ((p (string-append name ":")))
+    (let loop ((fs frames) (line #f))
+      (if (pair? fs)
+	  (loop (cdr fs)
+		(let ((w (caar fs)))
+		  (or (and (string? w) (prefix? p w)
+			   (string->number (substring w (string-length p) (string-length w))))
+		      line)))
+	  line))))
+
+;; CHAIN's frames, then those of JavaScript (no form)
+(define (chain->json chain frames)
+  (let loop ((l chain))
+    (if (pair? l)
+	(cons (frame->json (car l)) (loop (cdr l)))
+	(let js ((fs frames))
+	  (if (pair? fs)
+	      (cons (list (cons "where" (caar fs)) (cons "proc" (cadar fs)) (cons "form" #f))
+		    (js (cdr fs)))
+	      '())))))
+
+;; NAME: the cell's, whose JavaScript frames give the line when the
+;; error has none of its own
+(define (error-object c chain fm x read? name)
+  (let ((frames (js-frames c)))
+    (list (cons "text" (error-text c))
+	  (cons "kind" (if (condition? c) (map symbol->string (##sys#slot c 1)) '()))
+	  (cons "location" (and (condition? c)
+				(->string/null (get-condition-property c 'exn 'location #f))))
+	  (cons "form" fm)
+	  (cons "line" (or (error-line c x read?) (js-line frames name)))
+	  (cons "chain" (chain->json chain frames)))))
 
 (define fallback-error
   '(("text" . "Error: an error occurred while reporting an error")
     ("kind") ("location" . #f) ("form" . #f) ("line" . #f) ("chain")))
 
-;; outcome -> ((status . fields) . display objects to show)
-(define (outcome->fields o)
+;; outcome of cell NAME -> ((status . fields) . display objects to show)
+(define (outcome->fields o name)
   (case (car o)
     ((ok)
      (let* ((unspecified (not (cdr o)))
@@ -719,7 +789,7 @@
     ((reset) (list (list "reset")))
     ((incomplete)
      (let ((c (incomplete-condition (cadr o))))
-       (list (list "incomplete" (cons "error" (error-object c '() #f #f #t))))))
+       (list (list "incomplete" (cons "error" (error-object c '() #f #f #t name))))))
     (else				; (raised c chain datum form reading?)
      (let ((c (list-ref o 1)) (chain (list-ref o 2)) (x (list-ref o 3))
 	   (fm (list-ref o 4)) (read? (list-ref o 5)))
@@ -727,7 +797,7 @@
        (when (condition? c) (set! ##sys#last-exception c)) ; for ",exn"
        (if (and (condition? c) ((condition-predicate 'user-interrupt) c))
 	   (list (list "interrupted"))
-	   (list (list "error" (cons "error" (error-object c chain fm x read?)))))))))
+	   (list (list "error" (cons "error" (error-object c chain fm x read? name)))))))))
 
 (define (filter-list ok? xs)
   (cond ((null? xs) '())
@@ -736,8 +806,40 @@
 
 (define current-datum #f)		; the form being evaluated (for its line)
 
-;; Run SRC as NAME -> ((status . fields) . display objects)
-(define (execute src name restore-ports)
+;; The value of JavaScript cell SRC (NAME), as eval-cell's: its
+;; JavaScript text, or what a Scheme cell shows for a Scheme object
+(define (js-cell src name)
+  (set! form 1)
+  (let* ((r (##webnb#js-hook src name))
+	 (v (car r))
+	 (t (cdr r)))
+    (cond (t (list t))
+	  ((eq? v (##core#undefined)) #f)
+	  ((##webnb#display? v) (list v))
+	  ((##sys#structure? v 'promise) (list (show-lazy v)))
+	  (else (list (print-to-string v))))))
+
+;; the call history a condition C carries (a Scheme error crossing
+;; JavaScript), or none: a JavaScript cell has no forms of its own
+(define (own-chain c)
+  (or (and (condition? c) (get-condition-property c 'exn 'call-chain #f)) '()))
+
+;; THUNK's value, or FALLBACK if it raises or resets: describing an
+;; outcome runs user code (record printers)
+(define (formatted thunk fallback)
+  (call-with-current-continuation
+   (lambda (k)
+     (let ((old (##sys#reset-handler)))
+       (dynamic-wind
+	   (lambda () (##sys#reset-handler (lambda () (k fallback))))
+	   (lambda ()
+	     (with-exception-handler
+	      (lambda (e) (k fallback))
+	      thunk))
+	   (lambda () (##sys#reset-handler old)))))))
+
+;; Run SRC as NAME, in LANG (scheme or js) -> ((status . fields) . display objects)
+(define (execute src name restore-ports lang)
   (set! form #f)
   (set! reading #f)
   (set! current-datum #f)
@@ -754,14 +856,18 @@
 		  (lambda ()
 		    (with-exception-handler
 		     (lambda (c)
-		       (k (if (incomplete? c)
-			      (list 'incomplete c)
-			      (list 'raised c
-				    (if reading '() (call-chain-of c))
-				    (if reading #f current-datum)
-				    form
-				    reading))))
-		     (lambda () (cons 'ok (eval-cell src name)))))
+		       (k (cond ((incomplete? c) (list 'incomplete c))
+				((not (eq? lang 'js))
+				 (list 'raised c
+				       (if reading '() (call-chain-of c))
+				       (if reading #f current-datum)
+				       form
+				       reading))
+				((and (condition? c) (get-condition-property c 'js 'incomplete #f))
+				 (list 'incomplete (make-incomplete c)))
+				(else (list 'raised c (own-chain c) #f #f #f)))))
+		     (lambda ()
+		       (cons 'ok (if (eq? lang 'js) (js-cell src name) (eval-cell src name))))))
 		  (lambda () (##sys#reset-handler old))))))))
     (restore-ports)
     (##webio#discard-input!)
@@ -769,17 +875,8 @@
     ;; formatting runs user code (record printers): describe the outcome
     ;; only now, outside the cell, with a fallback, also for a (reset)
     ;; there, which would else reach csi's own handler and exit
-    (call-with-current-continuation
-     (lambda (k)
-       (let ((fallback (list (list "error" (cons "error" fallback-error))))
-	     (old (##sys#reset-handler)))
-	 (dynamic-wind
-	     (lambda () (##sys#reset-handler (lambda () (k fallback))))
-	     (lambda ()
-	       (with-exception-handler
-		(lambda (e) (k fallback))
-		(lambda () (outcome->fields outcome))))
-	     (lambda () (##sys#reset-handler old))))))))
+    (formatted (lambda () (outcome->fields outcome name))
+	       (list (list "error" (cons "error" fallback-error))))))
 
 (define (module-name)
   (let ((m (##sys#current-module)))
@@ -790,18 +887,22 @@
       '()
       (cons (caar al) (cons (cdar al) (alist->plist (cdr al))))))
 
-(define (run-cell rid name src restore-ports)
+(define (set-active! rid)
   (set! active rid)
+  (js-context! (or rid 0)))
+
+(define (run-cell rid name src restore-ports lang)
+  (set-active! rid)
   (set! started (current-process-milliseconds))
   (event! "start" "rid" rid "name" name)
-  (cell-done (execute src name restore-ports)))
+  (cell-done (execute src name restore-ports lang)))
 
 ;; R, from execute, ends the active cell: maybe a later one than the
 ;; cell that started (see above)
 (define (cell-done r)
   (let ((rid active)
 	(ms (- (current-process-milliseconds) started)))
-    (set! active #f)
+    (set-active! #f)
     (for-each (lambda (d) (emit-display d #f rid)) (cdr r))
     (apply event! "done" "rid" rid "ms" ms "module" (module-name)
 	   "status" (caar r) (alist->plist (cdar r)))))
@@ -809,9 +910,9 @@
 (define (load-csirc! restore-ports)
   (let ((rc "/home/web_user/.csirc"))
     (when (##sys#file-exists? rc #t #f 'load-csirc)
-      (set! active #f)
+      (set-active! #f)
       (let* ((r (execute (string-append "(load " (with-output-to-string (lambda () (write rc))) ")")
-			 ".csirc" restore-ports))
+			 ".csirc" restore-ports 'scheme))
 	     (status (caar r)))
 	(cond (said-hello (cell-done r))	; re-entered by a cell
 	      ((string=? status "ok")
@@ -1088,6 +1189,62 @@
     (or text lazy-shown)))
 
 
+;;; JavaScript (webjs.scm): JavaScript cells, and the attribution of the
+;;; calls from JavaScript to the cells they come from (see above).  The
+;;; kernel sets webjs's hooks to these when it starts, so that the
+;;; REPL's csi is left as it is.
+
+;; set by webjs.scm: SRC evaluated as JavaScript file NAME -> (value . text)
+(define (##webnb#js-hook src name) (error "JavaScript cells are not available"))
+
+;; the tag of a Scheme object crossing to JavaScript: the running cell
+(define (##webnb#current-rid) active)
+(define (##webnb#kernel-running?) running)
+
+(define (interrupt-condition? c)
+  (and (condition? c) ((condition-predicate 'user-interrupt) c)))
+
+;; how a call of cell TAG ended (its OUTCOME, see webjs.scm), as the
+;; fields of async-done; the error as a cell's, named so that the
+;; lines of its JavaScript frames are found
+(define (async-fields o tag)
+  (define (failed thunk)
+    (list "status" "error" "error" (formatted thunk fallback-error)))
+  (cond ((not (pair? o))
+	 (failed (lambda ()
+		   (cons (cons "text" "Error: the call was left by a continuation")
+			 (cdr fallback-error)))))
+	((eq? (car o) 'ok) '("status" "ok"))
+	((eq? (car o) 'reset) '("status" "reset"))
+	((interrupt-condition? (cadr o)) '("status" "interrupted"))
+	(else
+	 (let ((c (cadr o)))
+	   (failed (lambda ()
+		     (error-object c (call-chain-of c) #f #f #f
+				   (string-append "In[" (##sys#number->string tag) "]"))))))))
+
+;; TAG, the rid a call from JavaScript is attributed to (webjs.scm);
+;; one of another cell than the running one (or of a cell while none
+;; runs) is framed by async-start and async-done, its output that
+;; cell's, and its outcome reported by async-done (-> #t); any
+;; other runs as it is, its error written on stderr by webjs (-> #f).
+;; It may run inside a cell's js-await: the cell's own state (form,
+;; reading, started) stays as it is.
+(define (##webnb#run-attributed tag thunk)
+  (if (or (not (fixnum? tag)) (eqv? tag active))
+      (begin (thunk) #f)
+      (let ((saved active) (outcome #f))
+	(dynamic-wind
+	    (lambda ()
+	      (set-active! tag)
+	      (event! "async-start" "rid" tag))
+	    (lambda () (set! outcome (thunk)))
+	    (lambda ()
+	      (apply event! "async-done" "rid" tag (async-fields outcome tag))
+	      (set-active! saved)))
+	#t)))
+
+
 ;;; The kernel
 
 (define (##webnb#kernel)
@@ -1114,6 +1271,8 @@
 			  (set! ##sys#standard-error err)
 			  (##webio#reopen-std!))))
     (eval notebook-module)
+    (set! ##webjs#crossing-hook ##webnb#current-rid)
+    (set! ##webjs#call-hook ##webnb#run-attributed)
     (load-csirc! restore-ports)
     ;; startup happens once: a cell that re-entered the .csirc ends up
     ;; here again, and the kernel goes on taking requests
