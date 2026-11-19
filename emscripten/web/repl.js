@@ -36,6 +36,11 @@
  * - Stop always posts "interrupt".  If the worker then stays silent for
  *   3 s while evaluating (a long primitive that never yields), it is
  *   terminated and a fresh one started.
+ * - Output that comes while csi waits at its prompt (a call from
+ *   JavaScript run there, a timer's console.log) goes on a line of its
+ *   own, and the prompt is printed again after it: the page knows that
+ *   csi waits at a prompt from the prompt it printed last, not from the
+ *   end of the transcript.
  * - csi prints a lazy stream as its elements arrive (webio.scm): while
  *   it does, Pause, Next and Go on (and Enter on an empty line: Pause,
  *   or Next when paused) post "lazy" commands to it.
@@ -62,7 +67,7 @@
 (function () {
   'use strict';
 
-  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, PAUSED = 6;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, PAUSED = 6, AWAITING = 7;
   const LAZY_NEXT = 1, LAZY_GO = 2, LAZY_PAUSE = 3;     // (repl-driver.js)
   const TERM_LINES = 20000;             // terminal scrollback cap,
   const TERM_CHARS = 2000000;           // also for output without newlines
@@ -331,6 +336,8 @@
     const lastText = pending.length ? pending[pending.length - 1].text : term.textContent;
     emit('sys', (lastText && !lastText.endsWith('\n') ? '\n' : '') + text + '\n');
   }
+  // the prompt again, after output that came while csi waited at it
+  function reprompt() { emit('out', (tail.endsWith('\n') ? '' : '\n') + lastPrompt, false); }
 
   function outNode(text) {
     // stdout, with csi's "#;N> " prompts dimmed
@@ -445,7 +452,11 @@
   let replay = null;                    // a saved session's inputs being run again (see replayStep)
   const saveProviders = new Map();      // kind -> provider (ChickenPage.provideSaves)
 
-  const atPrompt = () => PROMPT_END.test(tail);
+  // promptUp: csi waits at a prompt, and has had no input since;
+  // lastPrompt: that prompt ("#;3> "), printed again after the output
+  // that comes there
+  let promptUp = false, lastPrompt = '';
+  const atPrompt = () => promptUp;
 
   function setStatus(key, text) {
     statusPill.dataset.state = key;
@@ -457,9 +468,10 @@
     switch (state) {
     case WAITING:  return atPrompt() ? setStatus('ready') : setStatus('waiting', 'waiting for input');
     case RUNNING:
-    case BUSY:     return setStatus('running');
+    case BUSY:     return promptUp ? setStatus('running', 'running callback') : setStatus('running');
     case SLEEPING: return setStatus('sleeping');
     case PAUSED:   return setStatus('waiting', 'paused');
+    case AWAITING: return setStatus('sleeping', 'awaiting');
     default:       return setStatus('loading');
     }
   }
@@ -524,6 +536,7 @@
     worker = null;
     alive = ready = false;
     state = null;
+    promptUp = false;
     lazy = false;
     lazyControls();
     for (const r of reqs.values()) r.reject(new Error('the interpreter was restarted'));
@@ -644,19 +657,29 @@
       if (replay) {
         // hidden, but acked (the worker pauses csi above 1 MB unacked)
         tail = (tail + m.text).slice(-64);
+        // (output at the prompt, which it is still at: see reprompt)
+        if (m.idle && promptUp && state === WAITING) tail = (tail + lastPrompt).slice(-64);
         worker.postMessage({ type: 'ack', bytes: m.text.length });
         if (m.fd === 2) { if (replay.i === 0) replay.startErr = true; else replay.curErr = true; }
         break;
       }
+      // output at the prompt (a callback's, a timer's) on a line of its own
+      if (promptUp && PROMPT_END.test(tail) && !m.text.startsWith('\n')) emit('out', '\n', false);
       emit(m.fd === 2 ? 'err' : 'out', m.text, true);
+      if (m.idle && promptUp && state === WAITING) reprompt();
       break;
     case 'state':
       state = m.state;
       lazy = !!m.lazy;
+      if (state === WAITING) {          // at the prompt it just printed
+        const p = PROMPT_END.exec(tail);
+        if (p) { promptUp = true; lastPrompt = p[0]; }
+      }
       lazyControls();
       if (state === WAITING && atPrompt() && ilog) ilog.prompt();
       if (replay) { replayStep(); break; }
       updateStatus();
+      if (state === WAITING && promptUp && !PROMPT_END.test(tail)) reprompt();
       break;
     case 'exit':
       if (ilog) ilog.exited();
@@ -712,8 +735,8 @@
       note('; replay stopped at input ' + r.i + ' of ' + r.n + '; the inputs before it were run (saving now keeps only those)');
       consoleGen++;                     // its saved copy has more: ask before replacing it
       // (an interrupt at a fresh prompt prints nothing: show the prompt)
-      const p = state === WAITING && PROMPT_END.exec(tail);
-      if (p) emit('out', p[0], false);
+      const p = state === WAITING && (promptUp ? lastPrompt : (PROMPT_END.exec(tail) || [''])[0]);
+      if (p) emit('out', p, false);
       writeHome(r.home);
       setInputEnabled(true);
     }
@@ -746,6 +769,7 @@
     const atP = state === WAITING && atPrompt();
     if (atP && !confirm('End session?')) return;
     eofSent = true;
+    promptUp = false;
     worker.postMessage({ type: 'input', text: '', eof: true });
     if (!atP && ilog) ilog.addEof();     // (at a prompt it ends the session: not logged)
     consoleGen++;
@@ -788,7 +812,8 @@
   function submit() {
     if (!worker || !alive || !ready || replay) return;
     let text = line.value;
-    if (settings.quotes) text = straightenQuotes(text);
+    // (not JavaScript: ",js 'don’t'" means what it says)
+    if (settings.quotes && !/^\s*,js(\s|$)/.test(text)) text = straightenQuotes(text);
     if (text.trim() && history[history.length - 1] !== text) {
       history.push(text);
       if (history.length > HISTORY_MAX) history = history.slice(-HISTORY_MAX);
@@ -797,6 +822,7 @@
     histIdx = history.length;
     draft = '';
     const atP = state === WAITING && atPrompt();    // (before the echo, which goes in tail)
+    promptUp = false;
     emit('in', text + '\n');
     render();
     term.scrollTop = term.scrollHeight;
@@ -1320,11 +1346,12 @@
   function replayStep() {
     const r = replay;
     if (state === RUNNING || state === BUSY) return setStatus('running', 'replaying ' + r.i + '/' + r.n);
-    if (state === SLEEPING) return setStatus('sleeping', 'replaying ' + r.i + '/' + r.n);
+    if (state === SLEEPING || state === AWAITING) return setStatus('sleeping', 'replaying ' + r.i + '/' + r.n);
     if (state !== WAITING) return;
     if (r.curErr) { r.errs++; r.curErr = false; }
     if (r.i >= r.n) { finishReplay(); return; }
     const e = r.list[r.i++];
+    promptUp = false;
     if (e.eof) {
       ilog.addEof();
       worker.postMessage({ type: 'input', text: '', eof: true });
@@ -1343,8 +1370,8 @@
          (r.errs ? '; ' + r.errs + ' of them wrote errors (their output is hidden)' : '') +
          (r.skipped ? '; skipped ' + r.skipped + ' that had not finished or were stopped' : '') +
          (r.startErr ? '; .csirc wrote errors' : ''));
-    const p = PROMPT_END.exec(tail);
-    if (p) emit('out', p[0], false);
+    const p = promptUp ? lastPrompt : (PROMPT_END.exec(tail) || [''])[0];
+    if (p) emit('out', p, false);
     else note('; csi is waiting for more input');
     writeHome(r.home);
     setInputEnabled(true);

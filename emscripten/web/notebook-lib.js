@@ -25,8 +25,9 @@
  */
 
 /* UMD: a CommonJS module in node, the global ChickenNotebookLib in the
- * page.  No dependencies; the DOM is only touched through the document
- * passed in (renderMarkdown, sanitizeMarkup).
+ * page.  It uses js-lexer.js (loaded before it) for JavaScript cells and
+ * code blocks; the DOM is only touched through the document passed in
+ * (renderMarkdown, sanitizeMarkup).
  *
  *   renderMarkdown(src, doc, idPrefix, ids?, lazy?) -> DocumentFragment
  *   sanitizeMarkup(str, 'html'|'svg', idPrefix) -> DocumentFragment
@@ -35,10 +36,17 @@
  *                                           modified, packages, cells, warnings}
  *   limitOutputs(outputs, max) -> outputs (as Import keeps them)
  *   balance(text) -> {depth, ok, stray, mismatch, open}
+ *   balanceJs(text) -> the same, of JavaScript
  *   splitForms(text) -> [string]          newId() -> string
  *   highlight(text) -> [[kind, text]]     highlightLines(pieces) -> [[[kind, text]]]
- *   highlightDom(text, doc) -> DocumentFragment
+ *   highlightJs(text) -> [[kind, text]]   (of JavaScript)
+ *   highlightDom(text, doc, lang?) -> DocumentFragment   (lang 'js': JavaScript)
  *   colorCode(root, doc)                  (the code blocks of a lazy renderMarkdown)
+ *
+ * A code cell has a language, lang 'js' for JavaScript (Scheme when it
+ * is missing): .json writes it as "lang": "js", in a notebook of format
+ * version 2 (version 1 has no JavaScript cell); .scm writes a JavaScript
+ * cell as a ";; %% [javascript]" block of ";; " lines, as markdown.
  *
  * Untrusted markup is parsed inertly (DOMParser) and rebuilt element by
  * element from an allowlist; nothing is ever serialized back into
@@ -46,9 +54,9 @@
  * createElement and text nodes only. */
 
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.ChickenNotebookLib = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./js-lexer.js'));
+  else root.ChickenNotebookLib = factory(root.ChickenJsLexer);
+})(typeof self !== 'undefined' ? self : this, function (Lexer) {
   'use strict';
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -379,8 +387,9 @@
         const pre = doc.createElement('pre'), code = doc.createElement('code'), text = body.join('\n');
         if (m[3]) code.setAttribute('data-lang', m[3].slice(0, 32));
         code.textContent = text;
-        // Scheme (or no language), to be colored by colorCode()
+        // Scheme (or no language) and JavaScript, to be colored by colorCode()
         if (/^(?:scheme|scm|chicken|lisp)?$/i.test(m[3] || '')) code.setAttribute('data-syn', '');
+        else if (/^(?:js|javascript|mjs)$/i.test(m[3])) code.setAttribute('data-syn', 'js');
         pre.appendChild(code);
         out.appendChild(pre);
         continue;
@@ -525,7 +534,7 @@
   }
 
   // ids: heading ids taken (by other cells), and given to the new ones;
-  // lazy: the Scheme code blocks are left for colorCode()
+  // lazy: the code blocks are left for colorCode()
   function renderMarkdown(src, doc, idPrefix, ids, lazy) {
     const frag = doc.createDocumentFragment();
     const prefix = idPrefix || '';
@@ -1069,10 +1078,21 @@
     return lines;
   }
 
-  // highlight() as DOM: spans of class syn-KIND, text nodes for plain text
-  function highlightDom(text, doc) {
+  // ---- JavaScript (js-lexer.js): plain text and no brackets without it
+
+  function highlightJs(text) {
+    const t = String(text);
+    return Lexer ? Lexer.highlight(t) : t ? [['', t]] : [];
+  }
+  function balanceJs(text) {
+    return Lexer ? Lexer.balance(String(text || '')) : { depth: 0, stray: 0, mismatch: 0, open: false, ok: true };
+  }
+
+  // highlight() (highlightJs() for LANG 'js') as DOM: spans of class
+  // syn-KIND, text nodes for plain text
+  function highlightDom(text, doc, lang) {
     const frag = doc.createDocumentFragment();
-    for (const [k, s] of highlight(String(text))) {
+    for (const [k, s] of (lang === 'js' ? highlightJs : highlight)(String(text))) {
       if (!k) { frag.appendChild(doc.createTextNode(s)); continue; }
       const e = doc.createElement('span');
       e.className = 'syn-' + k;
@@ -1082,16 +1102,17 @@
     return frag;
   }
 
-  // colors the Scheme code blocks of renderMarkdown(src, doc, prefix,
-  // ids, true) under root, up to HIGHLIGHT_MAX characters in all
+  // colors the Scheme and JavaScript code blocks of renderMarkdown(src,
+  // doc, prefix, ids, true) under root, up to HIGHLIGHT_MAX characters in all
   function colorCode(root, doc) {
     let budget = HIGHLIGHT_MAX;
     for (const code of root.querySelectorAll('code[data-syn]')) {
+      const lang = code.getAttribute('data-syn') === 'js' ? 'js' : 'scheme';
       code.removeAttribute('data-syn');
       const text = code.textContent;
       if (text.length > budget) continue;
       budget -= text.length;
-      code.replaceChildren(highlightDom(text, doc));
+      code.replaceChildren(highlightDom(text, doc, lang));
     }
   }
 
@@ -1137,7 +1158,7 @@
     const close = () => {
       if (!cur) return;
       let src = cur.lines;
-      if (cur.type === 'markdown') src = src.map(l => l.replace(/^;; ?/, ''));
+      if (cur.type === 'markdown' || cur.lang === 'js') src = src.map(l => l.replace(/^;; ?/, ''));
       cur.source = trimBlankLines(src.join('\n'));
       delete cur.lines;
       cells.push(cur);
@@ -1146,7 +1167,9 @@
       const m = MARK.exec(l);
       if (m) {
         close();
-        cur = { id: newId(), type: /\[\s*markdown\s*\]/i.test(m[1]) ? 'markdown' : 'code', lines: [] };
+        cur = /\[\s*markdown\s*\]/i.test(m[1]) ? { id: newId(), type: 'markdown', lines: [] }
+          : /\[\s*javascript\s*\]/i.test(m[1]) ? { id: newId(), type: 'code', lang: 'js', lines: [] }
+          : { id: newId(), type: 'code', lines: [] };
         continue;
       }
       if (cur) cur.lines.push(unescapeMark(l)); else pre.push(l);
@@ -1163,8 +1186,9 @@
   function toPercent(nb) {
     const out = [';; -*- mode: scheme -*-', ';; CHICKEN notebook: ' + String(nb.title || 'Untitled').replace(/\n/g, ' '), ''];
     for (const c of nb.cells) {
-      if (c.type === 'markdown') {
-        out.push(';; %% [markdown]');
+      // markdown and JavaScript: commented, so that the file is Scheme
+      if (c.type === 'markdown' || c.lang === 'js') {
+        out.push(c.type === 'markdown' ? ';; %% [markdown]' : ';; %% [javascript]');
         for (const l of String(c.source).split('\n')) out.push(l ? escapeMark(';; ' + l) : ';;');
       } else {
         out.push(';; %%');
@@ -1199,6 +1223,9 @@
       chain,
     };
   }
+  // an error or note of a callback that ran after its cell (which leaves
+  // the cell's status as it was)
+  const callback = o => (o.callback === true ? { callback: true } : {});
   function cleanOutput(o) {
     if (!o || typeof o !== 'object') return null;
     switch (o.k) {
@@ -1208,10 +1235,10 @@
     case 'value':                       // text null: "; no values"
       return o.text === null || str(o.text) ? { k: 'value', text: o.text } : null;
     case 'note':
-      return str(o.text, 4096) ? Object.assign({ k: 'note', text: o.text }, o.bad === true ? { bad: true } : {}) : null;
+      return str(o.text, 4096) ? Object.assign({ k: 'note', text: o.text }, o.bad === true ? { bad: true } : {}, callback(o)) : null;
     case 'display':
       return MIMES.has(o.mime) && str(o.data) ? { k: 'display', mime: o.mime, data: o.data, id: typeof o.id === 'string' ? o.id.slice(0, 256) : null } : null;
-    case 'error': { const e = cleanError(o.error); return e ? { k: 'error', error: e } : null; }
+    case 'error': { const e = cleanError(o.error); return e ? Object.assign({ k: 'error', error: e }, callback(o)) : null; }
     case 'lazy': { const n = cleanLazy(o.node, 0, { left: LAZY_MAX }); return n ? { k: 'lazy', node: n } : null; }
     default: return null;
     }
@@ -1256,16 +1283,21 @@
 
   // a code cell's status is saved when it did not succeed
   const FAILED = new Set(['error', 'interrupted']);
+  const isJs = c => c.type === 'code' && c.lang === 'js';
 
+  // version 2: a notebook with JavaScript cells (which a page that reads
+  // version 1 runs as Scheme, warned).  A text cell that was a
+  // JavaScript cell keeps its lang too, to be one again.
   function toJson(nb) {
     return JSON.stringify({
       format: 'chicken-notebook',
-      version: 1,
+      version: nb.cells.some(isJs) ? 2 : 1,
       meta: Object.assign({ title: nb.title || 'Untitled', created: nb.created || null, modified: nb.modified || null,
                             chicken: nb.chicken || null, arch: nb.arch || null },
                           nb.packages && nb.packages.length ? { packages: nb.packages } : {}),
       cells: nb.cells.map(c => {
         const o = { id: c.id, type: c.type, source: c.source };
+        if (c.lang === 'js') o.lang = 'js';
         if (c.type === 'code' && Number.isInteger(c.count)) o.count = c.count;
         if (c.type === 'code' && FAILED.has(c.status)) o.status = c.status;
         if (c.outputs && c.outputs.length) o.outputs = c.outputs;
@@ -1295,19 +1327,21 @@
     if (!j || typeof j !== 'object' || j.format !== 'chicken-notebook' || !Array.isArray(j.cells))
       throw new Error('not a CHICKEN notebook (format "chicken-notebook" expected)');
     const warnings = [];
-    if (typeof j.version === 'number' && j.version > 1)
+    if (typeof j.version === 'number' && j.version > 2)
       warnings.push('This notebook was saved by a newer version (format ' + j.version + '); it was imported as far as possible.');
     if (j.cells.length > lim.cells) throw new Error('more than ' + lim.cells + ' cells');
     const meta = j.meta && typeof j.meta === 'object' ? j.meta : {};
     const seen = new Set();
     const cells = [];
-    let dropped = 0, cut = 0;
+    let dropped = 0, cut = 0, unknown = 0;
     for (const c of j.cells) {
       if (!c || typeof c !== 'object' || (c.type !== 'code' && c.type !== 'markdown') || !str(c.source, lim.source)) { dropped++; continue; }
       let id = typeof c.id === 'string' && ID_RE.test(c.id) && !seen.has(c.id) ? c.id : newId();
       while (seen.has(id)) id = newId();
       seen.add(id);
       const cell = { id, type: c.type, source: c.source };
+      if (c.lang === 'js') cell.lang = 'js';
+      else if (c.type === 'code' && typeof c.lang === 'string' && c.lang !== 'scheme') unknown++;
       if (c.type === 'code' && Number.isInteger(c.count) && c.count > 0 && c.count < 1e9) cell.count = c.count;
       if (c.type === 'code' && FAILED.has(c.status)) cell.status = c.status;
       if (Array.isArray(c.outputs)) {
@@ -1319,6 +1353,8 @@
       cells.push(cell);
     }
     if (dropped) warnings.push(dropped + ' invalid cell' + (dropped > 1 ? 's were' : ' was') + ' skipped.');
+    if (unknown) warnings.push(unknown + (unknown > 1 ? ' cells' : ' cell') + ' in a language this page does not know ' +
+                               (unknown > 1 ? 'were imported as Scheme cells.' : 'was imported as a Scheme cell.'));
     if (cut) warnings.push(cut + (cut > 1 ? ' cells had' : ' cell had') + ' more than ' + lim.outputs +
                            ' outputs, so some were left out.');
     return {
@@ -1329,6 +1365,7 @@
     };
   }
 
-  return { renderMarkdown, sanitizeMarkup, splitPercent, toPercent, toJson, fromJson, balance, splitForms,
-           highlight, highlightLines, highlightDom, colorCode, scan, newId, safeHref, safeImageSrc, slug, LIMITS, limitOutputs };
+  return { renderMarkdown, sanitizeMarkup, splitPercent, toPercent, toJson, fromJson, balance, balanceJs, splitForms,
+           highlight, highlightJs, highlightLines, highlightDom, colorCode, scan, newId, safeHref, safeImageSrc, slug, LIMITS,
+           limitOutputs };
 });

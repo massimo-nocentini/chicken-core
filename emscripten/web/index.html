@@ -27,8 +27,9 @@
 
 <!-- The page runs the unmodified csi in a Web Worker (repl-worker.js) and
   the chicken compiler in another (compiler-worker.js); repl.js drives
-  both.  The Notebook tab (notebook.js, with notebook-lib.js and the
-  kernel client nb-kernel.js) runs a second csi worker of its own.
+  both.  The Notebook tab (notebook.js, with notebook-lib.js, the
+  kernel client nb-kernel.js and js-lexer.js for JavaScript cells) runs
+  a second csi worker of its own.
   session-store.js and sessions.js keep named saves of the console and
   of notebooks in the browser's IndexedDB; packages.js (with
   package-check.js) loads packages of compiled extensions.  The build rule replaces the BUILD placeholder (in the
@@ -594,6 +595,24 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 .nb-cell[data-edited] .nb-count { font-style: italic; }
 .nb-cell[data-stale] .nb-count { opacity: .55; }
 .nb-cell[data-type="markdown"] .nb-count { visibility: hidden; }
+.nb-cell[data-callback] .nb-count { color: var(--accent); }
+/* the language of a code cell: JS shown, Scheme on hover or selection */
+.nb-gutter .nb-lang {
+  min-height: 18px;
+  padding: 0 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--muted);
+  font: 500 10px/1.4 var(--sans);
+  white-space: nowrap;
+}
+.nb-gutter .nb-lang:hover { background: var(--surface-2); color: var(--text); }
+.nb-cell[data-lang="js"] .nb-lang { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.nb-cell[data-lang="scheme"]:not(.is-selected):not(:hover) .nb-lang { visibility: hidden; }
+/* (taking no room: a short Scheme cell is no taller for it) */
+.nb-cell[data-lang="scheme"] .nb-gutter .nb-lang { margin-bottom: -20px; }
+.nb-cell[data-type="markdown"] .nb-lang { display: none; }
 
 .nb-body { grid-area: body; min-width: 0; }
 .nb-editor {
@@ -942,6 +961,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
   }
   .nb-cell::before { top: 4px; bottom: 8px; }
   .nb-gutter { flex-direction: row; align-items: center; gap: 6px; padding: 0; }
+  .nb-cell[data-lang="scheme"] .nb-gutter .nb-lang { margin-bottom: 0; }
   .nb-count { min-width: 0; }
   .nb-tools { position: static; grid-area: tools; opacity: 1; padding: 0 0 2px; border: 0; background: none; box-shadow: none; }
   .nb-md h1 { font-size: 1.35em; }
@@ -1095,7 +1115,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <button class="btn primary" id="send" type="submit" disabled>Run</button>
         </form>
       </div>
-      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops (a lazy stream being printed too: <kbd>Enter</kbd> on an empty line pauses it, then gets its next element), <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves the session in this browser (Saved).</p>
+      <p class="hints"><kbd>Enter</kbd> evaluates, <kbd>Shift</kbd>+<kbd>Enter</kbd> adds a line, <kbd>Esc</kbd> or <kbd>Ctrl</kbd>+<kbd>C</kbd> stops (a lazy stream being printed too: <kbd>Enter</kbd> on an empty line pauses it, then gets its next element), <kbd>Ctrl</kbd>+<kbd>D</kbd> ends input, <kbd>↑</kbd>/<kbd>↓</kbd> recall history. Uploaded files load with <code>,l name</code>. <code>(import js)</code> calls the worker's JavaScript, as in <code>(js-call (js-global "Math.max") 1 2)</code>; <code>,js 1 + 2</code> evaluates a line of JavaScript. <kbd>Ctrl</kbd>+<kbd>S</kbd> saves the session in this browser (Saved).</p>
     </section>
 
     <section class="panel" id="panel-notebook" role="tabpanel" aria-labelledby="tab-notebook" hidden>
@@ -1257,6 +1277,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
           <dt><kbd>d</kbd> <kbd>d</kbd></dt><dd>Delete the cell</dd>
           <dt><kbd>z</kbd></dt><dd>Undo a delete</dd>
           <dt><kbd>m</kbd> / <kbd>y</kbd></dt><dd>Make it text / code</dd>
+          <dt><kbd>l</kbd></dt><dd>Switch between Scheme and Java&shy;Script</dd>
           <dt><kbd>o</kbd></dt><dd>Hide or show the output</dd>
           <dt><kbd>i</kbd> <kbd>i</kbd></dt><dd>Interrupt</dd>
           <dt><kbd>0</kbd> <kbd>0</kbd></dt><dd>Restart the kernel</dd>
@@ -1335,6 +1356,7 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 8px; padding-to
 <script src="package-check.js?v=@BUILD@"></script>
 <script src="packages.js?v=@BUILD@"></script>
 <script src="repl.js?v=@BUILD@"></script>
+<script src="js-lexer.js?v=@BUILD@"></script>
 <script src="notebook-lib.js?v=@BUILD@"></script>
 <script src="nb-kernel.js?v=@BUILD@"></script>
 <script src="notebook.js?v=@BUILD@"></script>

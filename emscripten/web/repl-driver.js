@@ -25,7 +25,7 @@
  */
 
 /* UMD: a CommonJS module in node (tests), the global ChickenReplDriver in
- * a worker (importScripts).
+ * a worker (importScripts, after js-lexer.js, which it takes then).
  *
  *   const drv = await ChickenReplDriver.start(createChickenRepl, options);
  *
@@ -55,10 +55,25 @@
  *   onState(st, lazy)  after every slice; st is one of the state
  *                constants (IDLE: the notebook kernel waits for a
  *                request; PAUSED: a lazy stream being printed waits for
- *                lazy()), lazy whether one is being printed
+ *                lazy(); AWAITING: js-await waits for a promise, until it
+ *                settles or interrupt()), lazy whether one is being
+ *                printed
  *   onExit(code), onCrash(message)  called once; the driver is then dead
  *   onDiag(text) C-level stderr before the REPL is ready (default
  *                console.warn)
+ *   onModule(M)  the module, before main runs (the worker installs its
+ *                console there: see webjs-pre.js)
+ *   onIdleOutput()  after onOutput, for output that came between slices:
+ *                JavaScript writing on its own (a console call from a
+ *                timer), which the host should pass on soon
+ *   jsLexer      js-lexer.js, which JavaScript cells and ,js need
+ *                (webjs-pre.js's RUN_JS); by default the one found
+ *                beside this file (node) or as the global ChickenJsLexer
+ *
+ * The JavaScript bridge (webjs.scm) wakes the driver when a promise
+ * js-await waits for settles, or a call from JavaScript was queued
+ * (Module.onJsWake): it runs Scheme then, unless output is held back
+ * (canRun) or Scheme sleeps, which runs no such call.
  *
  * feed() does not add a newline: after reading a datum csi peeks for the
  * newline that ends the line, so input should be "\n"-terminated.
@@ -76,12 +91,14 @@
  * stderr once csi is ready. */
 
 (function (root, factory) {
-  if (typeof module === 'object' && module.exports) module.exports = factory();
-  else root.ChickenReplDriver = factory();
-})(typeof self !== 'undefined' ? self : this, function () {
+  if (typeof module === 'object' && module.exports) module.exports = factory(require('./js-lexer.js'));
+  else root.ChickenReplDriver = factory(root.ChickenJsLexer);
+})(typeof self !== 'undefined' ? self : this, function (Lexer) {
   'use strict';
 
-  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, IDLE = 5, PAUSED = 6;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, EXITED = 3, SLEEPING = 4, IDLE = 5, PAUSED = 6, AWAITING = 7;
+  // user JavaScript runs in the worker's realm and may replace it
+  const max = Math.max;
   const LAZY_NEXT = 1, LAZY_GO = 2, LAZY_PAUSE = 3;
 
   // An error's message and stack: V8's stack begins with the message,
@@ -104,6 +121,8 @@
 
   async function start(createModule, o) {
     let M = null, dead = false, scheduled = false, ready = false;
+    // inSlice: Scheme runs (main, or a slice); woken: a wake before ready
+    let inSlice = false, woken = false;
     const earlyErr = [], writeErr = [];
     const dec = { 1: new TextDecoder(), 2: new TextDecoder(), 3: new TextDecoder() };
 
@@ -130,19 +149,32 @@
       if (dead) return;
       o.onState(st, st !== EXITED && !!M._webrepl_lazy_printing());
       if (st === BUSY) { if (!o.canRun || o.canRun()) kick(); }   // else resumeOutput()
-      else if (st === SLEEPING) kick(Math.max(1, M._webrepl_wakeup_ms()));
+      else if (st === SLEEPING) kick(max(1, M._webrepl_wakeup_ms()));
     }
     function pump() {
       scheduled = false;
-      report(guard(() => M._webrepl_resume()));
+      inSlice = true;
+      const st = guard(() => M._webrepl_resume());
+      inSlice = false;
+      report(st);
+    }
+    // the bridge has work for Scheme (see above)
+    function wake() {
+      if (!ready) { woken = true; return; }
+      if (dead || (M._webrepl_state() === BUSY && o.canRun && !o.canRun())) return;
+      kick();
     }
 
     const opts = {
       arguments: ['-:c', ...(o.args || [])],
       thisProgram: 'csi',
       stdin: () => null,                    // never window.prompt()
-      onSchemeOutput: (fd, bytes) =>
-        o.onOutput(fd, dec[fd].decode(bytes, { stream: true })),
+      onSchemeOutput: (fd, bytes) => {
+        o.onOutput(fd, dec[fd].decode(bytes, { stream: true }));
+        if (!inSlice && o.onIdleOutput) o.onIdleOutput();
+      },
+      onJsWake: () => wake(),
+      webjsLexer: o.jsLexer || Lexer || null,
       print: t => o.onOutput(1, t + '\n'),  // C-level stdio (panic, -:d)
       printErr: t => {
         if (ready) o.onOutput(2, t + '\n');
@@ -153,6 +185,7 @@
         if (ready) fail(new Error('abort: ' + what)); else earlyErr.push('abort: ' + what);
       },
       preRun: [mod => {
+        if (o.onModule) o.onModule(mod);
         mod.FS.chdir('/home/web_user');
         if (o.csirc != null) mod.FS.writeFile('/home/web_user/.csirc', o.csirc);
         // (before main: the directories of the embedded repository do
@@ -175,7 +208,8 @@
       return {};
     };
 
-    M = await Promise.race([createModule(opts), loadFailure]);
+    inSlice = true;
+    try { M = await Promise.race([createModule(opts), loadFailure]); } finally { inSlice = false; }
     if (!M._webrepl_started()) {            // exited or panicked inside main
       if (M._webrepl_exited()) {
         // C-level messages (a panic) went to onDiag only so far
@@ -220,11 +254,12 @@
       get module() { return M; },
       get dead() { return dead; },
       initialState() { return guard(() => M._webrepl_state()); },
-      begin() { report(api.initialState()); },   // after posting 'ready'
+      // after posting 'ready'
+      begin() { report(api.initialState()); if (woken) { woken = false; wake(); } },
     };
     return api;
   }
 
-  return { start, describe, fsError, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE, PAUSED,
+  return { start, describe, fsError, RUNNING, WAITING, BUSY, EXITED, SLEEPING, IDLE, PAUSED, AWAITING,
            LAZY_NEXT, LAZY_GO, LAZY_PAUSE };
 });

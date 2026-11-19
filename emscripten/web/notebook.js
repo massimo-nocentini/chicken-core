@@ -24,9 +24,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* The Notebook tab: cells of Scheme and Markdown, run by a second csi
- * instance (the notebook kernel, nb-kernel.js), separate from the REPL's.
- * No dependencies.
+/* The Notebook tab: cells of Scheme, JavaScript and Markdown, run by a
+ * second csi instance (the notebook kernel, nb-kernel.js), separate from
+ * the REPL's.  No dependencies.
  *
  * - repl.js provides window.ChickenPage (settings, storage, the compiled
  *   .wasm, uploads); notebook-lib.js the markdown renderer, the markup
@@ -41,6 +41,14 @@
  *   while it runs, it can be paused, stepped and resumed.
  * - Code cells are colored by notebook-lib.js's highlighter, in an
  *   overlay behind each editor, painted as cells come into view.
+ * - A code cell's language is Scheme or JavaScript (lang 'js', the key l
+ *   or its badge); a JavaScript cell runs in the kernel's worker
+ *   (webjs.scm), and its editor colors, balances and indents
+ *   JavaScript.  What a cell left to run there (a timer, a Scheme
+ *   procedure it gave JavaScript) writes in it later, after its outputs
+ *   (in the newest cell that ran when it is gone); while such a callback
+ *   runs and no cell does, the status says "running callback" and Stop
+ *   ends it.
  * - Rich outputs (HTML, SVG, Markdown) are rebuilt from an allowlist by
  *   notebook-lib.js; no untrusted string ever reaches innerHTML.
  * - The notebook is saved to localStorage (debounced), outputs capped at
@@ -131,8 +139,9 @@
 
   // ---- the notebook model
 
-  // cell: {id, type: 'code'|'markdown', source, count, outputs, status,
-  //        stale, ranSource, editing, collapsed}; outputs are the saved
+  // cell: {id, type: 'code'|'markdown', lang: 'scheme'|'js', source,
+  //        count, outputs, status, stale, ranSource, ranLang, editing,
+  //        collapsed, callbacks}; outputs are the saved
   //        kinds ({k:'stream'|'value'|'display'|'error'|'note', ...}),
   //        with their DOM nodes in the views map
   // packages: the URLs of the packages of the notebook loaded (its
@@ -146,15 +155,19 @@
   const byId = id => nb.cells.find(c => c.id === id);
   const indexOf = cell => nb.cells.indexOf(cell);
 
-  function newCell(type, source) {
-    return { id: L.newId(), type, source: source || '', count: null, outputs: [], status: 'idle',
-             stale: false, ranSource: null, editing: type === 'markdown' && !source, collapsed: false,
-             sources: [], rt: null };
+  // (lang matters for code cells only; a cell made text keeps it)
+  function newCell(type, source, lang) {
+    return { id: L.newId(), type, lang: lang === 'js' ? 'js' : 'scheme', source: source || '', count: null, outputs: [],
+             status: 'idle', stale: false, ranSource: null, ranLang: null, editing: type === 'markdown' && !source,
+             collapsed: false, sources: [], rt: null, callbacks: 0 };
   }
 
   // ---- the kernel
 
   let kernel = null, kernelState = 'off', kernelUsed = false, pendingNoted = false;
+  // the kernels started so far: a cell's runCount is that of its run in
+  // kernel runKernel
+  let kernelRuns = 0;
 
   function ensureKernel() {
     if (kernel) return kernel;
@@ -190,9 +203,10 @@
   const STATES = {
     off: ['off', 'kernel not started'], starting: ['loading', 'starting kernel'], idle: ['ready', 'idle'],
     busy: ['running', 'running'], sleeping: ['sleeping', 'sleeping'], input: ['waiting', 'waiting for input'],
-    paused: ['waiting', 'paused'],
+    paused: ['waiting', 'paused'], awaiting: ['sleeping', 'awaiting'],
     dead: ['exited', 'kernel stopped'], unavailable: ['error', 'unavailable'],
   };
+  const CALLBACK_STATES = { busy: 'running callback', sleeping: 'callback sleeping', awaiting: 'callback awaiting' };
   function setStatus(key, text) {
     statusEl.dataset.state = key;
     if (statusText.textContent !== text) statusText.textContent = text;
@@ -201,7 +215,10 @@
     kernelState = state;
     const [key, label] = STATES[state] || ['loading', state];
     let text = label;
-    if ((state === 'busy' || state === 'sleeping' || state === 'input' || state === 'paused') && info && info.queued)
+    // a callback of a cell runs (a timer's, say), and no cell does
+    if (info && info.callback && CALLBACK_STATES[state]) text = CALLBACK_STATES[state];
+    if ((state === 'busy' || state === 'sleeping' || state === 'input' || state === 'paused' || state === 'awaiting') &&
+        info && info.queued)
       text += ' · ' + info.queued + ' queued';
     if (state === 'dead' && info && info.reason) text = clip(String(info.reason), 60);
     setStatus(key, text);
@@ -215,7 +232,7 @@
         for (const n of P.packages.pending()) log('kernel', 'package ' + n + ' is still loading: the kernel gets it when it is ready');
       }
     }
-    if (state === 'starting') pendingNoted = false;
+    if (state === 'starting') { pendingNoted = false; kernelRuns++; }
     if (state === 'idle' && kernel && kernel.info) {
       $('nb-info').textContent = 'CHICKEN ' + kernel.info.version + ' · ' + P.ARCH;
       nb.chicken = kernel.info.version;
@@ -266,6 +283,7 @@
   // deletion undone) gets none of that run's events
   let startedCell = null;
   function onCell(id, ev) {
+    if (ev.type === 'async' || ev.async === true) { asyncEvent(id, ev); return; }
     const cell = byId(id);
     const started = startedCell && startedCell.id === id ? startedCell : null;
     if (ev.type === 'start') startedCell = cell;
@@ -284,7 +302,9 @@
       clearHighlight(cell);
       cell.status = 'running';
       cell.runCount = ev.count;
+      cell.runKernel = kernelRuns;
       cell.ranSource = cell.sources.length ? cell.sources.shift() : cell.source;
+      cell.ranLang = cell.lang;
       cell.stale = false;
       kernelUsed = true;
       chrome(cell);
@@ -315,6 +335,68 @@
       break;
     }
     updateToolbar();
+  }
+
+  // A callback of the cell ID (nb-kernel.js's async events) writes after
+  // its outputs, also once it ran again; when it is gone (or a text cell
+  // now), in the code cell that ran last in this kernel, and with none
+  // in the kernel messages, but its clears are dropped then: they are
+  // its own cell's.  Its error is an error box, without the line marked
+  // (the source may have changed), and marked as a callback's, which
+  // leaves the cell's status as it was, also once loaded again.  The
+  // callbacks running are counted in the cell their start went to.
+  const callbackFrames = [];            // [{id, cell}], innermost last
+  function asyncEvent(id, ev) {
+    let cell = byId(id);
+    const own = !!cell && cell.type === 'code' && views.has(cell.id);
+    if (!own) cell = newestRun();
+    if (ev.type === 'async' && ev.op === 'done') {
+      const i = callbackFrames.map(f => f.id).lastIndexOf(id);
+      const f = i >= 0 ? callbackFrames.splice(i)[0] : null;
+      const counted = f ? f.cell : cell;
+      if (counted) {
+        counted.callbacks = Math.max(0, counted.callbacks - 1);
+        if (byId(counted.id) === counted) chrome(counted);  // (not a copy a deletion undone replaced)
+      }
+    }
+    if (!cell) {
+      if (ev.type === 'stream') log(ev.name, ev.text);
+      else if (ev.type === 'display') log('display', ev.mime + ' output not shown');
+      else if (ev.type === 'async' && ev.op === 'done' && ev.status === 'error' && ev.error) log('stderr', ev.error.text);
+      else if (ev.type === 'async' && ev.op === 'start') callbackFrames.push({ id, cell: null });
+      return;
+    }
+    if (ev.type !== 'async') {
+      if (ev.type !== 'clear' || own) queueOp(cell, ev);
+      return;
+    }
+    if (ev.op === 'start') { callbackFrames.push({ id, cell }); cell.callbacks++; chrome(cell); return; }
+    if (ev.op !== 'done') return;
+    flushCell(cell);
+    const n = indexOf(cell) + 1;
+    switch (ev.status) {
+    case 'error': {
+      const e = ev.error || { text: 'Error', kind: [], chain: [] };
+      addOutput(cell, { k: 'error', error: e, callback: true });
+      announce(clip('A callback of cell ' + n + ' failed: ' + e.text, 120));
+      break;
+    }
+    case 'interrupted': addOutput(cell, { k: 'note', text: 'Callback interrupted.', callback: true }); break;
+    case 'reset': addOutput(cell, { k: 'note', text: 'A callback called reset.', callback: true }); break;
+    case 'killed':
+      addOutput(cell, { k: 'note', text: 'The kernel stopped while a callback of this cell ran.', bad: true, callback: true });
+      break;
+    }
+    chrome(cell);
+    scheduleSave();
+  }
+  // the code cell with the highest run count in this kernel
+  function newestRun() {
+    let best = null;
+    for (const c of nb.cells)
+      if (c.type === 'code' && c.runCount != null && c.runKernel === kernelRuns &&
+          (!best || c.runCount > best.runCount)) best = c;
+    return best;
   }
 
   const CANCEL = {
@@ -874,9 +956,10 @@
   // ---- cell views
 
   function makeView(cell) {
-    const li = h('li', { class: 'nb-cell', 'data-id': cell.id, 'data-type': cell.type, tabindex: '-1' });
+    const li = h('li', { class: 'nb-cell', 'data-id': cell.id, 'data-type': cell.type, 'data-lang': cell.lang, tabindex: '-1' });
     const run = h('button', { class: 'nb-run btn ghost', type: 'button' }, icon('run'));
     const count = h('span', { class: 'nb-count', 'aria-hidden': 'true' });
+    const lang = h('button', { class: 'nb-lang btn ghost', type: 'button' });
     const src = h('textarea', { class: 'nb-src', rows: '1', spellcheck: 'false', autocapitalize: 'off', autocomplete: 'off',
                                 autocorrect: 'off', wrap: 'soft' });
     src.value = cell.source;
@@ -893,13 +976,14 @@
     const del = h('button', { class: 'btn ghost del', type: 'button', 'data-act': 'del' }, icon('del'));
     const tools = h('div', { class: 'nb-tools', role: 'toolbar' }, up, down, kind, del);
     // the tools come before the editor, which keeps Tab for indenting
-    li.append(h('div', { class: 'nb-gutter' }, run, count), tools, body);
-    const v = { li, run, count, src, hl, bal, editor, md, out, showOut, body, tools, up, down, kind, del, stdin: null, stdinText: null,
+    li.append(h('div', { class: 'nb-gutter' }, run, count, lang), tools, body);
+    const v = { li, run, count, lang, src, hl, bal, editor, md, out, showOut, body, tools, up, down, kind, del, stdin: null, stdinText: null,
                 near: false, dirty: false, mark: 0, keys: null, mdSyn: false };
     views.set(cell.id, v);
     if (nearby) nearby.observe(li);
 
     run.addEventListener('click', () => { select(cell.id); runOne(cell, cell.type === 'markdown' ? 'cell' : null); });
+    lang.addEventListener('click', () => setLang(cell, cell.lang === 'js' ? 'scheme' : 'js'));
     up.addEventListener('click', () => moveCell(cell, -1, 'button'));
     down.addEventListener('click', () => moveCell(cell, 1, 'button'));
     kind.addEventListener('click', () => setType(cell, cell.type === 'code' ? 'markdown' : 'code'));
@@ -944,11 +1028,14 @@
   function chrome(cell) {
     const v = views.get(cell.id);
     if (!v) return;
-    const n = indexOf(cell) + 1, code = cell.type === 'code';
+    const n = indexOf(cell) + 1, code = cell.type === 'code', js = cell.lang === 'js';
     const li = v.li;
     li.dataset.type = cell.type;
+    li.dataset.lang = cell.lang;
     li.dataset.status = cell.status;
-    const edited = code && cell.count != null && cell.ranSource != null && cell.ranSource !== cell.source;
+    const edited = code && cell.count != null && (cell.ranSource != null && cell.ranSource !== cell.source ||
+                                                  cell.ranLang != null && cell.ranLang !== cell.lang);
+    if (cell.callbacks > 0) li.dataset.callback = 'true'; else delete li.dataset.callback;
     if (cell.stale) li.dataset.stale = 'true'; else delete li.dataset.stale;
     if (edited) li.dataset.edited = 'true'; else delete li.dataset.edited;
     li.classList.toggle('is-editing', !!cell.editing);
@@ -958,6 +1045,7 @@
       : cell.count != null ? '[' + cell.count + ']' : '[ ]';
     if (v.count.textContent !== c) v.count.textContent = c;
     let label = (code ? 'Code' : 'Text') + ' cell ' + n;
+    if (code && js) label += ', JavaScript';
     if (code && cell.count != null) label += ', run [' + cell.count + ']';
     const w = code && STATUS_WORDS[cell.status];
     if (w) label += ', ' + w;
@@ -966,8 +1054,13 @@
     li.setAttribute('aria-label', label);
     v.run.setAttribute('aria-label', (code ? 'Run cell ' : 'Render cell ') + n);
     v.run.title = code ? 'Run (Shift+Enter)' : 'Render (Shift+Enter)';
-    v.src.setAttribute('aria-label', code ? 'Cell ' + n + ' source (Scheme)' : 'Cell ' + n + ' text (Markdown)');
-    v.src.placeholder = code ? 'Scheme code' : 'Markdown text';
+    v.src.setAttribute('aria-label', code ? 'Cell ' + n + ' source (' + (js ? 'JavaScript' : 'Scheme') + ')' : 'Cell ' + n + ' text (Markdown)');
+    v.src.placeholder = code ? (js ? 'JavaScript code' : 'Scheme code') : 'Markdown text';
+    const lt = js ? 'JS' : 'Scheme';
+    if (v.lang.textContent !== lt) v.lang.textContent = lt;
+    v.lang.setAttribute('aria-label', 'Cell ' + n + ' is ' + (js ? 'JavaScript: switch to Scheme' : 'Scheme: switch to JavaScript') + ' (l)');
+    v.lang.title = 'Language (l)';
+    v.lang.hidden = !code;
     v.out.setAttribute('aria-label', 'Output of cell ' + n);
     v.tools.setAttribute('aria-label', 'Cell ' + n + ' actions');
     v.up.setAttribute('aria-label', 'Move cell ' + n + ' up');
@@ -1024,12 +1117,13 @@
     const v = views.get(cell.id);
     if (!v) return;
     if (cell.type !== 'code') { v.bal.hidden = true; return; }
-    const b = L.balance(cell.source);
+    const js = cell.lang === 'js', b = js ? L.balanceJs(cell.source) : L.balance(cell.source);
+    const brackets = n => (n > 1 ? ' brackets' : ' bracket');
     let t = '';
-    if (b.open) t = 'unclosed string or comment';
-    else if (b.stray) t = b.stray + ' extra )';
-    else if (b.mismatch) t = b.mismatch + ' mismatched bracket' + (b.mismatch > 1 ? 's' : '');
-    else if (b.depth) t = b.depth + ' unclosed (';
+    if (b.open) t = js ? 'unclosed string, template or comment' : 'unclosed string or comment';
+    else if (b.stray) t = js ? b.stray + ' extra closing' + brackets(b.stray) : b.stray + ' extra )';
+    else if (b.mismatch) t = b.mismatch + ' mismatched' + brackets(b.mismatch);
+    else if (b.depth) t = js ? b.depth + ' unclosed' + brackets(b.depth) : b.depth + ' unclosed (';
     v.bal.textContent = t;
     v.bal.hidden = !t;
   }
@@ -1074,7 +1168,7 @@
     const text = v.src.value, syn = cell.type === 'code' && text.length <= SYN_MAX;
     v.editor.classList.toggle('syn', syn);
     if (syn) {
-      const lines = L.highlightLines(L.highlight(text));
+      const lines = L.highlightLines(cell.lang === 'js' ? L.highlightJs(text) : L.highlight(text));
       if (v.mark > lines.length) v.mark = 0;
       const keys = lines.map((l, k) => (k + 1 === v.mark ? '!' : '') + l.map(p => p[0] + '\u0001' + p[1]).join('\u0002'));
       const old = v.keys || [];
@@ -1141,7 +1235,7 @@
     // a running cell is stopped, as by Stop: its stdin box goes with it
     if (kernel) { if (kernel.current === cell.id) kernel.stop(); else kernel.cancel(cell.id); }
     flushCell(cell);
-    const snap = Object.assign({}, cell, { outputs: cell.outputs.map(stripOutput), sources: [], ops: [], rt: null,
+    const snap = Object.assign({}, cell, { outputs: cell.outputs.map(stripOutput), sources: [], ops: [], rt: null, callbacks: 0,
                                            status: cell.status === 'running' || cell.status === 'waiting' || cell.status === 'queued' ? 'idle' : cell.status });
     trash.push({ cell: snap, index: i });
     if (trash.length > TRASH_MAX) trash.shift();
@@ -1226,6 +1320,24 @@
     scheduleSave();
   }
 
+  // the language of a code cell (not while it runs; a run queued is
+  // cancelled): the outputs stay, and the cell is edited since it ran
+  function setLang(cell, lang) {
+    const n = indexOf(cell) + 1;
+    if (cell.type !== 'code') { announce('Text cells have no language'); return; }
+    if (cell.status === 'running' || cell.status === 'waiting') { announce('Cell ' + n + ' is running: its language stays'); return; }
+    if (kernel && cell.status === 'queued') kernel.cancel(cell.id);
+    if (cell.lang === lang) return;
+    cell.lang = lang;
+    const v = views.get(cell.id);
+    if (v) v.keys = null;
+    paint(cell, true);
+    updateBalance(cell);
+    chrome(cell);
+    announce('Cell ' + n + ' is now ' + (lang === 'js' ? 'JavaScript' : 'Scheme'));
+    scheduleSave();
+  }
+
   function toggleOutput(cell) {
     cell.collapsed = !cell.collapsed;
     chrome(cell);
@@ -1285,8 +1397,9 @@
 
   // ---- running
 
+  // (JavaScript's quotes are its own: a ’ in a string stays one)
   function prepSource(cell) {
-    if (P.settings.quotes) {
+    if (P.settings.quotes && cell.lang !== 'js') {
       const s = P.straightenQuotes(cell.source);
       if (s !== cell.source) {
         cell.source = s;
@@ -1318,9 +1431,9 @@
       const source = prepSource(c);
       c.sources.push(source);
       if (c.status !== 'queued' && c.status !== 'running' && c.status !== 'waiting') c.prevStatus = c.status;
-      return { cellId: c.id, source };
+      return { cellId: c.id, source, lang: c.lang };
     });
-    if (jobs.length === 1) k.run(jobs[0].cellId, jobs[0].source);
+    if (jobs.length === 1) k.run(jobs[0].cellId, jobs[0].source, jobs[0].lang);
     else k.runMany(jobs);
     updateToolbar();
   }
@@ -1413,7 +1526,8 @@
       const ls = v.lastIndexOf('\n', a - 1) + 1;
       const line = v.slice(ls, a);
       const indent = /^[ \t]*/.exec(line)[0];
-      insertText(ta, '\n' + indent + (L.balance(line).depth > 0 ? '  ' : ''));
+      const open = cell.lang === 'js' ? L.balanceJs(line).depth > 0 : L.balance(line).depth > 0;
+      insertText(ta, '\n' + indent + (open ? '  ' : ''));
       return;
     }
     if (e.key === 'Tab' && !mod && !e.altKey) {
@@ -1485,6 +1599,7 @@
     case 'z': undoDelete(); break;
     case 'm': setType(cell, 'markdown'); break;
     case 'y': setType(cell, 'code'); break;
+    case 'l': setLang(cell, cell.lang === 'js' ? 'scheme' : 'js'); break;
     case 'o': toggleOutput(cell); break;
     case 'i': if (twice) stop(); break;
     case '0':
@@ -1511,7 +1626,7 @@
     if (panel.hidden || document.querySelector('dialog[open]')) return;
     const k = e.key.toLowerCase();
     if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && k === 'c') {
-      if (!kernel || !kernel.current) return;
+      if (!kernel || !(kernel.current || kernel.callback)) return;
       // a selection to copy: in a text field, else in the document
       const sel = getSelection(), t = e.target;
       const field = t instanceof HTMLTextAreaElement || t instanceof HTMLInputElement;
@@ -1530,7 +1645,7 @@
   // ---- toolbar, menu, notices
 
   function updateToolbar() {
-    const busy = !!(kernel && (kernel.current || kernel.queueLength));
+    const busy = !!(kernel && (kernel.current || kernel.queueLength || kernel.callback));
     $('nb-stop').setAttribute('aria-disabled', String(!busy));
   }
   $('nb-run-all').addEventListener('click', runAll);
@@ -1861,15 +1976,17 @@
       title: nb.title, created: nb.created, modified: nb.modified, chicken: nb.chicken || null, arch: P.ARCH || null,
       packages: [...new Set([...(P.packages ? P.packages.urls() : []), ...nb.packages])],
       cells: nb.cells.map(c => {
-        if (c.type !== 'code') return { id: c.id, type: c.type, source: c.source, count: null, status: null, outputs: [] };
+        if (c.type !== 'code')          // (its lang: it was a JavaScript cell, and may be one again)
+          return { id: c.id, type: c.type, lang: c.lang, source: c.source, count: null, status: null, outputs: [] };
+        const lang = c.lang;
         const outputs = withOutputs ? capOutputs(c.outputs, max || SAVE_OUT_MAX) : [];
         // a cell still running has partial outputs: it is saved as interrupted
         if (c.status === 'running' || c.status === 'waiting') {
           if (withOutputs) outputs.push({ k: 'note', text: 'Unfinished when the notebook was saved.' });
-          return { id: c.id, type: c.type, source: c.source, count: c.runCount != null ? c.runCount : c.count,
+          return { id: c.id, type: c.type, lang, source: c.source, count: c.runCount != null ? c.runCount : c.count,
                    status: 'interrupted', outputs };
         }
-        return { id: c.id, type: c.type, source: c.source, count: c.count,
+        return { id: c.id, type: c.type, lang, source: c.source, count: c.count,
                  status: c.status === 'queued' ? c.prevStatus : c.status, outputs };
       }),
     };
@@ -1934,7 +2051,7 @@
   // the page's rules kept: tokens, the cells, their counts and status
   // bars, markdown, outputs and colors; not those of the editor, the
   // controls or the selection
-  const CSS_KEEP = /^(?::root(?::not\(\[data-theme=.light.\]\))?|code|kbd|details > summary)$|\.(?:nb-(?:cell|gutter|body|md|out|rich|stream|value|note|error|trace|count|lazy)|md-|syn-)/;
+  const CSS_KEEP = /^(?::root(?::not\(\[data-theme=.light.\]\))?|code|kbd|details > summary)$|\.(?:nb-(?:cell|gutter|body|md|out|rich|stream|value|note|error|trace|count|lang|lazy)|md-|syn-)/;
   const CSS_DROP = /nb-(?:editor|src|hl|bal|run|tools|stdin|more|hidden-out|lazy-ctl)|is-selected|is-editing|:hover|button|\.empty/;
   // the exported code (.nb-code) has the frame of the editor and the text
   // of its textarea: these properties of their rules
@@ -2084,7 +2201,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
       const v = views.get(cell.id);
       if (!v) continue;
       // cells are not <li>: the markup of an output cannot close one
-      const div = h('div', { class: 'nb-cell', 'data-type': cell.type });
+      const div = h('div', { class: 'nb-cell', 'data-type': cell.type, 'data-lang': cell.type === 'code' && cell.lang === 'js' ? 'js' : null });
       if (cell.type === 'markdown') {
         if (!cell.source.trim()) continue;
         const md = h('div', { class: 'nb-md' }, L.renderMarkdown(cell.source, document, 'nb-h-', ids, !colors(cell.source)));
@@ -2095,8 +2212,9 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
         const out = staticOutputs(cell, v);
         if (!cell.source.trim() && !out) continue;
         for (const k of ['status', 'stale', 'edited']) if (v.li.dataset[k]) div.dataset[k] = v.li.dataset[k];
-        const code = h('code', null, cell.source.length <= SYN_MAX && colors(cell.source) ? L.highlightDom(cell.source, document) : cell.source);
-        div.append(h('div', { class: 'nb-gutter' }, h('span', { class: 'nb-count', text: v.count.textContent })),
+        const code = h('code', null, cell.source.length <= SYN_MAX && colors(cell.source) ? L.highlightDom(cell.source, document, cell.lang) : cell.source);
+        div.append(h('div', { class: 'nb-gutter' }, h('span', { class: 'nb-count', text: v.count.textContent }),
+                     cell.lang === 'js' ? h('span', { class: 'nb-lang', text: 'JS' }) : null),
                    h('div', { class: 'nb-body' }, h('pre', { class: 'nb-code' }, code), out));
       }
       list.appendChild(div);
@@ -2172,7 +2290,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
                ['Keep mine', () => saveNow()]);
   });
 
-  // {title, created, cells: [{id?, type, source, count?, status?, outputs?}]}
+  // {title, created, cells: [{id?, type, lang?, source, count?, status?, outputs?}]}
   function load(doc, stale) {
     if (kernel) {                       // the cells go, and their stdin boxes
       if (kernel.current && byId(kernel.current)) kernel.stop();
@@ -2193,7 +2311,7 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
     const seen = new Set();
     for (const d of doc.cells) {
       // as the editor has it: a lone \r would be a line break there, not in the overlay
-      const c = newCell(d.type === 'markdown' ? 'markdown' : 'code', String(d.source || '').replace(/\r\n?/g, '\n'));
+      const c = newCell(d.type === 'markdown' ? 'markdown' : 'code', String(d.source || '').replace(/\r\n?/g, '\n'), d.lang);
       if (d.id && !seen.has(d.id)) c.id = d.id;
       seen.add(c.id);
       c.editing = c.type === 'markdown' && !c.source.trim();
@@ -2201,8 +2319,10 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 var(
         c.count = Number.isInteger(d.count) ? d.count : null;
         c.outputs = (d.outputs || []).map(o => Object.assign({}, o));
         c.ranSource = c.count != null ? c.source : null;
+        c.ranLang = c.count != null ? c.lang : null;
         c.status = d.status === 'error' || d.status === 'interrupted' ? d.status
-          : c.outputs.some(o => o.k === 'error' || (o.k === 'note' && o.bad)) ? 'error' : c.count != null ? 'ok' : 'idle';
+          : c.outputs.some(o => !o.callback && (o.k === 'error' || (o.k === 'note' && o.bad))) ? 'error'
+          : c.count != null ? 'ok' : 'idle';
         c.stale = !!stale && (c.count != null || c.outputs.length > 0);
       }
       nb.cells.push(c);

@@ -44,6 +44,9 @@
  * The kernel is a csi of its own, "csi -n -e (##webnb#kernel)" (see
  * webnb.scm), started lazily, one cell at a time: run() queues, and the
  * next cell is sent only after the kernel reported "done" for the last.
+ * run(cellId, source, lang) runs a JavaScript cell when lang is 'js'
+ * (in the kernel's worker: webjs.scm), a Scheme one otherwise;
+ * runMany(cells) takes {cellId, source, lang} each.
  *
  * Per run(), onCell gets, in this order,
  *   queued {position} -> start {count, name} ->
@@ -51,7 +54,18 @@
  *      lazy {op, sid, parent, mime, data, size, dot, how})*
  *     -> done {status, count, ms, wallMs, values, error, module, code, reason, message}
  * or queued -> cancelled {reason}; run() resolves with the done or
- * cancelled event and never rejects.  A display has a size when its
+ * cancelled event and never rejects.
+ *
+ * Later, what the cell left to run (a Scheme procedure it gave
+ * JavaScript, a timer or a promise reaction of a JavaScript cell) is
+ * attributed to it: each such callback that runs after the cell's done
+ * (or inside another cell's js-await) gives the cell, in this order,
+ *   async {op: 'start'} -> (stream | display | clear, with async: true)*
+ *     -> async {op: 'done', status, error}
+ * where status is ok, error (error as a done's), interrupted, reset or
+ * killed (the kernel went away meanwhile).  They never change the
+ * cell's status or count, never resolve run() and never cancel the
+ * queue.  A display has a size when its
  * data was too large to send (the page shows no more than 4 MB): the
  * number of characters, and data is empty.  done.status is ok, error,
  * incomplete, interrupted or reset (from the kernel), or killed, exited
@@ -65,11 +79,20 @@
  * "stopped" by Stop, after which the cell ends "ok").  A stream still
  * open when the cell is done was ended by an error.
  *
- * onState(state, {queued, current, version, reason, lazy}): off,
- * starting, idle, busy, sleeping, input (the cell reads stdin), paused
- * (a lazy stream waits for lazy()), dead (exited, crashed or killed;
+ * onState(state, {queued, current, version, reason, lazy, callback}):
+ * off, starting, idle, busy, sleeping, input (the cell reads stdin),
+ * paused (a lazy stream waits for lazy()), awaiting (js-await waits for
+ * a promise; Stop interrupts it), dead (exited, crashed or killed;
  * the next run() respawns it) or unavailable; lazy is whether a lazy
- * stream is being shown (also lazyShown).  lazy(cmd) pauses it
+ * stream is being shown (also lazyShown); callback (also the getter)
+ * is whether a callback runs while no cell does: the state is then
+ * busy, sleeping or awaiting, and Stop interrupts it, with the watchdog
+ * as for a cell.  The cells run() meanwhile wait ("queued") until the
+ * attributed call running then ends, which Stop cancels, and no
+ * longer: the kernel takes a request before its next call from
+ * JavaScript, so callbacks that come faster than they end (a busy
+ * setInterval) cannot keep a cell, such as one that clears the
+ * interval, from running.  lazy(cmd) pauses the lazy stream
  * (LAZY_PAUSE), or, when paused, gets its next element (LAZY_NEXT) or
  * lets it go on (LAZY_GO).
  *
@@ -78,9 +101,12 @@
  * one: files() gives those of the next kernel.
  *
  * onLog(kind, text): stdout and stderr outside any cell (.csirc, whose
- * text displays are logged as stdout, and others as display), csirc
- * (its result), kernel (restarts and exits) and protocol (anything the
- * kernel sent that makes no sense). */
+ * text displays are logged as stdout, and others as display; the
+ * callbacks attributed to no cell: JavaScript functions registered
+ * while no cell ran, event listeners, the continuations of a native
+ * await after their cell ended), csirc (its result), kernel (restarts
+ * and exits) and protocol (anything the kernel sent that makes no
+ * sense). */
 
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -89,7 +115,7 @@
   'use strict';
 
   // repl-driver.js's states
-  const RUNNING = 0, WAITING = 1, BUSY = 2, SLEEPING = 4, IDLE = 5, PAUSED = 6;
+  const RUNNING = 0, WAITING = 1, BUSY = 2, SLEEPING = 4, IDLE = 5, PAUSED = 6, AWAITING = 7;
   const LAZY_NEXT = 1, LAZY_GO = 2, LAZY_PAUSE = 3;
   // after input, how long the stdin box waits for the kernel to read again
   const INPUT_HIDE_MS = 250;
@@ -143,13 +169,20 @@
     }
     let carry = '', ackBytes = 0, ackPending = false;
     let watchdog = null, disposed = false;
+    // the cell of each rid sent to this kernel; the callbacks running
+    // ({rid, cellId}, innermost last); a callback runs (a state other
+    // than IDLE with no cell)
+    let ridCell = new Map(), frames = [], idleBusy = false;
+    const callbackRunning = () => !current && (idleBusy || frames.length > 0);
 
     function emitState() {
-      const key = state + '|' + queue.length + '|' + (current ? current.cellId : '') + '|' + reason + '|' + lazy;
+      const cb = callbackRunning();
+      const key = state + '|' + queue.length + '|' + (current ? current.cellId : '') + '|' + reason + '|' + lazy +
+            '|' + cb;
       if (key === lastState) return;
       lastState = key;
       call(o.onState, state, { queued: queue.length, current: current ? current.cellId : null,
-                               version: info ? info.version : null, reason, lazy });
+                               version: info ? info.version : null, reason, lazy, callback: cb });
     }
     function setState(s, why) { state = s; reason = why || null; emitState(); }
 
@@ -158,7 +191,15 @@
       gen++;                            // later messages of this worker are ignored
       if (w) { try { w.terminate(); } catch (e) { /* gone */ } }
       w = null; ready = false; hello = false; carry = ''; ackBytes = 0; lazy = false;
+      ridCell = new Map(); frames = []; idleBusy = false;
       disarm();
+    }
+
+    // the callbacks still running end so (the kernel went away)
+    function closeFrames(status) {
+      for (let i = frames.length - 1; i >= 0; i--)
+        if (frames[i].cellId != null) onCell(frames[i].cellId, { type: 'async', op: 'done', status, error: null });
+      frames = [];
     }
 
     // ---- terminal events
@@ -235,6 +276,7 @@
     // exit or crash (or a worker error after ready)
     function gone(how, detail) {
       const wasHello = hello;
+      closeFrames('killed');
       kill();
       const why = how === 'exited' ? 'kernel exited (code ' + detail + ')' : 'kernel crashed: ' + detail;
       if (current) finish(how === 'exited' ? { status: 'exited', code: detail }
@@ -261,8 +303,16 @@
           });
         }
         if (m.fd === 3) events(m.text);
-        else if (current) onCell(current.cellId, { type: 'stream', name: m.fd === 2 ? 'stderr' : 'stdout', text: m.text });
-        else log(m.fd === 2 ? 'stderr' : 'stdout', m.text);
+        else {
+          const name = m.fd === 2 ? 'stderr' : 'stdout', top = frames[frames.length - 1];
+          if (top) {
+            if (top.cellId != null) onCell(top.cellId, { type: 'stream', name, text: m.text, async: true });
+            else log(name, m.text);
+          }
+          // (before its start: a call from JavaScript the idle kernel ran)
+          else if (current && current.started) onCell(current.cellId, { type: 'stream', name, text: m.text });
+          else log(name, m.text);
+        }
         break;
       case 'state': lazy = !!m.lazy && !!current; workerState(m.state); break;
       case 'exit': gone('exited', m.code); break;
@@ -278,8 +328,15 @@
     // the output of a slice before its state, so "start" comes first.)
     function workerState(st) {
       if (!hello) return;               // startup: stays "starting"
-      if (!current) {
-        if (st === IDLE) setState('idle');
+      if (!current) {                   // a callback runs, until IDLE
+        if (st === IDLE) {
+          idleBusy = false;
+          setState('idle');
+          pump();
+        } else {
+          idleBusy = true;
+          setState(st === AWAITING ? 'awaiting' : st === SLEEPING ? 'sleeping' : 'busy');
+        }
         return;
       }
       if (!current.started) return;
@@ -294,7 +351,8 @@
       current.waiting = waiting;
       // just after input() the box stays up while the kernel may read again
       if (waiting || !current.hideTimer) showInput(current, waiting);
-      setState(waiting ? 'input' : st === SLEEPING ? 'sleeping' : st === PAUSED ? 'paused' : 'busy');
+      setState(waiting ? 'input' : st === SLEEPING ? 'sleeping' : st === PAUSED ? 'paused' :
+               st === AWAITING ? 'awaiting' : 'busy');
     }
 
     // the cell's stdin box: CUR.shown is what onCell was last told
@@ -321,6 +379,13 @@
                   id: ev.id == null ? null : String(ev.id) };
       if (Number.isInteger(ev.size) && ev.size >= 0) d.size = ev.size;
       return d;
+    }
+
+    // a display with no cell to show it in: text as stdout
+    function logDisplay(ev) {
+      const d = display(ev);
+      if (d.mime === 'text/plain' && d.size == null) log('stdout', d.data + '\n');
+      else log('display', d.mime + ' output not shown (' + (d.size != null ? d.size : d.data.length) + ' characters)');
     }
 
     function lazyEvent(ev) {
@@ -364,17 +429,39 @@
         if (current && ev.rid === current.rid) current.started = true;
         break;
       case 'display':
-      case 'clear':
-        if (current) {
+      case 'clear': {
+        const top = frames[frames.length - 1];
+        if (top && ev.rid === top.rid) {          // a callback's
+          if (top.cellId != null)
+            onCell(top.cellId, ev.ev === 'clear' ? { type: 'clear', async: true } : Object.assign(display(ev), { async: true }));
+          else if (ev.ev !== 'clear') logDisplay(ev);
+        } else if (current) {
           if (ev.rid !== current.rid) checkRid(ev);
           onCell(current.cellId, ev.ev === 'clear' ? { type: 'clear' } : display(ev));
         } else if (ev.rid == null) {    // .csirc: no cell to show it in
-          if (ev.ev === 'clear') break;
-          const d = display(ev);
-          if (d.mime === 'text/plain' && d.size == null) log('stdout', d.data + '\n');
-          else log('display', d.mime + ' output not shown (' + (d.size != null ? d.size : d.data.length) + ' characters)');
+          if (ev.ev !== 'clear') logDisplay(ev);
         } else log('protocol', ev.ev + ' outside a cell' + (ev.mime ? ' (' + ev.mime + ')' : ''));
         break;
+      }
+      case 'async-start': {
+        const cellId = ridCell.has(ev.rid) ? ridCell.get(ev.rid) : null;
+        frames.push({ rid: ev.rid, cellId });
+        if (cellId === null) log('protocol', 'async-start for unknown rid ' + ev.rid);
+        else onCell(cellId, { type: 'async', op: 'start' });
+        emitState();
+        break;
+      }
+      case 'async-done': {
+        if (!frames.some(f => f.rid === ev.rid)) { log('protocol', 'async-done for rid ' + ev.rid + ' without its start'); break; }
+        let f;
+        while ((f = frames.pop()).rid !== ev.rid) log('protocol', 'async-done for rid ' + ev.rid + ' inside rid ' + f.rid);
+        const status = String(ev.status), error = ev.error || null;
+        if (f.cellId !== null) onCell(f.cellId, { type: 'async', op: 'done', status, error });
+        else if (status === 'error' && error) log('stderr', String(error.text) + '\n');
+        emitState();
+        pump();
+        break;
+      }
       case 'lazy-open':
       case 'lazy-item':
       case 'lazy-end':
@@ -404,14 +491,18 @@
     }
     function checkRidDone(ev) { if (ev.rid !== current.rid) checkRid(ev); }
 
+    // (held while an attributed callback runs, so that Stop can cancel
+    // the queue, until its async-done: the kernel then takes the
+    // request before its next call from JavaScript)
     function pump() {
-      if (!hello || current || !queue.length || disposed) return;
+      if (!hello || current || !queue.length || disposed || frames.length) return;
       const q = queue.shift();
       const count = ++execCount, rid = count, name = 'In[' + count + ']';
       current = { cellId: q.cellId, rid, count, resolve: q.resolve, t0: now(), waiting: false,
                   shown: false, hideTimer: null, started: false };
+      ridCell.set(rid, q.cellId);
       const src = typeof q.source.toWellFormed === 'function' ? q.source.toWellFormed() : q.source;
-      post({ type: 'request', text: 'run ' + rid + ' ' + name + '\n' + src });
+      post({ type: 'request', text: (q.lang === 'js' ? 'js ' : 'run ') + rid + ' ' + name + '\n' + src });
       onCell(q.cellId, { type: 'start', count, name });
       setState('busy');
     }
@@ -426,7 +517,7 @@
 
     // Armed by stop() and again by every message: it fires when the
     // worker sent nothing for watchdogMs, whatever the last state it
-    // reported.  A kernel that sleeps reports every 50 ms at least, one
+    // reported (a cell's, or a callback's).  A kernel that sleeps reports every 50 ms at least, one
     // that waits for input answers the interrupt at once, but the slice
     // that wakes up or gets the input may run into a long primitive
     // without reporting anything.
@@ -435,10 +526,11 @@
       disarm();
       watchdog = setTimeout(() => {
         watchdog = null;
-        if (!current) return;
+        if (!current && !callbackRunning()) return;
         const why = 'kernel did not respond to Stop and was restarted';
+        closeFrames('killed');
         kill();
-        finish({ status: 'killed', reason: 'unresponsive' });
+        if (current) finish({ status: 'killed', reason: 'unresponsive' });
         cancelQueue('stopped');
         log('kernel', why);
         spawn();
@@ -454,7 +546,7 @@
         if (state === 'starting' && startP) return startP;
         return spawnIfNeeded();
       },
-      run(cellId, source) {
+      run(cellId, source, lang) {
         return new Promise(resolve => {
           if (disposed) {
             const ev = { type: 'cancelled', reason: 'disposed' };
@@ -462,14 +554,14 @@
             resolve(ev);
             return;
           }
-          queue.push({ cellId, source: String(source), resolve });
+          queue.push({ cellId, source: String(source), lang: lang === 'js' ? 'js' : 'scheme', resolve });
           onCell(cellId, { type: 'queued', position: queue.length });
           spawnIfNeeded();
           emitState();
           pump();
         });
       },
-      runMany(cells) { return Promise.all(cells.map(c => api.run(c.cellId, c.source))); },
+      runMany(cells) { return Promise.all(cells.map(c => api.run(c.cellId, c.source, c.lang))); },
       cancel(cellId) {
         const keep = [];
         for (const e of queue) {
@@ -483,7 +575,7 @@
         emitState();
       },
       stop() {
-        if (current && w) {
+        if ((current || callbackRunning()) && w) {
           post({ type: 'interrupt' });
           arm();
         }
@@ -516,6 +608,7 @@
       restart() {
         if (disposed) return Promise.reject({ reason: 'disposed' });
         const was = state;
+        closeFrames('killed');
         kill();
         if (current) finish({ status: 'killed', reason: 'restart' });
         cancelQueue('restart');
@@ -529,6 +622,7 @@
       dispose() {
         if (disposed) return;
         disposed = true;
+        closeFrames('killed');
         kill();
         if (current) finish({ status: 'killed', reason: 'disposed' });
         cancelQueue('disposed');
@@ -541,6 +635,7 @@
       get execCount() { return execCount; },
       get info() { return info; },
       get lazyShown() { return lazy; },
+      get callback() { return callbackRunning(); },
     };
     return api;
   }
